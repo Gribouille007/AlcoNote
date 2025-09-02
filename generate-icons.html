@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Generate AlcoNote Icons</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        canvas {
+            border: 1px solid #ddd;
+            margin: 10px;
+            border-radius: 8px;
+        }
+        .download-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        button {
+            background: #007AFF;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056CC;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AlcoNote PWA Icon Generator</h1>
+        <p>This page generates all the required PWA icons for AlcoNote.</p>
+        
+        <div id="canvases"></div>
+        
+        <div class="download-section">
+            <h3>Download Icons</h3>
+            <p>Right-click on each icon above and select "Save image as..." to download them to the assets/icons/ folder.</p>
+            <button onclick="generateAllIcons()">Regenerate All Icons</button>
+        </div>
+    </div>
+
+    <script>
+        const iconSizes = [72, 96, 128, 144, 152, 192, 384, 512];
+        
+        function drawIcon(canvas, size) {
+            const ctx = canvas.getContext('2d');
+            canvas.width = size;
+            canvas.height = size;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, size, size);
+            
+            // Create gradient background
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, '#007AFF');
+            gradient.addColorStop(1, '#0056CC');
+            
+            // Draw background circle
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(size/2, size/2, size/2 - 4, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Draw white border
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            
+            // Draw beer glass
+            const centerX = size / 2;
+            const centerY = size / 2;
+            const scale = size / 512; // Scale based on 512px reference
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            
+            // Glass body
+            const glassWidth = 120 * scale;
+            const glassHeight = 160 * scale;
+            const glassX = centerX - glassWidth/2;
+            const glassY = centerY - glassHeight/2;
+            
+            ctx.beginPath();
+            ctx.roundRect(glassX, glassY, glassWidth, glassHeight, 10 * scale);
+            ctx.fill();
+            
+            // Beer foam (ellipse at top)
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.ellipse(centerX, glassY, glassWidth/2, 20 * scale, 0, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Foam bubbles
+            const bubbles = [
+                {x: -30 * scale, y: -20 * scale, r: 12 * scale},
+                {x: 20 * scale, y: -25 * scale, r: 10 * scale},
+                {x: 0, y: -30 * scale, r: 8 * scale}
+            ];
+            
+            bubbles.forEach(bubble => {
+                ctx.beginPath();
+                ctx.arc(centerX + bubble.x, glassY + bubble.y, bubble.r, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+            
+            // Glass highlight
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.beginPath();
+            ctx.roundRect(glassX + 10 * scale, glassY + 10 * scale, 20 * scale, glassHeight - 20 * scale, 5 * scale);
+            ctx.fill();
+            
+            // Bubbles in beer
+            ctx.fillStyle = 'rgba(0, 122, 255, 0.6)';
+            const beerBubbles = [
+                {x: -20 * scale, y: -20 * scale, r: 4 * scale},
+                {x: 15 * scale, y: -40 * scale, r: 3 * scale},
+                {x: -10 * scale, y: 10 * scale, r: 2 * scale},
+                {x: 25 * scale, y: -10 * scale, r: 3 * scale}
+            ];
+            
+            beerBubbles.forEach(bubble => {
+                ctx.beginPath();
+                ctx.arc(centerX + bubble.x, centerY + bubble.y, bubble.r, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+            
+            // App name (only on larger icons)
+            if (size >= 192) {
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = `bold ${Math.max(24, size * 0.06)}px Arial, sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('AlcoNote', centerX, centerY + glassHeight/2 + 40 * scale);
+            }
+        }
+        
+        function generateAllIcons() {
+            const container = document.getElementById('canvases');
+            container.innerHTML = '';
+            
+            iconSizes.forEach(size => {
+                const canvas = document.createElement('canvas');
+                canvas.id = `icon-${size}`;
+                canvas.title = `icon-${size}x${size}.png`;
+                
+                const wrapper = document.createElement('div');
+                wrapper.style.display = 'inline-block';
+                wrapper.style.margin = '10px';
+                wrapper.style.textAlign = 'center';
+                
+                const label = document.createElement('div');
+                label.textContent = `${size}x${size}`;
+                label.style.marginBottom = '5px';
+                label.style.fontWeight = 'bold';
+                
+                wrapper.appendChild(label);
+                wrapper.appendChild(canvas);
+                container.appendChild(wrapper);
+                
+                drawIcon(canvas, size);
+                
+                // Add download functionality
+                canvas.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    downloadCanvas(canvas, `icon-${size}x${size}.png`);
+                });
+                
+                canvas.addEventListener('click', () => {
+                    downloadCanvas(canvas, `icon-${size}x${size}.png`);
+                });
+                
+                canvas.style.cursor = 'pointer';
+                canvas.title = `Click to download icon-${size}x${size}.png`;
+            });
+        }
+        
+        function downloadCanvas(canvas, filename) {
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+        
+        // Generate icons on page load
+        generateAllIcons();
+        
+        // Add roundRect polyfill for older browsers
+        if (!CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function(x, y, width, height, radius) {
+                this.beginPath();
+                this.moveTo(x + radius, y);
+                this.lineTo(x + width - radius, y);
+                this.quadraticCurveTo(x + width, y, x + width, y + radius);
+                this.lineTo(x + width, y + height - radius);
+                this.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+                this.lineTo(x + radius, y + height);
+                this.quadraticCurveTo(x, y + height, x, y + height - radius);
+                this.lineTo(x, y + radius);
+                this.quadraticCurveTo(x, y, x + radius, y);
+                this.closePath();
+            };
+        }
+    </script>
+</body>
+</html>

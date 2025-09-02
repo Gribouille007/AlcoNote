@@ -1,0 +1,636 @@
+/* Responsive Design for AlcoNote PWA */
+
+/* Mobile First Approach - Base styles are for mobile */
+
+/* Small Mobile Devices (320px - 480px) */
+@media screen and (max-width: 480px) {
+    .app-header {
+        padding: var(--spacing-sm) var(--spacing-md);
+    }
+    
+    .app-title {
+        font-size: var(--font-size-lg);
+    }
+    
+    .tab-navigation {
+        padding: 0 var(--spacing-sm);
+    }
+    
+    .tab-btn {
+        font-size: var(--font-size-sm);
+        padding: var(--spacing-sm) var(--spacing-xs);
+    }
+    
+    .main-content {
+        padding-bottom: 90px;
+    }
+    
+    .tab-content {
+        padding: var(--spacing-sm);
+    }
+    
+    /* FAB adjustments for small screens */
+    .fab-main {
+        width: 48px;
+        height: 48px;
+        bottom: var(--spacing-md);
+    }
+    
+    .fab-icon {
+        font-size: var(--font-size-xl);
+    }
+    
+    .fab-menu {
+        bottom: 60px;
+    }
+    
+    .fab-option {
+        padding: var(--spacing-xs) var(--spacing-sm);
+    }
+    
+    .fab-option-label {
+        font-size: var(--font-size-xs);
+    }
+    
+    /* Modal adjustments */
+    .modal {
+        padding: var(--spacing-sm);
+    }
+    
+    .modal-content {
+        max-height: 95vh;
+    }
+    
+    .modal-header {
+        padding: var(--spacing-md);
+    }
+    
+    .modal-form {
+        padding: var(--spacing-md);
+    }
+    
+    /* Form adjustments */
+    .form-row {
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    
+    .form-actions {
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    
+    .btn-primary,
+    .btn-secondary,
+    .btn-danger {
+        width: 100%;
+    }
+    
+    /* Statistics grid for small screens */
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--spacing-sm);
+    }
+    
+    .stat-card {
+        padding: var(--spacing-md);
+    }
+    
+    .stat-value {
+        font-size: var(--font-size-xl);
+    }
+    
+    /* Period selector scrollable on small screens */
+    .period-selector {
+        justify-content: flex-start;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+    
+    .period-selector::-webkit-scrollbar {
+        display: none;
+    }
+    
+    .period-btn {
+        flex-shrink: 0;
+        min-width: 80px;
+    }
+    
+    /* Settings menu full width on small screens */
+    .settings-content {
+        width: 100%;
+    }
+    
+    /* Scanner adjustments */
+    .scanner-container {
+        height: 250px;
+    }
+    
+    .scanner-frame {
+        width: 150px;
+        height: 150px;
+    }
+}
+
+/* Large Mobile Devices (481px - 768px) */
+@media screen and (min-width: 481px) and (max-width: 768px) {
+    .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    
+    .form-row {
+        flex-direction: row;
+    }
+    
+    .form-actions {
+        flex-direction: row;
+        justify-content: flex-end;
+    }
+    
+    .btn-primary,
+    .btn-secondary,
+    .btn-danger {
+        width: auto;
+        min-width: 120px;
+    }
+    
+    .settings-content {
+        width: 320px;
+    }
+    
+    .period-selector {
+        justify-content: center;
+    }
+}
+
+/* Tablet Portrait (769px - 1024px) */
+@media screen and (min-width: 769px) and (max-width: 1024px) {
+    .app-header {
+        padding: var(--spacing-lg) var(--spacing-xl);
+    }
+    
+    .main-content {
+        padding-bottom: 120px;
+    }
+    
+    .tab-content {
+        padding: var(--spacing-lg) var(--spacing-xl);
+    }
+    
+    /* Two-column layout for categories and drinks */
+    .categories-list,
+    .drinks-list {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--spacing-md);
+    }
+    
+    .category-item,
+    .drink-group {
+        margin-bottom: 0;
+    }
+    
+    /* Statistics grid for tablets */
+    .stats-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+    
+    /* Modal adjustments for tablets */
+    .modal-content {
+        max-width: 600px;
+    }
+    
+    /* FAB positioning for tablets */
+    .fab-container {
+        bottom: var(--spacing-xl);
+    }
+    
+    .fab-main {
+        width: 64px;
+        height: 64px;
+    }
+    
+    .fab-icon {
+        font-size: var(--font-size-3xl);
+    }
+    
+    .fab-menu {
+        bottom: 80px;
+    }
+    
+    /* Settings menu */
+    .settings-content {
+        width: 400px;
+    }
+    
+    /* Chart containers */
+    .chart-wrapper {
+        height: 350px;
+    }
+    
+    /* Scanner adjustments */
+    .scanner-container {
+        height: 400px;
+    }
+    
+    .scanner-frame {
+        width: 250px;
+        height: 250px;
+    }
+}
+
+/* Tablet Landscape & Small Desktop (1025px - 1440px) */
+@media screen and (min-width: 1025px) and (max-width: 1440px) {
+    /* Container max-width for better readability */
+    #app {
+        max-width: 1200px;
+        margin: 0 auto;
+        box-shadow: var(--shadow-lg);
+    }
+    
+    .app-header {
+        padding: var(--spacing-lg) var(--spacing-xl);
+    }
+    
+    .main-content {
+        padding-bottom: 140px;
+    }
+    
+    .tab-content {
+        padding: var(--spacing-xl);
+    }
+    
+    /* Three-column layout for larger screens */
+    .categories-list,
+    .drinks-list {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: var(--spacing-lg);
+    }
+    
+    /* Statistics grid for desktop */
+    .stats-grid {
+        grid-template-columns: repeat(5, 1fr);
+        gap: var(--spacing-lg);
+    }
+    
+    /* Side-by-side charts */
+    .charts-row {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--spacing-lg);
+    }
+    
+    /* Modal adjustments for desktop */
+    .modal-content {
+        max-width: 700px;
+    }
+    
+    .modal-form {
+        padding: var(--spacing-xl);
+    }
+    
+    /* FAB positioning for desktop */
+    .fab-container {
+        bottom: var(--spacing-xl);
+        right: var(--spacing-xl);
+        transform: none;
+    }
+    
+    .fab-main {
+        width: 72px;
+        height: 72px;
+    }
+    
+    .fab-menu {
+        bottom: 90px;
+        left: 0;
+        transform: none;
+    }
+    
+    /* Settings menu */
+    .settings-content {
+        width: 450px;
+    }
+    
+    /* Chart containers */
+    .chart-wrapper {
+        height: 400px;
+    }
+    
+    /* Hover effects for desktop */
+    .category-item:hover,
+    .drink-group-header:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-lg);
+    }
+    
+    /* Scanner adjustments */
+    .scanner-content {
+        max-width: 800px;
+    }
+    
+    .scanner-container {
+        height: 500px;
+    }
+    
+    .scanner-frame {
+        width: 300px;
+        height: 300px;
+    }
+}
+
+/* Large Desktop (1441px+) */
+@media screen and (min-width: 1441px) {
+    #app {
+        max-width: 1400px;
+    }
+    
+    /* Four-column layout for very large screens */
+    .categories-list,
+    .drinks-list {
+        grid-template-columns: repeat(4, 1fr);
+    }
+    
+    /* Statistics grid for large desktop */
+    .stats-grid {
+        grid-template-columns: repeat(6, 1fr);
+    }
+    
+    /* Three-column charts */
+    .charts-row {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    
+    /* Modal adjustments for large desktop */
+    .modal-content {
+        max-width: 800px;
+    }
+    
+    /* Settings menu */
+    .settings-content {
+        width: 500px;
+    }
+    
+    /* Chart containers */
+    .chart-wrapper {
+        height: 450px;
+    }
+}
+
+/* Landscape Orientation Adjustments */
+@media screen and (orientation: landscape) and (max-height: 600px) {
+    .app-header {
+        padding: var(--spacing-sm) var(--spacing-md);
+    }
+    
+    .app-title {
+        font-size: var(--font-size-lg);
+    }
+    
+    .tab-btn {
+        padding: var(--spacing-sm);
+    }
+    
+    .main-content {
+        padding-bottom: 80px;
+    }
+    
+    .tab-content {
+        padding: var(--spacing-sm) var(--spacing-md);
+    }
+    
+    /* Horizontal layout for landscape */
+    .stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    }
+    
+    .stat-card {
+        padding: var(--spacing-sm);
+    }
+    
+    .stat-value {
+        font-size: var(--font-size-lg);
+    }
+    
+    /* FAB adjustments for landscape */
+    .fab-main {
+        width: 48px;
+        height: 48px;
+    }
+    
+    .fab-container {
+        bottom: var(--spacing-md);
+    }
+    
+    /* Modal adjustments for landscape */
+    .modal-content {
+        max-height: 85vh;
+    }
+    
+    /* Scanner adjustments for landscape */
+    .scanner-container {
+        height: 200px;
+    }
+    
+    .scanner-frame {
+        width: 120px;
+        height: 120px;
+    }
+}
+
+/* High DPI Displays */
+@media screen and (-webkit-min-device-pixel-ratio: 2),
+       screen and (min-resolution: 192dpi),
+       screen and (min-resolution: 2dppx) {
+    /* Sharper borders and shadows for high DPI */
+    .category-item,
+    .drink-group,
+    .stat-card,
+    .modal-content {
+        border-width: 0.5px;
+    }
+    
+    /* Adjust font smoothing for high DPI */
+    body {
+        -webkit-font-smoothing: subpixel-antialiased;
+    }
+}
+
+/* Print Styles */
+@media print {
+    .app-header,
+    .tab-navigation,
+    .fab-container,
+    .modal,
+    .settings-menu {
+        display: none !important;
+    }
+    
+    .main-content {
+        padding-bottom: 0;
+    }
+    
+    .tab-content {
+        display: block !important;
+        padding: 0;
+    }
+    
+    .category-item,
+    .drink-group,
+    .stat-card {
+        break-inside: avoid;
+        box-shadow: none;
+        border: 1px solid #ccc;
+    }
+    
+    /* Print-friendly colors */
+    * {
+        color: #000 !important;
+        background: #fff !important;
+    }
+    
+    .stat-value {
+        color: #333 !important;
+    }
+}
+
+/* Reduced Motion Preferences */
+@media (prefers-reduced-motion: reduce) {
+    .fab-main,
+    .category-item,
+    .drink-group-header,
+    .stat-card,
+    .modal-content {
+        transition: none;
+        transform: none !important;
+    }
+    
+    .fab-main:hover,
+    .category-item:hover,
+    .drink-group-header:hover,
+    .stat-card:hover {
+        transform: none !important;
+    }
+    
+    .animate-fade-in,
+    .animate-slide-up,
+    .animate-slide-down {
+        animation: none;
+    }
+}
+
+/* Dark Mode Responsive Adjustments */
+@media (prefers-color-scheme: dark) {
+    @media screen and (min-width: 1025px) {
+        #app {
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+        }
+    }
+    
+    /* Adjust shadows for dark mode */
+    .category-item:hover,
+    .drink-group-header:hover,
+    .stat-card:hover {
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+    }
+}
+
+/* Touch Device Optimizations */
+@media (hover: none) and (pointer: coarse) {
+    /* Larger touch targets */
+    .tab-btn,
+    .category-item,
+    .drink-group-header,
+    .fab-option,
+    .period-btn {
+        min-height: 44px;
+    }
+    
+    /* Remove hover effects on touch devices */
+    .category-item:hover,
+    .drink-group-header:hover,
+    .stat-card:hover,
+    .fab-option:hover {
+        transform: none;
+        box-shadow: var(--shadow-sm);
+    }
+    
+    /* Improve touch scrolling */
+    .period-selector,
+    .suggestions-list,
+    .modal-content,
+    .settings-content {
+        -webkit-overflow-scrolling: touch;
+    }
+}
+
+/* Accessibility - Large Text Support */
+@media screen and (min-width: 320px) {
+    html[data-font-size="large"] {
+        font-size: 18px;
+    }
+    
+    html[data-font-size="x-large"] {
+        font-size: 20px;
+    }
+    
+    html[data-font-size="large"] .stats-grid,
+    html[data-font-size="x-large"] .stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+    
+    html[data-font-size="large"] .form-row,
+    html[data-font-size="x-large"] .form-row {
+        flex-direction: column;
+    }
+}
+
+/* Container Queries Support (Future-proofing) */
+@supports (container-type: inline-size) {
+    .statistics-container {
+        container-type: inline-size;
+    }
+    
+    @container (min-width: 600px) {
+        .stats-grid {
+            grid-template-columns: repeat(4, 1fr);
+        }
+    }
+    
+    @container (min-width: 900px) {
+        .stats-grid {
+            grid-template-columns: repeat(6, 1fr);
+        }
+        
+        .charts-row {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: var(--spacing-lg);
+        }
+    }
+}
+
+/* Safe Area Support for devices with notches */
+@supports (padding: max(0px)) {
+    .app-header {
+        padding-left: max(var(--spacing-md), env(safe-area-inset-left));
+        padding-right: max(var(--spacing-md), env(safe-area-inset-right));
+        padding-top: max(var(--spacing-md), env(safe-area-inset-top));
+    }
+    
+    .fab-container {
+        bottom: max(var(--spacing-lg), env(safe-area-inset-bottom));
+        right: max(50%, env(safe-area-inset-right));
+    }
+    
+    .modal {
+        padding-bottom: max(var(--spacing-md), env(safe-area-inset-bottom));
+    }
+    
+    .settings-content {
+        padding-left: max(0px, env(safe-area-inset-left));
+    }
+}

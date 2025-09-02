@@ -1,0 +1,22 @@
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://alconote.app/sitemap.xml
+
+# Disallow sensitive files
+Disallow: /js/error-tracking.js
+Disallow: /test-*.html
+Disallow: /generate-icons.html
+
+# Allow important PWA files
+Allow: /manifest.json
+Allow: /sw.js
+Allow: /assets/
+Allow: /css/
+Allow: /js/app.js
+Allow: /js/database.js
+Allow: /js/utils.js
+Allow: /js/geolocation.js
+Allow: /js/scanner.js
+Allow: /js/statistics.js

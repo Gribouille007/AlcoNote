@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Statistics - AlcoNote</title>
+    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
+</head>
+<body>
+    <h1>Test Statistics Data</h1>
+    <button id="addTestData">Add Test Data</button>
+    <button id="clearData">Clear All Data</button>
+    <button id="openApp">Open AlcoNote</button>
+    
+    <div id="status"></div>
+
+    <script>
+        // Initialize database (same as in database.js)
+        const db = new Dexie('AlcoNoteDB');
+        db.version(1).stores({
+            categories: '++id, name, drinkCount, createdAt, updatedAt',
+            drinks: '++id, name, category, quantity, unit, alcoholContent, date, time, location, barcode, createdAt, updatedAt',
+            settings: 'key, value, updatedAt'
+        });
+
+        const statusDiv = document.getElementById('status');
+
+        function log(message) {
+            console.log(message);
+            statusDiv.innerHTML += '<p>' + message + '</p>';
+        }
+
+        // Add test data
+        document.getElementById('addTestData').addEventListener('click', async () => {
+            try {
+                log('Adding test data...');
+
+                // Add categories
+                await db.categories.clear();
+                const now = new Date();
+                await db.categories.bulkAdd([
+                    { name: 'Bière', drinkCount: 0, createdAt: now, updatedAt: now },
+                    { name: 'Vin', drinkCount: 0, createdAt: now, updatedAt: now },
+                    { name: 'Spiritueux', drinkCount: 0, createdAt: now, updatedAt: now }
+                ]);
+                log('Categories added');
+
+                // Add test drinks with various dates and locations
+                await db.drinks.clear();
+                const testDrinks = [
+                    // Today's drinks
+                    {
+                        name: 'Heineken',
+                        category: 'Bière',
+                        quantity: 1,
+                        unit: 'EcoCup',
+                        alcoholContent: 5,
+                        date: '2025-09-02',
+                        time: '18:00',
+                        location: {
+                            latitude: 50.8503,
+                            longitude: 4.3517,
+                            address: 'Brussels, Belgium'
+                        },
+                        createdAt: now,
+                        updatedAt: now
+                    },
+                    {
+                        name: 'Stella Artois',
+                        category: 'Bière',
+                        quantity: 1,
+                        unit: 'EcoCup',
+                        alcoholContent: 5.2,
+                        date: '2025-09-02',
+                        time: '19:30',
+                        location: {
+                            latitude: 50.8503,
+                            longitude: 4.3517,
+                            address: 'Brussels, Belgium'
+                        },
+                        createdAt: now,
+                        updatedAt: now
+                    },
+                    {
+                        name: 'Chardonnay',
+                        category: 'Vin',
+                        quantity: 150,
+                        unit: 'cL',
+                        alcoholContent: 12.5,
+                        date: '2025-09-02',
+                        time: '20:15',
+                        location: {
+                            latitude: 50.8503,
+                            longitude: 4.3517,
+                            address: 'Brussels, Belgium'
+                        },
+                        createdAt: now,
+                        updatedAt: now
+                    },
+                    // Yesterday's drinks
+                    {
+                        name: 'Leffe Blonde',
+                        category: 'Bière',
+                        quantity: 1,
+                        unit: 'EcoCup',
+                        alcoholContent: 6.6,
+                        date: '2025-09-01',
+                        time: '17:45',
+                        location: {
+                            latitude: 50.8467,
+                            longitude: 4.3525,
+                            address: 'Antwerp, Belgium'
+                        },
+                        createdAt: now,
+                        updatedAt: now
+                    },
+                    {
+                        name: 'Whisky',
+                        category: 'Spiritueux',
+                        quantity: 4,
+                        unit: 'cL',
+                        alcoholContent: 40,
+                        date: '2025-09-01',
+                        time: '22:00',
+                        location: {
+                            latitude: 50.8467,
+                            longitude: 4.3525,
+                            address: 'Antwerp, Belgium'
+                        },
+                        createdAt: now,
+                        updatedAt: now
+                    },
+                    // Last week's drinks
+                    {
+                        name: 'Jupiler',
+                        category: 'Bière',
+                        quantity: 2,
+                        unit: 'EcoCup',
+                        alcoholContent: 5.2,
+                        date: '2025-08-26',
+                        time: '16:30',
+                        location: {
+                            latitude: 50.8400,
+                            longitude: 4.3600,
+                            address: 'Ghent, Belgium'
+                        },
+                        createdAt: now,
+                        updatedAt: now
+                    },
+                    {
+                        name: 'Merlot',
+                        category: 'Vin',
+                        quantity: 200,
+                        unit: 'cL',
+                        alcoholContent: 13,
+                        date: '2025-08-26',
+                        time: '19:00',
+                        location: {
+                            latitude: 50.8400,
+                            longitude: 4.3600,
+                            address: 'Ghent, Belgium'
+                        },
+                        createdAt: now,
+                        updatedAt: now
+                    },
+                    // More varied data for better statistics
+                    {
+                        name: 'Corona',
+                        category: 'Bière',
+                        quantity: 1,
+                        unit: 'EcoCup',
+                        alcoholContent: 4.5,
+                        date: '2025-08-30',
+                        time: '15:00',
+                        location: {
+                            latitude: 50.8200,
+                            longitude: 4.4000,
+                            address: 'Leuven, Belgium'
+                        },
+                        createdAt: now,
+                        updatedAt: now
+                    },
+                    {
+                        name: 'Vodka',
+                        category: 'Spiritueux',
+                        quantity: 3,
+                        unit: 'cL',
+                        alcoholContent: 37.5,
+                        date: '2025-08-31',
+                        time: '23:30',
+                        location: {
+                            latitude: 50.8200,
+                            longitude: 4.4000,
+                            address: 'Leuven, Belgium'
+                        },
+                        createdAt: now,
+                        updatedAt: now
+                    },
+                    {
+                        name: 'Sauvignon Blanc',
+                        category: 'Vin',
+                        quantity: 125,
+                        unit: 'cL',
+                        alcoholContent: 11.5,
+                        date: '2025-08-28',
+                        time: '18:45',
+                        location: {
+                            latitude: 50.8300,
+                            longitude: 4.3800,
+                            address: 'Bruges, Belgium'
+                        },
+                        createdAt: now,
+                        updatedAt: now
+                    }
+                ];
+
+                await db.drinks.bulkAdd(testDrinks);
+                log(`Added ${testDrinks.length} test drinks`);
+
+                // Add user settings for BAC calculation
+                await db.settings.put({ key: 'userWeight', value: 70, updatedAt: now });
+                await db.settings.put({ key: 'userGender', value: 'male', updatedAt: now });
+                log('Added user settings for BAC calculation');
+
+                log('Test data added successfully! You can now test the statistics.');
+
+            } catch (error) {
+                log('Error adding test data: ' + error.message);
+                console.error(error);
+            }
+        });
+
+        // Clear all data
+        document.getElementById('clearData').addEventListener('click', async () => {
+            try {
+                await db.categories.clear();
+                await db.drinks.clear();
+                await db.settings.clear();
+                log('All data cleared');
+            } catch (error) {
+                log('Error clearing data: ' + error.message);
+            }
+        });
+
+        // Open main app
+        document.getElementById('openApp').addEventListener('click', () => {
+            window.open('/', '_blank');
+        });
+    </script>
+</body>
+</html>

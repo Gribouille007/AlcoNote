@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlcoNote - Suivi de Consommation d'Alcool</title>
+    <meta name="description" content="Application PWA pour suivre votre consommation d'alcool avec scanner de codes-barres, statistiques détaillées et fonctionnement hors ligne.">
+    <meta name="keywords" content="alcool, consommation, suivi, PWA, scanner, statistiques, santé">
+    <meta name="author" content="AlcoNote">
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#007AFF">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="AlcoNote">
+    
+    <!-- Security Headers -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https:; connect-src 'self' https://world.openfoodfacts.org https://nominatim.openstreetmap.org; media-src 'self';">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
+    
+    <!-- Manifest -->
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- Icons -->
+    <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192x192.png">
+    
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <link rel="stylesheet" href="css/accessibility.css">
+    
+    <!-- Chart.js for statistics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- QuaggaJS for barcode scanning -->
+    <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
+    <!-- Dexie.js for IndexedDB -->
+    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
+    <!-- Leaflet for maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="app-header">
+            <button id="settings-btn" class="settings-btn" aria-label="Paramètres">
+                <div class="hamburger-icon">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </button>
+            <h1 class="app-title">AlcoNote</h1>
+            <div class="header-spacer"></div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Navigation Tabs -->
+            <nav class="tab-navigation">
+                <button class="tab-btn active" data-tab="categories">Catégories</button>
+                <button class="tab-btn" data-tab="history">Historique</button>
+                <button class="tab-btn" data-tab="statistics">Statistiques</button>
+            </nav>
+
+            <!-- Categories Tab -->
+            <section id="categories-tab" class="tab-content active">
+                <div class="categories-container">
+                    <div id="categories-list" class="categories-list">
+                        <!-- Categories will be populated dynamically -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- History Tab -->
+            <section id="history-tab" class="tab-content">
+                <div class="history-container">
+                    <div id="history-list" class="history-list">
+                        <!-- History will be populated dynamically -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Statistics Tab -->
+            <section id="statistics-tab" class="tab-content">
+                <div class="statistics-container">
+                    <!-- Time period selector -->
+                    <div class="period-selector">
+                        <button class="period-btn active" data-period="today">Aujourd'hui</button>
+                        <button class="period-btn" data-period="week">Semaine</button>
+                        <button class="period-btn" data-period="month">Mois</button>
+                        <button class="period-btn" data-period="year">Année</button>
+                        <button class="period-btn" data-period="custom">Personnalisé</button>
+                    </div>
+
+                    <!-- Period navigation -->
+                    <div id="period-navigation" class="period-navigation active">
+                        <button id="prev-period" class="nav-btn">‹</button>
+                        <span id="current-period-display" class="current-date"></span>
+                        <button id="next-period" class="nav-btn">›</button>
+                    </div>
+
+                    <!-- Statistics content -->
+                    <div id="statistics-content" class="statistics-content">
+                        <!-- Statistics will be populated dynamically -->
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Floating Action Button (only visible in categories tab) -->
+        <div class="fab-container" id="fab-container">
+            <button id="add-category-btn" class="fab-main" aria-label="Ajouter une catégorie">
+                <span class="fab-icon">+</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <!-- Add Drink Modal -->
+    <div id="add-drink-modal" class="modal popup-modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content popup-content">
+            <div class="modal-header">
+                <h2>Ajouter une boisson</h2>
+                <button class="modal-close" data-modal="add-drink-modal">&times;</button>
+            </div>
+            <form id="add-drink-form" class="modal-form">
+                <div class="form-group">
+                    <label for="drink-name">Nom de la boisson</label>
+                    <input type="text" id="drink-name" name="name" required>
+                    <div id="drink-suggestions" class="suggestions-list"></div>
+                </div>
+                
+                <div class="form-group" id="category-form-group">
+                    <label for="drink-category">Catégorie</label>
+                    <select id="drink-category" name="category" required>
+                        <option value="">Sélectionner une catégorie</option>
+                    </select>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="drink-quantity">Quantité</label>
+                        <input type="number" id="drink-quantity" name="quantity" step="0.1" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="drink-unit">Unité</label>
+                        <select id="drink-unit" name="unit" required>
+                            <option value="EcoCup">EcoCup (25cL)</option>
+                            <option value="cL">cL</option>
+                            <option value="L">L</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="drink-alcohol">Degré d'alcool (%)</label>
+                    <input type="number" id="drink-alcohol" name="alcoholContent" step="0.1" min="0" max="100">
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="drink-date">Date</label>
+                        <input type="date" id="drink-date" name="date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="drink-time">Heure</label>
+                        <input type="time" id="drink-time" name="time" required>
+                    </div>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" data-modal="add-drink-modal">Annuler</button>
+                    <button type="submit" class="btn-primary">Ajouter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Category Modal -->
+    <div id="add-category-modal" class="modal popup-modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content popup-content">
+            <div class="modal-header">
+                <h2>Ajouter une catégorie</h2>
+                <button class="modal-close" data-modal="add-category-modal">&times;</button>
+            </div>
+            <form id="add-category-form" class="modal-form">
+                <div class="form-group">
+                    <label for="category-name">Nom de la catégorie</label>
+                    <input type="text" id="category-name" name="name" required>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" data-modal="add-category-modal">Annuler</button>
+                    <button type="submit" class="btn-primary">Ajouter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Barcode Scanner Modal -->
+    <div id="scanner-modal" class="modal">
+        <div class="modal-content scanner-content">
+            <div class="modal-header">
+                <h2>Scanner un code-barres</h2>
+                <button class="modal-close" data-modal="scanner-modal">&times;</button>
+            </div>
+            <div id="scanner-container" class="scanner-container">
+                <div id="scanner-viewport" class="scanner-viewport"></div>
+                <div class="scanner-overlay">
+                    <div class="scanner-frame"></div>
+                </div>
+            </div>
+            <div class="scanner-status">
+                <p id="scanner-status-text">Positionnez le code-barres dans le cadre</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Menu -->
+    <div id="settings-menu" class="settings-menu">
+        <div class="settings-content">
+            <div class="settings-header">
+                <h2>Paramètres</h2>
+                <button id="settings-close" class="settings-close">&times;</button>
+            </div>
+            <div class="settings-body">
+                <div class="settings-section">
+                    <h3>Apparence</h3>
+                    <div class="form-group">
+                        <label for="theme-toggle">Thème</label>
+                        <select id="theme-toggle">
+                            <option value="light">Clair</option>
+                            <option value="dark">Sombre</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="settings-section">
+                    <h3>Profil</h3>
+                    <div class="form-group">
+                        <label for="user-weight">Poids (kg)</label>
+                        <input type="number" id="user-weight" step="0.1" min="30" max="200">
+                    </div>
+                    <div class="form-group">
+                        <label for="user-gender">Sexe</label>
+                        <select id="user-gender">
+                            <option value="">Non spécifié</option>
+                            <option value="male">Homme</option>
+                            <option value="female">Femme</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="settings-section">
+                    <h3>Données</h3>
+                    <button id="export-data" class="btn-secondary">Exporter les données</button>
+                    <button id="import-data" class="btn-secondary">Importer les données</button>
+                    <button id="clear-data" class="btn-danger">Effacer toutes les données</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Drink Detail Modal -->
+    <div id="drink-detail-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="drink-detail-title"></h2>
+                <button class="modal-close" data-modal="drink-detail-modal">&times;</button>
+            </div>
+            <div id="drink-detail-content" class="drink-detail-content">
+                <!-- Drink details will be populated dynamically -->
+            </div>
+            <div class="modal-actions">
+                <button id="add-same-drink" class="btn-primary">Ajouter cette boisson</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/error-tracking.js"></script>
+    <script src="js/performance-optimizer.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/geolocation.js"></script>
+    <script src="js/scanner.js"></script>
+    <script src="js/statistics.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
