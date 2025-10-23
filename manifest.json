@@ -1,7 +1,7 @@
 {
   "name": "AlcoNote - Suivi de Consommation",
   "short_name": "AlcoNote",
-  "description": "Application de suivi de consommation d'alcool avec scanner de code-barres et statistiques détaillées",
+  "description": "Application de suivi de consommation d'alcool avec des statistiques détaillées",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

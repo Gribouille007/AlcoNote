@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Debug BAC - AlcoNote</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { background-color: #d4edda; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; border: 1px solid #f5c6cb; }
+        .warning { background-color: #fff3cd; border: 1px solid #ffeaa7; }
+        .info { background-color: #d1ecf1; border: 1px solid #bee5eb; }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test Debug - Calcul Taux d'Alcoolémie</h1>
+    
+    <div class="test-container">
+        <h2>Configuration de Test</h2>
+        <button onclick="setupTestData()">1. Configurer données de test</button>
+        <button onclick="testBACCalculation()">2. Tester calcul BAC</button>
+        <button onclick="testHealthStats()">3. Tester stats santé</button>
+        <button onclick="testFullFlow()">4. Test complet</button>
+        <div id="config-result"></div>
+    </div>
+
+    <div class="test-container">
+        <h2>Résultats des Tests</h2>
+        <div id="test-results"></div>
+    </div>
+
+    <div class="test-container">
+        <h2>Debug Détaillé</h2>
+        <div id="debug-details"></div>
+    </div>
+
+    <!-- Scripts de l'application -->
+    <script src="js/utils.js"></script>
+    <script src="js/stats-calculators/health.js"></script>
+    <script src="js/stats-renderers/health-renderer.js"></script>
+
+    <script>
+        // Mock dbManager pour les tests
+        const mockDbManager = {
+            async getAllSettings() {
+                return {
+                    userWeight: 75,
+                    userGender: 'male'
+                };
+            },
+            async saveSetting(key, value) {
+                console.log(`Mock: Setting ${key} = ${value}`);
+                return true;
+            },
+            async getDrinksByDateRange(startDate, endDate) {
+                console.log(`Mock: Getting drinks from ${startDate} to ${endDate}`);
+                return testDrinks.filter(drink => drink.date >= startDate && drink.date <= endDate);
+            },
+            async saveDrink(drink) {
+                console.log('Mock: Saving drink', drink);
+                if (!drink.id) {
+                    drink.id = Date.now();
+                }
+                testDrinks.push(drink);
+                return drink;
+            }
+        };
+        
+        // Définir dbManager et window.dbManager
+        window.dbManager = mockDbManager;
+        let dbManager = mockDbManager;
+        let testDrinks = [];
+
+        // Initialisation
+        async function init() {
+            try {
+                log('✅ Mock dbManager initialisé');
+                
+                // Vérifier si les utilitaires sont chargés
+                if (typeof Utils !== 'undefined') {
+                    log('✅ Utils chargé');
+                } else {
+                    log('❌ Utils non disponible', 'error');
+                }
+                
+                if (typeof calculateHealthStats !== 'undefined') {
+                    log('✅ HealthStatsCalculator chargé');
+                } else {
+                    log('❌ HealthStatsCalculator non disponible', 'error');
+                }
+                
+            } catch (error) {
+                log('❌ Erreur d\'initialisation: ' + error.message, 'error');
+            }
+        }
+
+        // Configuration des données de test
+        async function setupTestData() {
+            try {
+                log('🔧 Configuration des données de test...', 'info');
+                
+                // Configurer profil utilisateur
+                await dbManager.saveSetting('userWeight', 75); // 75kg
+                await dbManager.saveSetting('userGender', 'male'); // homme
+                log('✅ Profil utilisateur configuré (75kg, homme)');
+                
+                // Créer des boissons de test
+                const now = new Date();
+                const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+                const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+                
+                testDrinks = [
+                    {
+                        id: 1,
+                        name: 'Bière test 1',
+                        quantity: 50, // 50cL
+                        unit: 'cL',
+                        alcoholContent: 5, // 5%
+                        date: twoHoursAgo.toISOString().split('T')[0],
+                        time: twoHoursAgo.toTimeString().split(' ')[0].slice(0, 5)
+                    },
+                    {
+                        id: 2,
+                        name: 'Bière test 2',
+                        quantity: 33, // 33cL
+                        unit: 'cL',
+                        alcoholContent: 5, // 5%
+                        date: oneHourAgo.toISOString().split('T')[0],
+                        time: oneHourAgo.toTimeString().split(' ')[0].slice(0, 5)
+                    }
+                ];
+                
+                // Sauvegarder les boissons dans la base
+                for (const drink of testDrinks) {
+                    await dbManager.saveDrink(drink);
+                }
+                
+                log(`✅ ${testDrinks.length} boissons de test ajoutées`);
+                
+                // Afficher les détails
+                const details = document.getElementById('config-result');
+                details.innerHTML = `
+                    <div class="result info">
+                        <h4>Configuration Test</h4>
+                        <ul>
+                            <li><strong>Poids:</strong> 75kg</li>
+                            <li><strong>Sexe:</strong> Homme (r=0.68)</li>
+                            <li><strong>Boissons:</strong></li>
+                            <ul>
+                                ${testDrinks.map(drink => 
+                                    `<li>${drink.name}: ${drink.quantity}${drink.unit} à ${drink.alcoholContent}% (${drink.date} ${drink.time})</li>`
+                                ).join('')}
+                            </ul>
+                            <li><strong>Alcool total théorique:</strong> ${calculateExpectedAlcohol()}g</li>
+                        </ul>
+                    </div>
+                `;
+                
+            } catch (error) {
+                log('❌ Erreur configuration: ' + error.message, 'error');
+                console.error(error);
+            }
+        }
+
+        // Test calcul BAC direct
+        async function testBACCalculation() {
+            try {
+                log('🧮 Test calcul BAC...', 'info');
+                
+                const settings = await dbManager.getAllSettings();
+                log(`Paramètres récupérés: poids=${settings.userWeight}, sexe=${settings.userGender}`);
+                
+                // Test 1: Vérifier Utils.calculateBACStats
+                const bacStats = await Utils.calculateBACStats(settings.userWeight, settings.userGender);
+                log('Résultat Utils.calculateBACStats:');
+                console.log('BAC Stats:', bacStats);
+                
+                if (bacStats) {
+                    log(`✅ BAC calculé: ${bacStats.currentBAC.toFixed(2)} mg/L`);
+                    log(`⏱️ Temps sobriété: ${Utils.formatTimeToSobriety(bacStats.timeToSobriety)}`);
+                    log(`🚗 Temps limite légale: ${Utils.formatTimeToSobriety(bacStats.timeToLegalLimit)}`);
+                    log(`📊 Boissons considérées: ${bacStats.relevantDrinks.length}`);
+                } else {
+                    log('❌ BAC Stats null/undefined', 'error');
+                }
+
+                // Test 2: Calcul manuel avec les boissons de test
+                const currentTime = new Date();
+                const manualBAC = Utils.calculateCurrentBAC(testDrinks, settings.userWeight, settings.userGender, currentTime);
+                log(`🔍 Calcul manuel: ${manualBAC.toFixed(2)} mg/L`);
+
+                // Test 3: Vérifier getRelevantDrinksForBAC
+                const relevantDrinks = await Utils.getRelevantDrinksForBAC();
+                log(`📋 Boissons pertinentes: ${relevantDrinks.length}`);
+                console.log('Relevant drinks:', relevantDrinks);
+
+                // Affichage détaillé
+                updateDebugDetails({
+                    bacStats,
+                    manualBAC,
+                    relevantDrinks,
+                    testDrinks,
+                    settings
+                });
+
+            } catch (error) {
+                log('❌ Erreur test BAC: ' + error.message, 'error');
+                console.error(error);
+            }
+        }
+
+        // Test stats de santé
+        async function testHealthStats() {
+            try {
+                log('📊 Test statistiques santé...', 'info');
+                
+                const dateRange = {
+                    start: Utils.getCurrentDate(),
+                    end: Utils.getCurrentDate()
+                };
+                
+                const drinks = await dbManager.getDrinksByDateRange(dateRange.start, dateRange.end);
+                log(`Boissons trouvées pour ${dateRange.start}: ${drinks.length}`);
+                
+                const healthStats = await calculateHealthStats(drinks, dateRange);
+                log('Statistiques santé calculées:');
+                console.log('Health stats:', healthStats);
+                
+                if (healthStats) {
+                    log(`✅ Stats générées`);
+                    if (healthStats.bacEstimation) {
+                        log(`🍺 BAC estimé: ${healthStats.bacEstimation.currentBAC} mg/L`);
+                    } else {
+                        log('⚠️ Pas de BAC estimé dans les stats', 'warning');
+                    }
+                } else {
+                    log('❌ Pas de stats générées', 'error');
+                }
+                
+            } catch (error) {
+                log('❌ Erreur test stats santé: ' + error.message, 'error');
+                console.error(error);
+            }
+        }
+
+        // Test complet du flux
+        async function testFullFlow() {
+            log('🔄 Test flux complet...', 'info');
+            await setupTestData();
+            await testBACCalculation();
+            await testHealthStats();
+            log('✅ Test flux complet terminé');
+        }
+
+        // Utilitaires
+        function calculateExpectedAlcohol() {
+            return testDrinks.reduce((total, drink) => {
+                const volumeCL = Utils.convertToStandardUnit(drink.quantity, drink.unit).quantity;
+                const alcoholGrams = Utils.calculateAlcoholGrams(volumeCL, drink.alcoholContent);
+                return total + alcoholGrams;
+            }, 0).toFixed(1);
+        }
+
+        function log(message, type = 'info') {
+            const results = document.getElementById('test-results');
+            const div = document.createElement('div');
+            div.className = `result ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`;
+            results.appendChild(div);
+            console.log(message);
+        }
+
+        function updateDebugDetails(data) {
+            const details = document.getElementById('debug-details');
+            details.innerHTML = `
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+            `;
+        }
+
+        // Initialisation au chargement
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>

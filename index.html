@@ -1,55 +1,66 @@
 <!DOCTYPE html>
+<!-- Page principale de l'application AlcoNote PWA -->
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <!-- Configuration de la viewport pour le responsive design -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlcoNote - Suivi de Consommation d'Alcool</title>
     <meta name="description" content="Application PWA pour suivre votre consommation d'alcool avec scanner de codes-barres, statistiques détaillées et fonctionnement hors ligne.">
     <meta name="keywords" content="alcool, consommation, suivi, PWA, scanner, statistiques, santé">
     <meta name="author" content="AlcoNote">
-    
-    <!-- PWA Meta Tags -->
+
+    <!-- Métadonnées PWA pour l'installation et l'apparence -->
     <meta name="theme-color" content="#007AFF">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="AlcoNote">
-    
-    <!-- Security Headers -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https:; connect-src 'self' https://world.openfoodfacts.org https://nominatim.openstreetmap.org; media-src 'self';">
+
+    <!-- En-têtes de sécurité pour protéger l'application -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https:; connect-src 'self' https://world.openfoodfacts.org https://nominatim.openstreetmap.org https://api.upcitemdb.com https://api.barcodelookup.com; media-src 'self'; worker-src 'self' blob:; child-src 'self' blob:;">
     <meta http-equiv="X-Content-Type-Options" content="nosniff">
     <meta http-equiv="X-Frame-Options" content="DENY">
     <meta http-equiv="X-XSS-Protection" content="1; mode=block">
-    
-    <!-- Manifest -->
+
+    <!-- Manifest pour la PWA -->
     <link rel="manifest" href="manifest.json">
-    
-    <!-- Icons -->
+
+    <!-- Icônes de l'application -->
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192x192.png">
-    
-    <!-- Stylesheets -->
+
+    <!-- Feuilles de style principales -->
     <link rel="stylesheet" href="css/main.css">
     <link rel="stylesheet" href="css/components.css">
     <link rel="stylesheet" href="css/responsive.css">
     <link rel="stylesheet" href="css/accessibility.css">
-    
-    <!-- Chart.js for statistics -->
+
+    <!-- Bibliothèques JavaScript externes -->
+    <!-- Chart.js pour les graphiques statistiques -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- QuaggaJS for barcode scanning -->
+    <!-- QuaggaJS pour la lecture de codes-barres -->
     <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
-    <!-- Dexie.js for IndexedDB -->
+    <!-- Dexie.js pour IndexedDB -->
     <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
-    <!-- Leaflet for maps -->
+    <!-- Leaflet pour les cartes interactives -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script>
+        window.MathJax = {
+            tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+            chtml: { scale: 1 }
+        };
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
 </head>
 <body>
+    <!-- Conteneur principal de l'application -->
     <div id="app">
-        <!-- Header -->
+        <!-- En-tête de l'application avec menu paramètres -->
         <header class="app-header">
             <button id="settings-btn" class="settings-btn" aria-label="Paramètres">
                 <div class="hamburger-icon">
@@ -62,37 +73,37 @@
             <div class="header-spacer"></div>
         </header>
 
-        <!-- Main Content -->
+        <!-- Contenu principal avec navigation par onglets -->
         <main class="main-content">
-            <!-- Navigation Tabs -->
+            <!-- Navigation par onglets -->
             <nav class="tab-navigation">
                 <button class="tab-btn active" data-tab="categories">Catégories</button>
                 <button class="tab-btn" data-tab="history">Historique</button>
                 <button class="tab-btn" data-tab="statistics">Statistiques</button>
             </nav>
 
-            <!-- Categories Tab -->
+            <!-- Onglet Catégories - liste des catégories de boissons -->
             <section id="categories-tab" class="tab-content active">
                 <div class="categories-container">
                     <div id="categories-list" class="categories-list">
-                        <!-- Categories will be populated dynamically -->
+                        <!-- Les catégories seront chargées dynamiquement ici -->
                     </div>
                 </div>
             </section>
 
-            <!-- History Tab -->
+            <!-- Onglet Historique - liste chronologique des consommations -->
             <section id="history-tab" class="tab-content">
                 <div class="history-container">
                     <div id="history-list" class="history-list">
-                        <!-- History will be populated dynamically -->
+                        <!-- L'historique sera chargé dynamiquement ici -->
                     </div>
                 </div>
             </section>
 
-            <!-- Statistics Tab -->
+            <!-- Onglet Statistiques - graphiques et analyses -->
             <section id="statistics-tab" class="tab-content">
                 <div class="statistics-container">
-                    <!-- Time period selector -->
+                    <!-- Sélecteur de période temporelle -->
                     <div class="period-selector">
                         <button class="period-btn active" data-period="today">Aujourd'hui</button>
                         <button class="period-btn" data-period="week">Semaine</button>
@@ -101,22 +112,22 @@
                         <button class="period-btn" data-period="custom">Personnalisé</button>
                     </div>
 
-                    <!-- Period navigation -->
+                    <!-- Navigation temporelle (précédent/suivant) -->
                     <div id="period-navigation" class="period-navigation active">
                         <button id="prev-period" class="nav-btn">‹</button>
                         <span id="current-period-display" class="current-date"></span>
                         <button id="next-period" class="nav-btn">›</button>
                     </div>
 
-                    <!-- Statistics content -->
+                    <!-- Contenu des statistiques -->
                     <div id="statistics-content" class="statistics-content">
-                        <!-- Statistics will be populated dynamically -->
+                        <!-- Les statistiques seront chargées dynamiquement ici -->
                     </div>
                 </div>
             </section>
         </main>
 
-        <!-- Floating Action Button (only visible in categories tab) -->
+        <!-- Bouton d'action flottant (visible uniquement dans l'onglet catégories) -->
         <div class="fab-container" id="fab-container">
             <button id="add-category-btn" class="fab-main" aria-label="Ajouter une catégorie">
                 <span class="fab-icon">+</span>
@@ -124,8 +135,8 @@
         </div>
     </div>
 
-    <!-- Modals -->
-    <!-- Add Drink Modal -->
+    <!-- Fenêtres modales de l'application -->
+    <!-- Modal d'ajout de boisson -->
     <div id="add-drink-modal" class="modal popup-modal">
         <div class="modal-backdrop"></div>
         <div class="modal-content popup-content">
@@ -137,16 +148,17 @@
                 <div class="form-group">
                     <label for="drink-name">Nom de la boisson</label>
                     <input type="text" id="drink-name" name="name" required>
+                    <button type="button" id="scan-barcode-btn" class="btn-secondary" aria-label="Scanner un code-barres" style="margin-top: 8px;">📷 Scanner</button>
                     <div id="drink-suggestions" class="suggestions-list"></div>
                 </div>
-                
+
                 <div class="form-group" id="category-form-group">
                     <label for="drink-category">Catégorie</label>
                     <select id="drink-category" name="category" required>
                         <option value="">Sélectionner une catégorie</option>
                     </select>
                 </div>
-                
+
                 <div class="form-row">
                     <div class="form-group">
                         <label for="drink-quantity">Quantité</label>
@@ -161,12 +173,12 @@
                         </select>
                     </div>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="drink-alcohol">Degré d'alcool (%)</label>
                     <input type="number" id="drink-alcohol" name="alcoholContent" step="0.1" min="0" max="100">
                 </div>
-                
+
                 <div class="form-row">
                     <div class="form-group">
                         <label for="drink-date">Date</label>
@@ -177,7 +189,7 @@
                         <input type="time" id="drink-time" name="time" required>
                     </div>
                 </div>
-                
+
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" data-modal="add-drink-modal">Annuler</button>
                     <button type="submit" class="btn-primary">Ajouter</button>
@@ -186,7 +198,7 @@
         </div>
     </div>
 
-    <!-- Add Category Modal -->
+    <!-- Modal d'ajout de catégorie -->
     <div id="add-category-modal" class="modal popup-modal">
         <div class="modal-backdrop"></div>
         <div class="modal-content popup-content">
@@ -199,7 +211,7 @@
                     <label for="category-name">Nom de la catégorie</label>
                     <input type="text" id="category-name" name="name" required>
                 </div>
-                
+
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" data-modal="add-category-modal">Annuler</button>
                     <button type="submit" class="btn-primary">Ajouter</button>
@@ -208,7 +220,7 @@
         </div>
     </div>
 
-    <!-- Barcode Scanner Modal -->
+    <!-- Modal du scanner de code-barres -->
     <div id="scanner-modal" class="modal">
         <div class="modal-content scanner-content">
             <div class="modal-header">
@@ -227,7 +239,7 @@
         </div>
     </div>
 
-    <!-- Settings Menu -->
+    <!-- Menu des paramètres -->
     <div id="settings-menu" class="settings-menu">
         <div class="settings-content">
             <div class="settings-header">
@@ -245,7 +257,7 @@
                         </select>
                     </div>
                 </div>
-                
+
                 <div class="settings-section">
                     <h3>Profil</h3>
                     <div class="form-group">
@@ -261,7 +273,7 @@
                         </select>
                     </div>
                 </div>
-                
+
                 <div class="settings-section">
                     <h3>Données</h3>
                     <button id="export-data" class="btn-secondary">Exporter les données</button>
@@ -272,7 +284,7 @@
         </div>
     </div>
 
-    <!-- Drink Detail Modal -->
+    <!-- Modal de détails de boisson -->
     <div id="drink-detail-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -280,7 +292,7 @@
                 <button class="modal-close" data-modal="drink-detail-modal">&times;</button>
             </div>
             <div id="drink-detail-content" class="drink-detail-content">
-                <!-- Drink details will be populated dynamically -->
+                <!-- Les détails de la boisson seront chargés dynamiquement ici -->
             </div>
             <div class="modal-actions">
                 <button id="add-same-drink" class="btn-primary">Ajouter cette boisson</button>
@@ -288,14 +300,41 @@
         </div>
     </div>
 
-    <!-- Scripts -->
+    <!-- Scripts JavaScript de l'application -->
+    <!-- Chargés dans l'ordre des dépendances -->
     <script src="js/error-tracking.js"></script>
     <script src="js/performance-optimizer.js"></script>
     <script src="js/database.js"></script>
     <script src="js/utils.js"></script>
     <script src="js/geolocation.js"></script>
     <script src="js/scanner.js"></script>
+    
+    <!-- Nouveau système de statistiques modulaire -->
+    <!-- Configuration des statistiques -->
+    <script src="js/stats-config.js"></script>
+    
+    <!-- Calculateurs -->
+    <script src="js/stats-calculators/general.js"></script>
+    <script src="js/stats-calculators/temporal.js"></script>
+    <script src="js/stats-calculators/categories.js"></script>
+    <script src="js/stats-calculators/drinks.js"></script>
+    <script src="js/stats-calculators/health.js"></script>
+    <script src="js/stats-calculators/location.js"></script>
+    
+    <!-- Renderers -->
+    <script src="js/stats-renderers/general-renderer.js"></script>
+    <script src="js/stats-renderers/temporal-renderer.js"></script>
+    <script src="js/stats-renderers/category-renderer.js"></script>
+    <script src="js/stats-renderers/drinks-renderer.js"></script>
+    <script src="js/stats-renderers/health-renderer.js"></script>
+    <script src="js/stats-renderers/location-renderer.js"></script>
+    
+    <!-- Ancien système (gardé en backup) -->
     <script src="js/statistics.js"></script>
+    
+    <!-- Nouveau gestionnaire -->
+    <script src="js/statistics-new.js"></script>
+    
     <script src="js/app.js"></script>
 </body>
 </html>

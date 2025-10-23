@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test StatsManager</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug { background: #f0f0f0; padding: 10px; margin: 5px 0; border-radius: 3px; }
+        .error { background: #ffe6e6; }
+        .success { background: #e6ffe6; }
+    </style>
+</head>
+<body>
+    <h1>Debug StatsManager</h1>
+    <div id="debug-output"></div>
+    <div id="statistics-content"></div>
+
+    <script src="js/utils.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/stats-calculators/general.js"></script>
+    <script src="js/statistics.js"></script>
+
+    <script>
+        const testData = {
+            drinks: [
+                {
+                    id: 1,
+                    name: 'Heineken',
+                    category: 'Bière',
+                    quantity: 1,
+                    unit: 'EcoCup',
+                    alcoholContent: 5,
+                    date: '2025-09-29',
+                    time: '18:00'
+                },
+                {
+                    id: 2,
+                    name: 'Vin Rouge',
+                    category: 'Vin',
+                    quantity: 150,
+                    unit: 'cL',
+                    alcoholContent: 12.5,
+                    date: '2025-09-29',
+                    time: '20:00'
+                }
+            ],
+            settings: {
+                userWeight: 70,
+                userGender: 'male'
+            }
+        };
+
+        function debug(message, type = 'info') {
+            const output = document.getElementById('debug-output');
+            const div = document.createElement('div');
+            div.className = `debug ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: ${message}`;
+            output.appendChild(div);
+        }
+
+        // Mock all dependencies
+        window.dbManager = {
+            getDrinksByDateRange: async (startDate, endDate) => {
+                debug(`Mock: getDrinksByDateRange(${startDate}, ${endDate})`);
+                const filtered = testData.drinks.filter(drink => 
+                    drink.date >= startDate && drink.date <= endDate
+                );
+                debug(`Mock: Returning ${filtered.length} drinks`, 'success');
+                return filtered;
+            },
+            getAllSettings: async () => {
+                debug('Mock: getAllSettings()');
+                return testData.settings;
+            },
+            getAllDrinks: async () => {
+                debug('Mock: getAllDrinks()');
+                return testData.drinks;
+            }
+        };
+
+        window.geoManager = {
+            getLocationStats: async (drinks) => {
+                debug(`Mock: geoManager.getLocationStats with ${drinks.length} drinks`);
+                return {
+                    hasLocationData: false,
+                    message: 'Pas de données de localisation en mode test',
+                    stats: null
+                };
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            debug('=== Test StatsManager ===');
+            
+            try {
+                if (window.statsManager) {
+                    debug('statsManager trouvé', 'success');
+                    
+                    // Debug des méthodes disponibles
+                    const methods = Object.getOwnPropertyNames(window.statsManager.constructor.prototype);
+                    debug(`Méthodes: ${methods.join(', ')}`);
+                    
+                    // Test d'initialisation
+                    debug('Appel de init()...');
+                    window.statsManager.init();
+                    debug('init() terminé', 'success');
+                    
+                    // Test manuel de loadStatistics après un délai
+                    setTimeout(() => {
+                        debug('Test manuel de loadStatistics()...');
+                        try {
+                            window.statsManager.loadStatistics();
+                            debug('loadStatistics() appelé manuellement', 'success');
+                        } catch (error) {
+                            debug(`Erreur dans loadStatistics(): ${error.message}`, 'error');
+                            console.error('Erreur complète:', error);
+                        }
+                    }, 2000);
+                    
+                } else {
+                    debug('statsManager NON TROUVÉ', 'error');
+                }
+                
+            } catch (error) {
+                debug(`Erreur: ${error.message}`, 'error');
+                console.error('Erreur complète:', error);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -10,6 +10,8 @@ class GeolocationManager {
             timeout: 10000,
             maximumAge: 300000 // 5 minutes
         };
+        this.consent = this.getStoredConsent(); // 'granted' | 'denied' | null
+        this.lastKnownLocation = this.getStoredLocation();
     }
     
     // Check if geolocation is supported and permission is granted
@@ -34,6 +36,163 @@ class GeolocationManager {
         }
     }
     
+    // Consent management to avoid repeated prompts
+    getStoredConsent() {
+        try {
+            return localStorage.getItem('geoConsent') || null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    setStoredConsent(state) {
+        try {
+            if (state === null) {
+                localStorage.removeItem('geoConsent');
+            } else {
+                localStorage.setItem('geoConsent', state);
+            }
+            this.consent = state;
+        } catch (e) {
+            // ignore storage errors
+        }
+    }
+
+    // Persist and retrieve last known location to avoid drinks without location
+    getStoredLocation() {
+        try {
+            const raw = localStorage.getItem('lastKnownLocation');
+            if (!raw) return null;
+            const data = JSON.parse(raw);
+            if (!data || typeof data.latitude !== 'number' || typeof data.longitude !== 'number') {
+                return null;
+            }
+            // Normalize structure to match drink.location expectations
+            return {
+                latitude: data.latitude,
+                longitude: data.longitude,
+                accuracy: data.accuracy || null,
+                timestamp: data.timestamp ? new Date(data.timestamp) : new Date(),
+                address: typeof data.address === 'string' ? data.address : (data.address && data.address.formatted ? data.address.formatted : null)
+            };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    setStoredLocation(locationData) {
+        try {
+            const payload = {
+                latitude: locationData.latitude,
+                longitude: locationData.longitude,
+                accuracy: locationData.accuracy || null,
+                timestamp: locationData.timestamp instanceof Date ? locationData.timestamp.toISOString() : (locationData.timestamp || new Date().toISOString()),
+                // Persist address as string if available
+                address: typeof locationData.address === 'string' ? locationData.address : (locationData.address && locationData.address.formatted ? locationData.address.formatted : null)
+            };
+            localStorage.setItem('lastKnownLocation', JSON.stringify(payload));
+            this.lastKnownLocation = this.getStoredLocation();
+        } catch (e) {
+            // ignore storage errors
+        }
+    }
+
+    getLastKnownLocation() {
+        // Prefer in-memory recent position if present
+        if (this.currentPosition) {
+            return {
+                latitude: this.currentPosition.latitude,
+                longitude: this.currentPosition.longitude,
+                accuracy: this.currentPosition.accuracy,
+                address: typeof this.currentPosition.address === 'string' ? this.currentPosition.address : (this.currentPosition.address && this.currentPosition.address.formatted ? this.currentPosition.address.formatted : null)
+            };
+        }
+        const stored = this.getStoredLocation();
+        if (!stored) return null;
+        return {
+            latitude: stored.latitude,
+            longitude: stored.longitude,
+            accuracy: stored.accuracy,
+            address: stored.address
+        };
+    }
+
+    hasLocationAcquired() {
+        return !!(this.currentPosition || this.getStoredLocation());
+    }
+
+    init() {
+        // Load last known location into memory for quick access
+        const stored = this.getStoredLocation();
+        if (stored) {
+            this.currentPosition = stored;
+        }
+    }
+
+    // Prewarm geolocation cache without prompting the user
+    async prewarmQuickPosition() {
+        try {
+            const support = await this.checkSupport();
+            if (!support.supported || support.permission === 'denied') return;
+            // Only prewarm if permission is already granted OR user previously consented in-app
+            if (support.permission !== 'granted' && this.consent !== 'granted') return;
+            await this.getQuickPosition(false, 1500);
+        } catch (e) {
+            // ignore errors during prewarm
+        }
+    }
+
+    async ensureConsent() {
+        if (!this.isSupported) return false;
+
+        let permissionState = 'unknown';
+        try {
+            const perm = await navigator.permissions.query({ name: 'geolocation' });
+            permissionState = perm.state;
+        } catch (_) {
+            // permissions API not supported (e.g., iOS Safari)
+        }
+
+        if (permissionState === 'granted') {
+            if (this.consent !== 'granted') this.setStoredConsent('granted');
+            return true;
+        }
+        if (permissionState === 'denied') {
+            this.setStoredConsent('denied');
+            return false;
+        }
+
+        // permissionState is 'prompt' or 'unknown' -> gate with our own one-time consent
+        if (this.consent === 'granted') {
+            return true;
+        }
+        if (this.consent === 'denied') {
+            return false;
+        }
+
+        // Ask user once via lightweight confirm instead of nagging every drink
+        const userAgreed = typeof window !== 'undefined'
+            ? window.confirm('Autoriser AlcoNote à enregistrer votre position pour vos boissons ? Cette autorisation est demandée une seule fois. Vous pourrez changer ce choix dans les réglages du navigateur.')
+            : false;
+
+        if (!userAgreed) {
+            this.setStoredConsent('denied');
+            return false;
+        }
+
+        // Trigger actual browser permission prompt once
+        const res = await this.requestPermission();
+        if (res.granted) {
+            this.setStoredConsent('granted');
+            // Immediately start prewarming location for future drinks
+            this.startLocationPrewarming();
+            return true;
+        } else {
+            this.setStoredConsent('denied');
+            return false;
+        }
+    }
+
     // Get current position
     async getCurrentPosition() {
         return new Promise((resolve, reject) => {
@@ -64,6 +223,7 @@ class GeolocationManager {
                     }
                     
                     this.currentPosition = locationData;
+                    this.setStoredLocation(locationData);
                     resolve(locationData);
                 },
                 (error) => {
@@ -103,6 +263,7 @@ class GeolocationManager {
                 }
                 
                 this.currentPosition = locationData;
+                this.setStoredLocation(locationData);
                 callback(null, locationData);
             },
             (error) => {
@@ -249,6 +410,10 @@ class GeolocationManager {
     // Get location for drink entry
     async getLocationForDrink() {
         try {
+            const consent = await this.ensureConsent();
+            if (!consent) {
+                return null;
+            }
             const support = await this.checkSupport();
             
             if (!support.supported) {
@@ -281,6 +446,88 @@ class GeolocationManager {
             
         } catch (error) {
             console.warn('Could not get location for drink:', error);
+            return null;
+        }
+    }
+
+    // Quick position without reverse geocoding (for fast UX)
+    getQuickPosition(highAccuracy = false, timeoutMs = 3000) {
+        return new Promise((resolve, reject) => {
+            if (!this.isSupported) {
+                reject(new Error('Geolocation not supported'));
+                return;
+            }
+            const opts = {
+                enableHighAccuracy: !!highAccuracy,
+                timeout: timeoutMs,
+                maximumAge: this.options.maximumAge
+            };
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const locationData = {
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        accuracy: position.coords.accuracy,
+                        timestamp: new Date(position.timestamp),
+                        address: null // skip reverse geocoding for speed
+                    };
+                    this.currentPosition = locationData;
+                    this.setStoredLocation(locationData);
+                    resolve(locationData);
+                },
+                (error) => {
+                    reject(this.handleGeolocationError(error));
+                },
+                opts
+            );
+        });
+    }
+
+    // Timeboxed location fetch for drink, returns fast or null
+    async getLocationForDrinkFast(timeoutMs = 1500, highAccuracy = false) {
+        try {
+            const consent = await this.ensureConsent();
+            if (!consent) {
+                return null;
+            }
+            const support = await this.checkSupport();
+            if (!support.supported || support.permission === 'denied') {
+                return null;
+            }
+
+            // Use cached if fresh
+            if (this.currentPosition && (Date.now() - this.currentPosition.timestamp.getTime()) < 300000) {
+                return {
+                    latitude: this.currentPosition.latitude,
+                    longitude: this.currentPosition.longitude,
+                    address: this.currentPosition.address?.formatted || null,
+                    accuracy: this.currentPosition.accuracy
+                };
+            }
+
+            // Race quick position with timeout
+            const timeoutPromise = new Promise((resolve) => {
+                setTimeout(() => resolve(null), timeoutMs);
+            });
+            const loc = await Promise.race([
+                this.getQuickPosition(highAccuracy, timeoutMs),
+                timeoutPromise
+            ]);
+
+            if (!loc) return null;
+
+            // Optionally reverse geocode in background to enrich cache (non-blocking)
+            this.reverseGeocode(loc.latitude, loc.longitude)
+                .then(addr => { if (this.currentPosition) this.currentPosition.address = addr; })
+                .catch(() => { /* ignore */ });
+
+            return {
+                latitude: loc.latitude,
+                longitude: loc.longitude,
+                address: null, // keep fast path without waiting for address
+                accuracy: loc.accuracy
+            };
+        } catch (e) {
             return null;
         }
     }
@@ -411,8 +658,10 @@ class GeolocationManager {
     async requestPermission() {
         try {
             const position = await this.getCurrentPosition();
+            this.setStoredConsent('granted');
             return { granted: true, position };
         } catch (error) {
+            this.setStoredConsent('denied');
             return { granted: false, error: error.message };
         }
     }
@@ -643,6 +892,137 @@ class GeolocationManager {
                 this.updateTimeInputs();
             }
         }, 60000); // Update every minute
+    }
+
+    // Start location prewarming for performance
+    startLocationPrewarming() {
+        if (!this.isSupported || this.consent !== 'granted') return;
+        
+        // Prewarm location immediately
+        this.getQuickPosition(false, 2000).catch(() => {});
+        
+        // Set up periodic refresh to keep location cache fresh
+        if (this.locationWarmupInterval) {
+            clearInterval(this.locationWarmupInterval);
+        }
+        
+        this.locationWarmupInterval = setInterval(() => {
+            // Only refresh if location is getting stale (older than 3 minutes)
+            if (!this.currentPosition || 
+                (Date.now() - this.currentPosition.timestamp.getTime()) > 180000) {
+                this.getQuickPosition(false, 1000).catch(() => {});
+            }
+        }, 120000); // Check every 2 minutes
+    }
+    
+    // Stop location prewarming
+    stopLocationPrewarming() {
+        if (this.locationWarmupInterval) {
+            clearInterval(this.locationWarmupInterval);
+            this.locationWarmupInterval = null;
+        }
+    }
+
+    // Get location immediately without waiting - ultra-fast for UI responsiveness  
+    getLocationInstant() {
+        // Return last known location immediately, no async delays
+        if (this.currentPosition) {
+            return {
+                latitude: this.currentPosition.latitude,
+                longitude: this.currentPosition.longitude,
+                accuracy: this.currentPosition.accuracy,
+                address: typeof this.currentPosition.address === 'string' ? this.currentPosition.address : 
+                         (this.currentPosition.address && this.currentPosition.address.formatted ? this.currentPosition.address.formatted : null)
+            };
+        }
+        
+        const stored = this.getStoredLocation();
+        if (stored) {
+            return {
+                latitude: stored.latitude,
+                longitude: stored.longitude,
+                accuracy: stored.accuracy,
+                address: stored.address
+            };
+        }
+        
+        return null;
+    }
+
+    // Enhanced consent check without blocking UI
+    async checkConsentAndLocation() {
+        // Fast synchronous checks first
+        if (!this.isSupported) return { hasConsent: false, hasLocation: false, reason: 'not_supported' };
+        if (this.consent === 'denied') return { hasConsent: false, hasLocation: false, reason: 'denied' };
+        if (this.consent === 'granted' && this.hasLocationAcquired()) {
+            return { hasConsent: true, hasLocation: true, reason: 'ready' };
+        }
+
+        // Quick permission check
+        try {
+            const perm = await navigator.permissions.query({ name: 'geolocation' });
+            if (perm.state === 'denied') {
+                this.setStoredConsent('denied');
+                return { hasConsent: false, hasLocation: false, reason: 'denied' };
+            }
+            if (perm.state === 'granted') {
+                if (this.consent !== 'granted') this.setStoredConsent('granted');
+                return { hasConsent: true, hasLocation: this.hasLocationAcquired(), reason: 'granted' };
+            }
+        } catch (e) {
+            // Permissions API not supported, fallback to stored consent
+        }
+
+        return { 
+            hasConsent: this.consent === 'granted', 
+            hasLocation: this.hasLocationAcquired(), 
+            reason: this.consent || 'unknown' 
+        };
+    }
+
+    // Request one-time location permission on first app launch
+    async requestInitialLocationPermission() {
+        const key = 'initialLocationRequested';
+        const alreadyRequested = localStorage.getItem(key);
+        
+        if (alreadyRequested) return false;
+        localStorage.setItem(key, 'true');
+        
+        try {
+            const consent = await this.ensureConsent();
+            return consent;
+        } catch (error) {
+            console.warn('Initial location permission request failed:', error);
+            return false;
+        }
+    }
+
+    // Optimized batch reverse geocoding for multiple locations
+    async batchReverseGeocode(locations, maxConcurrency = 3) {
+        const results = new Map();
+        const chunks = [];
+        
+        // Split into chunks to avoid rate limiting
+        for (let i = 0; i < locations.length; i += maxConcurrency) {
+            chunks.push(locations.slice(i, i + maxConcurrency));
+        }
+        
+        for (const chunk of chunks) {
+            const promises = chunk.map(async (loc) => {
+                try {
+                    const address = await this.reverseGeocode(loc.latitude, loc.longitude);
+                    results.set(`${loc.latitude},${loc.longitude}`, address);
+                } catch (error) {
+                    results.set(`${loc.latitude},${loc.longitude}`, null);
+                }
+            });
+            
+            await Promise.all(promises);
+            // Small delay between chunks to be respectful to the API
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        
+        return results;
     }
 }
 

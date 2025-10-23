@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Statistiques - AlcoNote</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug { background: #f0f0f0; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .error { background: #ffe6e6; }
+        .success { background: #e6ffe6; }
+    </style>
+</head>
+<body>
+    <h1>Debug Statistiques AlcoNote</h1>
+    <div id="debug-output"></div>
+
+    <script src="js/utils.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/stats-config.js"></script>
+    <script src="js/stats-calculators/general.js"></script>
+    <script src="js/statistics.js"></script>
+    <script>
+        // Données de test simplifiées
+        const testData = {
+            drinks: [
+                {
+                    id: 1,
+                    name: 'Bière Test',
+                    category: 'Bière',
+                    quantity: 1,
+                    unit: 'EcoCup',
+                    alcoholContent: 5,
+                    date: '2025-09-29',
+                    time: '18:00'
+                },
+                {
+                    id: 2,
+                    name: 'Vin Test',
+                    category: 'Vin',
+                    quantity: 150,
+                    unit: 'cL',
+                    alcoholContent: 12,
+                    date: '2025-09-29',
+                    time: '19:00'
+                }
+            ]
+        };
+
+        function debug(message, type = 'info') {
+            const output = document.getElementById('debug-output');
+            const div = document.createElement('div');
+            div.className = `debug ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: ${message}`;
+            output.appendChild(div);
+        }
+
+        // Test des utilitaires de base
+        debug('=== Test des utilitaires de base ===');
+        
+        try {
+            const currentDate = Utils.getCurrentDate();
+            debug(`Date actuelle: ${currentDate}`, 'success');
+            
+            const dateRange = Utils.getDateRangeFixed('today');
+            debug(`Plage pour aujourd'hui: ${JSON.stringify(dateRange)}`, 'success');
+            
+            // Test conversion d'unités
+            const converted = Utils.convertToStandardUnit(1, 'EcoCup');
+            debug(`Conversion EcoCup: ${JSON.stringify(converted)}`, 'success');
+            
+            // Test calcul alcool
+            const alcoholGrams = Utils.calculateAlcoholGrams(25, 5);
+            debug(`Alcool pur pour 25cL à 5%: ${alcoholGrams}g`, 'success');
+            
+        } catch (error) {
+            debug(`Erreur dans les utilitaires: ${error.message}`, 'error');
+        }
+
+        // Test récupération données dans plage
+        debug('=== Test filtrage des données ===');
+        
+        try {
+            const dateRange = Utils.getDateRangeFixed('today');
+            const filteredDrinks = testData.drinks.filter(drink => 
+                drink.date >= dateRange.start && drink.date <= dateRange.end
+            );
+            debug(`Boissons trouvées pour aujourd'hui: ${filteredDrinks.length}`, 'success');
+            debug(`Détails: ${JSON.stringify(filteredDrinks, null, 2)}`, 'info');
+            
+        } catch (error) {
+            debug(`Erreur dans le filtrage: ${error.message}`, 'error');
+        }
+
+        // Test de calculs de statistiques basiques
+        debug('=== Test calculs statistiques basiques ===');
+        
+        try {
+            const drinks = testData.drinks;
+            let totalVolume = 0;
+            let totalAlcohol = 0;
+            
+            drinks.forEach(drink => {
+                const volumeInCL = Utils.convertToStandardUnit(drink.quantity, drink.unit).quantity;
+                totalVolume += volumeInCL;
+                
+                if (drink.alcoholContent) {
+                    totalAlcohol += Utils.calculateAlcoholGrams(volumeInCL, drink.alcoholContent);
+                }
+            });
+            
+            debug(`Volume total: ${totalVolume}cL`, 'success');
+            debug(`Alcool total: ${totalAlcohol}g`, 'success');
+            
+        } catch (error) {
+            debug(`Erreur dans les calculs: ${error.message}`, 'error');
+        }
+
+        // Test si les modules de statistiques sont chargés
+        debug('=== Test modules de statistiques ===');
+        
+        setTimeout(() => {
+            try {
+                if (window.statsManager) {
+                    debug('statsManager trouvé', 'success');
+                    debug(`Type: ${typeof window.statsManager}`, 'info');
+                    debug(`Méthodes: ${Object.getOwnPropertyNames(window.statsManager.constructor.prototype).join(', ')}`, 'info');
+                } else {
+                    debug('statsManager NON TROUVÉ', 'error');
+                }
+                
+                if (window.GeneralStatsCalculator) {
+                    debug('GeneralStatsCalculator trouvé', 'success');
+                } else {
+                    debug('GeneralStatsCalculator NON TROUVÉ', 'error');
+                }
+                
+            } catch (error) {
+                debug(`Erreur vérification modules: ${error.message}`, 'error');
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

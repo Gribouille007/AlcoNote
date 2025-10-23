@@ -57,6 +57,25 @@ class AlcoNoteApp {
         console.log('Statistics manager ready');
         
         // Initialize geolocation manager
+        geoManager.init();
+        // Keep time inputs updated when add drink modal opens
+        if (typeof geoManager.initTimeUpdates === 'function') {
+            geoManager.initTimeUpdates();
+        }
+        
+        // Request location permission once on first app launch for better UX
+        if (typeof geoManager.requestInitialLocationPermission === 'function') {
+            try {
+                await geoManager.requestInitialLocationPermission();
+            } catch (error) {
+                console.warn('Initial location permission request failed:', error);
+            }
+        }
+        
+        // Prewarm quick geolocation cache without prompting if permission already granted
+        if (typeof geoManager.prewarmQuickPosition === 'function') {
+            geoManager.prewarmQuickPosition();
+        }
         console.log('Geolocation manager initialized');
     }
     
@@ -130,7 +149,7 @@ class AlcoNoteApp {
     updateFABVisibility() {
         const fabContainer = document.getElementById('fab-container');
         if (this.currentTab === 'categories') {
-            fabContainer.style.display = 'block';
+            fabContainer.style.display = 'flex';
         } else {
             fabContainer.style.display = 'none';
         }
@@ -176,6 +195,14 @@ class AlcoNoteApp {
             
             // Setup drink name suggestions
             this.setupDrinkSuggestions();
+
+            // Scanner button inside add drink modal
+            const scanBtn = document.getElementById('scan-barcode-btn');
+            if (scanBtn) {
+                scanBtn.addEventListener('click', () => {
+                    this.openScannerModal();
+                });
+            }
         }
         
         // Add category form
@@ -474,10 +501,10 @@ class AlcoNoteApp {
                     await this.loadHistory();
                     break;
                 case 'statistics':
-                    if (!statsManager.isInitialized) {
-                        statsManager.init();
+                    if (!modularStatsManager.isInitialized) {
+                        modularStatsManager.init();
                     } else {
-                        statsManager.loadStatistics();
+                        modularStatsManager.loadStatistics();
                     }
                     break;
             }
@@ -528,14 +555,106 @@ class AlcoNoteApp {
         element.innerHTML = `
             <div class="category-main" data-category="${category.name}">
                 <div class="category-name">${category.name}</div>
+                <div class="category-actions">
+                    <span class="category-count">${typeof category.drinkCount === 'number' ? category.drinkCount : 0}</span>
+                    <button class="category-edit-btn" aria-label="Modifier la catégorie" title="Modifier la catégorie">✏️</button>
+                </div>
+            </div>
+            <div class="category-editor" style="display:none;">
+                <input type="text" class="category-name-input" value="${category.name}" aria-label="Nouveau nom de catégorie">
+                <button class="btn-primary save-rename-btn">Enregistrer</button>
+                <button class="btn-danger delete-category-btn">Supprimer</button>
+                <button class="btn-secondary cancel-edit-btn">Annuler</button>
             </div>
         `;
-        
-        // Click on category opens category detail page
-        element.addEventListener('click', () => {
-            this.openCategoryDetailPage(category);
-        });
-        
+
+        // Open detail on main area click (not when editing)
+        const main = element.querySelector('.category-main');
+        if (main) {
+            main.addEventListener('click', () => {
+                this.openCategoryDetailPage(category);
+            });
+        }
+
+        // Edit button toggles inline editor
+        const editBtn = element.querySelector('.category-edit-btn');
+        const editor = element.querySelector('.category-editor');
+        const input = element.querySelector('.category-name-input');
+        if (editBtn && editor && input) {
+            editBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                editor.style.display = editor.style.display === 'none' ? 'flex' : 'none';
+                if (editor.style.display !== 'none') {
+                    input.focus();
+                    input.select();
+                }
+            });
+        }
+
+        // Save rename
+        const saveBtn = element.querySelector('.save-rename-btn');
+        if (saveBtn && input) {
+            saveBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const newName = input.value.trim();
+                const oldName = category.name;
+                if (!newName) {
+                    Utils.showMessage('Le nom de catégorie ne peut pas être vide', 'error');
+                    return;
+                }
+                try {
+                    await dbManager.renameCategory(oldName, newName);
+                    Utils.showMessage('Catégorie renommée avec succès', 'success');
+
+                    // Notify stats and other views that drinks categories may have changed
+                    window.dispatchEvent(new CustomEvent('drinkDataChanged', {
+                        detail: { action: 'category-rename', from: oldName, to: newName }
+                    }));
+
+                    // Refresh lists and form options
+                    await this.loadCategories();
+                    await this.loadCategoriesForForm();
+                } catch (error) {
+                    Utils.handleError(error, 'renaming category');
+                }
+            });
+        }
+
+        // Delete category
+        const deleteBtn = element.querySelector('.delete-category-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                try {
+                    // Get current value from input (in case user changed it)
+                    const nameToDelete = input ? input.value.trim() : category.name;
+                    const cat = await dbManager.getCategoryByName(nameToDelete);
+                    if (!cat) {
+                        Utils.showMessage('Catégorie introuvable', 'error');
+                        return;
+                    }
+                    await dbManager.deleteCategory(cat.id);
+                    Utils.showMessage('Catégorie supprimée', 'success');
+
+                    // Refresh lists and form options
+                    await this.loadCategories();
+                    await this.loadCategoriesForForm();
+                } catch (error) {
+                    // Typically when category has drinks
+                    Utils.handleError(error, 'deleting category');
+                }
+            });
+        }
+
+        // Cancel editing
+        const cancelBtn = element.querySelector('.cancel-edit-btn');
+        if (cancelBtn && editor) {
+            cancelBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                editor.style.display = 'none';
+            });
+        }
+
         return element;
     }
     
@@ -719,38 +838,56 @@ class AlcoNoteApp {
         return element;
     }
     
-    // Add same drink from history
+    // Add same drink from history - INSTANT VERSION
     async addSameDrinkFromHistory(originalDrink) {
-        try {
-            const location = await geoManager.getLocationForDrink();
-            
-            const drinkData = {
-                name: originalDrink.name,
-                category: originalDrink.category,
-                quantity: originalDrink.quantity,
-                unit: originalDrink.unit,
-                alcoholContent: originalDrink.alcoholContent,
-                date: Utils.getCurrentDate(),
-                time: Utils.getCurrentTime(),
-                location: location
-            };
-            
-            await dbManager.addDrink(drinkData);
+        // INSTANT UI FEEDBACK - Show success immediately
+        Utils.showMessage(`${originalDrink.name} ajouté!`, 'success');
 
-            Utils.showMessage(`${originalDrink.name} ajouté!`, 'success');
+        // BACKGROUND OPERATIONS (completely non-blocking)
+        queueMicrotask(async () => {
+            try {
+                // Use instant location or fallback
+                let location = geoManager.getLocationInstant() || { 
+                    latitude: 0, longitude: 0, accuracy: null, address: 'Localisation en cours...' 
+                };
 
-            // Dispatch custom event for statistics update
-            window.dispatchEvent(new CustomEvent('drinkDataChanged', {
-                detail: { action: 'add', drink: drinkData }
-            }));
+                const drinkData = {
+                    name: originalDrink.name,
+                    category: originalDrink.category,
+                    quantity: originalDrink.quantity,
+                    unit: originalDrink.unit,
+                    alcoholContent: originalDrink.alcoholContent,
+                    date: Utils.getCurrentDate(),
+                    time: Utils.getCurrentTime(),
+                    location: location
+                };
 
-            // Refresh current tab and categories form
-            this.refreshCurrentTab();
-            this.loadCategoriesForForm();
-            
-        } catch (error) {
-            Utils.handleError(error, 'adding drink from history');
-        }
+                // Save in background
+                const result = await dbManager.addDrink(drinkData);
+                
+                // Update events in background
+                window.dispatchEvent(new CustomEvent('drinkDataChanged', {
+                    detail: { action: 'add', drink: drinkData }
+                }));
+
+                // Background location update if needed
+                if (location.latitude === 0) {
+                    try {
+                        await geoManager.ensureConsent();
+                        const realLocation = await geoManager.getLocationForDrinkFast(200);
+                        if (realLocation && result) {
+                            dbManager.updateDrink(result.id, { location: realLocation }).catch(console.warn);
+                        }
+                    } catch (e) { /* ignore */ }
+                }
+
+                // Background UI refresh (throttled)
+                this.scheduleBackgroundRefresh();
+
+            } catch (error) {
+                console.warn('Background save failed:', error);
+            }
+        });
     }
     
     // Load and display drinks
@@ -817,21 +954,44 @@ class AlcoNoteApp {
     }
     
     // Open modal functions
-    openAddDrinkModal(categoryName = null) {
+    async openAddDrinkModal(categoryName = null) {
+        // Ensure we request geolocation permission once before adding
+        try { await geoManager.ensureConsent(); } catch (e) { /* ignore */ }
+        console.log('Opening add drink modal with category:', categoryName);
+
+        // Reset form state to ensure we're in add mode, not edit mode
+        const form = document.getElementById('add-drink-form');
+        if (form) {
+            console.log('Current form dataset before reset:', { ...form.dataset });
+            delete form.dataset.editingDrinkId;
+            delete form.dataset.barcode;
+            console.log('Form dataset after reset:', { ...form.dataset });
+
+            // Reset form title and button text
+            const modalTitle = document.querySelector('#add-drink-modal .modal-title');
+            const submitButton = document.querySelector('#add-drink-form button[type="submit"]');
+
+            if (modalTitle) modalTitle.textContent = 'Ajouter une boisson';
+            if (submitButton) submitButton.textContent = 'Ajouter';
+        }
+
+        // Clear the form completely
+        Utils.resetForm(form);
+
         // Set current date and time
         const dateInput = document.getElementById('drink-date');
         const timeInput = document.getElementById('drink-time');
         const categorySelect = document.getElementById('drink-category');
         const categoryFormGroup = document.getElementById('category-form-group');
-        
+
         if (dateInput) dateInput.value = Utils.getCurrentDate();
         if (timeInput) timeInput.value = Utils.getCurrentTime();
-        
+
         // Pre-select category if provided and hide the field
         if (categoryName && categorySelect) {
             categorySelect.value = categoryName;
             categoryFormGroup.style.display = 'none';
-            
+
             // Add hidden input to ensure category is submitted
             let hiddenCategoryInput = document.getElementById('hidden-category');
             if (!hiddenCategoryInput) {
@@ -850,8 +1010,9 @@ class AlcoNoteApp {
                 hiddenCategoryInput.remove();
             }
         }
-        
+
         Utils.openModal('add-drink-modal');
+        console.log('Add drink modal opened successfully');
     }
     
     openAddCategoryModal() {
@@ -924,35 +1085,73 @@ class AlcoNoteApp {
         }
     }
     
-    // Handle form submissions
+    // Handle form submissions with ultra-fast optimistic updates
     async handleAddDrink(form) {
         try {
+            console.log('Handling add drink form submission');
+
             if (!Utils.validateForm(form)) {
                 Utils.showMessage('Veuillez remplir tous les champs requis', 'error');
                 return;
             }
-            
+
             const formData = Utils.getFormData(form);
             const isEditing = form.dataset.editingDrinkId;
-            
+
             // Get category from hidden input if it exists, otherwise from select
             let category = formData.category;
             const hiddenCategoryInput = document.getElementById('hidden-category');
             if (hiddenCategoryInput && hiddenCategoryInput.value) {
                 category = hiddenCategoryInput.value;
             }
+
+            // INSTANT UI FEEDBACK - Close modal and show success immediately
+            Utils.closeModal('add-drink-modal');
+            Utils.resetForm(form);
             
-            // Get location if available (only for new drinks, keep existing location for edits)
+            // Reset form state immediately
+            delete form.dataset.editingDrinkId;
+            delete form.dataset.barcode;
+            const modalTitle = document.querySelector('#add-drink-modal .modal-title');
+            const submitButton = document.querySelector('#add-drink-form button[type="submit"]');
+            if (modalTitle) modalTitle.textContent = 'Ajouter une boisson';
+            if (submitButton) submitButton.textContent = 'Ajouter';
+
+            // Show success message immediately (optimistic)
+            Utils.showMessage(`${formData.name} ajouté!`, 'success');
+
+            // Get location for new drinks (ultra-fast or fallback to coordinates 0,0)
             let location = null;
             if (!isEditing) {
-                try {
-                    location = await geoManager.getLocationForDrink();
-                } catch (error) {
-                    console.warn('Could not get location:', error);
-                    location = null;
+                location = geoManager.getLocationInstant();
+                if (!location) {
+                    // Don't wait for consent or location - use fallback
+                    location = { latitude: 0, longitude: 0, accuracy: null, address: 'Localisation en cours...' };
+                    
+                    // Try to get real location in background (non-blocking)
+                    setTimeout(async () => {
+                        try {
+                            await geoManager.ensureConsent();
+                            const realLocation = await geoManager.getLocationForDrinkFast(200);
+                            if (realLocation && location.latitude === 0) {
+                                // Update the drink with real location
+                                location.latitude = realLocation.latitude;
+                                location.longitude = realLocation.longitude;
+                                location.accuracy = realLocation.accuracy;
+                                location.address = realLocation.address;
+                                
+                                // Update in database without blocking UI
+                                if (savedDrink) {
+                                    dbManager.updateDrink(savedDrink.id, { location: realLocation }).catch(console.warn);
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('Background location failed:', e);
+                        }
+                    }, 50);
                 }
             }
-            
+
             const drinkData = {
                 name: formData.name,
                 category: category,
@@ -963,58 +1162,56 @@ class AlcoNoteApp {
                 time: formData.time,
                 barcode: form.dataset.barcode || null
             };
-            
-            // Add location only for new drinks
+
             if (!isEditing) {
                 drinkData.location = location;
             }
-            
-            console.log('Adding drink with data:', drinkData);
-            
-            if (isEditing) {
-                // Update existing drink
-                await dbManager.updateDrink(parseInt(isEditing), drinkData);
-                Utils.showMessage('Boisson modifiée avec succès!', 'success');
 
-                // Dispatch custom event for statistics update
-                window.dispatchEvent(new CustomEvent('drinkDataChanged', {
-                    detail: { action: 'update', drink: drinkData, drinkId: parseInt(isEditing) }
-                }));
-            } else {
-                // Add new drink
-                await dbManager.addDrink(drinkData);
-                Utils.showMessage('Boisson ajoutée avec succès!', 'success');
+            // BACKGROUND OPERATIONS (non-blocking)
+            let savedDrink = null;
+            setTimeout(async () => {
+                try {
+                    if (isEditing) {
+                        await dbManager.updateDrink(parseInt(isEditing), drinkData);
+                        window.dispatchEvent(new CustomEvent('drinkDataChanged', {
+                            detail: { action: 'update', drink: drinkData, drinkId: parseInt(isEditing) }
+                        }));
+                    } else {
+                        savedDrink = await dbManager.addDrink(drinkData);
+                        window.dispatchEvent(new CustomEvent('drinkDataChanged', {
+                            detail: { action: 'add', drink: drinkData }
+                        }));
+                    }
 
-                // Dispatch custom event for statistics update
-                window.dispatchEvent(new CustomEvent('drinkDataChanged', {
-                    detail: { action: 'add', drink: drinkData }
-                }));
-            }
-            
-            Utils.closeModal('add-drink-modal');
-            Utils.resetForm(form);
-            
-            // Reset form state
-            delete form.dataset.editingDrinkId;
-            delete form.dataset.barcode;
-            
-            // Reset form title and button text
-            const modalTitle = document.querySelector('#add-drink-modal .modal-title');
-            const submitButton = document.querySelector('#add-drink-form button[type="submit"]');
-            
-            if (modalTitle) modalTitle.textContent = 'Ajouter une boisson';
-            if (submitButton) submitButton.textContent = 'Ajouter';
-            
-            // Refresh current tab and categories form
-            this.refreshCurrentTab();
-            this.loadCategoriesForForm();
-            
-            // Refresh BAC estimation if on statistics tab
-            this.refreshBACEstimation();
-            
+                    // Background UI refresh (throttled)
+                    this.scheduleBackgroundRefresh();
+                    
+                } catch (error) {
+                    console.error('Background drink save failed:', error);
+                    // Show error but don't revert optimistic UI
+                    Utils.showMessage('Erreur lors de la sauvegarde, réessayez si nécessaire', 'warning');
+                }
+            }, 10);
+
         } catch (error) {
+            console.error('Error in handleAddDrink:', error);
             Utils.handleError(error, isEditing ? 'updating drink' : 'adding drink');
         }
+    }
+
+    // Throttled background refresh to avoid UI blocking
+    scheduleBackgroundRefresh() {
+        if (this.backgroundRefreshTimer) return;
+        
+        this.backgroundRefreshTimer = setTimeout(() => {
+            // Only refresh if user is still on the same tab
+            if (document.visibilityState === 'visible') {
+                this.refreshCurrentTab();
+                this.loadCategoriesForForm();
+                this.refreshBACEstimation();
+            }
+            this.backgroundRefreshTimer = null;
+        }, 500); // Delay to allow multiple quick additions
     }
     
     async handleAddCategory(form) {
@@ -1207,46 +1404,56 @@ class AlcoNoteApp {
         return modal;
     }
     
-    // Add drink from category (increment counter)
+    // Add drink from category (increment counter) - INSTANT VERSION
     async addDrinkFromCategory(drinkTemplate) {
-        try {
-            let location = null;
+        // INSTANT UI FEEDBACK - Show success immediately
+        Utils.showMessage(`${drinkTemplate.name} ajouté!`, 'success');
+
+        // BACKGROUND OPERATIONS (completely non-blocking)
+        queueMicrotask(async () => {
             try {
-                location = await geoManager.getLocationForDrink();
+                // Use instant location or fallback
+                let location = geoManager.getLocationInstant() || { 
+                    latitude: 0, longitude: 0, accuracy: null, address: 'Localisation en cours...' 
+                };
+
+                const drinkData = {
+                    name: drinkTemplate.name,
+                    category: drinkTemplate.category,
+                    quantity: drinkTemplate.quantity,
+                    unit: drinkTemplate.unit,
+                    alcoholContent: drinkTemplate.alcoholContent,
+                    date: Utils.getCurrentDate(),
+                    time: Utils.getCurrentTime(),
+                    location: location
+                };
+
+                // Save in background
+                const result = await dbManager.addDrink(drinkData);
+                
+                // Update events in background
+                window.dispatchEvent(new CustomEvent('drinkDataChanged', {
+                    detail: { action: 'add', drink: drinkData }
+                }));
+
+                // Background location update if needed
+                if (location.latitude === 0) {
+                    try {
+                        await geoManager.ensureConsent();
+                        const realLocation = await geoManager.getLocationForDrinkFast(200);
+                        if (realLocation && result) {
+                            dbManager.updateDrink(result.id, { location: realLocation }).catch(console.warn);
+                        }
+                    } catch (e) { /* ignore */ }
+                }
+
+                // Background UI refresh (throttled)
+                this.scheduleBackgroundRefresh();
+
             } catch (error) {
-                console.warn('Could not get location:', error);
-                location = null;
+                console.warn('Background save from category failed:', error);
             }
-            
-            const drinkData = {
-                name: drinkTemplate.name,
-                category: drinkTemplate.category,
-                quantity: drinkTemplate.quantity,
-                unit: drinkTemplate.unit,
-                alcoholContent: drinkTemplate.alcoholContent,
-                date: Utils.getCurrentDate(),
-                time: Utils.getCurrentTime(),
-                location: location
-            };
-            
-            console.log('Adding drink from category with data:', drinkData);
-            
-            await dbManager.addDrink(drinkData);
-
-            Utils.showMessage(`${drinkTemplate.name} ajouté!`, 'success');
-
-            // Dispatch custom event for statistics update
-            window.dispatchEvent(new CustomEvent('drinkDataChanged', {
-                detail: { action: 'add', drink: drinkData }
-            }));
-
-            // Refresh current tab and categories form
-            this.refreshCurrentTab();
-            this.loadCategoriesForForm();
-            
-        } catch (error) {
-            Utils.handleError(error, 'adding drink from category');
-        }
+        });
     }
     
     // Open category drinks view (legacy method for compatibility)
@@ -1348,7 +1555,22 @@ class AlcoNoteApp {
                             const drinkToDelete = await dbManager.getDrinkById(drinkId);
 
                             await dbManager.deleteDrink(drinkId);
-                            el.remove();
+
+                            // Animate out smoothly before removing from DOM
+                            el.classList.add('deleting');
+                            el.style.pointerEvents = 'none';
+                            const cleanup = () => {
+                                if (el && el.parentElement) {
+                                    el.remove();
+                                }
+                            };
+                            // Ensure removal even if transition doesn't fire
+                            const fallback = setTimeout(cleanup, 600);
+                            el.addEventListener('transitionend', () => {
+                                clearTimeout(fallback);
+                                cleanup();
+                            }, { once: true });
+
                             Utils.showMessage('Boisson supprimée', 'success');
 
                             // Dispatch custom event for statistics update
@@ -1375,8 +1597,29 @@ class AlcoNoteApp {
     // Add same drink with current date/time
     async addSameDrink(group) {
         try {
-            const location = await geoManager.getLocationForDrink();
-            
+            console.log('Adding same drink:', group);
+
+            // Fast path: use last known immediately to avoid latency
+            let location = geoManager.getLastKnownLocation();
+
+            // Only if we have no last known, attempt quick fetch with short timeout
+            if (!location) {
+                try { await geoManager.ensureConsent(); } catch (e) {}
+                try {
+                    location = await geoManager.getLocationForDrinkFast(400);
+                } catch (geoError) {
+                    console.warn('Could not get quick location for same drink:', geoError);
+                }
+            }
+            if (!location) {
+                Utils.showMessage('Localisation requise pour ajouter une boisson. Veuillez autoriser la localisation puis réessayer.', 'error');
+                return;
+            }
+            // Background refresh to keep cache fresh (non-blocking)
+            if (geoManager && typeof geoManager.getLocationForDrinkFast === 'function') {
+                geoManager.getLocationForDrinkFast(1500).catch(() => {});
+            }
+
             const drinkData = {
                 name: group.name,
                 category: group.category,
@@ -1387,10 +1630,28 @@ class AlcoNoteApp {
                 time: Utils.getCurrentTime(),
                 location: location
             };
-            
-            await dbManager.addDrink(drinkData);
+
+            console.log('Drink data to add (same):', drinkData);
+
+            const result = await dbManager.addDrink(drinkData);
+            console.log('Same drink added successfully:', result);
 
             Utils.showMessage(`${group.name} ajouté!`, 'success');
+
+            // Enrich address asynchronously if missing
+            if (result && drinkData.location && (!drinkData.location.address || drinkData.location.address === null)) {
+                try {
+                    const addr = await geoManager.reverseGeocode(drinkData.location.latitude, drinkData.location.longitude);
+                    await dbManager.updateDrink(result.id, {
+                        location: {
+                            ...drinkData.location,
+                            address: addr?.formatted || null
+                        }
+                    });
+                } catch (e) {
+                    console.warn('Reverse geocode post-save failed', e);
+                }
+            }
 
             // Dispatch custom event for statistics update
             window.dispatchEvent(new CustomEvent('drinkDataChanged', {
@@ -1400,8 +1661,9 @@ class AlcoNoteApp {
             // Refresh the modal content and current tab
             this.openDrinkDetail(group);
             this.refreshCurrentTab();
-            
+
         } catch (error) {
+            console.error('Error adding same drink:', error);
             Utils.handleError(error, 'adding same drink');
         }
     }
@@ -1421,12 +1683,9 @@ class AlcoNoteApp {
     // Refresh BAC estimation section specifically
     refreshBACEstimation() {
         // Only refresh if we're on the statistics tab and it's initialized
-        if (this.currentTab === 'statistics' && window.statsManager && window.statsManager.isInitialized) {
-            const bacContainer = document.querySelector('.bac-estimation-section');
-            if (bacContainer) {
-                // Re-render the BAC estimation section
-                window.statsManager.renderBACEstimation(bacContainer.parentElement);
-            }
+        if (this.currentTab === 'statistics' && window.modularStatsManager && window.modularStatsManager.isInitialized) {
+            // Refresh the entire statistics view to update BAC estimation
+            window.modularStatsManager.loadStatistics();
         }
     }
     

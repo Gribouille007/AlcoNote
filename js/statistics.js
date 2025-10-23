@@ -28,6 +28,7 @@ class StatisticsManager {
 
     // Setup event listeners for automatic updates
     setupEventListeners() {
+        
         // Listen for drink data changes
         window.addEventListener('drinkDataChanged', (event) => {
             console.log('Drink data changed:', event.detail);
@@ -342,6 +343,21 @@ class StatisticsManager {
     
     // Calculate general consumption statistics
     async calculateGeneralStats(drinks, dateRange) {
+        // Utilise le calculateur modulaire pour les statistiques générales
+        if (window.GeneralStatsCalculator && window.GeneralStatsCalculator.calculateGeneralStats) {
+            try {
+                return await window.GeneralStatsCalculator.calculateGeneralStats(
+                    drinks, 
+                    dateRange, 
+                    { currentPeriod: this.currentPeriod }
+                );
+            } catch (error) {
+                console.error('Error using modular general stats calculator:', error);
+                // Fallback vers l'ancienne logique
+            }
+        }
+        
+        // Fallback vers l'ancienne logique si le calculateur n'est pas disponible
         const totalDrinks = drinks.length;
         let totalVolume = 0;
         let totalAlcohol = 0;
@@ -553,10 +569,29 @@ class StatisticsManager {
     
     // Calculate health-related statistics
     async calculateHealthStats(drinks, dateRange) {
-        const settings = await dbManager.getAllSettings();
-        const userWeight = settings.userWeight;
-        const userGender = settings.userGender;
+        // Utilise le calculateur modulaire pour les statistiques de santé
+        if (window.HealthStatsCalculator) {
+            try {
+                // Récupération des settings pour passer au calculateur
+                let settings = {};
+                try {
+                    settings = await dbManager.getAllSettings();
+                } catch (error) {
+                    console.warn('Could not get settings from dbManager:', error);
+                }
+                
+                return await window.HealthStatsCalculator.calculateHealthStats(
+                    drinks, 
+                    dateRange, 
+                    { settings }
+                );
+            } catch (error) {
+                console.error('Error using HealthStatsCalculator:', error);
+                // Fallback vers l'ancienne logique si le calculateur échoue
+            }
+        }
         
+        // Fallback vers l'ancienne logique si le calculateur n'est pas disponible
         let totalAlcoholGrams = 0;
         const dailyAlcohol = {};
         
@@ -577,31 +612,12 @@ class StatisticsManager {
         const daysDiff = this.getDaysDifference(dateRange.start, dateRange.end) + 1;
         const weeklyAlcohol = (totalAlcoholGrams / daysDiff) * 7;
         
-        // WHO recommendations
-        const whoRecommendation = Utils.getWHORecommendation(userGender);
-        const whoComparison = whoRecommendation ? (weeklyAlcohol / whoRecommendation) * 100 : null;
-        
-        // BAC estimation for latest session
-        let estimatedBAC = null;
-        if (userWeight && userGender && drinks.length > 0) {
-            const latestSession = this.calculateSessions(drinks)[0];
-            if (latestSession) {
-                const sessionAlcohol = latestSession.drinks.reduce((total, drink) => {
-                    const volumeInCL = Utils.convertToStandardUnit(drink.quantity, drink.unit).quantity;
-                    return total + (drink.alcoholContent ? 
-                        Utils.calculateAlcoholGrams(volumeInCL, drink.alcoholContent) : 0);
-                }, 0);
-                
-                estimatedBAC = Utils.calculateBAC(sessionAlcohol, userWeight, userGender, 0);
-            }
-        }
-        
         return {
             totalAlcoholGrams: Math.round(totalAlcoholGrams * 10) / 10,
             weeklyAlcohol: Math.round(weeklyAlcohol * 10) / 10,
-            whoRecommendation,
-            whoComparison: whoComparison ? Math.round(whoComparison) : null,
-            estimatedBAC: estimatedBAC ? Math.round(estimatedBAC * 1000) / 1000 : null,
+            whoRecommendation: null,
+            whoComparison: null,
+            estimatedBAC: null,
             dailyAlcohol
         };
     }
@@ -711,6 +727,7 @@ class StatisticsManager {
             const previousDateRange = this.getPreviousPeriodRange(currentDateRange);
             if (!previousDateRange) return null;
             
+            console.log('Current Date Range:', currentDateRange, 'Previous Date Range:', previousDateRange);
             // Get drinks for both periods
             const currentDrinks = await dbManager.getDrinksByDateRange(currentDateRange.start, currentDateRange.end);
             const previousDrinks = await dbManager.getDrinksByDateRange(previousDateRange.start, previousDateRange.end);
@@ -721,7 +738,7 @@ class StatisticsManager {
             
             // Calculate percentage changes
             const comparison = {};
-            const metrics = ['totalDrinks', 'totalVolume', 'totalAlcohol', 'totalSessions', 'uniqueDrinks', 'soberDays', 'avgPerDay', 'avgPerWeek'];
+            const metrics = ['totalDrinks', 'totalVolume', 'totalAlcohol', 'totalSessions', 'uniqueDrinks', 'soberDays', 'avgPerDay', 'avgPerWeek', 'avgPerMonth'];
             
             metrics.forEach(metric => {
                 if (previousStats[metric] === 0) {
@@ -730,6 +747,7 @@ class StatisticsManager {
                     const change = ((currentStats[metric] - previousStats[metric]) / previousStats[metric]) * 100;
                     comparison[metric] = Math.round(change);
                 }
+                console.log(`Metric: ${metric}, Current: ${currentStats[metric]}, Previous: ${previousStats[metric]}, Change: ${comparison[metric]}`);
             });
             
             return comparison;
@@ -744,18 +762,61 @@ class StatisticsManager {
     getPreviousPeriodRange(currentRange) {
         const currentStart = new Date(currentRange.start);
         const currentEnd = new Date(currentRange.end);
-        const periodLength = this.getDaysDifference(currentRange.start, currentRange.end) + 1;
         
-        // Calculate previous period
-        const previousEnd = new Date(currentStart);
-        previousEnd.setDate(previousEnd.getDate() - 1);
+        let previousStart, previousEnd;
         
-        const previousStart = new Date(previousEnd);
-        previousStart.setDate(previousStart.getDate() - periodLength + 1);
+        console.log('Current period:', this.currentPeriod);
+        console.log('Current range:', currentRange);
+        
+        switch (this.currentPeriod) {
+            case 'today':
+                // Jour précédent
+                previousStart = new Date(currentStart);
+                previousStart.setDate(previousStart.getDate() - 1);
+                previousEnd = new Date(previousStart);
+                break;
+                
+            case 'week':
+                // Semaine précédente (7 jours avant)
+                previousStart = new Date(currentStart);
+                previousStart.setDate(previousStart.getDate() - 7);
+                previousEnd = new Date(currentEnd);
+                previousEnd.setDate(previousEnd.getDate() - 7);
+                break;
+                
+            case 'month':
+                // Mois précédent
+                previousStart = new Date(currentStart);
+                previousStart.setMonth(previousStart.getMonth() - 1);
+                previousEnd = new Date(currentEnd);
+                previousEnd.setMonth(previousEnd.getMonth() - 1);
+                break;
+                
+            case 'year':
+                // Année précédente
+                previousStart = new Date(currentStart);
+                previousStart.setFullYear(previousStart.getFullYear() - 1);
+                previousEnd = new Date(currentEnd);
+                previousEnd.setFullYear(previousEnd.getFullYear() - 1);
+                break;
+                
+            default:
+                // Pour les périodes personnalisées, calculer la durée équivalente
+                const periodLength = this.getDaysDifference(currentRange.start, currentRange.end) + 1;
+                previousEnd = new Date(currentStart);
+                previousEnd.setDate(previousEnd.getDate() - 1);
+                previousStart = new Date(previousEnd);
+                previousStart.setDate(previousStart.getDate() - periodLength + 1);
+        }
+        
+        const formattedPreviousStart = previousStart.toISOString().split('T')[0];
+        const formattedPreviousEnd = previousEnd.toISOString().split('T')[0];
+        
+        console.log('Previous range:', { start: formattedPreviousStart, end: formattedPreviousEnd });
         
         return {
-            start: previousStart.toISOString().split('T')[0],
-            end: previousEnd.toISOString().split('T')[0]
+            start: formattedPreviousStart,
+            end: formattedPreviousEnd
         };
     }
     
@@ -892,6 +953,9 @@ class StatisticsManager {
     
     // Render health statistics
     renderHealthStats(container, stats) {
+        // Render only BAC estimation section; health indicators removed
+        this.renderBACEstimation(container);
+        return;
         const section = document.createElement('div');
         section.className = 'stats-section';
         section.innerHTML = `
@@ -1273,13 +1337,13 @@ class StatisticsManager {
                 </div>
             </div>
         `;
-        
+
         container.appendChild(mapContainer);
-        
-        // Initialize map after DOM insertion with improved timing and retry mechanism
-        this.mapInitTimeout = setTimeout(() => {
+
+        // Initialize map immediately after DOM insertion using requestAnimationFrame for better timing
+        requestAnimationFrame(() => {
             this.initializeMapWithRetry(locationStats, 0);
-        }, 200);
+        });
     }
     
     // Initialize map with retry mechanism for better reliability
@@ -1360,6 +1424,9 @@ class StatisticsManager {
                 console.warn('Leaflet marker clustering not available, using basic markers');
                 // Continue without clustering
             }
+
+            // Clear any existing map content
+            mapElement.innerHTML = '';
 
             // Get all drinks with location data and validate coordinates
             const drinksWithLocation = locationStats.drinks.filter(drink => {

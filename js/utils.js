@@ -1,7 +1,15 @@
-// Utility functions for AlcoNote PWA
-
+/**
+ * Utility functions for AlcoNote PWA
+ * Provides static methods for dates, calculations, UI, storage and more
+ */
 class Utils {
-    // Date and time utilities
+
+    // ========== DATE AND TIME UTILITIES ==========
+
+    /**
+     * Get current date in YYYY-MM-DD format (local timezone)
+     * @returns {string} Current date string
+     */
     static getCurrentDate() {
         // Use local date to avoid timezone issues
         const now = new Date();
@@ -10,33 +18,56 @@ class Utils {
         const day = String(now.getDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
     }
-    
+
+    /**
+     * Get current time in HH:MM format
+     * @returns {string} Current time string
+     */
     static getCurrentTime() {
         const now = new Date();
         // Get local time in HH:MM format
         return now.toTimeString().slice(0, 5);
     }
-    
+
+    /**
+     * Format date to French long format with weekday
+     * @param {string} dateString - Date in YYYY-MM-DD format
+     * @returns {string} Formatted date in French
+     */
     static formatDate(dateString) {
+        // Convert date string to Date object and format in French with weekday
         const date = new Date(dateString);
-        const options = { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
+        const options = {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
         };
         return date.toLocaleDateString('fr-FR', options);
     }
-    
+
+    /**
+     * Format time string (simple passthrough)
+     * @param {string} timeString - Time in HH:MM format
+     * @returns {string} Same time string
+     */
     static formatTime(timeString) {
+        // Return the time string as-is (no special formatting needed)
         return timeString;
     }
-    
+
+    /**
+     * Format date and time combined in French short format
+     * @param {string} dateString - Date in YYYY-MM-DD format
+     * @param {string} timeString - Time in HH:MM format
+     * @returns {string} Formatted date and time in French
+     */
     static formatDateTime(dateString, timeString) {
+        // Combine date and time into a Date object, then format in French
         const date = new Date(`${dateString}T${timeString}`);
-        const options = { 
+        const options = {
             weekday: 'short',
-            month: 'short', 
+            month: 'short',
             day: 'numeric',
             hour: '2-digit',
             minute: '2-digit'
@@ -44,54 +75,16 @@ class Utils {
         return date.toLocaleDateString('fr-FR', options);
     }
     
-    static getDateRange(period, currentDate = new Date()) {
-        const start = new Date(currentDate);
-        const end = new Date(currentDate);
-        
-        switch (period) {
-            case 'today':
-                start.setHours(0, 0, 0, 0);
-                end.setHours(23, 59, 59, 999);
-                break;
-                
-            case 'week':
-                const dayOfWeek = start.getDay();
-                const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Monday as first day
-                start.setDate(diff);
-                start.setHours(0, 0, 0, 0);
-                end.setDate(start.getDate() + 6);
-                end.setHours(23, 59, 59, 999);
-                break;
-                
-            case 'month':
-                start.setDate(1);
-                start.setHours(0, 0, 0, 0);
-                end.setMonth(start.getMonth() + 1);
-                end.setDate(0);
-                end.setHours(23, 59, 59, 999);
-                break;
-                
-            case 'year':
-                start.setMonth(0, 1);
-                start.setHours(0, 0, 0, 0);
-                end.setMonth(11, 31);
-                end.setHours(23, 59, 59, 999);
-                break;
-                
-            default:
-                start.setHours(0, 0, 0, 0);
-                end.setHours(23, 59, 59, 999);
-        }
-        
-        return {
-            start: start.toISOString().split('T')[0],
-            end: end.toISOString().split('T')[0]
-        };
-    }
+    /**
+     * Calculate start and end dates for given period
+     * @param {string} period - 'today', 'week', 'month', 'year'
+     * @param {Date} currentDate - Reference date
+     * @returns {object} {start: 'YYYY-MM-DD', end: 'YYYY-MM-DD'}
+     */
     
     // Fixed version that ensures proper date ranges without overlapping
     static getDateRangeFixed(period, currentDate = new Date()) {
-        // Create new date objects to avoid modifying the original
+        // Improved date range calculation
         const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
         const end = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
         
@@ -141,30 +134,41 @@ class Utils {
     }
     
     static addDays(date, days) {
+        // Create new date with days added
         const result = new Date(date);
         result.setDate(result.getDate() + days);
         return result;
     }
     
     static getDayName(dayIndex) {
+        // Get French day name from 0-6 index
         const days = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
         return days[dayIndex];
     }
     
     // Quantity and unit conversions
+    /**
+     * Convert any drink quantity from its unit to standard centiliters
+     * For standardizing volume calculations across different unit types
+     * @param {number} quantity - The quantity value
+     * @param {string} unit - The unit ('EcoCup', 'L', 'cL')
+     * @returns {object} Object with quantity in cL and unit: 'cL'
+     */
     static convertToStandardUnit(quantity, unit) {
+        // Normalize quantity to centiliters for alcohol calculations
         switch (unit) {
-            case 'EcoCup':
+            case 'EcoCup':  // French drinking cup, assumed to be 25cL
                 return { quantity: 25, unit: 'cL' };
-            case 'L':
+            case 'L':  // Liters to centiliters
                 return { quantity: quantity * 100, unit: 'cL' };
-            case 'cL':
+            case 'cL':  // Already in centiliters
             default:
                 return { quantity, unit: 'cL' };
         }
     }
     
     static formatQuantity(quantity, unit) {
+        // Format quantity with proper unit and plural
         if (unit === 'EcoCup') {
             return `${quantity} EcoCup${quantity > 1 ? 's' : ''}`;
         }
@@ -173,13 +177,12 @@ class Utils {
     
     // Alcohol calculations
     static calculateAlcoholGrams(volumeCL, alcoholPercent) {
-        // Formula: Volume (cL) × Alcohol % × 0.8 (density of ethanol) / 10
-        // This gives the correct alcohol grams for BAC calculations
+        // Calculate grams of pure alcohol in drink
         return (volumeCL * alcoholPercent * 0.8) / 10;
     }
     
     static calculateBAC(alcoholGrams, weightKg, gender, hours = 0) {
-        // Widmark formula - result in mg/L
+        // Calculate blood alcohol concentration
         const r = gender === 'female' ? 0.55 : 0.68; // Body water percentage
         // Correct formula: BAC (g/L) = (Alcohol (g) / (Weight (kg) × r)) - (0.15 × hours)
         const bacGL = (alcoholGrams / (weightKg * r)) - (0.15 * hours);
@@ -187,44 +190,43 @@ class Utils {
         return Math.max(0, bacMgL);
     }
     
-    // Enhanced BAC calculation for multiple drinks with time consideration - result in mg/L
     static calculateCurrentBAC(drinks, weightKg, gender, currentTime = new Date()) {
+        // Calculate current BAC from drinks (cul sec assumption)
         if (!drinks || drinks.length === 0 || !weightKg || !gender) {
             return 0;
         }
-        
+
         const r = gender === 'female' ? 0.55 : 0.68;
-        let totalAlcoholGrams = 0;
-        let earliestDrinkTime = null;
-        
-        // Calculate total alcohol and find earliest drink time
+        let totalBACGL = 0;
+
         drinks.forEach(drink => {
+            // Convert unit to cL
             const volumeInCL = this.convertToStandardUnit(drink.quantity, drink.unit).quantity;
+            // Alcohol grams for this drink
             const alcoholGrams = this.calculateAlcoholGrams(volumeInCL, drink.alcoholContent || 0);
-            totalAlcoholGrams += alcoholGrams;
-            
+            if (alcoholGrams <= 0) return;
+
+            // Peak BAC contribution for this drink (g/L)
+            const peakBACGL = alcoholGrams / (weightKg * r);
+
+            // Time since this drink (hours)
             const drinkDateTime = new Date(`${drink.date}T${drink.time}`);
-            if (!earliestDrinkTime || drinkDateTime < earliestDrinkTime) {
-                earliestDrinkTime = drinkDateTime;
-            }
+            const hoursElapsed = isNaN(drinkDateTime) ? 0 : Math.max(0, (currentTime - drinkDateTime) / (1000 * 60 * 60));
+
+            // Apply elimination for this drink
+            const currentBACGL = Math.max(0, peakBACGL - (0.15 * hoursElapsed));
+
+            // Add this drink's contribution
+            totalBACGL += currentBACGL;
         });
-        
-        // Calculate peak BAC (without elimination)
-        const peakBACGL = totalAlcoholGrams / (weightKg * r);
-        
-        // Calculate time elapsed since first drink
-        const hoursElapsed = earliestDrinkTime ? 
-            Math.max(0, (currentTime - earliestDrinkTime) / (1000 * 60 * 60)) : 0;
-        
-        // Apply elimination from peak BAC
-        const currentBACGL = Math.max(0, peakBACGL - (0.15 * hoursElapsed));
-        
+
         // Convert g/L to mg/L
-        return currentBACGL * 1000;
+        return totalBACGL * 1000;
     }
+
     
-    // Calculate time to reach target BAC level (BAC in mg/L)
     static calculateTimeToBAC(currentBACMgL, targetBACMgL = 0) {
+        // Calculate time to reach target BAC
         if (currentBACMgL <= targetBACMgL) {
             return 0;
         }
@@ -240,7 +242,7 @@ class Utils {
     
     // Get drinks from current day and previous day that might still affect BAC
     static async getRelevantDrinksForBAC(currentTime = new Date()) {
-        // Get drinks from last 24 hours that could still affect BAC
+        // Get drinks that affect BAC (last 24h)
         const yesterday = new Date(currentTime);
         yesterday.setDate(yesterday.getDate() - 1);
         
@@ -264,8 +266,8 @@ class Utils {
         }
     }
     
-    // Calculate comprehensive BAC statistics (all values in mg/L)
     static async calculateBACStats(weightKg, gender, currentTime = new Date()) {
+        // Calculate comprehensive BAC statistics
         if (!weightKg || !gender) {
             return null;
         }
@@ -291,73 +293,73 @@ class Utils {
     
     // Format time in hours to human readable format
     static formatTimeToSobriety(hours) {
-        if (hours <= 0) {
-            return "Maintenant";
-        }
-        
+        // Format time to sobriety in human readable format
+        if (hours <= 0) return "Maintenant";
+
         const wholeHours = Math.floor(hours);
         const minutes = Math.round((hours - wholeHours) * 60);
-        
-        if (wholeHours === 0) {
-            return `${minutes} min`;
-        } else if (minutes === 0) {
-            return `${wholeHours}h`;
-        } else {
-            return `${wholeHours}h ${minutes}min`;
-        }
+        if (wholeHours === 0) return `${minutes} min`;
+        if (minutes === 0) return `${wholeHours}h`;
+        return `${wholeHours}h ${minutes}min`;
     }
+
     
     static getWHORecommendation(gender) {
-        // WHO recommendations in grams of pure alcohol per week
+        // Get WHO recommended alcohol limit
         return gender === 'female' ? 140 : 210;
     }
-    
+
     // Statistics utilities
     static calculateAverage(values) {
+        // Calculate arithmetic mean of values
         if (values.length === 0) return 0;
         return values.reduce((sum, value) => sum + value, 0) / values.length;
     }
-    
+
     static calculateMedian(values) {
+        // Calculate median of values
         if (values.length === 0) return 0;
         const sorted = [...values].sort((a, b) => a - b);
         const mid = Math.floor(sorted.length / 2);
-        return sorted.length % 2 === 0 
-            ? (sorted[mid - 1] + sorted[mid]) / 2 
+        return sorted.length % 2 === 0
+            ? (sorted[mid - 1] + sorted[mid]) / 2
             : sorted[mid];
     }
-    
+
     static calculatePercentile(values, percentile) {
+        // Calculate specific percentile
         if (values.length === 0) return 0;
         const sorted = [...values].sort((a, b) => a - b);
         const index = (percentile / 100) * (sorted.length - 1);
         const lower = Math.floor(index);
         const upper = Math.ceil(index);
         const weight = index % 1;
-        
+
         if (upper >= sorted.length) return sorted[sorted.length - 1];
         return sorted[lower] * (1 - weight) + sorted[upper] * weight;
     }
     
     // UI utilities
     static showMessage(message, type = 'info', duration = 3000) {
+        // Show temporary message to user
         const messageEl = document.createElement('div');
         messageEl.className = `message message-${type} animate-slide-down`;
         messageEl.innerHTML = `
             <span>${message}</span>
             <button onclick="this.parentElement.remove()" style="margin-left: auto; background: none; border: none; font-size: 18px; cursor: pointer;">&times;</button>
         `;
-        
+
         document.body.appendChild(messageEl);
-        
+
         setTimeout(() => {
             if (messageEl.parentElement) {
                 messageEl.remove();
             }
         }, duration);
     }
-    
+
     static showLoading(container, text = 'Chargement...') {
+        // Show loading spinner over element
         const loadingEl = document.createElement('div');
         loadingEl.className = 'loading-overlay';
         loadingEl.innerHTML = `
@@ -369,14 +371,16 @@ class Utils {
         container.appendChild(loadingEl);
         return loadingEl;
     }
-    
+
     static hideLoading(loadingEl) {
+        // Hide loading spinner
         if (loadingEl && loadingEl.parentElement) {
             loadingEl.remove();
         }
     }
-    
+
     static debounce(func, wait) {
+        // Delay function execution until no calls for wait time
         let timeout;
         return function executedFunction(...args) {
             const later = () => {
@@ -387,8 +391,9 @@ class Utils {
             timeout = setTimeout(later, wait);
         };
     }
-    
+
     static throttle(func, limit) {
+        // Limit function execution frequency
         let inThrottle;
         return function() {
             const args = arguments;
@@ -403,11 +408,12 @@ class Utils {
     
     // Modal utilities
     static openModal(modalId) {
+        // Show modal dialog
         const modal = document.getElementById(modalId);
         if (modal) {
             modal.classList.add('active');
             document.body.style.overflow = 'hidden';
-            
+
             // Focus first input if available
             const firstInput = modal.querySelector('input, select, textarea');
             if (firstInput) {
@@ -415,25 +421,28 @@ class Utils {
             }
         }
     }
-    
+
     static closeModal(modalId) {
+        // Hide modal dialog
         const modal = document.getElementById(modalId);
         if (modal) {
             modal.classList.remove('active');
             document.body.style.overflow = '';
         }
     }
-    
+
     static closeAllModals() {
+        // Hide all open modals
         const modals = document.querySelectorAll('.modal.active');
         modals.forEach(modal => {
             modal.classList.remove('active');
         });
         document.body.style.overflow = '';
     }
-    
+
     // Form utilities
     static getFormData(formElement) {
+        // Extract data from form inputs
         const formData = new FormData(formElement);
         const data = {};
         
@@ -454,19 +463,21 @@ class Utils {
     }
     
     static resetForm(formElement) {
+        // Clear form and remove validation states
         formElement.reset();
-        
+
         // Clear any validation states
         const inputs = formElement.querySelectorAll('input, select, textarea');
         inputs.forEach(input => {
             input.classList.remove('error', 'valid');
         });
     }
-    
+
     static validateForm(formElement) {
+        // Check if required fields are filled
         const inputs = formElement.querySelectorAll('input[required], select[required], textarea[required]');
         let isValid = true;
-        
+
         inputs.forEach(input => {
             if (!input.value.trim()) {
                 input.classList.add('error');
@@ -476,12 +487,13 @@ class Utils {
                 input.classList.add('valid');
             }
         });
-        
+
         return isValid;
     }
-    
+
     // Storage utilities
     static saveToLocalStorage(key, data) {
+        // Save object to browser storage
         try {
             localStorage.setItem(key, JSON.stringify(data));
             return true;
@@ -490,8 +502,9 @@ class Utils {
             return false;
         }
     }
-    
+
     static getFromLocalStorage(key, defaultValue = null) {
+        // Retrieve object from browser storage
         try {
             const item = localStorage.getItem(key);
             return item ? JSON.parse(item) : defaultValue;
@@ -500,8 +513,9 @@ class Utils {
             return defaultValue;
         }
     }
-    
+
     static removeFromLocalStorage(key) {
+        // Delete item from browser storage
         try {
             localStorage.removeItem(key);
             return true;
@@ -513,20 +527,22 @@ class Utils {
     
     // File utilities
     static downloadFile(content, filename, contentType = 'application/json') {
+        // Trigger file download with blob
         const blob = new Blob([content], { type: contentType });
         const url = URL.createObjectURL(blob);
-        
+
         const link = document.createElement('a');
         link.href = url;
         link.download = filename;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        
+
         URL.revokeObjectURL(url);
     }
-    
+
     static readFile(file) {
+        // Read text content from file
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = (e) => resolve(e.target.result);
@@ -534,75 +550,159 @@ class Utils {
             reader.readAsText(file);
         });
     }
-    
+
     // Color utilities for charts
     static getChartColors(count) {
+        // Generate color array for charts
         const colors = [
             '#007AFF', '#34C759', '#FF9500', '#FF3B30', '#5856D6',
             '#00C7BE', '#FF2D92', '#A2845E', '#8E8E93', '#AEAEB2'
         ];
-        
+
         const result = [];
         for (let i = 0; i < count; i++) {
             result.push(colors[i % colors.length]);
         }
         return result;
     }
-    
+
     static hexToRgba(hex, alpha = 1) {
+        // Convert hex color to rgba with alpha
         const r = parseInt(hex.slice(1, 3), 16);
         const g = parseInt(hex.slice(3, 5), 16);
         const b = parseInt(hex.slice(5, 7), 16);
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
-    
-    // Touch gesture utilities
-    static addSwipeListener(element, onSwipeLeft, onSwipeRight, threshold = 50) {
+
+    // Touch/Pointer gesture utilities (robust swipe detection)
+    static addSwipeListener(element, onSwipeLeft, onSwipeRight, threshold = 30) {
+        // Improved swipe detection with pointer events fallback to touch
+        // - Uses direction lock (horizontal vs vertical)
+        // - Works even if no touchmove fires (uses changedTouches/pointerup coords)
+        // - Lower threshold for reliability on small screens
+
         let startX = 0;
         let startY = 0;
-        let endX = 0;
-        let endY = 0;
-        
-        element.addEventListener('touchstart', (e) => {
-            startX = e.touches[0].clientX;
-            startY = e.touches[0].clientY;
-        }, { passive: true });
-        
-        element.addEventListener('touchmove', (e) => {
-            endX = e.touches[0].clientX;
-            endY = e.touches[0].clientY;
-            
-            const deltaX = endX - startX;
-            const deltaY = Math.abs(endY - startY);
-            
-            // Only trigger if horizontal swipe is dominant
-            if (Math.abs(deltaX) > threshold && deltaY < threshold) {
+        let lastX = 0;
+        let lastY = 0;
+        let startTime = 0;
+        let directionLocked = null; // 'horizontal' | 'vertical' | null
+        let activePointerId = null;
+
+        const reset = () => {
+            directionLocked = null;
+            activePointerId = null;
+            element.classList.remove('swipe-left');
+        };
+
+        const handleMove = (currentX, currentY) => {
+            const deltaX = currentX - startX;
+            const deltaY = Math.abs(currentY - startY);
+
+            // Lock direction after small movement to avoid scroll conflicts
+            if (!directionLocked) {
+                if (Math.abs(deltaX) > 10 && deltaY < Math.abs(deltaX)) {
+                    directionLocked = 'horizontal';
+                } else if (deltaY > 10) {
+                    directionLocked = 'vertical';
+                }
+            }
+
+            if (directionLocked === 'horizontal') {
+                // Visual feedback while swiping
                 if (deltaX < 0) {
                     element.classList.add('swipe-left');
                 } else {
                     element.classList.remove('swipe-left');
                 }
             }
-        }, { passive: true });
-        
-        element.addEventListener('touchend', (e) => {
+
+            lastX = currentX;
+            lastY = currentY;
+        };
+
+        const handleEnd = (endX, endY) => {
             const deltaX = endX - startX;
             const deltaY = Math.abs(endY - startY);
-            
-            if (Math.abs(deltaX) > threshold && deltaY < threshold) {
-                if (deltaX < 0 && onSwipeLeft) {
+
+            if (directionLocked === 'horizontal' || (Math.abs(deltaX) > threshold && deltaY < threshold)) {
+                if (deltaX < -threshold && typeof onSwipeLeft === 'function') {
                     onSwipeLeft(element);
-                } else if (deltaX > 0 && onSwipeRight) {
+                } else if (deltaX > threshold && typeof onSwipeRight === 'function') {
                     onSwipeRight(element);
                 }
             }
-            
-            element.classList.remove('swipe-left');
-        }, { passive: true });
+
+            reset();
+        };
+
+        if (window.PointerEvent) {
+            // Pointer events path (covers mouse, touch, pen)
+            element.addEventListener('pointerdown', (e) => {
+                // Only track primary pointer and ignore right-click
+                if (!e.isPrimary || e.button !== 0) return;
+                activePointerId = e.pointerId;
+                startX = e.clientX;
+                startY = e.clientY;
+                lastX = startX;
+                lastY = startY;
+                startTime = performance.now();
+                directionLocked = null;
+            });
+
+            element.addEventListener('pointermove', (e) => {
+                if (!e.isPrimary || activePointerId !== e.pointerId) return;
+                handleMove(e.clientX, e.clientY);
+            });
+
+            element.addEventListener('pointerup', (e) => {
+                if (!e.isPrimary || activePointerId !== e.pointerId) return;
+                handleEnd(e.clientX, e.clientY);
+            });
+
+            element.addEventListener('pointercancel', reset);
+            element.addEventListener('pointerleave', () => {
+                // If pointer leaves and we had a significant left swipe, still handle it
+                if (directionLocked === 'horizontal') {
+                    handleEnd(lastX, lastY);
+                } else {
+                    reset();
+                }
+            });
+        } else {
+            // Touch events fallback
+            element.addEventListener('touchstart', (e) => {
+                if (e.touches.length > 1) return; // ignore multi-touch
+                const t = e.touches[0];
+                startX = t.clientX;
+                startY = t.clientY;
+                lastX = startX;
+                lastY = startY;
+                startTime = performance.now();
+                directionLocked = null;
+            }, { passive: true });
+
+            element.addEventListener('touchmove', (e) => {
+                if (e.touches.length > 1) return;
+                const t = e.touches[0];
+                handleMove(t.clientX, t.clientY);
+            }, { passive: true });
+
+            element.addEventListener('touchend', (e) => {
+                const t = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0] : { clientX: lastX, clientY: lastY };
+                // Ensure we have valid last positions even if no move fired
+                const endX = t.clientX ?? lastX;
+                const endY = t.clientY ?? lastY;
+                handleEnd(endX, endY);
+            }, { passive: true });
+
+            element.addEventListener('touchcancel', reset, { passive: true });
+        }
     }
-    
+
     // URL utilities
     static getURLParams() {
+        // Parse URL query parameters
         const params = new URLSearchParams(window.location.search);
         const result = {};
         for (let [key, value] of params.entries()) {
@@ -610,8 +710,9 @@ class Utils {
         }
         return result;
     }
-    
+
     static updateURL(params) {
+        // Update browser URL with new params
         const url = new URL(window.location);
         Object.keys(params).forEach(key => {
             if (params[key] !== null && params[key] !== undefined) {
@@ -622,73 +723,82 @@ class Utils {
         });
         window.history.replaceState({}, '', url);
     }
-    
+
     // Device utilities
     static isMobile() {
+        // Check if viewport is mobile width
         return window.innerWidth <= 768;
     }
-    
+
     static isTablet() {
+        // Check if viewport is tablet width
         return window.innerWidth > 768 && window.innerWidth <= 1024;
     }
-    
+
     static isDesktop() {
+        // Check if viewport is desktop width
         return window.innerWidth > 1024;
     }
-    
+
     static isTouchDevice() {
+        // Check if device supports touch
         return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     }
-    
+
     static isStandalone() {
+        // Check if running as PWA
         return window.matchMedia('(display-mode: standalone)').matches ||
                window.navigator.standalone === true;
     }
-    
+
     // Animation utilities
     static animateValue(element, start, end, duration, formatter = (val) => val) {
+        // Animate number display with easing
         const startTime = performance.now();
-        
+
         function animate(currentTime) {
             const elapsed = currentTime - startTime;
             const progress = Math.min(elapsed / duration, 1);
-            
+
             // Easing function (ease-out)
             const easeOut = 1 - Math.pow(1 - progress, 3);
             const current = start + (end - start) * easeOut;
-            
+
             element.textContent = formatter(Math.round(current));
-            
+
             if (progress < 1) {
                 requestAnimationFrame(animate);
             }
         }
-        
+
         requestAnimationFrame(animate);
     }
-    
+
     // Error handling utilities
     static handleError(error, context = '') {
+        // Log error and show user message
         console.error(`Error in ${context}:`, error);
-        
+
         let message = 'Une erreur est survenue';
         if (error.message) {
             message = error.message;
         }
-        
+
         this.showMessage(message, 'error');
     }
-    
+
     // Performance utilities
     static measurePerformance(name, fn) {
+        // Time synchronous function execution
         const start = performance.now();
         const result = fn();
         const end = performance.now();
         console.log(`${name} took ${end - start} milliseconds`);
         return result;
     }
-    
+
     static async measureAsyncPerformance(name, fn) {
+        // Time async function execution
         const start = performance.now();
         const result = await fn();
         const end = performance.now();

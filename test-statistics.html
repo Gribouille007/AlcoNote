@@ -48,14 +48,14 @@
                 // Add test drinks with various dates and locations
                 await db.drinks.clear();
                 const testDrinks = [
-                    // Today's drinks
+                    // Today's drinks (2025-09-21)
                     {
                         name: 'Heineken',
                         category: 'Bière',
                         quantity: 1,
                         unit: 'EcoCup',
                         alcoholContent: 5,
-                        date: '2025-09-02',
+                        date: '2025-09-21',
                         time: '18:00',
                         location: {
                             latitude: 50.8503,
@@ -71,7 +71,7 @@
                         quantity: 1,
                         unit: 'EcoCup',
                         alcoholContent: 5.2,
-                        date: '2025-09-02',
+                        date: '2025-09-21',
                         time: '19:30',
                         location: {
                             latitude: 50.8503,
@@ -87,7 +87,7 @@
                         quantity: 150,
                         unit: 'cL',
                         alcoholContent: 12.5,
-                        date: '2025-09-02',
+                        date: '2025-09-21',
                         time: '20:15',
                         location: {
                             latitude: 50.8503,
@@ -97,14 +97,14 @@
                         createdAt: now,
                         updatedAt: now
                     },
-                    // Yesterday's drinks
+                    // Previous days' drinks
                     {
                         name: 'Leffe Blonde',
                         category: 'Bière',
                         quantity: 1,
                         unit: 'EcoCup',
                         alcoholContent: 6.6,
-                        date: '2025-09-01',
+                        date: '2025-09-20',
                         time: '17:45',
                         location: {
                             latitude: 50.8467,
@@ -120,7 +120,7 @@
                         quantity: 4,
                         unit: 'cL',
                         alcoholContent: 40,
-                        date: '2025-09-01',
+                        date: '2025-09-19',
                         time: '22:00',
                         location: {
                             latitude: 50.8467,
@@ -130,14 +130,14 @@
                         createdAt: now,
                         updatedAt: now
                     },
-                    // Last week's drinks
+                    // This week's drinks
                     {
                         name: 'Jupiler',
                         category: 'Bière',
                         quantity: 2,
                         unit: 'EcoCup',
                         alcoholContent: 5.2,
-                        date: '2025-08-26',
+                        date: '2025-09-18',
                         time: '16:30',
                         location: {
                             latitude: 50.8400,
@@ -153,7 +153,7 @@
                         quantity: 200,
                         unit: 'cL',
                         alcoholContent: 13,
-                        date: '2025-08-26',
+                        date: '2025-09-17',
                         time: '19:00',
                         location: {
                             latitude: 50.8400,
@@ -170,7 +170,7 @@
                         quantity: 1,
                         unit: 'EcoCup',
                         alcoholContent: 4.5,
-                        date: '2025-08-30',
+                        date: '2025-09-15',
                         time: '15:00',
                         location: {
                             latitude: 50.8200,
@@ -186,7 +186,7 @@
                         quantity: 3,
                         unit: 'cL',
                         alcoholContent: 37.5,
-                        date: '2025-08-31',
+                        date: '2025-09-14',
                         time: '23:30',
                         location: {
                             latitude: 50.8200,
@@ -202,7 +202,7 @@
                         quantity: 125,
                         unit: 'cL',
                         alcoholContent: 11.5,
-                        date: '2025-08-28',
+                        date: '2025-09-10',
                         time: '18:45',
                         location: {
                             latitude: 50.8300,

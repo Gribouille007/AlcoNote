@@ -172,6 +172,40 @@ class DatabaseManager {
             console.error('Error updating category drink count:', error);
         }
     }
+
+    async renameCategory(oldName, newName) {
+        try {
+            const trimmedOld = (oldName || '').trim();
+            const trimmedNew = (newName || '').trim();
+            if (!trimmedNew) {
+                throw new Error('Le nouveau nom de catégorie est invalide');
+            }
+            if (trimmedOld === trimmedNew) {
+                return true;
+            }
+            const existing = await this.getCategoryByName(trimmedNew);
+            if (existing) {
+                throw new Error('Une catégorie avec ce nom existe déjà');
+            }
+            const category = await this.getCategoryByName(trimmedOld);
+            if (!category) {
+                throw new Error('Catégorie non trouvée');
+            }
+
+            // Transaction: update category name and cascade to drinks
+            await this.db.transaction('rw', this.db.categories, this.db.drinks, async () => {
+                await this.db.categories.update(category.id, { name: trimmedNew });
+                await this.db.drinks.where('category').equals(trimmedOld).modify({ category: trimmedNew });
+            });
+
+            // Update drink counts for new name
+            await this.updateCategoryDrinkCount(trimmedNew);
+            return true;
+        } catch (error) {
+            console.error('Error renaming category:', error);
+            throw error;
+        }
+    }
     
     // Drink operations
     async getAllDrinks() {

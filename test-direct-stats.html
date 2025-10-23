@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Direct Statistiques</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug { background: #f0f0f0; padding: 10px; margin: 5px 0; border-radius: 3px; }
+        .error { background: #ffe6e6; }
+        .success { background: #e6ffe6; }
+        .stats-section { border: 1px solid #ccc; margin: 10px 0; padding: 15px; }
+    </style>
+</head>
+<body>
+    <h1>Test Direct Statistiques</h1>
+    <div id="debug-output"></div>
+    <div id="stats-output"></div>
+
+    <script src="js/utils.js"></script>
+    <script src="js/stats-calculators/general.js"></script>
+
+    <script>
+        const testDrinks = [
+            {
+                id: 1,
+                name: 'Heineken',
+                category: 'Bière',
+                quantity: 1,
+                unit: 'EcoCup',
+                alcoholContent: 5,
+                date: '2025-09-29',
+                time: '18:00'
+            },
+            {
+                id: 2,
+                name: 'Vin Rouge',
+                category: 'Vin',
+                quantity: 150,
+                unit: 'cL',
+                alcoholContent: 12.5,
+                date: '2025-09-29',
+                time: '20:00'
+            }
+        ];
+
+        const testDateRange = {
+            start: '2025-09-29',
+            end: '2025-09-29'
+        };
+
+        function debug(message, type = 'info') {
+            const output = document.getElementById('debug-output');
+            const div = document.createElement('div');
+            div.className = `debug ${type}`;
+            div.innerHTML = `${message}`;
+            output.appendChild(div);
+        }
+
+        async function testDirectStats() {
+            debug('=== Test Direct des Calculateurs ===');
+            
+            try {
+                // Mock dbManager basique pour les tests
+                window.dbManager = {
+                    getAllDrinks: async () => testDrinks,
+                    getAllSettings: async () => ({ userWeight: 70, userGender: 'male' }),
+                    getDrinksByDateRange: async () => testDrinks
+                };
+                
+                debug('Mock dbManager créé', 'success');
+                
+                // Test du calculateur général
+                if (window.GeneralStatsCalculator) {
+                    debug('GeneralStatsCalculator trouvé', 'success');
+                    
+                    const stats = await GeneralStatsCalculator.calculateGeneralStats(
+                        testDrinks, 
+                        testDateRange, 
+                        { currentPeriod: 'today' }
+                    );
+                    
+                    debug('Statistiques calculées avec succès', 'success');
+                    debug(`Total boissons: ${stats.totalDrinks}`, 'success');
+                    debug(`Volume total: ${stats.totalVolume}cL`, 'success');
+                    debug(`Alcool total: ${stats.totalAlcohol}g`, 'success');
+                    
+                    // Affichage des stats
+                    const statsDiv = document.getElementById('stats-output');
+                    statsDiv.innerHTML = `
+                        <div class="stats-section">
+                            <h3>Statistiques Test</h3>
+                            <p>Total boissons: ${stats.totalDrinks}</p>
+                            <p>Volume total: ${(stats.totalVolume/100).toFixed(2)}L</p>
+                            <p>Alcool total: ${stats.totalAlcohol}g</p>
+                            <p>Sessions: ${stats.totalSessions}</p>
+                            <p>Boissons uniques: ${stats.uniqueDrinks}</p>
+                        </div>
+                    `;
+                    
+                } else {
+                    debug('GeneralStatsCalculator NON TROUVÉ', 'error');
+                }
+                
+            } catch (error) {
+                debug(`Erreur: ${error.message}`, 'error');
+                console.error('Erreur complète:', error);
+            }
+        }
+
+        // Lancement du test
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(testDirectStats, 500);
+        });
+    </script>
+</body>
+</html>

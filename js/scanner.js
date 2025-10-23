@@ -5,41 +5,52 @@ class BarcodeScanner {
     constructor() {
         this.isInitialized = false;
         this.isScanning = false;
+        this.isStarting = false;
         this.stream = null;
         this.config = {
             inputStream: {
                 name: "Live",
                 type: "LiveStream",
-                target: document.querySelector('#scanner-viewport'),
+                target: '#scanner-viewport',
                 constraints: {
                     width: 640,
                     height: 480,
                     facingMode: "environment" // Use back camera
-                }
+                },
+                area: { top: "20%", right: "10%", left: "10%", bottom: "20%" }
             },
             locator: {
-                patchSize: "medium",
+                patchSize: "large",
                 halfSample: true
             },
             numOfWorkers: 2,
             frequency: 10,
             decoder: {
                 readers: [
-                    "code_128_reader",
                     "ean_reader",
                     "ean_8_reader",
-                    "code_39_reader",
-                    "code_39_vin_reader",
-                    "codabar_reader",
-                    "upc_reader",
                     "upc_e_reader",
-                    "i2of5_reader"
+                    "code_128_reader"
                 ]
             },
             locate: true
         };
         this.onDetected = null;
         this.onError = null;
+        this.inactivityTimeout = null;
+        this.inactivityDuration = 30000; // 30 seconds
+        this.hasDetected = false;
+        this.fallbackTimer = null;
+        this.broadReaders = [
+            "ean_reader",
+            "ean_8_reader",
+            "upc_reader",
+            "upc_e_reader",
+            "code_128_reader",
+            "code_39_reader",
+            "codabar_reader",
+            "i2of5_reader"
+        ];
     }
     
     // Initialize the scanner
@@ -56,7 +67,11 @@ class BarcodeScanner {
                 return;
             }
             
-            Quagga.init(this.config, (err) => {
+                            // Ensure target element is resolved at init time
+                const targetEl = document.getElementById('scanner-viewport') || document.body;
+                this.config.inputStream.target = targetEl;
+
+                Quagga.init(this.config, (err) => {
                 if (err) {
                     console.error('Scanner initialization failed:', err);
                     reject(err);
@@ -74,34 +89,38 @@ class BarcodeScanner {
     setupEventListeners() {
         Quagga.onDetected((result) => {
             if (this.isScanning) {
+                this.hasDetected = true;
                 const code = result.codeResult.code;
                 console.log('Barcode detected:', code);
-                
+
+                // Reset inactivity timer on detection
+                this.resetInactivityTimer();
+
                 // Stop scanning after detection
                 this.stop();
-                
+
                 if (this.onDetected) {
                     this.onDetected(code);
                 }
             }
         });
-        
+
         Quagga.onProcessed((result) => {
             const drawingCtx = Quagga.canvas.ctx.overlay;
             const drawingCanvas = Quagga.canvas.dom.overlay;
-            
-            if (result) {
+
+            if (result && this.isScanning) {
                 if (result.boxes) {
                     drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.getAttribute("width")), parseInt(drawingCanvas.getAttribute("height")));
                     result.boxes.filter((box) => box !== result.box).forEach((box) => {
                         Quagga.ImageDebug.drawPath(box, {x: 0, y: 1}, drawingCtx, {color: "green", lineWidth: 2});
                     });
                 }
-                
+
                 if (result.box) {
                     Quagga.ImageDebug.drawPath(result.box, {x: 0, y: 1}, drawingCtx, {color: "#00F", lineWidth: 2});
                 }
-                
+
                 if (result.codeResult && result.codeResult.code) {
                     Quagga.ImageDebug.drawPath(result.line, {x: 'x', y: 'y'}, drawingCtx, {color: 'red', lineWidth: 3});
                 }
@@ -112,33 +131,57 @@ class BarcodeScanner {
     // Start scanning
     async start() {
         try {
+            if (this.isStarting || this.isScanning) {
+                return;
+            }
+            this.isStarting = true;
             if (!this.isInitialized) {
                 await this.init();
             }
-            
+
             Quagga.start();
             this.isScanning = true;
-            
+            this.scheduleFallbackProfile();
+
             // Update status
             this.updateStatus('Recherche de code-barres...');
+
+            // Set up inactivity timeout to stop camera if no barcode is detected
+            this.startInactivityTimer();
             
+            // Mark starting completed
+            this.isStarting = false;
+
         } catch (error) {
             console.error('Failed to start scanner:', error);
             this.updateStatus('Erreur lors du démarrage du scanner');
-            
+
             if (this.onError) {
                 this.onError(error);
             }
+            // Ensure starting flag is reset on failure
+            this.isStarting = false;
         }
     }
     
-    // Stop scanning
+        // Stop scanning
     stop() {
-        if (this.isInitialized && this.isScanning) {
-            Quagga.stop();
+        try {
+            if (this.isInitialized) {
+                try {
+                    Quagga.stop();
+                } catch (e) {
+                    console.warn('Quagga.stop() failed or not running:', e);
+                }
+            }
+        } finally {
             this.isScanning = false;
             this.updateStatus('Scanner arrêté');
-            
+
+            // Clear inactivity timer
+            this.clearInactivityTimer();
+            this.clearFallbackTimer();
+
             // Properly stop camera stream
             this.stopCameraStream();
         }
@@ -147,19 +190,40 @@ class BarcodeScanner {
     // Stop camera stream to free up resources
     stopCameraStream() {
         try {
-            // Get all video tracks and stop them
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                const videoElement = document.querySelector('#scanner-viewport video');
-                if (videoElement && videoElement.srcObject) {
+            // First, ask Quagga to release the camera if available
+            if (typeof Quagga !== 'undefined' && Quagga.CameraAccess && typeof Quagga.CameraAccess.release === 'function') {
+                try {
+                    Quagga.CameraAccess.release();
+                } catch (e) {
+                    console.warn('Quagga.CameraAccess.release() failed:', e);
+                }
+            }
+
+            // Stop all video tracks attached to our viewport
+            const videos = document.querySelectorAll('#scanner-viewport video');
+            videos.forEach(videoElement => {
+                if (videoElement.srcObject) {
                     const stream = videoElement.srcObject;
                     const tracks = stream.getTracks();
                     tracks.forEach(track => {
-                        track.stop();
-                        console.log('Camera track stopped:', track.kind);
+                        try {
+                            track.stop();
+                            console.log('Camera track stopped:', track.kind);
+                        } catch (_) {}
                     });
                     videoElement.srcObject = null;
                 }
-            }
+            });
+
+            // As a final fallback, stop any active media tracks in the document
+            document.querySelectorAll('video').forEach(v => {
+                if (v.srcObject) {
+                    v.srcObject.getTracks().forEach(t => {
+                        try { t.stop(); } catch (_) {}
+                    });
+                    v.srcObject = null;
+                }
+            });
         } catch (error) {
             console.error('Error stopping camera stream:', error);
         }
@@ -334,6 +398,24 @@ class BarcodeScanner {
     // Auto-save beer products
     async autoSaveBeer(productInfo) {
         try {
+            // Ensure consent once; do not nag repeatedly
+            try { await geoManager.ensureConsent(); } catch (_) {}
+
+            // Get current or last known location; if none, block autosave
+            let location = null;
+            try {
+                location = await geoManager.getLocationForDrink();
+            } catch (e) {
+                location = null;
+            }
+            if (!location) {
+                location = geoManager.getLastKnownLocation();
+            }
+            if (!location) {
+                Utils.showMessage('Localisation requise pour ajouter une boisson. Veuillez autoriser la localisation puis réessayer.', 'error');
+                throw new Error('Location required for auto-save');
+            }
+
             const drinkData = {
                 name: productInfo.name,
                 category: productInfo.category,
@@ -343,7 +425,7 @@ class BarcodeScanner {
                 date: Utils.getCurrentDate(),
                 time: Utils.getCurrentTime(),
                 barcode: productInfo.barcode,
-                location: await geoManager.getLocationForDrink()
+                location: location
             };
             
             const savedDrink = await dbManager.addDrink(drinkData);
@@ -614,7 +696,7 @@ class BarcodeScanner {
     initScannerModal() {
         const scannerModal = document.getElementById('scanner-modal');
         const closeButtons = scannerModal.querySelectorAll('.modal-close');
-        
+
         // Setup close button handlers
         closeButtons.forEach(button => {
             button.addEventListener('click', () => {
@@ -622,7 +704,7 @@ class BarcodeScanner {
                 Utils.closeModal('scanner-modal');
             });
         });
-        
+
         // Setup modal open/close handlers
         scannerModal.addEventListener('transitionend', (e) => {
             if (e.target === scannerModal) {
@@ -635,30 +717,55 @@ class BarcodeScanner {
                 }
             }
         });
-        
+
+        // Fallback: observe class changes to robustly start/stop even if no transition fires
+        const classObserver = new MutationObserver((mutations) => {
+            for (const m of mutations) {
+                if (m.type === 'attributes' && m.attributeName === 'class') {
+                    if (scannerModal.classList.contains('active')) {
+                        this.startScanning();
+                    } else {
+                        this.stop();
+                    }
+                }
+            }
+        });
+        classObserver.observe(scannerModal, { attributes: true });
+
+        // Ensure camera stops on page lifecycle events
+        window.addEventListener('pagehide', () => this.stop());
+        window.addEventListener('beforeunload', () => this.stop());
+        window.addEventListener('blur', () => {
+            if (this.isScanning) this.stop();
+        });
+
+        // Setup visibility change handler to stop camera when page becomes hidden
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && this.isScanning) {
+                console.log('Page became hidden, stopping scanner to save battery');
+                this.stop();
+            }
+        });
+
         // Setup barcode detection handler
         this.onDetected = (barcode) => {
             this.handleBarcodeDetected(barcode);
         };
-        
+
         this.onError = (error) => {
             Utils.showMessage('Erreur du scanner: ' + error.message, 'error');
         };
     }
     
-    // Start scanning process
+        // Start scanning process
     async startScanning() {
         try {
-            // Check camera permission first
-            const permission = await this.checkCameraPermission();
-            
-            if (!permission.granted) {
-                this.updateStatus(permission.error);
-                Utils.showMessage(permission.error, 'error');
+            // Avoid duplicate starts
+            if (this.isScanning || this.isStarting) {
                 return;
             }
-            
-            // Start the scanner
+
+            // Start the scanner; browser will prompt for permission if needed
             await this.start();
             
         } catch (error) {
@@ -688,21 +795,85 @@ class BarcodeScanner {
     async switchCamera() {
         const currentFacingMode = this.config.inputStream.constraints.facingMode;
         const newFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
-        
+
         this.config.inputStream.constraints.facingMode = newFacingMode;
-        
+
         if (this.isScanning) {
             this.stop();
             await this.start();
         }
     }
-    
+
+    // After starting, auto-widen readers if nothing detected
+    scheduleFallbackProfile(timeoutMs = 10000) {
+        this.clearFallbackTimer();
+        this.hasDetected = false;
+        this.fallbackTimer = setTimeout(() => {
+            if (this.isScanning && !this.hasDetected) {
+                console.log('No detection yet, widening decoder readers for robustness');
+                this.reconfigureReaders(this.broadReaders);
+                Utils.showMessage('Recherche de codes élargie pour une meilleure détection', 'info');
+            }
+        }, timeoutMs);
+    }
+
+    clearFallbackTimer() {
+        if (this.fallbackTimer) {
+            clearTimeout(this.fallbackTimer);
+            this.fallbackTimer = null;
+        }
+    }
+
+    reconfigureReaders(readers) {
+        try {
+            // Stop current scanning, update config, and restart
+            Quagga.stop();
+            this.config.decoder.readers = readers;
+            Quagga.init(this.config, (err) => {
+                if (err) {
+                    console.error('Reconfiguration failed:', err);
+                    return;
+                }
+                Quagga.start();
+            });
+        } catch (e) {
+            console.error('Error reconfiguring readers', e);
+        }
+    }
+
+    // Start inactivity timer to auto-stop camera if no barcode is detected
+    startInactivityTimer() {
+        this.clearInactivityTimer();
+        this.inactivityTimeout = setTimeout(() => {
+            if (this.isScanning) {
+                console.log('No barcode detected in 30 seconds, stopping scanner');
+                this.stop();
+                Utils.showMessage('Arrêt automatique du scanner (inactivité)', 'info');
+            }
+        }, this.inactivityDuration);
+    }
+
+    // Clear the inactivity timer
+    clearInactivityTimer() {
+        if (this.inactivityTimeout) {
+            clearTimeout(this.inactivityTimeout);
+            this.inactivityTimeout = null;
+        }
+    }
+
+    // Reset the inactivity timer (called when processing frames)
+    resetInactivityTimer() {
+        this.clearInactivityTimer();
+        this.startInactivityTimer();
+    }
+
     // Cleanup resources
     cleanup() {
         this.stop();
         this.isInitialized = false;
         this.onDetected = null;
         this.onError = null;
+        this.clearInactivityTimer();
     }
 }
 

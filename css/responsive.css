@@ -243,11 +243,12 @@
 
 /* Tablet Landscape & Small Desktop (1025px - 1440px) */
 @media screen and (min-width: 1025px) and (max-width: 1440px) {
-    /* Container max-width for better readability */
+    /* Full width layout on desktop */
     #app {
-        max-width: 1200px;
-        margin: 0 auto;
-        box-shadow: var(--shadow-lg);
+        max-width: none;
+        width: 100%;
+        margin: 0;
+        box-shadow: none;
     }
     
     .app-header {
@@ -292,11 +293,14 @@
         padding: var(--spacing-xl);
     }
     
-    /* FAB positioning for desktop */
+    /* FAB positioning for desktop - centered */
     .fab-container {
         bottom: var(--spacing-xl);
-        right: var(--spacing-xl);
-        transform: none;
+        left: 50%;
+        transform: translateX(-50%);
+        right: auto;
+        display: flex;
+        justify-content: center;
     }
     
     .fab-main {
@@ -345,7 +349,8 @@
 /* Large Desktop (1441px+) */
 @media screen and (min-width: 1441px) {
     #app {
-        max-width: 1400px;
+        max-width: none;
+        width: 100%;
     }
     
     /* Four-column layout for very large screens */
@@ -526,7 +531,7 @@
 @media (prefers-color-scheme: dark) {
     @media screen and (min-width: 1025px) {
         #app {
-            box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+            box-shadow: none;
         }
     }
     
@@ -623,7 +628,11 @@
     
     .fab-container {
         bottom: max(var(--spacing-lg), env(safe-area-inset-bottom));
-        right: max(50%, env(safe-area-inset-right));
+        left: 50%;
+        transform: translateX(-50%);
+        width: 100%;
+        display: flex;
+        justify-content: center;
     }
     
     .modal {
