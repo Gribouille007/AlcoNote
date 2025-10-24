@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlcoNote - Debug</title>
+    
+    <!-- Feuilles de style principales -->
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <link rel="stylesheet" href="css/accessibility.css">
+
+    <!-- Dexie.js pour IndexedDB -->
+    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
+</head>
+<body>
+    <!-- Interface AlcoNote de base -->
+    <div id="app">
+        <header class="app-header">
+            <button id="settings-btn" class="settings-btn" aria-label="Paramètres">
+                <div class="hamburger-icon">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </button>
+            <h1 class="app-title">AlcoNote Debug</h1>
+            <div class="header-spacer"></div>
+        </header>
+
+        <main class="main-content">
+            <nav class="tab-navigation">
+                <button class="tab-btn active" data-tab="categories">Catégories</button>
+                <button class="tab-btn" data-tab="history">Historique</button>
+                <button class="tab-btn" data-tab="statistics">Statistiques</button>
+            </nav>
+
+            <section id="categories-tab" class="tab-content active">
+                <div class="categories-container">
+                    <div id="categories-list" class="categories-list">
+                        <div id="debug-info" style="padding: 20px; background: #f0f0f0; margin: 20px;">
+                            <h3>État du debug:</h3>
+                            <div id="script-status"></div>
+                            <button onclick="loadNextScript()" style="margin: 10px; padding: 10px;">Charger script suivant</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="history-tab" class="tab-content">
+                <div class="history-container">
+                    <p>Historique</p>
+                </div>
+            </section>
+
+            <section id="statistics-tab" class="tab-content">
+                <div class="statistics-container">
+                    <p>Statistiques</p>
+                </div>
+            </section>
+        </main>
+
+        <div class="fab-container" id="fab-container">
+            <button id="add-category-btn" class="fab-main" aria-label="Ajouter une catégorie">
+                <span class="fab-icon">+</span>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        console.log('Debug script démarré');
+        
+        const scripts = [
+            'js/error-tracking.js',
+            'js/performance-optimizer.js',
+            'js/database.js',
+            'js/utils.js',
+            'js/geolocation.js',
+            'js/scanner.js',
+            'js/app.js'
+        ];
+        
+        let currentScript = 0;
+        let scriptResults = {};
+        
+        function updateStatus() {
+            const statusDiv = document.getElementById('script-status');
+            let html = '<ul>';
+            
+            scripts.forEach((script, index) => {
+                const status = scriptResults[script];
+                let statusText = 'Non chargé';
+                let color = '#999';
+                
+                if (status === 'loading') {
+                    statusText = 'Chargement...';
+                    color = 'orange';
+                } else if (status === 'loaded') {
+                    statusText = 'Chargé OK';
+                    color = 'green';
+                } else if (status === 'error') {
+                    statusText = 'ERREUR';
+                    color = 'red';
+                }
+                
+                html += `<li style="color: ${color}; margin: 5px 0;">${script}: ${statusText}</li>`;
+            });
+            
+            html += '</ul>';
+            html += `<p><strong>Script actuel:</strong> ${currentScript}/${scripts.length}</p>`;
+            statusDiv.innerHTML = html;
+        }
+        
+        function loadNextScript() {
+            if (currentScript >= scripts.length) {
+                console.log('Tous les scripts ont été testés!');
+                return;
+            }
+            
+            const scriptPath = scripts[currentScript];
+            console.log('Chargement de:', scriptPath);
+            
+            scriptResults[scriptPath] = 'loading';
+            updateStatus();
+            
+            const script = document.createElement('script');
+            script.src = scriptPath;
+            
+            script.onload = () => {
+                console.log('Script chargé avec succès:', scriptPath);
+                scriptResults[scriptPath] = 'loaded';
+                currentScript++;
+                updateStatus();
+            };
+            
+            script.onerror = (e) => {
+                console.error('Erreur lors du chargement de:', scriptPath, e);
+                scriptResults[scriptPath] = 'error';
+                currentScript++;
+                updateStatus();
+            };
+            
+            document.head.appendChild(script);
+        }
+        
+        // Navigation basique
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM chargé - navigation activée');
+            
+            const tabButtons = document.querySelectorAll('.tab-btn');
+            const tabContents = document.querySelectorAll('.tab-content');
+            
+            tabButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    console.log('Clic sur onglet:', button.dataset.tab);
+                    
+                    tabButtons.forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                    
+                    tabContents.forEach(content => content.classList.remove('active'));
+                    const targetContent = document.getElementById(button.dataset.tab + '-tab');
+                    if (targetContent) {
+                        targetContent.classList.add('active');
+                    }
+                });
+            });
+            
+            updateStatus();
+        });
+    </script>
+</body>
+</html>

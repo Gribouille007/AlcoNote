@@ -33,6 +33,10 @@
     --bg-secondary: #F2F2F7;       /* Fond secondaire */
     --bg-tertiary: #FFFFFF;        /* Fond tertiaire */
     --bg-grouped: #F2F2F7;         /* Fond des groupes */
+    --bg-popup: #FAFAFA;           /* Fond des pop-ups (gris très clair) */
+
+    /* Mode sombre pour les pop-ups */
+    --bg-popup-dark: #2A2A2A;      /* Fond des pop-ups en mode sombre */
 
     /* Couleurs de texte */
     --text-primary: #000000;       /* Texte principal */
@@ -113,6 +117,9 @@
     --bg-tertiary: #2C2C2E;
     --bg-grouped: #000000;
 
+    /* Mode sombre pour les pop-ups */
+    --bg-popup: var(--bg-popup-dark);
+
     --text-primary: #FFFFFF;
     --text-secondary: #EBEBF5;
     --text-tertiary: #EBEBF599;
@@ -136,6 +143,7 @@
         --bg-secondary: #1C1C1E;
         --bg-tertiary: #2C2C2E;
         --bg-grouped: #000000;
+        --bg-popup: var(--bg-popup-dark);
 
         --text-primary: #FFFFFF;
         --text-secondary: #EBEBF5;
@@ -676,7 +684,7 @@ body {
 
 .stat-card.warning {
     border-color: var(--warning-color);
-    background-color: var(--warning-color)10;
+    background-color: rgba(255, 149, 0, 0.1);
 }
 
 .stat-value {
@@ -702,12 +710,12 @@ body {
 
 .stat-change.positive {
     color: var(--success-color);
-    background-color: var(--success-color)20;
+    background-color: rgba(52, 199, 89, 0.2);
 }
 
 .stat-change.negative {
     color: var(--error-color);
-    background-color: var(--error-color)20;
+    background-color: rgba(255, 59, 48, 0.2);
 }
 
 .chart-container {

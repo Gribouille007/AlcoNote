@@ -1794,13 +1794,37 @@ class AlcoNoteApp {
     
     // Service Worker registration
     async registerServiceWorker() {
-        if ('serviceWorker' in navigator) {
-            try {
-                const registration = await navigator.serviceWorker.register('/sw.js');
-                console.log('Service Worker registered:', registration);
-            } catch (error) {
-                console.error('Service Worker registration failed:', error);
+        if (!('serviceWorker' in navigator)) return;
+        try {
+            const registration = await navigator.serviceWorker.register('/sw.js');
+            console.log('Service Worker registered:', registration);
+
+            // If an updated SW is already waiting, activate it immediately
+            if (registration.waiting) {
+                registration.waiting.postMessage({ type: 'SKIP_WAITING' });
             }
+
+            // When a new SW is found, force activation asap
+            registration.addEventListener('updatefound', () => {
+                const newSW = registration.installing;
+                if (!newSW) return;
+                newSW.addEventListener('statechange', () => {
+                    if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+                        // Page is currently controlled, ask new SW to activate immediately
+                        newSW.postMessage({ type: 'SKIP_WAITING' });
+                    }
+                });
+            });
+
+            // Reload the page once the new SW takes control
+            let refreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (refreshing) return;
+                refreshing = true;
+                window.location.reload();
+            });
+        } catch (error) {
+            console.error('Service Worker registration failed:', error);
         }
     }
     

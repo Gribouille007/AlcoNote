@@ -1,14 +1,15 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v1.0.0';
-const STATIC_CACHE = 'alconote-static-v1.0.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v1.0.0';
+const CACHE_NAME = 'alconote-v1.0.1';
+const STATIC_CACHE = 'alconote-static-v1.0.1';
+const DYNAMIC_CACHE = 'alconote-dynamic-v1.0.1';
+
+// Detect local development environment to avoid stale caches on localhost
+const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
 
 // Files to cache for offline functionality
 const STATIC_FILES = [
-    '/',
-    '/index.html',
     '/manifest.json',
     '/css/main.css',
     '/css/components.css',
@@ -95,6 +96,18 @@ self.addEventListener('fetch', (event) => {
     
     // Skip chrome-extension and other non-http(s) requests
     if (!request.url.startsWith('http')) {
+        return;
+    }
+    
+    // In dev, always prefer network-first for same-origin to keep assets fresh
+    if (IS_DEV && request.url.startsWith(self.location.origin)) {
+        event.respondWith(networkFirst(request));
+        return;
+    }
+    
+    // Ensure fresh HTML for navigations (avoid stale index.html)
+    if (request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html')) {
+        event.respondWith(networkFirst(request));
         return;
     }
     
