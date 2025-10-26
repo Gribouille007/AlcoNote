@@ -7,8 +7,8 @@ class GeolocationManager {
         this.watchId = null;
         this.options = {
             enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 300000 // 5 minutes
+            timeout: 15000,
+            maximumAge: 60000 // 1 minute for higher precision
         };
         this.consent = this.getStoredConsent(); // 'granted' | 'denied' | null
         this.lastKnownLocation = this.getStoredLocation();
@@ -451,7 +451,7 @@ class GeolocationManager {
     }
 
     // Quick position without reverse geocoding (for fast UX)
-    getQuickPosition(highAccuracy = false, timeoutMs = 3000) {
+    getQuickPosition(highAccuracy = true, timeoutMs = 3000) {
         return new Promise((resolve, reject) => {
             if (!this.isSupported) {
                 reject(new Error('Geolocation not supported'));

@@ -266,27 +266,37 @@ class Utils {
         }
     }
     
-    static async calculateBACStats(weightKg, gender, currentTime = new Date()) {
-        // Calculate comprehensive BAC statistics
+    static async calculateBACStats(weightKg, gender, currentTime = new Date(), drinks = []) {
+        // Calculate comprehensive BAC statistics using provided drinks rather than DB lookups
         if (!weightKg || !gender) {
             return null;
         }
-        
-        const relevantDrinks = await this.getRelevantDrinksForBAC(currentTime);
+
+        // If no drinks provided, fallback to last 24 hours
+        const relevantDrinks = drinks.length
+            ? drinks.filter(drink => {
+                if (!drink.date || !drink.time) return false;
+                const drinkDateTime = new Date(`${drink.date}T${drink.time}`);
+                const hoursElapsed = (currentTime - drinkDateTime) / (1000 * 60 * 60);
+                return hoursElapsed >= 0 && hoursElapsed <= 24;
+            })
+            : await this.getRelevantDrinksForBAC(currentTime);
+
+        // Calculate BAC from relevant drinks
         const currentBACMgL = this.calculateCurrentBAC(relevantDrinks, weightKg, gender, currentTime);
-        
+
         // Time to complete sobriety (0 mg/L)
         const timeToSobriety = this.calculateTimeToBAC(currentBACMgL, 0);
-        
-        // Time to legal limit - Belgium: 500 mg/L (0.5‰) for general drivers
-        const legalLimit = 500; // mg/L
+
+        // Time to legal limit - Belgium: 500 mg/L (0.5‰)
+        const legalLimit = 500;
         const timeToLegalLimit = this.calculateTimeToBAC(currentBACMgL, legalLimit);
-        
+
         return {
-            currentBAC: Math.round(currentBACMgL * 100) / 100, // Round to 2 decimal places in mg/L
-            timeToSobriety: timeToSobriety,
+            currentBAC: Math.round(currentBACMgL * 100) / 100,
+            timeToSobriety,
             timeToLegalLimit: Math.max(0, timeToLegalLimit),
-            relevantDrinks: relevantDrinks,
+            relevantDrinks,
             isAboveLegalLimit: currentBACMgL > legalLimit
         };
     }

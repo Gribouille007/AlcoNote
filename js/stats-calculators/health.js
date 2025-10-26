@@ -99,7 +99,7 @@ async function calculateCurrentBAC(userWeight, userGender, drinks) {
     if (!userWeight || !userGender) return null;
     
     try {
-        const bacStats = await Utils.calculateBACStats(userWeight, userGender);
+        const bacStats = await Utils.calculateBACStats(userWeight, userGender, new Date(), drinks);
         return bacStats;
     } catch (error) {
         console.error('Error calculating BAC:', error);

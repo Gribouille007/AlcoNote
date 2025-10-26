@@ -29,6 +29,8 @@
     width: 100%;
     max-height: 90vh;
     overflow-y: auto;
+    overflow-x: hidden;
+    box-sizing: border-box;
     transform: scale(0.9) translateY(20px);
     transition: transform var(--transition-normal);
 }
@@ -62,6 +64,10 @@
     border: 1px solid var(--separator);
     transform: scale(0.8) translateY(50px);
     transition: all var(--transition-spring);
+    max-width: 95vw;
+    width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
 }
 
 .popup-modal.active .popup-content {
@@ -130,6 +136,7 @@
 .form-group select,
 .form-group textarea {
     width: 100%;
+    max-width: 100%;
     padding: var(--spacing-md);
     border: 1px solid var(--separator);
     border-radius: var(--radius-md);
@@ -138,6 +145,7 @@
     background-color: var(--bg-primary);
     color: var(--text-primary);
     transition: all var(--transition-fast);
+    box-sizing: border-box;
 }
 
 .form-group input:focus,
