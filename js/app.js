@@ -37,6 +37,11 @@ class AlcoNoteApp {
             this.isInitialized = true;
             console.log('AlcoNote PWA initialized successfully');
             
+            // Enrichir les anciennes boissons sans adresse
+            if (typeof this.enrichMissingAddresses === 'function') {
+                this.enrichMissingAddresses().catch(console.warn);
+            }
+            
         } catch (error) {
             console.error('Failed to initialize AlcoNote PWA:', error);
             Utils.showMessage('Erreur lors de l\'initialisation de l\'application', 'error');
@@ -406,6 +411,15 @@ class AlcoNoteApp {
     
     // Setup window events
     setupWindowEvents() {
+        // Listen for address updates from geoManager
+        window.addEventListener("addressFound", (e) => {
+            console.log("New address found:", e.detail);
+            // Refresh the current tab to display updated addresses immediately
+            if (window.app && typeof window.app.refreshCurrentTab === "function") {
+                window.app.refreshCurrentTab();
+            }
+        });
+
         // Handle app install prompt
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
@@ -1867,8 +1881,65 @@ class AlcoNoteApp {
         
         console.log(`Theme set to: ${theme}`);
     }
-}
+    
+    // Enrich drinks in history without address (optimized concurrent version)
+    async enrichMissingAddresses() {
+        try {
+            const allDrinks = await dbManager.getAllDrinks();
+            const drinksWithoutAddress = allDrinks.filter(
+                d => d.location && d.location.latitude && !d.location.address
+            );
+            if (drinksWithoutAddress.length === 0) return;
 
+            console.log(`Enriching ${drinksWithoutAddress.length} drinks with missing addresses (optimized)...`);
+
+            // Remove duplicate coordinates to avoid redundant reverse geocoding
+            const uniqueCoords = new Map();
+            for (const d of drinksWithoutAddress) {
+                const key = `${d.location.latitude},${d.location.longitude}`;
+                if (!uniqueCoords.has(key)) uniqueCoords.set(key, d.location);
+            }
+
+            const coordsArray = Array.from(uniqueCoords.values());
+            const concurrency = 5;
+            const results = new Map();
+            let index = 0;
+
+            // Run reverse geocoding in limited concurrent batches
+            const worker = async () => {
+                while (index < coordsArray.length) {
+                    const loc = coordsArray[index++];
+                    try {
+                        const addr = await geoManager.reverseGeocode(loc.latitude, loc.longitude);
+                        if (addr) results.set(`${loc.latitude},${loc.longitude}`, addr);
+                    } catch (e) {
+                        console.warn("Reverse geocode failed for", loc, e);
+                    }
+                }
+            };
+
+            const workers = Array(concurrency).fill(0).map(worker);
+            await Promise.allSettled(workers);
+
+            // Update drinks in parallel (batched updates)
+            const updates = drinksWithoutAddress.map(async drink => {
+                const key = `${drink.location.latitude},${drink.location.longitude}`;
+                const addr = results.get(key);
+                if (addr) {
+                    await dbManager.updateDrink(drink.id, {
+                        location: { ...drink.location, address: addr.formatted || addr.display_name || null }
+                    });
+                }
+            });
+
+            await Promise.allSettled(updates);
+            console.log(`Address enrichment completed (${results.size}/${uniqueCoords.size} resolved).`);
+        } catch (err) {
+            console.warn("Error enriching addresses in background (optimized):", err);
+        }
+    }
+}
+    
 // Initialize the app when DOM is ready
 const app = new AlcoNoteApp();
 

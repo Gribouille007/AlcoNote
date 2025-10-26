@@ -222,9 +222,15 @@ class GeolocationManager {
                         console.warn('Could not get address:', error);
                     }
                     
-                    this.currentPosition = locationData;
-                    this.setStoredLocation(locationData);
-                    resolve(locationData);
+this.currentPosition = locationData;
+this.setStoredLocation(locationData);
+
+// Dispatch event so UI can update immediately once address is found
+if (locationData.address && locationData.address.formatted) {
+    window.dispatchEvent(new CustomEvent('addressFound', { detail: locationData }));
+}
+
+resolve(locationData);
                 },
                 (error) => {
                     reject(this.handleGeolocationError(error));
@@ -262,9 +268,15 @@ class GeolocationManager {
                     console.warn('Could not get address:', error);
                 }
                 
-                this.currentPosition = locationData;
-                this.setStoredLocation(locationData);
-                callback(null, locationData);
+this.currentPosition = locationData;
+this.setStoredLocation(locationData);
+
+// Dispatch event so UI can update immediately once address is found
+if (locationData.address && locationData.address.formatted) {
+    window.dispatchEvent(new CustomEvent('addressFound', { detail: locationData }));
+}
+
+callback(null, locationData);
             },
             (error) => {
                 callback(this.handleGeolocationError(error), null);
