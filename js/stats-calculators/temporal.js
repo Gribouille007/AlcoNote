@@ -15,6 +15,11 @@ async function calculateTemporalStats(drinks, dateRange, options = {}) {
     const dailyDistribution = {};
     const sessions = calculateSessions(drinks);
 
+    // Sécurisation de la durée de période pour éviter les incohérences
+    const daysDiff = typeof normalizeDaysForPeriod !== "undefined"
+        ? normalizeDaysForPeriod(options.currentPeriod || "custom", dateRange.start, dateRange.end)
+        : getDaysDifference(dateRange.start, dateRange.end);
+
     // Initialisation des distributions
     for (let i = 0; i < 24; i++) {
         hourlyDistribution[i] = 0;
@@ -39,20 +44,24 @@ async function calculateTemporalStats(drinks, dateRange, options = {}) {
     });
 
     // Recherche des heures et jours de pointe
-    const peakHour = findPeakValue(hourlyDistribution);
-    const peakDay = findPeakValue(dailyDistribution);
+    const peakHour = findPeakValue(hourlyDistribution) ?? 0;
+    
+    // Corriger le calcul du jour de pointe en plaçant lundi en premier
+    const adjustedDaily = reorderDaysMondayFirst(dailyDistribution);
+    const peakDay = findPeakValue(adjustedDaily) ?? 0;
 
     // Statistiques des sessions
-    const sessionStats = calculateSessionStats(sessions);
+    const sessionStats = calculateSessionStats([...sessions]); // préserver copies avant tri
 
     return {
         hourlyDistribution,
-        dailyDistribution,
+        dailyDistribution: adjustedDaily,
         peakHour: parseInt(peakHour) || 0,
         peakDay: parseInt(peakDay) || 0,
         avgSessionDuration: sessionStats.avgDuration,
         avgTimeBetweenSessions: sessionStats.avgTimeBetween,
         totalSessions: sessions.length,
+        totalDaysAnalyzed: daysDiff,
         firstDrink: drinks.length > 0 ? drinks[drinks.length - 1].date : null,
         lastDrink: drinks.length > 0 ? drinks[0].date : null,
         sessions: sessions.slice(0, 5) // Les 5 dernières sessions pour affichage
@@ -143,13 +152,12 @@ function calculateSessionStats(sessions) {
     const avgDuration = sessionDurations.length > 0 ? 
         sessionDurations.reduce((sum, duration) => sum + duration, 0) / sessionDurations.length : 0;
 
-    // Temps entre les sessions
+    // Trier par ordre chronologique avant calcul des écarts
+    const chronological = [...sessions].sort((a, b) => a.startTime - b.startTime);
     const timeBetweenSessions = [];
-    for (let i = 1; i < sessions.length; i++) {
-        const timeDiff = (sessions[i].startTime - sessions[i-1].endTime) / (1000 * 60 * 60); // heures
-        if (timeDiff > 0) {
-            timeBetweenSessions.push(timeDiff);
-        }
+    for (let i = 1; i < chronological.length; i++) {
+        const timeDiff = (chronological[i].startTime - chronological[i-1].endTime) / (1000 * 60 * 60);
+        if (timeDiff > 0) timeBetweenSessions.push(timeDiff);
     }
     
     const avgTimeBetween = timeBetweenSessions.length > 0 ?
@@ -218,7 +226,7 @@ function analyzeConsumptionPatterns(drinks) {
         // Heures de consommation
         if (hour >= 18 && hour <= 23) {
             eveningDrinks++;
-        } else if (hour >= 23 || hour <= 2) {
+        } else if ((hour >= 23 && hour <= 23) || (hour >= 0 && hour <= 2)) {
             nightDrinks++;
         }
     });
@@ -229,26 +237,41 @@ function analyzeConsumptionPatterns(drinks) {
     patterns.nightDrinker = nightDrinks > drinks.length * 0.3;
     
     // Régularité (au moins une boisson tous les 3 jours en moyenne)
-    const daySpan = getDaysDifference(drinks[drinks.length - 1].date, drinks[0].date);
-    patterns.regularDrinker = daySpan > 0 && (drinks.length / daySpan) >= (1/3);
+    const firstDate = drinks[drinks.length - 1].date;
+    const lastDate = drinks[0].date;
+    const daySpan = getDaysDifference(firstDate, lastDate);
+    patterns.regularDrinker = daySpan > 0 && (drinks.length / daySpan) >= (1 / 3);
 
     return patterns;
 }
 
 /**
- * Calcule la différence en jours entre deux dates
+ * Calcule la différence en jours entre deux dates (inclut début et fin)
  * @param {string} startDate - Date de début
  * @param {string} endDate - Date de fin
  * @returns {number} Nombre de jours
  */
 function getDaysDifference(startDate, endDate) {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const diffTime = Math.abs(end - start);
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    const diffTime = end - start;
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return Math.max(1, diffDays);
 }
 
-// Export pour utilisation dans d'autres modules
+/**
+ * Réordonne les jours pour commencer par lundi
+ */
+function reorderDaysMondayFirst(dailyDistribution) {
+    const reordered = {};
+    const order = [1, 2, 3, 4, 5, 6, 0]; // Lundi -> Dimanche
+    order.forEach(i => {
+        reordered[i] = dailyDistribution[i] ?? 0;
+    });
+    return reordered;
+}
+
+ // Export pour utilisation dans d'autres modules
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         calculateTemporalStats,

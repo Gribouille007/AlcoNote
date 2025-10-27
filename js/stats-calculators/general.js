@@ -40,10 +40,14 @@ async function calculateGeneralStats(drinks, dateRange, options = {}) {
     });
     
     // Calcul des moyennes
-    const daysDiff = getDaysDifference(dateRange.start, dateRange.end) + 1;
+    // Correction de la différence de jours en fonction de la période actuelle
+    const daysDiff = typeof normalizeDaysForPeriod !== "undefined"
+        ? normalizeDaysForPeriod(options.currentPeriod || "custom", dateRange.start, dateRange.end)
+        : getDaysDifference(dateRange.start, dateRange.end);
     const avgPerDay = daysDiff > 0 ? totalDrinks / daysDiff : 0;
-    const avgPerWeek = avgPerDay * 7;
-    const avgPerMonth = avgPerDay * 30.44; // Moyenne de jours par mois
+    // Éviter les extrapolations non réalistes pour les périodes < 7 jours
+    const avgPerWeek = daysDiff >= 7 ? avgPerDay * 7 : totalDrinks;
+    const avgPerMonth = daysDiff >= 30 ? avgPerDay * 30.44 : totalDrinks;
     
     // Calcul des sessions de consommation
     const sessions = calculateSessions(drinks);
@@ -113,16 +117,17 @@ function calculateSessions(drinks) {
 }
 
 /**
- * Calcule la différence en jours entre deux dates
+ * Calcule la différence en jours entre deux dates (inclut début et fin)
  * @param {string} startDate - Date de début
  * @param {string} endDate - Date de fin
  * @returns {number} Nombre de jours
  */
 function getDaysDifference(startDate, endDate) {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const diffTime = Math.abs(end - start);
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    const diffTime = end - start;
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return Math.max(1, diffDays);
 }
 
 /**
@@ -135,7 +140,9 @@ async function calculateSoberDays(dateRange) {
         // Calcul des jours sobres strictement sur la période sélectionnée
         const start = dateRange.start;
         const end = dateRange.end;
-        const daysDiff = getDaysDifference(start, end) + 1;
+        const daysDiff = typeof normalizeDaysForPeriod !== "undefined"
+            ? normalizeDaysForPeriod("custom", start, end)
+            : getDaysDifference(start, end);
 
         // Récupération des boissons uniquement pour la période sélectionnée
         const drinksInRange = await dbManager.getDrinksByDateRange(start, end);
@@ -171,15 +178,24 @@ async function calculatePeriodComparison(currentDateRange, currentPeriod) {
         const currentStats = await calculateBasicStats(currentDrinks, currentDateRange);
         const previousStats = await calculateBasicStats(previousDrinks, previousDateRange);
         
-        // Calcul des changements en pourcentage
+        // Comparaison uniquement si périodes de même durée
+        const currentDays = getDaysDifference(currentDateRange.start, currentDateRange.end);
+        const previousDays = getDaysDifference(previousDateRange.start, previousDateRange.end);
+        
+        if (currentDays !== previousDays) {
+            console.warn('Comparaison de périodes de durées différentes, résultats approximatifs');
+        }
+
         const comparison = {};
         const metrics = ['totalDrinks', 'totalVolume', 'totalAlcohol', 'totalSessions', 'uniqueDrinks', 'soberDays', 'avgPerDay', 'avgPerWeek'];
         
         metrics.forEach(metric => {
-            if (previousStats[metric] === 0) {
-                comparison[metric] = currentStats[metric] > 0 ? 100 : 0;
+            const prev = previousStats[metric] || 0;
+            const curr = currentStats[metric] || 0;
+            if (prev === 0) {
+                comparison[metric] = curr > 0 ? 100 : 0;
             } else {
-                const change = ((currentStats[metric] - previousStats[metric]) / previousStats[metric]) * 100;
+                const change = ((curr - prev) / prev) * 100;
                 comparison[metric] = Math.round(change);
             }
         });
@@ -238,7 +254,7 @@ function getPreviousPeriodRange(currentRange, periodType) {
             
         default:
             // Pour les périodes personnalisées, calculer la durée équivalente
-            const periodLength = getDaysDifference(currentRange.start, currentRange.end) + 1;
+            const periodLength = getDaysDifference(currentRange.start, currentRange.end);
             previousEnd = new Date(currentStart);
             previousEnd.setDate(previousEnd.getDate() - 1);
             previousStart = new Date(previousEnd);
@@ -274,7 +290,9 @@ async function calculateBasicStats(drinks, dateRange) {
         uniqueDrinks.add(drink.name);
     });
     
-    const daysDiff = getDaysDifference(dateRange.start, dateRange.end) + 1;
+    const daysDiff = typeof normalizeDaysForPeriod !== "undefined"
+        ? normalizeDaysForPeriod("custom", dateRange.start, dateRange.end)
+        : getDaysDifference(dateRange.start, dateRange.end);
     const avgPerDay = daysDiff > 0 ? drinks.length / daysDiff : 0;
     const avgPerWeek = avgPerDay * 7;
     

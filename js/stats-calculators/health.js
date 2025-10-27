@@ -54,15 +54,20 @@ async function calculateHealthStats(drinks, dateRange, options = {}) {
     });
     
     // Calcul de la moyenne hebdomadaire
-    const daysDiff = getDaysDifference(dateRange.start, dateRange.end) + 1;
-    const weeklyAlcoholAvg = (totalAlcoholGrams / daysDiff) * 7;
+    const daysDiff = typeof normalizeDaysForPeriod !== "undefined"
+        ? normalizeDaysForPeriod("custom", dateRange.start, dateRange.end)
+        : getDaysDifference(dateRange.start, dateRange.end);
+    // Si la période est inférieure à 7 jours, éviter l'extrapolation incohérente
+    const weeklyAlcoholAvg = daysDiff >= 7 ? (totalAlcoholGrams / daysDiff) * 7 : totalAlcoholGrams;
     
     // Comparaison avec les recommandations OMS
-    const whoRecommendation = getWHORecommendation(userGender);
-    const whoComparison = whoRecommendation ? (weeklyAlcoholAvg / whoRecommendation) * 100 : null;
+    const whoRecommendation = getWHORecommendation(userGender) || 140; // Défaut 140g si non défini
+    const whoComparison = whoRecommendation > 0 ? (weeklyAlcoholAvg / whoRecommendation) * 100 : null;
     
     // Estimation du BAC pour la dernière session
-    const bacEstimation = await calculateCurrentBAC(userWeight, userGender, drinks);
+    // Utiliser la dernière consommation de la période pour un BAC cohérent
+    const lastDrinkDate = drinks.length > 0 ? new Date(drinks[drinks.length - 1].date) : new Date();
+    const bacEstimation = await calculateCurrentBAC(userWeight, userGender, drinks, lastDrinkDate);
     
     // Analyse des risques
     const riskAnalysis = analyzeHealthRisks(weeklyAlcoholAvg, dailyAlcohol, userGender);
@@ -95,11 +100,11 @@ async function calculateHealthStats(drinks, dateRange, options = {}) {
  * @param {Array} drinks - Liste des boissons
  * @returns {Object|null} Estimation du BAC
  */
-async function calculateCurrentBAC(userWeight, userGender, drinks) {
+async function calculateCurrentBAC(userWeight, userGender, drinks, referenceDate = new Date()) {
     if (!userWeight || !userGender) return null;
     
     try {
-        const bacStats = await Utils.calculateBACStats(userWeight, userGender, new Date(), drinks);
+        const bacStats = await Utils.calculateBACStats(userWeight, userGender, referenceDate, drinks);
         return bacStats;
     } catch (error) {
         console.error('Error calculating BAC:', error);
@@ -168,7 +173,7 @@ function analyzeHealthRisks(weeklyAlcohol, dailyAlcohol, userGender) {
     
     // Évaluation de la fréquence
     const drinkingDays = Object.keys(dailyAlcohol).length;
-    const totalDays = 7; // Approximation pour une semaine
+    const totalDays = Object.keys(dailyAlcohol).length > 0 ? Object.keys(dailyAlcohol).length : 7; // Adapter à la période réelle
     const frequency = drinkingDays / totalDays;
     
     if (frequency > 0.8) {
@@ -270,16 +275,17 @@ function getWeekNumber(date) {
 }
 
 /**
- * Calcule la différence en jours entre deux dates
+ * Calcule la différence en jours entre deux dates (inclut début et fin)
  * @param {string} startDate - Date de début
  * @param {string} endDate - Date de fin
  * @returns {number} Nombre de jours
  */
 function getDaysDifference(startDate, endDate) {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const diffTime = Math.abs(end - start);
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    const diffTime = end - start;
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return Math.max(1, diffDays);
 }
 
 /**

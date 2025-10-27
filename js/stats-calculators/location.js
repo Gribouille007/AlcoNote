@@ -390,16 +390,17 @@ function findMostCommonDay(dayDistribution) {
 }
 
 /**
- * Calcule la différence en jours entre deux dates
+ * Calcule la différence en jours entre deux dates (inclut début et fin)
  * @param {string} startDate - Date de début
  * @param {string} endDate - Date de fin
  * @returns {number} Nombre de jours
  */
 function getDaysDifference(startDate, endDate) {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const diffTime = Math.abs(end - start);
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    const diffTime = end - start;
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return Math.max(1, diffDays);
 }
 
 /**
