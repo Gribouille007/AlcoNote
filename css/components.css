@@ -153,6 +153,9 @@
     width: 100%;
     max-width: 100%;
     min-width: 0;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
 }
 
 .form-group input:focus,
@@ -188,6 +191,7 @@
     .form-row .form-group {
         width: 100% !important;
         max-width: 100% !important;
+        flex: none !important;
     }
     
     .form-row .form-group input[type="date"],
@@ -196,6 +200,45 @@
         max-width: 100% !important;
         min-width: 0 !important;
         box-sizing: border-box !important;
+        -webkit-appearance: none !important;
+        -moz-appearance: none !important;
+        appearance: none !important;
+        flex: none !important;
+    }
+}
+
+/* iOS Safari specific fixes */
+@supports (-webkit-touch-callout: none) {
+    /* This targets iOS Safari specifically */
+    .form-row {
+        flex-direction: column !important;
+    }
+    
+    .form-row .form-group {
+        width: 100% !important;
+        max-width: 100% !important;
+        flex: none !important;
+    }
+    
+    .form-group input[type="date"],
+    .form-group input[type="time"] {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        -webkit-appearance: none !important;
+        appearance: none !important;
+        box-sizing: border-box !important;
+        display: block !important;
+        flex: none !important;
+    }
+    
+    /* Ensure inputs in form-row are full width on iOS */
+    .form-row .form-group input,
+    .form-row .form-group select {
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        flex: none !important;
     }
 }
 
