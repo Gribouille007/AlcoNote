@@ -1847,13 +1847,13 @@ class AlcoNoteApp {
         try {
             const settings = await dbManager.getAllSettings();
             const savedTheme = settings.theme;
-            
-            if (savedTheme) {
-                this.setTheme(savedTheme);
+
+            // Only keep dark if explicitly set, otherwise default to light
+            if (savedTheme === 'dark') {
+                this.setTheme('dark');
             } else {
-                // Use system preference as default
-                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                this.setTheme(prefersDark ? 'dark' : 'light');
+                // Default to light theme (includes cases where savedTheme is null, 'light', 'auto', etc.)
+                this.setTheme('light');
             }
         } catch (error) {
             console.error('Error initializing theme:', error);

@@ -136,31 +136,7 @@
     --overlay: rgba(0, 0, 0, 0.6);
 }
 
-/* Mode sombre automatique selon les préférences système */
-@media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-        --bg-primary: #000000;
-        --bg-secondary: #1C1C1E;
-        --bg-tertiary: #2C2C2E;
-        --bg-grouped: #000000;
-        --bg-popup: var(--bg-popup-dark);
-
-        --text-primary: #FFFFFF;
-        --text-secondary: #EBEBF5;
-        --text-tertiary: #EBEBF599;
-        --text-quaternary: #EBEBF566;
-
-        --separator: #54545899;
-        --gray-6: #1C1C1E;
-        --gray-5: #2C2C2E;
-        --gray-4: #3A3A3C;
-        --gray-3: #48484A;
-        --gray-2: #636366;
-        --gray-1: #8E8E93;
-
-        --overlay: rgba(0, 0, 0, 0.6);
-    }
-}
+/* Mode sombre uniquement contrôlé par l'application (pas par le système) */
 
 /* =============================================================================
    TYPOGRAPHIE ET STYLES DE BASE

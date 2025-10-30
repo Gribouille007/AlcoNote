@@ -375,27 +375,7 @@ textarea:valid {
     }
 }
 
-/* Dark mode accessibility */
-@media (prefers-color-scheme: dark) {
-    :root {
-        --text-color: #ffffff;
-        --background-color: #1a1a1a;
-        --border-color: #444444;
-    }
-    
-    input,
-    select,
-    textarea {
-        background-color: #2a2a2a;
-        color: #ffffff;
-        border-color: #444444;
-    }
-    
-    .modal-content {
-        background-color: #2a2a2a;
-        color: #ffffff;
-    }
-}
+/* Dark mode accessibility is now handled by application settings via data-theme attribute */
 
 /* Animation classes for reduced motion */
 .reduce-animations .animate-fade-in,
