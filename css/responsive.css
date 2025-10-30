@@ -74,6 +74,21 @@
         flex-direction: column;
         gap: var(--spacing-sm);
     }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    input[type="date"],
+    input[type="time"] {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
     
     .form-actions {
         flex-direction: column;
