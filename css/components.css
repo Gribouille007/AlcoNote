@@ -178,11 +178,24 @@
 }
 
 /* Specific handling for date/time inputs on mobile to prevent overflow */
-@media (max-width: 480px) {
+@media (max-width: 768px) {
     /* Force all form-row to be vertical on mobile to prevent input overflow */
     .form-row {
         flex-direction: column !important;
         gap: var(--spacing-sm) !important;
+    }
+    
+    .form-row .form-group {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    
+    .form-row .form-group input[type="date"],
+    .form-row .form-group input[type="time"] {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
     }
 }
 
