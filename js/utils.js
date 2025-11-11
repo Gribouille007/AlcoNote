@@ -200,6 +200,8 @@ class Utils {
         let totalBACGL = 0;
 
         drinks.forEach(drink => {
+            if (!drink.date || !drink.time) return;
+            
             // Convert unit to cL
             const volumeInCL = this.convertToStandardUnit(drink.quantity, drink.unit).quantity;
             // Alcohol grams for this drink
@@ -209,15 +211,27 @@ class Utils {
             // Peak BAC contribution for this drink (g/L)
             const peakBACGL = alcoholGrams / (weightKg * r);
 
-            // Time since this drink (hours)
-            const drinkDateTime = new Date(`${drink.date}T${drink.time}`);
-            const hoursElapsed = isNaN(drinkDateTime) ? 0 : Math.max(0, (currentTime - drinkDateTime) / (1000 * 60 * 60));
+            // Time since this drink (hours) - parse carefully to avoid timezone issues
+            try {
+                const [year, month, day] = drink.date.split('-').map(Number);
+                const [hours, minutes] = drink.time.split(':').map(Number);
+                const drinkDateTime = new Date(year, month - 1, day, hours, minutes);
+                
+                if (isNaN(drinkDateTime.getTime())) {
+                    console.warn('Invalid drink datetime:', drink.date, drink.time);
+                    return;
+                }
+                
+                const hoursElapsed = Math.max(0, (currentTime - drinkDateTime) / (1000 * 60 * 60));
 
-            // Apply elimination for this drink
-            const currentBACGL = Math.max(0, peakBACGL - (0.15 * hoursElapsed));
+                // Apply elimination for this drink
+                const currentBACGL = Math.max(0, peakBACGL - (0.15 * hoursElapsed));
 
-            // Add this drink's contribution
-            totalBACGL += currentBACGL;
+                // Add this drink's contribution
+                totalBACGL += currentBACGL;
+            } catch (error) {
+                console.warn('Error parsing drink datetime:', error, drink);
+            }
         });
 
         // Convert g/L to mg/L
@@ -246,15 +260,29 @@ class Utils {
         const yesterday = new Date(currentTime);
         yesterday.setDate(yesterday.getDate() - 1);
         
-        const startDate = yesterday.toISOString().split('T')[0];
-        const endDate = currentTime.toISOString().split('T')[0];
+        // Use local date format to avoid timezone issues
+        const formatLocalDate = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+        
+        const startDate = formatLocalDate(yesterday);
+        const endDate = formatLocalDate(currentTime);
         
         try {
             const drinks = await dbManager.getDrinksByDateRange(startDate, endDate);
             
             // Filter drinks that could still have an effect (within reasonable elimination time)
             return drinks.filter(drink => {
-                const drinkDateTime = new Date(`${drink.date}T${drink.time}`);
+                if (!drink.date || !drink.time) return false;
+                
+                // Parse drink datetime carefully to avoid timezone issues
+                const [year, month, day] = drink.date.split('-').map(Number);
+                const [hours, minutes] = drink.time.split(':').map(Number);
+                const drinkDateTime = new Date(year, month - 1, day, hours, minutes);
+                
                 const hoursElapsed = (currentTime - drinkDateTime) / (1000 * 60 * 60);
                 
                 // Only include drinks from last 24 hours that could still have measurable effect
@@ -276,9 +304,21 @@ class Utils {
         const relevantDrinks = drinks.length
             ? drinks.filter(drink => {
                 if (!drink.date || !drink.time) return false;
-                const drinkDateTime = new Date(`${drink.date}T${drink.time}`);
-                const hoursElapsed = (currentTime - drinkDateTime) / (1000 * 60 * 60);
-                return hoursElapsed >= 0 && hoursElapsed <= 24;
+                
+                try {
+                    // Parse drink datetime carefully to avoid timezone issues
+                    const [year, month, day] = drink.date.split('-').map(Number);
+                    const [hours, minutes] = drink.time.split(':').map(Number);
+                    const drinkDateTime = new Date(year, month - 1, day, hours, minutes);
+                    
+                    if (isNaN(drinkDateTime.getTime())) return false;
+                    
+                    const hoursElapsed = (currentTime - drinkDateTime) / (1000 * 60 * 60);
+                    return hoursElapsed >= 0 && hoursElapsed <= 24;
+                } catch (error) {
+                    console.warn('Error filtering drink for BAC:', error, drink);
+                    return false;
+                }
             })
             : await this.getRelevantDrinksForBAC(currentTime);
 
@@ -297,7 +337,8 @@ class Utils {
             timeToSobriety,
             timeToLegalLimit: Math.max(0, timeToLegalLimit),
             relevantDrinks,
-            isAboveLegalLimit: currentBACMgL > legalLimit
+            isAboveLegalLimit: currentBACMgL > legalLimit,
+            referenceTime: currentTime
         };
     }
     

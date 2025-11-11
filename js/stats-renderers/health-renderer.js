@@ -44,9 +44,10 @@ function renderHealthStats(stats) {
 
 /**
  * Rend la section d'estimation d'alcoolémie
+ * @param {Object} context - Context including referenceDate and drinks
  * @returns {HTMLElement} Section d'estimation BAC
  */
-async function renderBACEstimation() {
+async function renderBACEstimation(context = {}) {
     try {
         const settings = await dbManager.getAllSettings();
         const userWeight = settings.userWeight;
@@ -77,8 +78,22 @@ async function renderBACEstimation() {
             return section;
         }
         
-        // Calculate BAC statistics
-        const bacStats = await Utils.calculateBACStats(userWeight, userGender);
+        // Determine reference time for BAC calculation
+        let referenceTime = new Date();
+        
+        // If we have a specific dateRange in context, use the end of that range as reference
+        if (context.dateRange) {
+            const endDate = context.dateRange.end;
+            // Parse the date and set time to end of day (23:59:59)
+            const [year, month, day] = endDate.split('-').map(Number);
+            referenceTime = new Date(year, month - 1, day, 23, 59, 59);
+        }
+        
+        // Get drinks from context if available, otherwise fetch
+        const drinksForBAC = context.drinks || [];
+        
+        // Calculate BAC statistics with reference time and drinks
+        const bacStats = await Utils.calculateBACStats(userWeight, userGender, referenceTime, drinksForBAC);
         
         if (!bacStats) {
             section.innerHTML = `
@@ -138,15 +153,21 @@ async function renderBACEstimation() {
                 <h4>Consommations prises en compte (${bacStats.relevantDrinks.length})</h4>
                 <div class="relevant-drinks-list">
                     ${bacStats.relevantDrinks.slice(0, 3).map(drink => {
-                        const drinkTime = new Date(`${drink.date}T${drink.time}`);
-                        const hoursAgo = Math.round((new Date() - drinkTime) / (1000 * 60 * 60) * 10) / 10;
-                        return `
-                            <div class="relevant-drink-item">
-                                <span class="drink-name">${drink.name}</span>
-                                <span class="drink-details">${Utils.formatQuantity(drink.quantity, drink.unit)} • ${drink.alcoholContent || 0}%</span>
-                                <span class="drink-time">il y a ${hoursAgo}h</span>
-                            </div>
-                        `;
+                        try {
+                            const [year, month, day] = drink.date.split('-').map(Number);
+                            const [hours, minutes] = drink.time.split(':').map(Number);
+                            const drinkTime = new Date(year, month - 1, day, hours, minutes);
+                            const hoursAgo = Math.round((referenceTime - drinkTime) / (1000 * 60 * 60) * 10) / 10;
+                            return `
+                                <div class="relevant-drink-item">
+                                    <span class="drink-name">${drink.name}</span>
+                                    <span class="drink-details">${Utils.formatQuantity(drink.quantity, drink.unit)} • ${drink.alcoholContent || 0}%</span>
+                                    <span class="drink-time">il y a ${hoursAgo}h</span>
+                                </div>
+                            `;
+                        } catch (e) {
+                            return '';
+                        }
                     }).join('')}
                     ${bacStats.relevantDrinks.length > 3 ? `
                         <div class="more-drinks">+${bacStats.relevantDrinks.length - 3} autre${bacStats.relevantDrinks.length - 3 > 1 ? 's' : ''}</div>

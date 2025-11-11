@@ -176,7 +176,13 @@ class ModularStatisticsManager {
                     wrapper.className = 'stats-section-group health-group';
                     try {
                         if (typeof HealthStatsRenderer.renderBACEstimation === 'function') {
-                            const bacEl = await HealthStatsRenderer.renderBACEstimation();
+                            // Pass context with dateRange and drinks for proper BAC calculation
+                            const bacContext = {
+                                dateRange: ctx?.dateRange,
+                                drinks: ctx?.drinks,
+                                currentPeriod: ctx?.currentPeriod
+                            };
+                            const bacEl = await HealthStatsRenderer.renderBACEstimation(bacContext);
                             if (bacEl) wrapper.appendChild(bacEl);
                         }
                     } catch (e) {
@@ -471,8 +477,8 @@ class ModularStatisticsManager {
                 this.cache.lastCacheKey = cacheKey;
             }
             
-            // Render all sections
-            await this.renderAllSections(container, allStats);
+            // Render all sections (pass drinks for BAC calculation)
+            await this.renderAllSections(container, allStats, drinks);
             
         } catch (error) {
             console.error('Error loading modular statistics:', error);
@@ -522,7 +528,7 @@ class ModularStatisticsManager {
     }
     
     // Render all sections using the modular system
-    async renderAllSections(container, allStats) {
+    async renderAllSections(container, allStats, drinks) {
         const enabledSections = getEnabledSections();
 
         console.log(`Rendering ${enabledSections.length} sections`);
@@ -540,7 +546,8 @@ class ModularStatisticsManager {
                         maps: this.maps,
                         section: section,
                         currentPeriod: this.currentPeriod,
-                        dateRange: this.getDateRange()
+                        dateRange: this.getDateRange(),
+                        drinks: drinks
                     });
 
                     // Convert HTML string to DOM element if needed
