@@ -191,51 +191,34 @@ class Utils {
     }
     
     static calculateCurrentBAC(drinks, weightKg, gender, currentTime = new Date()) {
-        // Calculate current BAC from drinks (cul sec assumption)
-        if (!drinks || drinks.length === 0 || !weightKg || !gender) {
-            return 0;
-        }
+        // Calcul cohérent du taux d'alcoolémie total en g/L
+        if (!drinks || drinks.length === 0 || !weightKg || !gender) return 0;
 
         const r = gender === 'female' ? 0.55 : 0.68;
-        let totalBACGL = 0;
+        let totalAlcoholGrams = 0;
+        let earliestDrinkTime = null;
 
         drinks.forEach(drink => {
             if (!drink.date || !drink.time) return;
-            
-            // Convert unit to cL
-            const volumeInCL = this.convertToStandardUnit(drink.quantity, drink.unit).quantity;
-            // Alcohol grams for this drink
-            const alcoholGrams = this.calculateAlcoholGrams(volumeInCL, drink.alcoholContent || 0);
-            if (alcoholGrams <= 0) return;
+            const volumeCL = this.convertToStandardUnit(drink.quantity, drink.unit).quantity;
+            const alcoholGrams = this.calculateAlcoholGrams(volumeCL, drink.alcoholContent || 0);
+            totalAlcoholGrams += alcoholGrams;
 
-            // Peak BAC contribution for this drink (g/L)
-            const peakBACGL = alcoholGrams / (weightKg * r);
-
-            // Time since this drink (hours) - parse carefully to avoid timezone issues
-            try {
-                const [year, month, day] = drink.date.split('-').map(Number);
-                const [hours, minutes] = drink.time.split(':').map(Number);
-                const drinkDateTime = new Date(year, month - 1, day, hours, minutes);
-                
-                if (isNaN(drinkDateTime.getTime())) {
-                    console.warn('Invalid drink datetime:', drink.date, drink.time);
-                    return;
-                }
-                
-                const hoursElapsed = Math.max(0, (currentTime - drinkDateTime) / (1000 * 60 * 60));
-
-                // Apply elimination for this drink
-                const currentBACGL = Math.max(0, peakBACGL - (0.15 * hoursElapsed));
-
-                // Add this drink's contribution
-                totalBACGL += currentBACGL;
-            } catch (error) {
-                console.warn('Error parsing drink datetime:', error, drink);
+            const [y, m, d] = drink.date.split('-').map(Number);
+            const [h, min] = drink.time.split(':').map(Number);
+            const drinkDateTime = new Date(y, m - 1, d, h, min);
+            if (!earliestDrinkTime || drinkDateTime < earliestDrinkTime) {
+                earliestDrinkTime = drinkDateTime;
             }
         });
 
-        // Convert g/L to mg/L
-        return totalBACGL * 1000;
+        if (!earliestDrinkTime) return 0;
+        const hoursElapsed = Math.max(0, (currentTime - earliestDrinkTime) / (1000 * 60 * 60));
+
+        // Taux estimé en g/L selon Widmark, avec élimination
+        const bacGL = Math.max(0, (totalAlcoholGrams / (weightKg * r)) - (0.15 * hoursElapsed));
+        // On retourne déjà en g/L (pas mg/L)
+        return bacGL;
     }
 
     
@@ -323,17 +306,21 @@ class Utils {
             : await this.getRelevantDrinksForBAC(currentTime);
 
         // Calculate BAC from relevant drinks
-        const currentBACMgL = this.calculateCurrentBAC(relevantDrinks, weightKg, gender, currentTime);
+        const currentBACGL = this.calculateCurrentBAC(relevantDrinks, weightKg, gender, currentTime);
 
-        // Time to complete sobriety (0 mg/L)
+        // Conversion en mg/L
+        const currentBACMgL = currentBACGL * 1000;
+
+        // Temps jusqu'à sobriété complète (0 g/L)
         const timeToSobriety = this.calculateTimeToBAC(currentBACMgL, 0);
 
-        // Time to legal limit - Belgium: 500 mg/L (0.5‰)
+        // Temps jusqu'à limite légale - Belgique: 0.5 g/L = 500 mg/L
         const legalLimit = 500;
         const timeToLegalLimit = this.calculateTimeToBAC(currentBACMgL, legalLimit);
 
         return {
             currentBAC: Math.round(currentBACMgL * 100) / 100,
+            currentBACgL: Math.round(currentBACGL * 1000) / 1000,
             timeToSobriety,
             timeToLegalLimit: Math.max(0, timeToLegalLimit),
             relevantDrinks,
