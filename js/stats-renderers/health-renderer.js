@@ -9,7 +9,7 @@ function renderHealthStats(stats) {
     if (!stats) {
         return null;
     }
-    
+
     const section = document.createElement('div');
     section.className = 'stats-section';
     section.innerHTML = `
@@ -38,7 +38,7 @@ function renderHealthStats(stats) {
             ` : ''}
         </div>
     `;
-    
+
     return section;
 }
 
@@ -52,11 +52,11 @@ async function renderBACEstimation(context = {}) {
         const settings = await dbManager.getAllSettings();
         const userWeight = settings.userWeight;
         const userGender = settings.userGender;
-        
+
         const section = document.createElement('div');
         section.className = 'stats-section bac-estimation-section';
         section.id = 'bac-estimation-section';
-        
+
         if (!userWeight || !userGender) {
             // Show setup message if user data is missing
             section.innerHTML = `
@@ -74,27 +74,40 @@ async function renderBACEstimation(context = {}) {
                     <p><strong>⚠️ Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
                 </div>
             `;
-            
+
             return section;
         }
-        
+
         // Determine reference time for BAC calculation
+        // CRITICAL: Use current time for 'today' or when dateRange end is today
+        // Otherwise BAC will be calculated hours in the future, showing near-zero values
         let referenceTime = new Date();
-        
-        // If we have a specific dateRange in context, use the end of that range as reference
+
+        // If we have a specific dateRange in context that's NOT today, use the end of that range
         if (context.dateRange) {
             const endDate = context.dateRange.end;
-            // Parse the date and set time to end of day (23:59:59)
-            const [year, month, day] = endDate.split('-').map(Number);
-            referenceTime = new Date(year, month - 1, day, 23, 59, 59);
+            const today = Utils.getCurrentDate(); // Get today in YYYY-MM-DD format
+
+            // Only use end-of-day if we're looking at a past date
+            if (endDate !== today && endDate < today) {
+                // Parse the date and set time to end of day (23:59:59)
+                const [year, month, day] = endDate.split('-').map(Number);
+                referenceTime = new Date(year, month - 1, day, 23, 59, 59);
+                console.log(`[BAC] Using end-of-day referenceTime for past date: ${endDate}`);
+            } else {
+                console.log(`[BAC] Using current time as referenceTime (date is today or future)`);
+            }
+        } else {
+            console.log(`[BAC] Using current time as referenceTime (no dateRange in context)`);
         }
-        
+
         // Get drinks from context if available, otherwise fetch
         const drinksForBAC = context.drinks || [];
-        
+        console.log(`[BAC Health Renderer] Received ${drinksForBAC.length} drinks from context`);
+
         // Calculate BAC statistics with reference time and drinks
         const bacStats = await Utils.calculateBACStats(userWeight, userGender, referenceTime, drinksForBAC);
-        
+
         if (!bacStats) {
             section.innerHTML = `
                 <div class="section-header">
@@ -107,12 +120,12 @@ async function renderBACEstimation(context = {}) {
             `;
             return section;
         }
-        
+
         // Render BAC estimation with current values in mg/L
         const bacLevel = bacStats.currentBAC; // Already in mg/L from utils.js
         const bacLevelClass = getBACLevelClass(bacLevel);
         const bacLevelText = getBACLevelText(bacLevel);
-        
+
         section.innerHTML = `
             <div class="section-header">
                 <h3>🍺 Estimation alcoolémie</h3>
@@ -153,22 +166,22 @@ async function renderBACEstimation(context = {}) {
                 <h4>Consommations prises en compte (${bacStats.relevantDrinks.length})</h4>
                 <div class="relevant-drinks-list">
                     ${bacStats.relevantDrinks.slice(0, 3).map(drink => {
-                        try {
-                            const [year, month, day] = drink.date.split('-').map(Number);
-                            const [hours, minutes] = drink.time.split(':').map(Number);
-                            const drinkTime = new Date(year, month - 1, day, hours, minutes);
-                            const hoursAgo = Math.round((referenceTime - drinkTime) / (1000 * 60 * 60) * 10) / 10;
-                            return `
+            try {
+                const [year, month, day] = drink.date.split('-').map(Number);
+                const [hours, minutes] = drink.time.split(':').map(Number);
+                const drinkTime = new Date(year, month - 1, day, hours, minutes);
+                const hoursAgo = Math.round((referenceTime - drinkTime) / (1000 * 60 * 60) * 10) / 10;
+                return `
                                 <div class="relevant-drink-item">
                                     <span class="drink-name">${drink.name}</span>
                                     <span class="drink-details">${Utils.formatQuantity(drink.quantity, drink.unit)} • ${drink.alcoholContent || 0}%</span>
                                     <span class="drink-time">il y a ${hoursAgo}h</span>
                                 </div>
                             `;
-                        } catch (e) {
-                            return '';
-                        }
-                    }).join('')}
+            } catch (e) {
+                return '';
+            }
+        }).join('')}
                     ${bacStats.relevantDrinks.length > 3 ? `
                         <div class="more-drinks">+${bacStats.relevantDrinks.length - 3} autre${bacStats.relevantDrinks.length - 3 > 1 ? 's' : ''}</div>
                     ` : ''}
@@ -180,9 +193,9 @@ async function renderBACEstimation(context = {}) {
                 <p><strong>⚠️ Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
             </div>
         `;
-        
+
         return section;
-        
+
     } catch (error) {
         console.error('Error rendering BAC estimation:', error);
         const section = document.createElement('div');
@@ -203,17 +216,17 @@ async function renderBACEstimation(context = {}) {
  * Get BAC level CSS class for styling (bacLevel in mg/L)
  */
 function getBACLevelClass(bacLevel) {
-    if (bacLevel <= 50) return 'safe';        
-    if (bacLevel <= 500) return 'caution';    
-    if (bacLevel <= 800) return 'warning';    
-    return 'danger';                          
+    if (bacLevel < 200) return 'safe';
+    if (bacLevel <= 500) return 'caution';
+    if (bacLevel <= 800) return 'warning';
+    return 'danger';
 }
 
 /**
  * Get BAC level descriptive text (bacLevel in mg/L)
  */
 function getBACLevelText(bacLevel) {
-    if (bacLevel <= 50) return 'Sobre';
+    if (bacLevel < 200) return 'Sobre';
     if (bacLevel <= 500) return 'Conduite autorisée';
     if (bacLevel <= 800) return 'Conduite interdite';
     if (bacLevel <= 1999) return 'État d\'ébriété dangereux';
@@ -232,7 +245,7 @@ function postRenderHealthStats(stats) {
             showHealthInfoModal();
         });
     }
-    
+
     // Add click event for BAC info button
     const bacInfoBtn = document.getElementById('bac-info-btn');
     if (bacInfoBtn) {
@@ -240,7 +253,7 @@ function postRenderHealthStats(stats) {
             showBACInfoModal();
         });
     }
-    
+
     // Add click event for profile settings
     const openSettingsBtn = document.getElementById('open-profile-settings');
     if (openSettingsBtn) {
@@ -257,7 +270,7 @@ function openProfileSettings() {
     const settingsMenu = document.getElementById('settings-menu');
     if (settingsMenu) {
         settingsMenu.classList.add('active');
-        
+
         // Focus on weight input
         setTimeout(() => {
             const weightInput = document.getElementById('user-weight');
@@ -387,9 +400,9 @@ function showBACInfoModal() {
     // Typeset LaTeX if MathJax is available
     try {
         if (window.MathJax && window.MathJax.typesetPromise) {
-            window.MathJax.typesetPromise([modal]).catch(() => {});
+            window.MathJax.typesetPromise([modal]).catch(() => { });
         }
-    } catch (e) {}
+    } catch (e) { }
     modal.querySelector('.modal-backdrop').addEventListener('click', () => modal.remove());
 }
 

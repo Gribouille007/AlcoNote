@@ -74,25 +74,25 @@ class Utils {
         };
         return date.toLocaleDateString('fr-FR', options);
     }
-    
+
     /**
      * Calculate start and end dates for given period
      * @param {string} period - 'today', 'week', 'month', 'year'
      * @param {Date} currentDate - Reference date
      * @returns {object} {start: 'YYYY-MM-DD', end: 'YYYY-MM-DD'}
      */
-    
+
     // Fixed version that ensures proper date ranges without overlapping
     static getDateRangeFixed(period, currentDate = new Date()) {
         // Improved date range calculation
         const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
         const end = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
-        
+
         switch (period) {
             case 'today':
                 // Today: same day only
                 break;
-                
+
             case 'week':
                 // Week: Monday to Sunday of the current week
                 const dayOfWeek = start.getDay();
@@ -100,25 +100,25 @@ class Utils {
                 start.setDate(start.getDate() + mondayDiff);
                 end.setDate(start.getDate() + 6);
                 break;
-                
+
             case 'month':
                 // Month: First day to last day of current month
                 start.setDate(1);
                 end.setMonth(end.getMonth() + 1);
                 end.setDate(0); // Last day of current month
                 break;
-                
+
             case 'year':
                 // Year: January 1st to December 31st of current year
                 start.setMonth(0, 1);
                 end.setMonth(11, 31);
                 break;
-                
+
             default:
                 // Default to today
                 break;
         }
-        
+
         // Use local date formatting to avoid timezone issues
         const formatLocalDate = (date) => {
             const year = date.getFullYear();
@@ -126,26 +126,26 @@ class Utils {
             const day = String(date.getDate()).padStart(2, '0');
             return `${year}-${month}-${day}`;
         };
-        
+
         return {
             start: formatLocalDate(start),
             end: formatLocalDate(end)
         };
     }
-    
+
     static addDays(date, days) {
         // Create new date with days added
         const result = new Date(date);
         result.setDate(result.getDate() + days);
         return result;
     }
-    
+
     static getDayName(dayIndex) {
         // Get French day name from 0-6 index
         const days = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
         return days[dayIndex];
     }
-    
+
     // Quantity and unit conversions
     /**
      * Convert any drink quantity from its unit to standard centiliters
@@ -166,7 +166,7 @@ class Utils {
                 return { quantity, unit: 'cL' };
         }
     }
-    
+
     static formatQuantity(quantity, unit) {
         // Format quantity with proper unit and plural
         if (unit === 'EcoCup') {
@@ -174,13 +174,13 @@ class Utils {
         }
         return `${quantity} ${unit}`;
     }
-    
+
     // Alcohol calculations
     static calculateAlcoholGrams(volumeCL, alcoholPercent) {
         // Calculate grams of pure alcohol in drink
         return (volumeCL * alcoholPercent * 0.8) / 10;
     }
-    
+
     static calculateBAC(alcoholGrams, weightKg, gender, hours = 0) {
         // Calculate blood alcohol concentration
         const r = gender === 'female' ? 0.55 : 0.68; // Body water percentage
@@ -189,60 +189,91 @@ class Utils {
         const bacMgL = bacGL * 1000; // Convert g/L to mg/L
         return Math.max(0, bacMgL);
     }
-    
+
     static calculateCurrentBAC(drinks, weightKg, gender, currentTime = new Date()) {
-        // Calcul cohérent du taux d'alcoolémie total en g/L
+        // Correct calculation: Simulate BAC evolution over time
         if (!drinks || drinks.length === 0 || !weightKg || !gender) return 0;
 
         const r = gender === 'female' ? 0.55 : 0.68;
-        let totalAlcoholGrams = 0;
-        let earliestDrinkTime = null;
+        const eliminationRate = 0.15; // g/L per hour
 
-        drinks.forEach(drink => {
-            if (!drink.date || !drink.time) return;
-            const volumeCL = this.convertToStandardUnit(drink.quantity, drink.unit).quantity;
-            const alcoholGrams = this.calculateAlcoholGrams(volumeCL, drink.alcoholContent || 0);
-            totalAlcoholGrams += alcoholGrams;
+        // 1. Parse and sort drinks chronologically
+        const sortedDrinks = drinks
+            .map(drink => {
+                if (!drink.date || !drink.time) return null;
 
-            const [y, m, d] = drink.date.split('-').map(Number);
-            const [h, min] = drink.time.split(':').map(Number);
-            const drinkDateTime = new Date(y, m - 1, d, h, min);
-            if (!earliestDrinkTime || drinkDateTime < earliestDrinkTime) {
-                earliestDrinkTime = drinkDateTime;
+                const [y, m, d] = drink.date.split('-').map(Number);
+                const [h, min] = drink.time.split(':').map(Number);
+                const date = new Date(y, m - 1, d, h, min);
+
+                if (isNaN(date.getTime())) return null;
+
+                const volumeCL = this.convertToStandardUnit(drink.quantity, drink.unit).quantity;
+                const alcoholGrams = this.calculateAlcoholGrams(volumeCL, drink.alcoholContent || 0);
+
+                return {
+                    date: date,
+                    alcoholGrams: alcoholGrams
+                };
+            })
+            .filter(d => d !== null && d.alcoholGrams > 0)
+            .sort((a, b) => a.date - b.date);
+
+        if (sortedDrinks.length === 0) return 0;
+
+        // 2. Simulate BAC evolution
+        let currentBAC = 0;
+        let lastTime = sortedDrinks[0].date;
+
+        // Start simulation from the first drink
+        sortedDrinks.forEach(drink => {
+            // Calculate elimination since last event
+            const timeDiffHours = (drink.date - lastTime) / (1000 * 60 * 60);
+
+            if (timeDiffHours > 0) {
+                currentBAC -= eliminationRate * timeDiffHours;
+                if (currentBAC < 0) currentBAC = 0;
             }
+
+            // Add new drink contribution
+            // BAC increase = Alcohol (g) / (Weight (kg) * r)
+            const bacIncrease = drink.alcoholGrams / (weightKg * r);
+            currentBAC += bacIncrease;
+
+            lastTime = drink.date;
         });
 
-        if (!earliestDrinkTime) return 0;
-        const hoursElapsed = Math.max(0, (currentTime - earliestDrinkTime) / (1000 * 60 * 60));
+        // 3. Calculate final elimination until current time
+        const finalTimeDiffHours = (currentTime - lastTime) / (1000 * 60 * 60);
+        if (finalTimeDiffHours > 0) {
+            currentBAC -= eliminationRate * finalTimeDiffHours;
+        }
 
-        // Taux estimé en g/L selon Widmark, avec élimination
-        const bacGL = Math.max(0, (totalAlcoholGrams / (weightKg * r)) - (0.15 * hoursElapsed));
-        // On retourne déjà en g/L (pas mg/L)
-        return bacGL;
+        return Math.max(0, currentBAC);
     }
 
-    
+
     static calculateTimeToBAC(currentBACMgL, targetBACMgL = 0) {
         // Calculate time to reach target BAC
         if (currentBACMgL <= targetBACMgL) {
             return 0;
         }
-        
+
         // Convert mg/L to g/L for calculation
         const currentBACGL = currentBACMgL / 1000;
         const targetBACGL = targetBACMgL / 1000;
-        
+
         // Time = (Current BAC - Target BAC) / Elimination rate (0.15 g/L per hour)
         const hoursNeeded = (currentBACGL - targetBACGL) / 0.15;
         return Math.max(0, hoursNeeded);
     }
-    
+
     // Get drinks from current day and previous day that might still affect BAC
     static async getRelevantDrinksForBAC(currentTime = new Date()) {
         // Get drinks that affect BAC (last 24h)
         const yesterday = new Date(currentTime);
         yesterday.setDate(yesterday.getDate() - 1);
-        
+
         // Use local date format to avoid timezone issues
         const formatLocalDate = (date) => {
             const year = date.getFullYear();
@@ -250,24 +281,24 @@ class Utils {
             const day = String(date.getDate()).padStart(2, '0');
             return `${year}-${month}-${day}`;
         };
-        
+
         const startDate = formatLocalDate(yesterday);
         const endDate = formatLocalDate(currentTime);
-        
+
         try {
             const drinks = await dbManager.getDrinksByDateRange(startDate, endDate);
-            
+
             // Filter drinks that could still have an effect (within reasonable elimination time)
             return drinks.filter(drink => {
                 if (!drink.date || !drink.time) return false;
-                
+
                 // Parse drink datetime carefully to avoid timezone issues
                 const [year, month, day] = drink.date.split('-').map(Number);
                 const [hours, minutes] = drink.time.split(':').map(Number);
                 const drinkDateTime = new Date(year, month - 1, day, hours, minutes);
-                
+
                 const hoursElapsed = (currentTime - drinkDateTime) / (1000 * 60 * 60);
-                
+
                 // Only include drinks from last 24 hours that could still have measurable effect
                 return hoursElapsed >= 0 && hoursElapsed <= 24;
             });
@@ -276,34 +307,51 @@ class Utils {
             return [];
         }
     }
-    
+
     static async calculateBACStats(weightKg, gender, currentTime = new Date(), drinks = []) {
         // Calculate comprehensive BAC statistics using provided drinks rather than DB lookups
         if (!weightKg || !gender) {
+            console.warn('[BAC] Missing user profile data (weight or gender)');
             return null;
         }
+
+        console.log(`[BAC] calculateBACStats called with ${drinks.length} drinks`);
 
         // If no drinks provided, fallback to last 24 hours
         const relevantDrinks = drinks.length
             ? drinks.filter(drink => {
-                if (!drink.date || !drink.time) return false;
-                
+                if (!drink.date || !drink.time) {
+                    console.log('[BAC] Filtered out drink missing date/time:', drink.name);
+                    return false;
+                }
+
                 try {
                     // Parse drink datetime carefully to avoid timezone issues
                     const [year, month, day] = drink.date.split('-').map(Number);
                     const [hours, minutes] = drink.time.split(':').map(Number);
                     const drinkDateTime = new Date(year, month - 1, day, hours, minutes);
-                    
-                    if (isNaN(drinkDateTime.getTime())) return false;
-                    
+
+                    if (isNaN(drinkDateTime.getTime())) {
+                        console.log('[BAC] Filtered out drink with invalid date:', drink.name);
+                        return false;
+                    }
+
                     const hoursElapsed = (currentTime - drinkDateTime) / (1000 * 60 * 60);
-                    return hoursElapsed >= 0 && hoursElapsed <= 24;
+                    const isRelevant = hoursElapsed >= 0 && hoursElapsed <= 24;
+
+                    if (!isRelevant) {
+                        console.log(`[BAC] Filtered out drink outside 24h window: ${drink.name} (${hoursElapsed.toFixed(1)}h ago)`);
+                    }
+
+                    return isRelevant;
                 } catch (error) {
-                    console.warn('Error filtering drink for BAC:', error, drink);
+                    console.warn('[BAC] Error filtering drink:', error, drink);
                     return false;
                 }
             })
             : await this.getRelevantDrinksForBAC(currentTime);
+
+        console.log(`[BAC] ${relevantDrinks.length} relevant drinks after filtering`);
 
         // Calculate BAC from relevant drinks
         const currentBACGL = this.calculateCurrentBAC(relevantDrinks, weightKg, gender, currentTime);
@@ -328,7 +376,7 @@ class Utils {
             referenceTime: currentTime
         };
     }
-    
+
     // Format time in hours to human readable format
     static formatTimeToSobriety(hours) {
         // Format time to sobriety in human readable format
@@ -341,7 +389,7 @@ class Utils {
         return `${wholeHours}h ${minutes}min`;
     }
 
-    
+
     static getWHORecommendation(gender) {
         // Get WHO recommended alcohol limit
         return gender === 'female' ? 140 : 210;
@@ -376,7 +424,7 @@ class Utils {
         if (upper >= sorted.length) return sorted[sorted.length - 1];
         return sorted[lower] * (1 - weight) + sorted[upper] * weight;
     }
-    
+
     // UI utilities
     static showMessage(message, type = 'info', duration = 3000) {
         // Show temporary message to user
@@ -433,7 +481,7 @@ class Utils {
     static throttle(func, limit) {
         // Limit function execution frequency
         let inThrottle;
-        return function() {
+        return function () {
             const args = arguments;
             const context = this;
             if (!inThrottle) {
@@ -443,7 +491,7 @@ class Utils {
             }
         };
     }
-    
+
     // Modal utilities
     static openModal(modalId) {
         // Show modal dialog
@@ -483,7 +531,7 @@ class Utils {
         // Extract data from form inputs
         const formData = new FormData(formElement);
         const data = {};
-        
+
         for (let [key, value] of formData.entries()) {
             // Handle checkboxes and multiple values
             if (data[key]) {
@@ -496,10 +544,10 @@ class Utils {
                 data[key] = value;
             }
         }
-        
+
         return data;
     }
-    
+
     static resetForm(formElement) {
         // Clear form and remove validation states
         formElement.reset();
@@ -562,7 +610,7 @@ class Utils {
             return false;
         }
     }
-    
+
     // File utilities
     static downloadFile(content, filename, contentType = 'application/json') {
         // Trigger file download with blob
@@ -786,7 +834,7 @@ class Utils {
     static isStandalone() {
         // Check if running as PWA
         return window.matchMedia('(display-mode: standalone)').matches ||
-               window.navigator.standalone === true;
+            window.navigator.standalone === true;
     }
 
     // Animation utilities

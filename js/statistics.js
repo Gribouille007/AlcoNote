@@ -16,7 +16,7 @@ class StatisticsManager {
         // Performance optimization: reduce DOM queries
         this.domCache = {};
     }
-    
+
     // Initialize statistics module
     init() {
         this.isInitialized = true;
@@ -28,7 +28,7 @@ class StatisticsManager {
 
     // Setup event listeners for automatic updates
     setupEventListeners() {
-        
+
         // Listen for drink data changes
         window.addEventListener('drinkDataChanged', (event) => {
             console.log('Drink data changed:', event.detail);
@@ -94,7 +94,7 @@ class StatisticsManager {
         };
         console.log('Statistics cache cleared');
     }
-    
+
     // Setup period selector buttons
     setupPeriodSelector() {
         const periodButtons = document.querySelectorAll('.period-btn');
@@ -128,27 +128,27 @@ class StatisticsManager {
             });
         });
     }
-    
+
     // Setup day navigation for "today" period
     setupDayNavigation() {
         const prevBtn = document.getElementById('prev-period');
         const nextBtn = document.getElementById('next-period');
-        
+
         if (prevBtn) {
             prevBtn.addEventListener('click', () => {
                 this.navigatePeriod(-1);
             });
         }
-        
+
         if (nextBtn) {
             nextBtn.addEventListener('click', () => {
                 this.navigatePeriod(1);
             });
         }
-        
+
         this.updateDateDisplay();
     }
-    
+
     // Navigate between periods
     navigatePeriod(direction) {
         switch (this.currentPeriod) {
@@ -172,7 +172,7 @@ class StatisticsManager {
         this.updateDateDisplay();
         this.loadStatistics();
     }
-    
+
     // Update date display for day navigation
     updateDateDisplay() {
         const dateElement = document.getElementById('current-period-display');
@@ -204,7 +204,7 @@ class StatisticsManager {
             dateElement.textContent = displayText;
         }
     }
-    
+
     // Toggle custom date picker
     toggleCustomDatePicker() {
         const picker = document.getElementById('custom-date-picker');
@@ -218,14 +218,14 @@ class StatisticsManager {
             picker.classList.remove('active');
         }
     }
-    
+
     // Create custom date picker
     createCustomDatePicker() {
         const container = document.querySelector('.statistics-container');
         const picker = document.createElement('div');
         picker.id = 'custom-date-picker';
         picker.className = 'date-range-picker active';
-        
+
         picker.innerHTML = `
             <h3>Période personnalisée</h3>
             <div class="date-range-row">
@@ -240,15 +240,15 @@ class StatisticsManager {
             </div>
             <button id="apply-custom-range" class="btn-primary">Appliquer</button>
         `;
-        
+
         container.insertBefore(picker, document.getElementById('statistics-content'));
-        
+
         // Setup apply button
         document.getElementById('apply-custom-range').addEventListener('click', () => {
             this.loadStatistics();
         });
     }
-    
+
     // Get date range based on current period
     getDateRange() {
         if (this.currentPeriod === 'custom') {
@@ -260,7 +260,7 @@ class StatisticsManager {
             return Utils.getDateRangeFixed(this.currentPeriod, this.currentDate);
         }
     }
-    
+
     // Load and display statistics
     async loadStatistics() {
         const container = document.getElementById('statistics-content');
@@ -326,7 +326,7 @@ class StatisticsManager {
             Utils.hideLoading(loading);
         }
     }
-    
+
     // Calculate comprehensive statistics
     async calculateComprehensiveStats(drinks, dateRange) {
         const stats = {
@@ -337,18 +337,18 @@ class StatisticsManager {
             health: await this.calculateHealthStats(drinks, dateRange),
             location: await this.calculateLocationStats(drinks)
         };
-        
+
         return stats;
     }
-    
+
     // Calculate general consumption statistics
     async calculateGeneralStats(drinks, dateRange) {
         // Utilise le calculateur modulaire pour les statistiques générales
         if (window.GeneralStatsCalculator && window.GeneralStatsCalculator.calculateGeneralStats) {
             try {
                 return await window.GeneralStatsCalculator.calculateGeneralStats(
-                    drinks, 
-                    dateRange, 
+                    drinks,
+                    dateRange,
                     { currentPeriod: this.currentPeriod }
                 );
             } catch (error) {
@@ -356,7 +356,7 @@ class StatisticsManager {
                 // Fallback vers l'ancienne logique
             }
         }
-        
+
         // Fallback vers l'ancienne logique si le calculateur n'est pas disponible
         const totalDrinks = drinks.length;
         let totalVolume = 0;
@@ -364,40 +364,40 @@ class StatisticsManager {
         const sessions = this.calculateSessions(drinks);
         const uniqueDrinks = new Set();
         const categories = {};
-        
+
         drinks.forEach(drink => {
             // Convert to standard units (cL)
             const volumeInCL = Utils.convertToStandardUnit(drink.quantity, drink.unit).quantity;
             totalVolume += volumeInCL;
-            
+
             // Calculate alcohol content
             if (drink.alcoholContent) {
                 totalAlcohol += Utils.calculateAlcoholGrams(volumeInCL, drink.alcoholContent);
             }
-            
+
             // Track unique drinks
             uniqueDrinks.add(drink.name);
-            
+
             // Track categories
             if (!categories[drink.category]) {
                 categories[drink.category] = 0;
             }
             categories[drink.category]++;
         });
-        
+
         // Calculate averages using actual period length
         const daysDiff = this.getDaysDifference(dateRange.start, dateRange.end) + 1;
         const avgPerDay = daysDiff > 0 ? totalDrinks / daysDiff : 0;
         const avgPerWeek = avgPerDay * 7;
         // Calculate monthly average based on actual period
         const avgPerMonth = this.currentPeriod === 'month' ? totalDrinks : avgPerDay * 30.44; // Average days per month
-        
+
         // Calculate sober days from first drink recorded
         const soberDays = await this.calculateSoberDays(dateRange);
-        
+
         // Calculate percentage comparisons with previous period
         const comparison = await this.calculatePeriodComparison(dateRange);
-        
+
         return {
             totalDrinks,
             totalVolume: Math.round(totalVolume * 10) / 10,
@@ -412,7 +412,7 @@ class StatisticsManager {
             comparison
         };
     }
-    
+
     // Calculate temporal statistics
     async calculateTemporalStats(drinks, dateRange) {
         const hourlyDistribution = {};
@@ -462,7 +462,7 @@ class StatisticsManager {
         // Calculate time between sessions
         const timeBetweenSessions = [];
         for (let i = 1; i < sessions.length; i++) {
-            const timeDiff = (sessions[i].startTime - sessions[i-1].endTime) / (1000 * 60 * 60); // hours
+            const timeDiff = (sessions[i].startTime - sessions[i - 1].endTime) / (1000 * 60 * 60); // hours
             if (timeDiff > 0) {
                 timeBetweenSessions.push(timeDiff);
             }
@@ -482,11 +482,11 @@ class StatisticsManager {
             lastDrink: drinks.length > 0 ? drinks[0].date : null
         };
     }
-    
+
     // Calculate category statistics
     async calculateCategoryStats(drinks) {
         const categories = {};
-        
+
         drinks.forEach(drink => {
             if (!categories[drink.category]) {
                 categories[drink.category] = {
@@ -496,27 +496,27 @@ class StatisticsManager {
                     drinks: []
                 };
             }
-            
+
             const cat = categories[drink.category];
             cat.count++;
-            
+
             const volumeInCL = Utils.convertToStandardUnit(drink.quantity, drink.unit).quantity;
             cat.volume += volumeInCL;
-            
+
             if (drink.alcoholContent) {
                 cat.alcoholContent.push(drink.alcoholContent);
             }
-            
+
             cat.drinks.push(drink);
         });
-        
+
         // Calculate averages and find favorites
         Object.keys(categories).forEach(categoryName => {
             const cat = categories[categoryName];
             cat.avgVolume = Math.round((cat.volume / cat.count) * 10) / 10;
-            cat.avgAlcoholContent = cat.alcoholContent.length > 0 ? 
+            cat.avgAlcoholContent = cat.alcoholContent.length > 0 ?
                 Math.round(Utils.calculateAverage(cat.alcoholContent) * 10) / 10 : 0;
-            
+
             // Find most consumed drink in category (handle ties by taking the first occurrence)
             const drinkCounts = {};
             cat.drinks.forEach(drink => {
@@ -528,14 +528,14 @@ class StatisticsManager {
                 drinkCounts[drink] === maxCount
             );
         });
-        
+
         return categories;
     }
-    
+
     // Calculate individual drink statistics
     async calculateIndividualDrinkStats(drinks) {
         const drinkStats = {};
-        
+
         drinks.forEach(drink => {
             if (!drinkStats[drink.name]) {
                 drinkStats[drink.name] = {
@@ -545,28 +545,28 @@ class StatisticsManager {
                     dates: []
                 };
             }
-            
+
             const stat = drinkStats[drink.name];
             stat.count++;
-            
+
             const volumeInCL = Utils.convertToStandardUnit(drink.quantity, drink.unit).quantity;
             stat.totalVolume += volumeInCL;
-            
+
             stat.dates.push(drink.date);
-            
+
             if (!stat.lastConsumed || drink.date > stat.lastConsumed) {
                 stat.lastConsumed = drink.date;
             }
         });
-        
+
         // Sort by frequency
         const sortedDrinks = Object.entries(drinkStats)
-            .sort(([,a], [,b]) => b.count - a.count)
+            .sort(([, a], [, b]) => b.count - a.count)
             .slice(0, 10); // Top 10
-        
+
         return Object.fromEntries(sortedDrinks);
     }
-    
+
     // Calculate health-related statistics
     async calculateHealthStats(drinks, dateRange) {
         // Utilise le calculateur modulaire pour les statistiques de santé
@@ -579,10 +579,10 @@ class StatisticsManager {
                 } catch (error) {
                     console.warn('Could not get settings from dbManager:', error);
                 }
-                
+
                 return await window.HealthStatsCalculator.calculateHealthStats(
-                    drinks, 
-                    dateRange, 
+                    drinks,
+                    dateRange,
                     { settings }
                 );
             } catch (error) {
@@ -590,28 +590,28 @@ class StatisticsManager {
                 // Fallback vers l'ancienne logique si le calculateur échoue
             }
         }
-        
+
         // Fallback vers l'ancienne logique si le calculateur n'est pas disponible
         let totalAlcoholGrams = 0;
         const dailyAlcohol = {};
-        
+
         drinks.forEach(drink => {
             const volumeInCL = Utils.convertToStandardUnit(drink.quantity, drink.unit).quantity;
             if (drink.alcoholContent) {
                 const alcoholGrams = Utils.calculateAlcoholGrams(volumeInCL, drink.alcoholContent);
                 totalAlcoholGrams += alcoholGrams;
-                
+
                 if (!dailyAlcohol[drink.date]) {
                     dailyAlcohol[drink.date] = 0;
                 }
                 dailyAlcohol[drink.date] += alcoholGrams;
             }
         });
-        
+
         // Calculate weekly average
         const daysDiff = this.getDaysDifference(dateRange.start, dateRange.end) + 1;
         const weeklyAlcohol = (totalAlcoholGrams / daysDiff) * 7;
-        
+
         return {
             totalAlcoholGrams: Math.round(totalAlcoholGrams * 10) / 10,
             weeklyAlcohol: Math.round(weeklyAlcohol * 10) / 10,
@@ -621,31 +621,31 @@ class StatisticsManager {
             dailyAlcohol
         };
     }
-    
+
     // Calculate location statistics
     async calculateLocationStats(drinks) {
         return await geoManager.getLocationStats(drinks);
     }
-    
+
     // Calculate drinking sessions
     calculateSessions(drinks) {
         if (drinks.length === 0) return [];
-        
+
         const sessions = [];
         let currentSession = null;
         const sessionGapHours = 4; // 4 hours gap defines new session
-        
+
         // Sort drinks by date and time
         const sortedDrinks = [...drinks].sort((a, b) => {
             const dateTimeA = new Date(`${a.date}T${a.time}`);
             const dateTimeB = new Date(`${b.date}T${b.time}`);
             return dateTimeA - dateTimeB;
         });
-        
+
         sortedDrinks.forEach(drink => {
             const drinkDateTime = new Date(`${drink.date}T${drink.time}`);
-            
-            if (!currentSession || 
+
+            if (!currentSession ||
                 (drinkDateTime - currentSession.endTime) > (sessionGapHours * 60 * 60 * 1000)) {
                 // Start new session
                 currentSession = {
@@ -662,10 +662,10 @@ class StatisticsManager {
                 currentSession.duration = (currentSession.endTime - currentSession.startTime) / (1000 * 60 * 60); // hours
             }
         });
-        
+
         return sessions.reverse(); // Most recent first
     }
-    
+
     // Group drinks by day
     groupDrinksByDay(drinks) {
         const grouped = {};
@@ -677,7 +677,7 @@ class StatisticsManager {
         });
         return grouped;
     }
-    
+
     // Get difference in days between two dates
     getDaysDifference(startDate, endDate) {
         const start = new Date(startDate);
@@ -685,61 +685,61 @@ class StatisticsManager {
         const diffTime = Math.abs(end - start);
         return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     }
-    
+
     // Calculate sober days from first drink recorded
     async calculateSoberDays(dateRange) {
         try {
             // Get all drinks to find the first recorded drink
             const allDrinks = await dbManager.getAllDrinks();
             if (allDrinks.length === 0) return 0;
-            
+
             // Find the earliest drink date
             const firstDrinkDate = allDrinks.reduce((earliest, drink) => {
                 return drink.date < earliest ? drink.date : earliest;
             }, allDrinks[0].date);
-            
+
             // Calculate total days since first drink to today (not end of period)
             const today = Utils.getCurrentDate();
             const totalDaysSinceFirst = this.getDaysDifference(firstDrinkDate, today) + 1;
-            
+
             // Get all drinks since first drink to today
             const drinksInRange = await dbManager.getDrinksByDateRange(firstDrinkDate, today);
-            
+
             // Group drinks by day to count drinking days
             const drinkingDays = new Set();
             drinksInRange.forEach(drink => {
                 drinkingDays.add(drink.date);
             });
-            
+
             // Calculate sober days
             const soberDays = totalDaysSinceFirst - drinkingDays.size;
             return Math.max(0, soberDays);
-            
+
         } catch (error) {
             console.error('Error calculating sober days:', error);
             return 0;
         }
     }
-    
+
     // Calculate percentage comparisons with previous period
     async calculatePeriodComparison(currentDateRange) {
         try {
             const previousDateRange = this.getPreviousPeriodRange(currentDateRange);
             if (!previousDateRange) return null;
-            
+
             console.log('Current Date Range:', currentDateRange, 'Previous Date Range:', previousDateRange);
             // Get drinks for both periods
             const currentDrinks = await dbManager.getDrinksByDateRange(currentDateRange.start, currentDateRange.end);
             const previousDrinks = await dbManager.getDrinksByDateRange(previousDateRange.start, previousDateRange.end);
-            
+
             // Calculate stats for both periods
             const currentStats = await this.calculateBasicStats(currentDrinks, currentDateRange);
             const previousStats = await this.calculateBasicStats(previousDrinks, previousDateRange);
-            
+
             // Calculate percentage changes
             const comparison = {};
             const metrics = ['totalDrinks', 'totalVolume', 'totalAlcohol', 'totalSessions', 'uniqueDrinks', 'soberDays', 'avgPerDay', 'avgPerWeek', 'avgPerMonth'];
-            
+
             metrics.forEach(metric => {
                 if (previousStats[metric] === 0) {
                     comparison[metric] = currentStats[metric] > 0 ? 100 : 0;
@@ -749,25 +749,25 @@ class StatisticsManager {
                 }
                 console.log(`Metric: ${metric}, Current: ${currentStats[metric]}, Previous: ${previousStats[metric]}, Change: ${comparison[metric]}`);
             });
-            
+
             return comparison;
-            
+
         } catch (error) {
             console.error('Error calculating period comparison:', error);
             return null;
         }
     }
-    
+
     // Get previous period date range
     getPreviousPeriodRange(currentRange) {
         const currentStart = new Date(currentRange.start);
         const currentEnd = new Date(currentRange.end);
-        
+
         let previousStart, previousEnd;
-        
+
         console.log('Current period:', this.currentPeriod);
         console.log('Current range:', currentRange);
-        
+
         switch (this.currentPeriod) {
             case 'today':
                 // Jour précédent
@@ -775,7 +775,7 @@ class StatisticsManager {
                 previousStart.setDate(previousStart.getDate() - 1);
                 previousEnd = new Date(previousStart);
                 break;
-                
+
             case 'week':
                 // Semaine précédente (7 jours avant)
                 previousStart = new Date(currentStart);
@@ -783,7 +783,7 @@ class StatisticsManager {
                 previousEnd = new Date(currentEnd);
                 previousEnd.setDate(previousEnd.getDate() - 7);
                 break;
-                
+
             case 'month':
                 // Mois précédent
                 previousStart = new Date(currentStart);
@@ -791,7 +791,7 @@ class StatisticsManager {
                 previousEnd = new Date(currentEnd);
                 previousEnd.setMonth(previousEnd.getMonth() - 1);
                 break;
-                
+
             case 'year':
                 // Année précédente
                 previousStart = new Date(currentStart);
@@ -799,7 +799,7 @@ class StatisticsManager {
                 previousEnd = new Date(currentEnd);
                 previousEnd.setFullYear(previousEnd.getFullYear() - 1);
                 break;
-                
+
             default:
                 // Pour les périodes personnalisées, calculer la durée équivalente
                 const periodLength = this.getDaysDifference(currentRange.start, currentRange.end) + 1;
@@ -808,44 +808,44 @@ class StatisticsManager {
                 previousStart = new Date(previousEnd);
                 previousStart.setDate(previousStart.getDate() - periodLength + 1);
         }
-        
+
         const formattedPreviousStart = previousStart.toISOString().split('T')[0];
         const formattedPreviousEnd = previousEnd.toISOString().split('T')[0];
-        
+
         console.log('Previous range:', { start: formattedPreviousStart, end: formattedPreviousEnd });
-        
+
         return {
             start: formattedPreviousStart,
             end: formattedPreviousEnd
         };
     }
-    
+
     // Calculate basic stats for comparison
     async calculateBasicStats(drinks, dateRange) {
         let totalVolume = 0;
         let totalAlcohol = 0;
         const uniqueDrinks = new Set();
         const sessions = this.calculateSessions(drinks);
-        
+
         drinks.forEach(drink => {
             const volumeInCL = Utils.convertToStandardUnit(drink.quantity, drink.unit).quantity;
             totalVolume += volumeInCL;
-            
+
             if (drink.alcoholContent) {
                 totalAlcohol += Utils.calculateAlcoholGrams(volumeInCL, drink.alcoholContent);
             }
-            
+
             uniqueDrinks.add(drink.name);
         });
-        
+
         const daysDiff = this.getDaysDifference(dateRange.start, dateRange.end) + 1;
         const avgPerDay = daysDiff > 0 ? drinks.length / daysDiff : 0;
         const avgPerWeek = avgPerDay * 7;
-        
+
         // Calculate sober days for this specific period
         const drinksPerDay = this.groupDrinksByDay(drinks);
         const soberDays = daysDiff - Object.keys(drinksPerDay).length;
-        
+
         return {
             totalDrinks: drinks.length,
             totalVolume: Math.round(totalVolume * 10) / 10,
@@ -857,7 +857,7 @@ class StatisticsManager {
             soberDays: Math.max(0, soberDays)
         };
     }
-    
+
     // Render general statistics
     renderGeneralStats(container, stats) {
         const section = document.createElement('div');
@@ -907,13 +907,13 @@ class StatisticsManager {
                 </div>
             </div>
         `;
-        
+
         container.appendChild(section);
-        
+
         // Add category distribution chart
         this.renderCategoryDistributionChart(container, stats.categoryDistribution);
     }
-    
+
     // Render temporal statistics
     renderTemporalStats(container, stats) {
         const section = document.createElement('div');
@@ -939,9 +939,9 @@ class StatisticsManager {
                 </div>
             </div>
         `;
-        
+
         container.appendChild(section);
-        
+
         // Add hourly distribution chart (always shown)
         this.renderHourlyDistributionChart(container, stats.hourlyDistribution);
 
@@ -950,7 +950,7 @@ class StatisticsManager {
             this.renderDailyDistributionChart(container, stats.dailyDistribution);
         }
     }
-    
+
     // Render health statistics
     renderHealthStats(container, stats) {
         // Render only BAC estimation section; health indicators removed
@@ -984,9 +984,9 @@ class StatisticsManager {
                 ` : ''}
             </div>
         `;
-        
+
         container.appendChild(section);
-        
+
         // Add click event for info button
         const infoBtn = document.getElementById('health-info-btn');
         if (infoBtn) {
@@ -994,22 +994,22 @@ class StatisticsManager {
                 this.showHealthInfoModal();
             });
         }
-        
+
         // Add BAC estimation section
         this.renderBACEstimation(container);
     }
-    
+
     // Render BAC estimation section
     async renderBACEstimation(container) {
         try {
             const settings = await dbManager.getAllSettings();
             const userWeight = settings.userWeight;
             const userGender = settings.userGender;
-            
+
             const section = document.createElement('div');
             section.className = 'stats-section bac-estimation-section';
             section.id = 'bac-estimation-section';
-            
+
             if (!userWeight || !userGender) {
                 // Show setup message if user data is missing
                 section.innerHTML = `
@@ -1027,9 +1027,9 @@ class StatisticsManager {
                         <p><strong>⚠️ Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
                     </div>
                 `;
-                
+
                 container.appendChild(section);
-                
+
                 // Add event listeners
                 const openSettingsBtn = document.getElementById('open-profile-settings');
                 if (openSettingsBtn) {
@@ -1037,20 +1037,43 @@ class StatisticsManager {
                         this.openProfileSettings();
                     });
                 }
-                
+
                 const bacInfoBtn = document.getElementById('bac-info-btn');
                 if (bacInfoBtn) {
                     bacInfoBtn.addEventListener('click', () => {
                         this.showBACInfoModal();
                     });
                 }
-                
+
                 return;
             }
-            
-            // Calculate BAC statistics
-            const bacStats = await Utils.calculateBACStats(userWeight, userGender);
-            
+
+            // Fetch drinks for BAC calculation (last 24 hours)
+            const currentTime = new Date();
+            const yesterday = new Date(currentTime);
+            yesterday.setDate(yesterday.getDate() - 1);
+
+            const formatLocalDate = (date) => {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            };
+
+            const startDate = formatLocalDate(yesterday);
+            const endDate = formatLocalDate(currentTime);
+
+            let drinksForBAC = [];
+            try {
+                drinksForBAC = await dbManager.getDrinksByDateRange(startDate, endDate);
+                console.log(`[BAC] Fetched ${drinksForBAC.length} drinks from last 24h for BAC calculation`);
+            } catch (error) {
+                console.error('[BAC] Error fetching drinks for BAC:', error);
+            }
+
+            // Calculate BAC statistics with drinks explicitly passed
+            const bacStats = await Utils.calculateBACStats(userWeight, userGender, currentTime, drinksForBAC);
+
             if (!bacStats) {
                 section.innerHTML = `
                     <div class="section-header">
@@ -1064,12 +1087,12 @@ class StatisticsManager {
                 container.appendChild(section);
                 return;
             }
-            
+
             // Render BAC estimation with current values in mg/L
             const bacLevel = bacStats.currentBAC; // Already in mg/L from utils.js
             const bacLevelClass = this.getBACLevelClass(bacLevel);
             const bacLevelText = this.getBACLevelText(bacLevel);
-            
+
             section.innerHTML = `
                 <div class="section-header">
                     <h3>🍺 Estimation alcoolémie</h3>
@@ -1110,16 +1133,16 @@ class StatisticsManager {
                     <h4>Consommations prises en compte (${bacStats.relevantDrinks.length})</h4>
                     <div class="relevant-drinks-list">
                         ${bacStats.relevantDrinks.slice(0, 3).map(drink => {
-                            const drinkTime = new Date(`${drink.date}T${drink.time}`);
-                            const hoursAgo = Math.round((new Date() - drinkTime) / (1000 * 60 * 60) * 10) / 10;
-                            return `
+                const drinkTime = new Date(`${drink.date}T${drink.time}`);
+                const hoursAgo = Math.round((new Date() - drinkTime) / (1000 * 60 * 60) * 10) / 10;
+                return `
                                 <div class="relevant-drink-item">
                                     <span class="drink-name">${drink.name}</span>
                                     <span class="drink-details">${Utils.formatQuantity(drink.quantity, drink.unit)} • ${drink.alcoholContent || 0}%</span>
                                     <span class="drink-time">il y a ${hoursAgo}h</span>
                                 </div>
                             `;
-                        }).join('')}
+            }).join('')}
                         ${bacStats.relevantDrinks.length > 3 ? `
                             <div class="more-drinks">+${bacStats.relevantDrinks.length - 3} autre${bacStats.relevantDrinks.length - 3 > 1 ? 's' : ''}</div>
                         ` : ''}
@@ -1131,9 +1154,9 @@ class StatisticsManager {
                     <p><strong>⚠️ Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
                 </div>
             `;
-            
+
             container.appendChild(section);
-            
+
             // Add event listener for info button
             const bacInfoBtn = document.getElementById('bac-info-btn');
             if (bacInfoBtn) {
@@ -1141,12 +1164,12 @@ class StatisticsManager {
                     this.showBACInfoModal();
                 });
             }
-            
+
         } catch (error) {
             console.error('Error rendering BAC estimation:', error);
         }
     }
-    
+
     // Get BAC level CSS class for styling (bacLevel in mg/L)
     getBACLevelClass(bacLevel) {
         if (bacLevel <= 50) return 'safe';        // 0-50 mg/L: Safe
@@ -1154,7 +1177,7 @@ class StatisticsManager {
         if (bacLevel <= 800) return 'warning';    // 500-800 mg/L: Warning (above legal limit)
         return 'danger';                          // >800 mg/L: Danger
     }
-    
+
     // Get BAC level descriptive text (bacLevel in mg/L)
     getBACLevelText(bacLevel) {
         if (bacLevel <= 50) return 'Sobre';
@@ -1162,13 +1185,13 @@ class StatisticsManager {
         if (bacLevel <= 800) return 'Conduite interdite';
         return 'État d\'ébriété dangereux';
     }
-    
+
     // Open profile settings
     openProfileSettings() {
         const settingsMenu = document.getElementById('settings-menu');
         if (settingsMenu) {
             settingsMenu.classList.add('active');
-            
+
             // Focus on weight input
             setTimeout(() => {
                 const weightInput = document.getElementById('user-weight');
@@ -1178,7 +1201,7 @@ class StatisticsManager {
             }, 300);
         }
     }
-    
+
     // Show BAC information modal
     showBACInfoModal() {
         // Remove existing modal if present
@@ -1186,7 +1209,7 @@ class StatisticsManager {
         if (existingModal) {
             existingModal.remove();
         }
-        
+
         // Create modal
         const modal = document.createElement('div');
         modal.id = 'bac-info-modal';
@@ -1267,14 +1290,14 @@ class StatisticsManager {
                 </div>
             </div>
         `;
-        
+
         document.body.appendChild(modal);
-        
+
         // Close modal when clicking backdrop
         modal.querySelector('.modal-backdrop').addEventListener('click', () => {
             modal.remove();
         });
-        
+
         // Close modal with Escape key
         const handleEscape = (e) => {
             if (e.key === 'Escape') {
@@ -1284,13 +1307,13 @@ class StatisticsManager {
         };
         document.addEventListener('keydown', handleEscape);
     }
-    
+
     // Render location statistics and interactive map
     async renderLocationStats(container, locationStats) {
         if (!locationStats || !locationStats.stats) {
             return; // No location data available
         }
-        
+
         const section = document.createElement('div');
         section.className = 'stats-section';
         section.innerHTML = `
@@ -1299,13 +1322,13 @@ class StatisticsManager {
                 <p>${locationStats.message}</p>
             </div>
         `;
-        
+
         container.appendChild(section);
-        
+
         // Add interactive map with all consumption markers
         this.renderInteractiveConsumptionMap(container, locationStats.stats);
     }
-    
+
     // Render interactive consumption map with improved clustering
     renderInteractiveConsumptionMap(container, locationStats) {
         if (!locationStats || !locationStats.drinks || locationStats.drinks.length === 0) {
@@ -1345,7 +1368,7 @@ class StatisticsManager {
             this.initializeMapWithRetry(locationStats, 0);
         });
     }
-    
+
     // Initialize map with retry mechanism for better reliability
     initializeMapWithRetry(locationStats, retryCount = 0) {
         const maxRetries = 3;
@@ -1437,7 +1460,7 @@ class StatisticsManager {
 
                 // Validate coordinate ranges
                 return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 &&
-                       !isNaN(lat) && !isNaN(lng);
+                    !isNaN(lat) && !isNaN(lng);
             });
 
             if (drinksWithLocation.length === 0) {
@@ -1512,7 +1535,7 @@ class StatisticsManager {
                     showCoverageOnHover: false,
                     zoomToBoundsOnClick: true,
                     spiderfyDistanceMultiplier: 1.5,
-                    iconCreateFunction: function(cluster) {
+                    iconCreateFunction: function (cluster) {
                         const childCount = cluster.getChildCount();
                         let className = 'marker-cluster-small';
                         let size = 30;
@@ -1621,7 +1644,7 @@ class StatisticsManager {
                     });
 
                     // Add enhanced hover effects
-                    marker.on('mouseover', function() {
+                    marker.on('mouseover', function () {
                         this.setStyle({
                             fillOpacity: 1,
                             weight: 3,
@@ -1629,7 +1652,7 @@ class StatisticsManager {
                         });
                     });
 
-                    marker.on('mouseout', function() {
+                    marker.on('mouseout', function () {
                         this.setStyle({
                             fillOpacity: 0.8,
                             weight: 2,
@@ -1701,10 +1724,10 @@ class StatisticsManager {
             }
         }
     }
-    
+
     // Legacy method removed - use initializeInteractiveMap instead
     // This method has been completely removed to avoid confusion and conflicts
-    
+
     // Get marker color for interactive map based on consumption count
     getInteractiveMarkerColor(count) {
         if (count >= 10) return '#FF3B30'; // Red for very frequent locations
@@ -1758,25 +1781,25 @@ class StatisticsManager {
             Utils.showMessage('Erreur lors du recentrage de la carte', 'error');
         }
     }
-    
+
     // Get marker color based on consumption count (legacy method)
     getMarkerColor(count) {
         if (count >= 5) return '#FF3B30'; // Red for frequent
         if (count >= 2) return '#FF9500'; // Orange for occasional
         return '#34C759'; // Green for rare
     }
-    
+
     // Get marker CSS class based on consumption count
     getMarkerClass(count) {
         if (count >= 5) return 'frequent';
         if (count >= 2) return 'occasional';
         return 'rare';
     }
-    
+
     // Render top locations list
     renderTopLocations(container, locations) {
         if (!locations.length) return;
-        
+
         const listContainer = document.createElement('div');
         listContainer.className = 'top-locations';
         listContainer.innerHTML = `
@@ -1794,14 +1817,14 @@ class StatisticsManager {
                 `).join('')}
             </div>
         `;
-        
+
         container.appendChild(listContainer);
     }
-    
+
     // Render category statistics
     async renderCategoryStats(container, categories) {
         if (Object.keys(categories).length === 0) return;
-        
+
         const section = document.createElement('div');
         section.className = 'stats-section';
         section.innerHTML = `
@@ -1838,14 +1861,14 @@ class StatisticsManager {
                 `).join('')}
             </div>
         `;
-        
+
         container.appendChild(section);
     }
-    
+
     // Render individual drink statistics
     async renderIndividualDrinkStats(container, drinkStats) {
         if (Object.keys(drinkStats).length === 0) return;
-        
+
         const section = document.createElement('div');
         section.className = 'stats-section';
         section.innerHTML = `
@@ -1866,10 +1889,10 @@ class StatisticsManager {
                 `).join('')}
             </div>
         `;
-        
+
         container.appendChild(section);
     }
-    
+
     // Render category distribution chart
     renderCategoryDistributionChart(container, categories) {
         const chartContainer = document.createElement('div');
@@ -1880,15 +1903,15 @@ class StatisticsManager {
                 <canvas id="category-chart"></canvas>
             </div>
         `;
-        
+
         container.appendChild(chartContainer);
-        
+
         // Create chart
         const ctx = document.getElementById('category-chart').getContext('2d');
         const labels = Object.keys(categories);
         const data = Object.values(categories);
         const colors = Utils.getChartColors(labels.length);
-        
+
         this.charts.categoryChart = new Chart(ctx, {
             type: 'doughnut',
             data: {
@@ -1911,7 +1934,7 @@ class StatisticsManager {
             }
         });
     }
-    
+
     // Render hourly distribution chart
     renderHourlyDistributionChart(container, hourlyData) {
         const chartContainer = document.createElement('div');
@@ -1922,13 +1945,13 @@ class StatisticsManager {
                 <canvas id="hourly-chart"></canvas>
             </div>
         `;
-        
+
         container.appendChild(chartContainer);
-        
+
         const ctx = document.getElementById('hourly-chart').getContext('2d');
         const labels = Object.keys(hourlyData).map(hour => `${hour}h`);
         const data = Object.values(hourlyData);
-        
+
         this.charts.hourlyChart = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -1955,7 +1978,7 @@ class StatisticsManager {
             }
         });
     }
-    
+
     // Render daily distribution chart
     renderDailyDistributionChart(container, dailyData) {
         const chartContainer = document.createElement('div');
@@ -2053,7 +2076,7 @@ class StatisticsManager {
                         tooltip: {
                             enabled: true,
                             callbacks: {
-                                label: function(context) {
+                                label: function (context) {
                                     const value = context.parsed.r;
                                     return value + ' boisson' + (value > 1 ? 's' : '');
                                 }
@@ -2108,7 +2131,7 @@ class StatisticsManager {
             `;
         }
     }
-    
+
     // Show empty state when no data
     showEmptyState(container) {
         container.innerHTML = `
@@ -2122,7 +2145,7 @@ class StatisticsManager {
             </div>
         `;
     }
-    
+
     // Cleanup charts and maps when switching periods
     cleanup() {
         try {
@@ -2211,7 +2234,7 @@ class StatisticsManager {
             console.warn('Error cleaning up DOM event listeners:', error);
         }
     }
-    
+
     // Show health information modal
     showHealthInfoModal() {
         // Remove existing modal if present
@@ -2219,7 +2242,7 @@ class StatisticsManager {
         if (existingModal) {
             existingModal.remove();
         }
-        
+
         // Create modal
         const modal = document.createElement('div');
         modal.id = 'health-info-modal';
@@ -2546,17 +2569,17 @@ class StatisticsManager {
                 </div>
             </div>
         `;
-        
+
         document.body.appendChild(modal);
-        
+
         // Setup tab functionality
         this.setupHealthInfoTabs(modal);
-        
+
         // Close modal when clicking backdrop
         modal.querySelector('.modal-backdrop').addEventListener('click', () => {
             modal.remove();
         });
-        
+
         // Close modal with Escape key
         const handleEscape = (e) => {
             if (e.key === 'Escape') {
@@ -2566,7 +2589,7 @@ class StatisticsManager {
         };
         document.addEventListener('keydown', handleEscape);
     }
-    
+
     // Setup health info tabs functionality
     setupHealthInfoTabs(modal) {
         const tabButtons = modal.querySelectorAll('.health-tab-btn');
@@ -2590,7 +2613,7 @@ class StatisticsManager {
             });
         });
     }
-    
+
     // Check if cached data can be used
     shouldUseCache(cacheKey, dateRange) {
         // Check if cache exists and is recent (less than 5 minutes old)

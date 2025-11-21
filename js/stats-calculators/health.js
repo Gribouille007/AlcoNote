@@ -10,7 +10,7 @@
  */
 async function calculateHealthStats(drinks, dateRange, options = {}) {
     console.log('Calculating health stats for', drinks.length, 'drinks');
-    
+
     // Récupération des paramètres utilisateur pour calculs personnalisés
     let settings = options.settings;
     if (!settings && typeof window !== 'undefined' && window.dbManager) {
@@ -23,27 +23,27 @@ async function calculateHealthStats(drinks, dateRange, options = {}) {
     } else if (!settings) {
         settings = {};
     }
-    
+
     const userWeight = settings.userWeight; // en kg, requis pour calcul BAC
     const userGender = settings.userGender; // 'male'/'female', influence coef. élimination
-    
+
     let totalAlcoholGrams = 0;
     const dailyAlcohol = {};
     const weeklyAlcoholByWeek = {};
-    
+
     // Calcul de l'alcool par jour et par semaine
     drinks.forEach(drink => {
         const volumeInCL = Utils.convertToStandardUnit(drink.quantity, drink.unit).quantity;
         if (drink.alcoholContent) {
             const alcoholGrams = Utils.calculateAlcoholGrams(volumeInCL, drink.alcoholContent);
             totalAlcoholGrams += alcoholGrams;
-            
+
             // Par jour
             if (!dailyAlcohol[drink.date]) {
                 dailyAlcohol[drink.date] = 0;
             }
             dailyAlcohol[drink.date] += alcoholGrams;
-            
+
             // Par semaine (numéro de semaine)
             const weekNumber = getWeekNumber(new Date(drink.date));
             if (!weeklyAlcoholByWeek[weekNumber]) {
@@ -52,29 +52,47 @@ async function calculateHealthStats(drinks, dateRange, options = {}) {
             weeklyAlcoholByWeek[weekNumber] += alcoholGrams;
         }
     });
-    
+
     // Calcul de la moyenne hebdomadaire
     const daysDiff = typeof normalizeDaysForPeriod !== "undefined"
         ? normalizeDaysForPeriod("custom", dateRange.start, dateRange.end)
         : getDaysDifference(dateRange.start, dateRange.end);
     // Si la période est inférieure à 7 jours, éviter l'extrapolation incohérente
     const weeklyAlcoholAvg = daysDiff >= 7 ? (totalAlcoholGrams / daysDiff) * 7 : totalAlcoholGrams;
-    
+
     // Comparaison avec les recommandations OMS
     const whoRecommendation = getWHORecommendation(userGender) || 140; // Défaut 140g si non défini
     const whoComparison = whoRecommendation > 0 ? (weeklyAlcoholAvg / whoRecommendation) * 100 : null;
-    
+
+    // Estimation du BAC pour la dernière session
     // Estimation du BAC pour la dernière session
     // Utiliser la dernière consommation de la période pour un BAC cohérent
-    const lastDrinkDate = drinks.length > 0 ? new Date(drinks[drinks.length - 1].date) : new Date();
+    let lastDrinkDate = new Date();
+
+    if (drinks.length > 0) {
+        // Find the latest drink by combining date and time
+        const sortedDrinks = [...drinks].sort((a, b) => {
+            const timeA = new Date(`${a.date}T${a.time}`).getTime();
+            const timeB = new Date(`${b.date}T${b.time}`).getTime();
+            return timeA - timeB;
+        });
+
+        const lastDrink = sortedDrinks[sortedDrinks.length - 1];
+        if (lastDrink.date && lastDrink.time) {
+            const [y, m, d] = lastDrink.date.split('-').map(Number);
+            const [h, min] = lastDrink.time.split(':').map(Number);
+            lastDrinkDate = new Date(y, m - 1, d, h, min);
+        }
+    }
+
     const bacEstimation = await calculateCurrentBAC(userWeight, userGender, drinks, lastDrinkDate);
-    
+
     // Analyse des risques
     const riskAnalysis = analyzeHealthRisks(weeklyAlcoholAvg, dailyAlcohol, userGender);
-    
+
     // Calcul des jours de dépassement des seuils
     const exceedanceDays = calculateExceedanceDays(dailyAlcohol, userGender);
-    
+
     return {
         totalAlcoholGrams: Math.round(totalAlcoholGrams * 10) / 10,
         weeklyAlcohol: Math.round(weeklyAlcoholAvg * 10) / 10,
@@ -102,7 +120,7 @@ async function calculateHealthStats(drinks, dateRange, options = {}) {
  */
 async function calculateCurrentBAC(userWeight, userGender, drinks, referenceDate = new Date()) {
     if (!userWeight || !userGender) return null;
-    
+
     try {
         const bacStats = await Utils.calculateBACStats(userWeight, userGender, referenceDate, drinks);
         return bacStats;
@@ -126,21 +144,21 @@ function analyzeHealthRisks(weeklyAlcohol, dailyAlcohol, userGender) {
         factors: [],
         recommendations: []
     };
-    
+
     // Seuils de risque selon l'OMS
     const weeklyLimits = {
         male: 210,   // 21 unités standard
         female: 140  // 14 unités standard
     };
-    
+
     const dailyLimits = {
         male: 40,    // 4 unités standard
         female: 30   // 3 unités standard
     };
-    
+
     const weeklyLimit = weeklyLimits[userGender] || weeklyLimits.male;
     const dailyLimit = dailyLimits[userGender] || dailyLimits.male;
-    
+
     // Évaluation du risque hebdomadaire
     if (weeklyAlcohol > weeklyLimit * 1.5) {
         risks.level = 'high';
@@ -153,12 +171,12 @@ function analyzeHealthRisks(weeklyAlcohol, dailyAlcohol, userGender) {
         risks.factors.push('Consommation hebdomadaire au-dessus des recommandations');
         risks.recommendations.push('Essayez de respecter les recommandations hebdomadaires');
     }
-    
+
     // Évaluation des pics quotidiens
     const highDays = Object.values(dailyAlcohol).filter(amount => amount > dailyLimit);
     if (highDays.length > 0) {
         const avgExcess = highDays.reduce((sum, amount) => sum + amount, 0) / highDays.length;
-        
+
         if (avgExcess > dailyLimit * 2) {
             risks.level = 'high';
             risks.score += 30;
@@ -170,12 +188,12 @@ function analyzeHealthRisks(weeklyAlcohol, dailyAlcohol, userGender) {
             risks.recommendations.push('Modérez les quantités lors des sorties');
         }
     }
-    
+
     // Évaluation de la fréquence
     const drinkingDays = Object.keys(dailyAlcohol).length;
     const totalDays = Object.keys(dailyAlcohol).length > 0 ? Object.keys(dailyAlcohol).length : 7; // Adapter à la période réelle
     const frequency = drinkingDays / totalDays;
-    
+
     if (frequency > 0.8) {
         risks.score += 20;
         risks.factors.push('Consommation très fréquente');
@@ -185,7 +203,7 @@ function analyzeHealthRisks(weeklyAlcohol, dailyAlcohol, userGender) {
         risks.factors.push('Consommation fréquente');
         risks.recommendations.push('Alternez avec des jours sans alcool');
     }
-    
+
     // Détermination du niveau final
     if (risks.score >= 50) {
         risks.level = 'high';
@@ -194,12 +212,12 @@ function analyzeHealthRisks(weeklyAlcohol, dailyAlcohol, userGender) {
     } else {
         risks.level = 'low';
     }
-    
+
     // Recommandations générales
     if (risks.level === 'low') {
         risks.recommendations.push('Continuez à consommer avec modération');
     }
-    
+
     return risks;
 }
 
@@ -214,28 +232,28 @@ function calculateExceedanceDays(dailyAlcohol, userGender) {
         male: 40,    // 4 unités standard
         female: 30   // 3 unités standard
     };
-    
+
     const dailyLimit = dailyLimits[userGender] || dailyLimits.male;
     const heavyLimit = dailyLimit * 2; // Consommation excessive
-    
+
     let moderateExceedance = 0;
     let heavyExceedance = 0;
     let maxDaily = 0;
     let maxDailyDate = null;
-    
+
     Object.entries(dailyAlcohol).forEach(([date, amount]) => {
         if (amount > heavyLimit) {
             heavyExceedance++;
         } else if (amount > dailyLimit) {
             moderateExceedance++;
         }
-        
+
         if (amount > maxDaily) {
             maxDaily = amount;
             maxDailyDate = date;
         }
     });
-    
+
     return {
         moderateExceedance,
         heavyExceedance,
@@ -256,7 +274,7 @@ function getWHORecommendation(gender) {
         male: 210,   // 21 unités standard par semaine
         female: 140  // 14 unités standard par semaine
     };
-    
+
     return limits[gender] || null;
 }
 
@@ -296,7 +314,7 @@ function getDaysDifference(startDate, endDate) {
 function generateHealthAdvice(healthStats) {
     const advice = [];
     const { riskAnalysis, whoComparison, bacEstimation } = healthStats;
-    
+
     // Conseils basés sur le niveau de risque
     switch (riskAnalysis.level) {
         case 'high':
@@ -324,7 +342,7 @@ function generateHealthAdvice(healthStats) {
             });
             break;
     }
-    
+
     // Conseils sur le BAC
     if (bacEstimation && bacEstimation.currentBAC > 500) { // > 0.5g/L
         advice.push({
@@ -334,7 +352,7 @@ function generateHealthAdvice(healthStats) {
             action: 'Ne conduisez pas et attendez la sobriété complète'
         });
     }
-    
+
     return advice;
 }
 
