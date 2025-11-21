@@ -9,7 +9,6 @@
  * @returns {Object} Statistiques de santé : alcool total/hebdomadaire, comparaison OMS, estimation BAC
  */
 async function calculateHealthStats(drinks, dateRange, options = {}) {
-    console.log('Calculating health stats for', drinks.length, 'drinks');
 
     // Récupération des paramètres utilisateur pour calculs personnalisés
     let settings = options.settings;
@@ -112,14 +111,46 @@ async function calculateHealthStats(drinks, dateRange, options = {}) {
 }
 
 /**
- * Calcule l'estimation actuelle du BAC
- * @param {number} userWeight - Poids de l'utilisateur
- * @param {string} userGender - Sexe de l'utilisateur
- * @param {Array} drinks - Liste des boissons
- * @returns {Object|null} Estimation du BAC
+ * Calcule le BAC (Blood Alcohol Content) actuel en utilisant la formule de Widmark modifiée
+ * 
+ * Formule: BAC (g/L) = (Alcool ingéré en grammes / (Poids corporel en kg * Vd)) - (Taux d'élimination * Temps écoulé)
+ * 
+ * @param {number} userWeight - Poids de l'utilisateur en kg (requis)
+ * @param {string} userGender - Sexe de l'utilisateur ('male' ou 'female') (requis)
+ * @param {Array} drinks - Liste des boissons avec {date, time, quantity, unit, alcoholContent}
+ * @param {Date} referenceDate - Date/heure de référence pour le calcul (défaut: maintenant)
+ * @returns {Object|null} - {currentBAC, currentBACgL, timeToSobriety, timeToLegalLimit, relevantDrinks} ou null si données manquantes
+ * 
+ * Constantes utilisées (basées sur la littérature scientifique - Widmark 1932, Watson et al. 1981):
+ * - Vd (Volume de distribution): 0.68 (hommes), 0.55 (femmes)
+ * - Taux d'élimination: 0.15 g/L/h (moyenne, peut varier de 0.10 à 0.25 g/L/h)
+ * - Limite légale (Belgique): 0.5 g/L = 500 mg/L
+ * 
+ * AVERTISSEMENT: Cette estimation est indicative et peut différer du BAC réel selon:
+ * - Le métabolisme individuel, la tolérance à l'alcool
+ * - La prise de nourriture, l'hydratation
+ * - L'état de santé, la prise de médicaments
+ * - La précision des données d'entrée (quantités, degrés d'alcool)
  */
 async function calculateCurrentBAC(userWeight, userGender, drinks, referenceDate = new Date()) {
-    if (!userWeight || !userGender) return null;
+    // Validation stricte des paramètres requis
+    if (!userWeight || typeof userWeight !== 'number' || userWeight < 30 || userWeight > 300) {
+        return null;
+    }
+
+    if (!userGender || !['male', 'female'].includes(userGender)) {
+        return null;
+    }
+
+    if (!Array.isArray(drinks)) {
+        console.warn('[BAC] Drinks parameter must be an array');
+        return null;
+    }
+
+    if (!(referenceDate instanceof Date) || isNaN(referenceDate.getTime())) {
+        console.warn('[BAC] Invalid reference date:', referenceDate);
+        return null;
+    }
 
     try {
         const bacStats = await Utils.calculateBACStats(userWeight, userGender, referenceDate, drinks);

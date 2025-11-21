@@ -63,7 +63,7 @@ class ErrorTracker {
     generateUserId() {
         let userId = localStorage.getItem('alconote-user-id');
         if (!userId) {
-            userId = 'user_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+            userId = 'user_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
             localStorage.setItem('alconote-user-id', userId);
         }
         return userId;
@@ -103,7 +103,7 @@ class ErrorTracker {
 
     // Generate unique error ID
     generateErrorId() {
-        return 'err_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+        return 'err_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
     }
 
     // Get application context
@@ -167,8 +167,8 @@ class ErrorTracker {
             /is not defined/i
         ];
 
-        return criticalPatterns.some(pattern => 
-            pattern.test(error.message) || 
+        return criticalPatterns.some(pattern =>
+            pattern.test(error.message) ||
             (error.stack && pattern.test(error.stack))
         );
     }
@@ -177,7 +177,7 @@ class ErrorTracker {
     showUserErrorMessage(error) {
         if (window.Utils && window.Utils.showMessage) {
             let message = 'Une erreur inattendue s\'est produite.';
-            
+
             if (error.message.includes('database') || error.message.includes('indexeddb')) {
                 message = 'Problème de base de données. Vos données sont sécurisées.';
             } else if (error.message.includes('network') || error.message.includes('fetch')) {
@@ -192,13 +192,14 @@ class ErrorTracker {
     monitorNetworkErrors() {
         // Override fetch to monitor network requests
         const originalFetch = window.fetch;
-        window.fetch = async (...args) => {
+        const self = this; // Preserve ErrorTracker context
+        window.fetch = async function (...args) {
             try {
-                const response = await originalFetch(...args);
-                
+                const response = await originalFetch.apply(this, args);
+
                 // Log failed requests
                 if (!response.ok) {
-                    this.logError({
+                    self.logError({
                         type: 'network',
                         message: `HTTP ${response.status}: ${response.statusText}`,
                         url: args[0],
@@ -206,10 +207,10 @@ class ErrorTracker {
                         timestamp: new Date().toISOString()
                     });
                 }
-                
+
                 return response;
             } catch (error) {
-                this.logError({
+                self.logError({
                     type: 'network',
                     message: `Network error: ${error.message}`,
                     url: args[0],
@@ -247,7 +248,7 @@ class ErrorTracker {
     sendToMonitoringService(error) {
         // In production, you would send to a service like Sentry, LogRocket, etc.
         // For now, we just store locally
-        
+
         // Example implementation:
         /*
         if (this.isProduction() && this.monitoringEndpoint) {
@@ -266,9 +267,9 @@ class ErrorTracker {
 
     // Check if in development mode
     isDevelopment() {
-        return window.location.hostname === 'localhost' || 
-               window.location.hostname === '127.0.0.1' ||
-               window.location.protocol === 'file:';
+        return window.location.hostname === 'localhost' ||
+            window.location.hostname === '127.0.0.1' ||
+            window.location.protocol === 'file:';
     }
 
     // Check if in production mode
@@ -318,7 +319,7 @@ class ErrorTracker {
                     const perfData = performance.getEntriesByType('navigation')[0];
                     if (perfData) {
                         const loadTime = perfData.loadEventEnd - perfData.loadEventStart;
-                        
+
                         // Log slow page loads
                         if (loadTime > 3000) {
                             this.logError({

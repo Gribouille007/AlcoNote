@@ -93,17 +93,15 @@ async function renderBACEstimation(context = {}) {
                 // Parse the date and set time to end of day (23:59:59)
                 const [year, month, day] = endDate.split('-').map(Number);
                 referenceTime = new Date(year, month - 1, day, 23, 59, 59);
-                console.log(`[BAC] Using end-of-day referenceTime for past date: ${endDate}`);
             } else {
-                console.log(`[BAC] Using current time as referenceTime (date is today or future)`);
+                // Using current time as referenceTime (date is today or future)
             }
         } else {
-            console.log(`[BAC] Using current time as referenceTime (no dateRange in context)`);
+            // Using current time as referenceTime (no dateRange in context)
         }
 
         // Get drinks from context if available, otherwise fetch
         const drinksForBAC = context.drinks || [];
-        console.log(`[BAC Health Renderer] Received ${drinksForBAC.length} drinks from context`);
 
         // Calculate BAC statistics with reference time and drinks
         const bacStats = await Utils.calculateBACStats(userWeight, userGender, referenceTime, drinksForBAC);

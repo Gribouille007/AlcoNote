@@ -157,8 +157,8 @@ class Utils {
     static convertToStandardUnit(quantity, unit) {
         // Normalize quantity to centiliters for alcohol calculations
         switch (unit) {
-            case 'EcoCup':  // French drinking cup, assumed to be 25cL
-                return { quantity: 25, unit: 'cL' };
+            case 'EcoCup':  // French drinking cup, assumed to be 25cL each
+                return { quantity: quantity * 25, unit: 'cL' };  // FIX: multiply by quantity
             case 'L':  // Liters to centiliters
                 return { quantity: quantity * 100, unit: 'cL' };
             case 'cL':  // Already in centiliters
@@ -190,8 +190,16 @@ class Utils {
         return Math.max(0, bacMgL);
     }
 
+    /**
+     * Calculate current Blood Alcohol Content using Widmark formula
+     * @param {Array} drinks - Array of drink objects with date, time, quantity, unit, alcoholContent
+     * @param {number} weightKg - User weight in kg
+     * @param {string} gender - 'male' or 'female'
+     * @param {Date} currentTime - Reference time for calculation
+     * @returns {number} BAC in g/L (will be converted to mg/L by calculateBACStats)
+     */
     static calculateCurrentBAC(drinks, weightKg, gender, currentTime = new Date()) {
-        // Correct calculation: Simulate BAC evolution over time
+        // Simulate BAC evolution over time with elimination
         if (!drinks || drinks.length === 0 || !weightKg || !gender) return 0;
 
         const r = gender === 'female' ? 0.55 : 0.68;
@@ -249,6 +257,8 @@ class Utils {
             currentBAC -= eliminationRate * finalTimeDiffHours;
         }
 
+        // Return BAC in g/L (decimal format like 0.244)
+        // Note: calculateBACStats() will multiply by 1000 to convert to mg/L for display
         return Math.max(0, currentBAC);
     }
 
@@ -308,20 +318,24 @@ class Utils {
         }
     }
 
+    /**
+     * Calculate comprehensive BAC statistics
+     * @param {number} weightKg - User weight in kg
+     * @param {string} gender - 'male' or 'female'
+     * @param {Date} currentTime - Reference time
+     * @param {Array} drinks - Array of drinks to analyze
+     * @returns {Object} Stats with currentBAC in mg/L, timeToSobriety, etc.
+     */
     static async calculateBACStats(weightKg, gender, currentTime = new Date(), drinks = []) {
-        // Calculate comprehensive BAC statistics using provided drinks rather than DB lookups
+        // Calculate comprehensive BAC statistics using provided drinks
         if (!weightKg || !gender) {
-            console.warn('[BAC] Missing user profile data (weight or gender)');
             return null;
         }
-
-        console.log(`[BAC] calculateBACStats called with ${drinks.length} drinks`);
 
         // If no drinks provided, fallback to last 24 hours
         const relevantDrinks = drinks.length
             ? drinks.filter(drink => {
                 if (!drink.date || !drink.time) {
-                    console.log('[BAC] Filtered out drink missing date/time:', drink.name);
                     return false;
                 }
 
@@ -332,18 +346,11 @@ class Utils {
                     const drinkDateTime = new Date(year, month - 1, day, hours, minutes);
 
                     if (isNaN(drinkDateTime.getTime())) {
-                        console.log('[BAC] Filtered out drink with invalid date:', drink.name);
                         return false;
                     }
 
                     const hoursElapsed = (currentTime - drinkDateTime) / (1000 * 60 * 60);
-                    const isRelevant = hoursElapsed >= 0 && hoursElapsed <= 24;
-
-                    if (!isRelevant) {
-                        console.log(`[BAC] Filtered out drink outside 24h window: ${drink.name} (${hoursElapsed.toFixed(1)}h ago)`);
-                    }
-
-                    return isRelevant;
+                    return hoursElapsed >= 0 && hoursElapsed <= 24;
                 } catch (error) {
                     console.warn('[BAC] Error filtering drink:', error, drink);
                     return false;
@@ -351,12 +358,10 @@ class Utils {
             })
             : await this.getRelevantDrinksForBAC(currentTime);
 
-        console.log(`[BAC] ${relevantDrinks.length} relevant drinks after filtering`);
-
-        // Calculate BAC from relevant drinks
+        // Calculate BAC from relevant drinks (returns g/L)
         const currentBACGL = this.calculateCurrentBAC(relevantDrinks, weightKg, gender, currentTime);
 
-        // Conversion en mg/L
+        // Convert g/L to mg/L for display (0.244 g/L → 244 mg/L)
         const currentBACMgL = currentBACGL * 1000;
 
         // Temps jusqu'à sobriété complète (0 g/L)
