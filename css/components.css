@@ -1282,7 +1282,75 @@ textarea:focus-visible {
 .category-drinks-list {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-md);
+    gap: var(--spacing-lg);
+}
+
+/* Drink Family Grouping Styles */
+.drink-family {
+    background-color: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-md);
+    border: 2px solid var(--separator);
+    transition: all var(--transition-fast);
+}
+
+.drink-family.has-variants {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+    border: 2px solid var(--primary-color);
+    box-shadow: var(--shadow-md);
+}
+
+.drink-family:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+.drink-family-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-sm) var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    background-color: var(--bg-primary);
+    border-radius: var(--radius-md);
+    border-bottom: 2px solid var(--separator);
+}
+
+.drink-family.has-variants .drink-family-header {
+    background: linear-gradient(90deg, var(--primary-color) 0%, rgba(0, 122, 255, 0.8) 100%);
+    color: white;
+    border-bottom: none;
+}
+
+.drink-family-name {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+}
+
+.drink-family.has-variants .drink-family-name {
+    color: white;
+}
+
+.drink-family-count {
+    background-color: rgba(255, 255, 255, 0.2);
+    padding: var(--spacing-xs) var(--spacing-md);
+    border-radius: var(--radius-xl);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+}
+
+.drink-family.has-variants .drink-family-count {
+    background-color: rgba(255, 255, 255, 0.3);
+    color: white;
+    backdrop-filter: blur(5px);
+}
+
+.drink-variants {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
 }
 
 .category-drink-item {
@@ -1296,10 +1364,21 @@ textarea:focus-visible {
     border: 1px solid var(--separator);
 }
 
+.category-drink-item.is-variant {
+    background-color: var(--bg-primary);
+    border-left: 4px solid var(--primary-color);
+    margin-left: var(--spacing-md);
+    padding-left: var(--spacing-lg);
+}
+
 .category-drink-item:hover {
     background-color: var(--gray-6);
-    transform: translateY(-1px);
+    transform: translateX(4px);
     box-shadow: var(--shadow-sm);
+}
+
+.category-drink-item.is-variant:hover {
+    transform: translateX(8px);
 }
 
 .drink-info {
@@ -1324,6 +1403,13 @@ textarea:focus-visible {
     align-items: center;
     gap: var(--spacing-sm);
     flex-wrap: wrap;
+    font-weight: var(--font-weight-medium);
+}
+
+.category-drink-item.is-variant .drink-details {
+    font-size: var(--font-size-md);
+    color: var(--primary-color);
+    font-weight: var(--font-weight-semibold);
 }
 
 .drink-counter {

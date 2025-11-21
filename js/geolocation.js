@@ -145,6 +145,16 @@ class GeolocationManager {
     async ensureConsent() {
         if (!this.isSupported) return false;
 
+        // CRITICAL FIX: Check stored consent FIRST before doing anything else
+        // If user has already made a decision, respect it without asking again
+        if (this.consent === 'granted') {
+            return true;
+        }
+        if (this.consent === 'denied') {
+            return false;
+        }
+
+        // Check browser permission state
         let permissionState = 'unknown';
         try {
             const perm = await navigator.permissions.query({ name: 'geolocation' });
@@ -162,35 +172,36 @@ class GeolocationManager {
             return false;
         }
 
-        // permissionState is 'prompt' or 'unknown' -> gate with our own one-time consent
-        if (this.consent === 'granted') {
-            return true;
-        }
-        if (this.consent === 'denied') {
-            return false;
+        // permissionState is 'prompt' or 'unknown'
+        // Only ask if we've NEVER asked before (consent is null)
+        // This ensures we only ask ONCE, ever
+        if (this.consent === null) {
+            // Ask user once via lightweight confirm instead of nagging every drink
+            const userAgreed = typeof window !== 'undefined'
+                ? window.confirm('Autoriser AlcoNote à enregistrer votre position pour vos boissons ? Cette autorisation est demandée une seule fois. Vous pourrez changer ce choix dans les réglages du navigateur.')
+                : false;
+
+            if (!userAgreed) {
+                this.setStoredConsent('denied');
+                return false;
+            }
+
+            // Trigger actual browser permission prompt once
+            const res = await this.requestPermission();
+            if (res.granted) {
+                this.setStoredConsent('granted');
+                // Immediately start prewarming location for future drinks
+                this.startLocationPrewarming();
+                return true;
+            } else {
+                this.setStoredConsent('denied');
+                return false;
+            }
         }
 
-        // Ask user once via lightweight confirm instead of nagging every drink
-        const userAgreed = typeof window !== 'undefined'
-            ? window.confirm('Autoriser AlcoNote à enregistrer votre position pour vos boissons ? Cette autorisation est demandée une seule fois. Vous pourrez changer ce choix dans les réglages du navigateur.')
-            : false;
-
-        if (!userAgreed) {
-            this.setStoredConsent('denied');
-            return false;
-        }
-
-        // Trigger actual browser permission prompt once
-        const res = await this.requestPermission();
-        if (res.granted) {
-            this.setStoredConsent('granted');
-            // Immediately start prewarming location for future drinks
-            this.startLocationPrewarming();
-            return true;
-        } else {
-            this.setStoredConsent('denied');
-            return false;
-        }
+        // If we reach here, consent is null but we somehow didn't ask
+        // This should never happen, but default to denied for safety
+        return false;
     }
 
     // Get current position

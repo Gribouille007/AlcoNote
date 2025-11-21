@@ -1245,36 +1245,70 @@ class AlcoNoteApp {
             // Get drinks for this category
             const drinks = await dbManager.getDrinksByCategory(category.name);
 
-            // Group drinks by name and aggregate counts
-            const drinkGroups = {};
+            // FIRST LEVEL: Group drinks by name only to identify drink families
+            const drinkFamilies = {};
             drinks.forEach(drink => {
-                const key = drink.name;
-                if (!drinkGroups[key]) {
-                    drinkGroups[key] = {
-                        name: drink.name,
-                        category: drink.category,
-                        quantity: drink.quantity,
-                        unit: drink.unit,
-                        alcoholContent: drink.alcoholContent,
-                        count: 0,
-                        lastConsumed: null,
-                        drinks: []
-                    };
+                const nameKey = drink.name;
+                if (!drinkFamilies[nameKey]) {
+                    drinkFamilies[nameKey] = [];
                 }
-                drinkGroups[key].count++;
-                drinkGroups[key].drinks.push(drink);
-
-                // Update last consumed date
-                if (!drinkGroups[key].lastConsumed || drink.date > drinkGroups[key].lastConsumed) {
-                    drinkGroups[key].lastConsumed = drink.date;
-                }
+                drinkFamilies[nameKey].push(drink);
             });
 
-            // Convert to array and sort by count (descending)
-            const sortedDrinks = Object.values(drinkGroups).sort((a, b) => b.count - a.count);
+            // SECOND LEVEL: Within each family, group by quantity+unit to create variants
+            const drinkGroupsWithVariants = [];
+            Object.keys(drinkFamilies).forEach(drinkName => {
+                const familyDrinks = drinkFamilies[drinkName];
+
+                // Group variants by quantity+unit
+                const variants = {};
+                familyDrinks.forEach(drink => {
+                    const variantKey = `${drink.quantity}|${drink.unit}`;
+                    if (!variants[variantKey]) {
+                        variants[variantKey] = {
+                            name: drink.name,
+                            category: drink.category,
+                            quantity: drink.quantity,
+                            unit: drink.unit,
+                            alcoholContent: drink.alcoholContent,
+                            count: 0,
+                            lastConsumed: null,
+                            drinks: []
+                        };
+                    }
+                    variants[variantKey].count++;
+                    variants[variantKey].drinks.push(drink);
+
+                    // Update last consumed date
+                    if (!variants[variantKey].lastConsumed || drink.date > variants[variantKey].lastConsumed) {
+                        variants[variantKey].lastConsumed = drink.date;
+                    }
+                });
+
+                // Convert variants to array and sort by quantity (descending)
+                const variantArray = Object.values(variants).sort((a, b) => {
+                    // Convert to standard unit (cL) for comparison
+                    const aInCL = Utils.convertToStandardUnit(a.quantity, a.unit).quantity;
+                    const bInCL = Utils.convertToStandardUnit(b.quantity, b.unit).quantity;
+                    return bInCL - aInCL;
+                });
+
+                // Calculate total count for this drink family
+                const totalCount = variantArray.reduce((sum, v) => sum + v.count, 0);
+
+                drinkGroupsWithVariants.push({
+                    name: drinkName,
+                    variants: variantArray,
+                    totalCount: totalCount,
+                    hasMultipleVariants: variantArray.length > 1
+                });
+            });
+
+            // Sort drink families by total count (descending)
+            drinkGroupsWithVariants.sort((a, b) => b.totalCount - a.totalCount);
 
             // Create and show category detail modal
-            this.showCategoryDetailModal(category, sortedDrinks);
+            this.showCategoryDetailModal(category, drinkGroupsWithVariants);
 
         } catch (error) {
             Utils.handleError(error, 'opening category detail page');
@@ -1308,65 +1342,100 @@ class AlcoNoteApp {
         } else {
             content.innerHTML = `
                 <div class="category-drinks-list">
-                    ${drinkGroups.map(group => `
-                        <div class="category-drink-item">
-                            <div class="drink-info">
-                                <div class="drink-name">${group.name}</div>
-                                <div class="drink-details">
-                                    ${Utils.formatQuantity(group.quantity, group.unit)}
-                                    ${group.alcoholContent ? ` • ${group.alcoholContent}%` : ''}
-                                    ${group.lastConsumed ? ` • Dernière: ${Utils.formatDate(group.lastConsumed)}` : ''}
-                                </div>
+                    ${drinkGroups.map(drinkGroup => `
+                        <div class="drink-family ${drinkGroup.hasMultipleVariants ? 'has-variants' : ''}">
+                            <div class="drink-family-header">
+                                <span class="drink-family-name">${drinkGroup.name}</span>
+                                <span class="drink-family-count">${drinkGroup.totalCount} total</span>
                             </div>
-                            <div class="drink-counter">
-                                <span class="counter-value">${group.count}</span>
-                                <button class="counter-add-btn" data-drink='${JSON.stringify(group)}' aria-label="Ajouter cette boisson">
-                                    <span>+</span>
-                                </button>
+                            <div class="drink-variants">
+                                ${drinkGroup.variants.map((variant, variantIndex) => {
+                // Create a clean data object with only necessary fields
+                const drinkData = {
+                    name: variant.name,
+                    category: variant.category,
+                    quantity: variant.quantity,
+                    unit: variant.unit,
+                    alcoholContent: variant.alcoholContent
+                };
+                // Properly escape JSON for HTML attribute
+                const escapedData = JSON.stringify(drinkData)
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+
+                return `
+                                        <div class="category-drink-item ${drinkGroup.hasMultipleVariants ? 'is-variant' : ''}" data-variant-index="${variantIndex}">
+                                            <div class="drink-info">
+                                                <div class="drink-details">
+                                                    ${Utils.formatQuantity(variant.quantity, variant.unit)}
+                                                    ${variant.alcoholContent ? ` • ${variant.alcoholContent}%` : ''}
+                                                    ${variant.lastConsumed ? ` • ${Utils.formatDate(variant.lastConsumed)}` : ''}
+                                                </div>
+                                            </div>
+                                            <div class="drink-counter">
+                                                <span class="counter-value">${variant.count}</span>
+                                                <button class="counter-add-btn" data-drink="${escapedData}" aria-label="Ajouter cette boisson">
+                                                    <span>+</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    `;
+            }).join('')}
                             </div>
                         </div>
                     `).join('')}
                 </div>
             `;
 
-            // Setup + button functionality for each drink
+            // Setup + button functionality for each drink variant
             content.querySelectorAll('.counter-add-btn').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    const drinkData = JSON.parse(btn.dataset.drink);
-
-                    // Add visual feedback
-                    const counterValue = btn.parentElement.querySelector('.counter-value');
-                    const originalCount = parseInt(counterValue.textContent);
-
-                    // Temporarily update counter with animation
-                    counterValue.textContent = originalCount + 1;
-                    counterValue.classList.add('increment-animation');
-
-                    // Disable button temporarily
-                    btn.disabled = true;
-                    btn.style.opacity = '0.6';
 
                     try {
-                        await this.addDrinkFromCategory(drinkData);
+                        // Decode HTML entities and parse JSON
+                        const jsonStr = btn.getAttribute('data-drink')
+                            .replace(/&quot;/g, '"')
+                            .replace(/&#39;/g, "'");
+                        const drinkData = JSON.parse(jsonStr);
 
-                        // Refresh the modal content after successful addition
+                        // Add visual feedback
+                        const counterValue = btn.parentElement.querySelector('.counter-value');
+                        const originalCount = parseInt(counterValue.textContent);
+
+                        // Temporarily update counter with animation
+                        counterValue.textContent = originalCount + 1;
+                        counterValue.classList.add('increment-animation');
+
+                        // Disable button temporarily
+                        btn.disabled = true;
+                        btn.style.opacity = '0.6';
+
+                        try {
+                            await this.addDrinkFromCategory(drinkData);
+
+                            // Refresh the modal content after successful addition
+                            setTimeout(() => {
+                                this.openCategoryDetailPage(category);
+                            }, 300);
+
+                        } catch (error) {
+                            // Revert counter on error
+                            counterValue.textContent = originalCount;
+                            btn.disabled = false;
+                            btn.style.opacity = '1';
+                            Utils.handleError(error, 'adding drink from category');
+                        }
+
+                        // Remove animation class
                         setTimeout(() => {
-                            this.openCategoryDetailPage(category);
+                            counterValue.classList.remove('increment-animation');
                         }, 300);
 
-                    } catch (error) {
-                        // Revert counter on error
-                        counterValue.textContent = originalCount;
-                        btn.disabled = false;
-                        btn.style.opacity = '1';
-                        Utils.handleError(error, 'adding drink from category');
+                    } catch (parseError) {
+                        console.error('Error parsing drink data:', parseError, btn.getAttribute('data-drink'));
+                        Utils.showMessage('Erreur lors de l\'ajout de la boisson', 'error');
                     }
-
-                    // Remove animation class
-                    setTimeout(() => {
-                        counterValue.classList.remove('increment-animation');
-                    }, 300);
                 });
             });
         }
