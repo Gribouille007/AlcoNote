@@ -961,7 +961,7 @@ class AlcoNoteApp {
     }
 
     // Open modal functions
-    async openAddDrinkModal(categoryName = null) {
+    async openAddDrinkModal(categoryName = null, productInfo = null) {
         // Ensure we request geolocation permission once before adding
         try { await geoManager.ensureConsent(); } catch (e) { /* ignore */ }
 
@@ -969,7 +969,6 @@ class AlcoNoteApp {
         const form = document.getElementById('add-drink-form');
         if (form) {
             delete form.dataset.editingDrinkId;
-            delete form.dataset.barcode;
 
             // Reset form title and button text
             const modalTitle = document.querySelector('#add-drink-modal .modal-title');
@@ -982,14 +981,43 @@ class AlcoNoteApp {
         // Clear the form completely
         Utils.resetForm(form);
 
-        // Set current date and time
+        // Get form elements
         const dateInput = document.getElementById('drink-date');
         const timeInput = document.getElementById('drink-time');
         const categorySelect = document.getElementById('drink-category');
         const categoryFormGroup = document.getElementById('category-form-group');
+        const nameInput = document.getElementById('drink-name');
+        const alcoholInput = document.getElementById('drink-alcohol');
+        const quantityInput = document.getElementById('drink-quantity');
+        const unitSelect = document.getElementById('drink-unit');
 
+        // Set current date and time
         if (dateInput) dateInput.value = Utils.getCurrentDate();
         if (timeInput) timeInput.value = Utils.getCurrentTime();
+
+        // If productInfo is provided, pre-fill all fields
+        if (productInfo) {
+            if (nameInput) nameInput.value = productInfo.name || '';
+            if (alcoholInput && productInfo.alcoholContent) {
+                alcoholInput.value = productInfo.alcoholContent;
+            }
+            if (quantityInput && productInfo.quantity) {
+                quantityInput.value = productInfo.quantity;
+            }
+            if (unitSelect && productInfo.unit) {
+                unitSelect.value = productInfo.unit;
+            }
+
+            // Store barcode for later use
+            if (form && productInfo.barcode) {
+                form.dataset.barcode = productInfo.barcode;
+            }
+
+            // Use category from productInfo if available
+            if (productInfo.category) {
+                categoryName = productInfo.category;
+            }
+        }
 
         // Pre-select category if provided and hide the field
         if (categoryName && categorySelect) {

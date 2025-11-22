@@ -17,21 +17,23 @@ class BarcodeScanner {
                     height: 480,
                     facingMode: "environment" // Use back camera
                 },
-                area: { top: "20%", right: "10%", left: "10%", bottom: "20%" }
+                area: { top: "10%", right: "5%", left: "5%", bottom: "10%" } // Larger scan area
             },
             locator: {
-                patchSize: "large",
+                patchSize: "medium",
                 halfSample: true
             },
-            numOfWorkers: 2,
-            frequency: 10,
+            numOfWorkers: navigator.hardwareConcurrency > 2 ? 2 : 1,
+            frequency: 15, // Increased frequency for better detection
             decoder: {
                 readers: [
                     "ean_reader",
                     "ean_8_reader",
+                    "upc_reader",
                     "upc_e_reader",
                     "code_128_reader"
-                ]
+                ],
+                multiple: false
             },
             locate: true
         };
@@ -103,10 +105,9 @@ class BarcodeScanner {
                 // Reset inactivity timer on detection
                 this.resetInactivityTimer();
 
-                // Stop scanning after detection
-                this.stop();
-
+                // Call the detection handler (async) - don't stop yet!
                 if (this.onDetected) {
+                    // Call async handler and let it stop the scanner when done
                     this.onDetected(code);
                 }
             }
@@ -139,16 +140,23 @@ class BarcodeScanner {
     async start() {
         try {
             if (this.isStarting || this.isScanning) {
+                console.log('Scanner already starting or scanning, skipping...');
                 return;
             }
             this.isStarting = true;
+            console.log('Starting scanner... isInitialized:', this.isInitialized);
+
             if (!this.isInitialized) {
+                console.log('Initializing Quagga...');
                 await this.init();
+                console.log('Quagga initialized successfully');
             }
 
+            console.log('Starting Quagga scanner...');
             Quagga.start();
             this.isScanning = true;
             this.scheduleFallbackProfile();
+            console.log('Scanner started, isScanning:', this.isScanning);
 
             // Update status
             this.updateStatus('Recherche de code-barres...');
@@ -168,6 +176,7 @@ class BarcodeScanner {
             }
             // Ensure starting flag is reset on failure
             this.isStarting = false;
+            this.isInitialized = false; // Reset to allow retry
         }
     }
 
@@ -183,6 +192,9 @@ class BarcodeScanner {
             }
         } finally {
             this.isScanning = false;
+            this.isStarting = false;
+            // Reset initialization flag to force re-init on next start
+            this.isInitialized = false;
             this.updateStatus('Scanner arrêté');
 
             // Clear inactivity timer
@@ -395,87 +407,26 @@ class BarcodeScanner {
         return null;
     }
 
-    // Determine if product is beer for auto-save feature
-    isBeer(productInfo) {
-        return productInfo.category === 'Bière' ||
-            (productInfo.name && productInfo.name.toLowerCase().includes('bière')) ||
-            (productInfo.name && productInfo.name.toLowerCase().includes('beer'));
-    }
-
-    // Auto-save beer products
-    async autoSaveBeer(productInfo) {
-        try {
-            // Ensure consent once; do not nag repeatedly
-            try { await geoManager.ensureConsent(); } catch (_) { }
-
-            // Get current or last known location; if none, open manual entry modal
-            let location = null;
-            try {
-                location = await geoManager.getLocationForDrink();
-            } catch (e) {
-                console.warn('Could not get current location for auto-save:', e);
-                location = null;
-            }
-            if (!location) {
-                location = geoManager.getLastKnownLocation();
-            }
-            if (!location) {
-                // Instead of blocking, open the add drink modal for manual entry
-                console.log('No location available for auto-save, opening manual entry modal');
-                Utils.showMessage(`${productInfo.name} détecté! Ajoutez manuellement car la localisation est indisponible.`, 'info');
-                // Open manual entry instead of throwing error
-                this.openAddDrinkModal(productInfo);
-                return null;
-            }
-
-            const drinkData = {
-                name: productInfo.name,
-                category: productInfo.category,
-                quantity: 1,
-                unit: 'EcoCup', // Default for beer
-                alcoholContent: productInfo.alcoholContent || 5, // Default beer alcohol content
-                date: Utils.getCurrentDate(),
-                time: Utils.getCurrentTime(),
-                barcode: productInfo.barcode,
-                location: location
-            };
-
-            const savedDrink = await dbManager.addDrink(drinkData);
-
-            Utils.showMessage(`${productInfo.name} ajouté automatiquement!`, 'success');
-
-            // Refresh UI if needed
-            if (window.app && window.app.refreshCurrentTab) {
-                window.app.refreshCurrentTab();
-            }
-
-            return savedDrink;
-
-        } catch (error) {
-            console.error('Error auto-saving beer:', error);
-            Utils.showMessage('Erreur lors de la sauvegarde automatique', 'error');
-            throw error;
-        }
-    }
-
     // Handle barcode detection
     async handleBarcodeDetected(barcode) {
         try {
+            console.log('handleBarcodeDetected called with:', barcode);
             Utils.showMessage('Code-barres détecté, recherche du produit...', 'info');
 
             const productInfo = await this.getProductInfo(barcode);
+            console.log('Product info retrieved:', productInfo);
 
-            if (this.isBeer(productInfo)) {
-                // Auto-save beer products
-                await this.autoSaveBeer(productInfo);
-            } else {
-                // Open add drink modal with pre-filled data
-                this.openAddDrinkModal(productInfo);
-            }
+            // Always open add drink modal with pre-filled data for user confirmation
+            this.openAddDrinkModal(productInfo);
+
+            // Stop scanner AFTER opening the modal
+            this.stop();
 
         } catch (error) {
             console.error('Error handling barcode:', error);
             Utils.showMessage('Erreur lors du traitement du code-barres', 'error');
+            // Stop scanner even on error
+            this.stop();
         }
     }
 
@@ -521,9 +472,9 @@ class BarcodeScanner {
         // Close scanner modal and open add drink modal
         Utils.closeModal('scanner-modal');
 
-        // Use app's method to open add drink modal with pre-selected category
+        // Use app's method to open add drink modal with pre-filled product info
         if (window.app && window.app.openAddDrinkModal) {
-            window.app.openAddDrinkModal(productInfo.category);
+            window.app.openAddDrinkModal(productInfo.category, productInfo);
         } else {
             Utils.openModal('add-drink-modal');
         }
