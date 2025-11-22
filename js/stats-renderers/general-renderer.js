@@ -9,11 +9,11 @@
  */
 function renderGeneralStats(stats, options = {}) {
     console.log('Rendering general stats:', stats);
-    
+
     if (!stats) {
         return '<div class="error-message">Erreur lors du chargement des statistiques générales</div>';
     }
-    
+
     return `
         <div class="stats-section">
             <h3>Statistiques générales</h3>
@@ -32,13 +32,43 @@ function renderStatsGrid(stats, options = {}) {
     const period = options.currentPeriod || 'today';
     const cards = [];
 
-    const pushCard = (valueHTML, label, comparisonKey) => {
+    const pushCard = (valueHTML, label, comparisonKey, tooltip = '') => {
         const comp = stats.comparison && stats.comparison[comparisonKey];
-        const changeHTML = comp !== null && comp !== undefined
-            ? `<div class="stat-change ${comp >= 0 ? 'positive' : 'negative'}">${comp >= 0 ? '+' : ''}${comp}%</div>`
-            : '';
+
+        // Enhanced comparison display with icons
+        let changeHTML = '';
+        if (comp !== null && comp !== undefined && comp !== 0) {
+            const absChange = Math.abs(comp);
+            let icon = '';
+            let trend = '';
+
+            if (comp > 0) {
+                icon = '📈';
+                trend = 'en hausse';
+            } else {
+                icon = '📉';
+                trend = 'en baisse';
+            }
+
+            // Contextual period name
+            let periodName = 'période précédente';
+            if (period === 'today') periodName = 'hier';
+            else if (period === 'week') periodName = 'semaine dernière';
+            else if (period === 'month') periodName = 'mois dernier';
+            else if (period === 'year') periodName = 'année dernière';
+
+            changeHTML = `
+                <div class="stat-change ${comp >= 0 ? 'positive' : 'negative'}" 
+                     title="${icon} ${absChange}% ${trend} par rapport à la ${periodName}">
+                    ${icon} ${comp >= 0 ? '+' : ''}${comp}%
+                </div>
+            `;
+        }
+
+        const tooltipAttr = tooltip ? `data-tooltip="${tooltip}"` : '';
+
         cards.push(`
-            <div class="stat-card">
+            <div class="stat-card" ${tooltipAttr}>
                 <div class="stat-value">${valueHTML}</div>
                 <div class="stat-label">${label}</div>
                 ${changeHTML}
@@ -46,18 +76,25 @@ function renderStatsGrid(stats, options = {}) {
         `);
     };
 
-    // Toujours pertinents
-    pushCard(`${stats.totalDrinks}`, 'Boissons consommées', 'totalDrinks');
-    pushCard(`${stats.totalSessions}`, 'Sessions', 'totalSessions');
-    pushCard(`${(stats.totalVolume / 100).toFixed(2)}L`, 'Volume total', 'totalVolume');
-    pushCard(`${stats.totalAlcohol}g`, 'Alcool pur', 'totalAlcohol');
-    pushCard(`${stats.uniqueDrinks}`, 'Boissons différentes', 'uniqueDrinks');
+    // Toujours pertinents avec tooltips
+    pushCard(`${stats.totalDrinks}`, 'Boissons consommées', 'totalDrinks',
+        'Nombre total de boissons enregistrées pendant cette période');
+    pushCard(`${stats.totalSessions}`, 'Sessions', 'totalSessions',
+        'Sessions de consommation (regroupées si boissons espacées de moins de 4h)');
+    pushCard(`${(stats.totalVolume / 100).toFixed(2)}L`, 'Volume total', 'totalVolume',
+        'Volume total de liquide consommé (toutes boissons confondues)');
+    pushCard(`${stats.totalAlcohol}g`, 'Alcool pur', 'totalAlcohol',
+        'Quantité d\'alcool pur consommé (éthanol)');
+    pushCard(`${stats.uniqueDrinks}`, 'Boissons différentes', 'uniqueDrinks',
+        'Nombre de types de boissons différentes consommées');
 
     // Période-spécifique
     if (period === 'week') {
         // Semaine: jours sobres + boissons/jour
-        pushCard(`${stats.soberDays}`, 'Jours sobres', 'soberDays');
-        pushCard(`${stats.avgPerDay.toFixed(1)}`, 'Boissons/jour', 'avgPerDay');
+        pushCard(`${stats.soberDays}`, 'Jours sobres', 'soberDays',
+            'Nombre de jours sans aucune consommation cette semaine');
+        pushCard(`${stats.avgPerDay.toFixed(1)}`, 'Boissons/jour', 'avgPerDay',
+            'Moyenne de boissons consommées par jour sur la semaine');
         // Pas de "boissons/semaine" redondant
     } else if (period === 'today') {
         // Jour: pas de jours sobres / pas de moyennes par jour/semaine
@@ -65,10 +102,13 @@ function renderStatsGrid(stats, options = {}) {
     } else {
         // Mois/Année/Custom: jours sobres + moyennes jour et semaine
         if (typeof stats.soberDays === 'number') {
-            pushCard(`${stats.soberDays}`, 'Jours sobres', 'soberDays');
+            pushCard(`${stats.soberDays}`, 'Jours sobres', 'soberDays',
+                'Nombre de jours sans aucune consommation pendant cette période');
         }
-        pushCard(`${stats.avgPerDay.toFixed(1)}`, 'Boissons/jour', 'avgPerDay');
-        pushCard(`${stats.avgPerWeek.toFixed(1)}`, 'Boissons/semaine', 'avgPerWeek');
+        pushCard(`${stats.avgPerDay.toFixed(1)}`, 'Boissons/jour', 'avgPerDay',
+            'Moyenne de boissons consommées par jour sur la période');
+        pushCard(`${stats.avgPerWeek.toFixed(1)}`, 'Boissons/semaine', 'avgPerWeek',
+            'Moyenne de boissons consommées par semaine (extrapolé)');
     }
 
     return `<div class="stats-grid">${cards.join('')}</div>`;
@@ -84,7 +124,7 @@ function renderCategoryDistribution(categories) {
     if (!categories || Object.keys(categories).length === 0) {
         return '';
     }
-    
+
     return `
         <div class="chart-container">
             <h4 class="chart-title">Répartition par catégorie</h4>
@@ -102,14 +142,14 @@ function renderCategoryDistribution(categories) {
 function initializeCategoryChart(categories) {
     const canvas = document.getElementById('category-chart');
     if (!canvas || !window.Chart) return;
-    
+
     const ctx = canvas.getContext('2d');
     const labels = Object.keys(categories);
     const data = Object.values(categories);
-    
+
     // Utilise les couleurs de l'ancien système pour maintenir la cohérence visuelle
     const colors = Utils.getChartColors(labels.length);
-    
+
     new Chart(ctx, {
         type: 'doughnut',
         data: {
@@ -160,7 +200,7 @@ function postRenderGeneralStats(stats) {
             initializeCategoryChart(stats.categoryDistribution);
         }, 100);
     }
-    
+
     // Animation des cartes de statistiques
     animateStatCards();
 }
@@ -173,7 +213,7 @@ function animateStatCards() {
     cards.forEach((card, index) => {
         card.style.opacity = '0';
         card.style.transform = 'translateY(20px)';
-        
+
         setTimeout(() => {
             card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
             card.style.opacity = '1';

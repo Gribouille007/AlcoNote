@@ -1,12 +1,14 @@
 <!DOCTYPE html>
 <!-- Page principale de l'application AlcoNote PWA -->
 <html lang="fr">
+
 <head>
     <meta charset="UTF-8">
     <!-- Configuration de la viewport pour le responsive design -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlcoNote - Suivi de Consommation d'Alcool</title>
-    <meta name="description" content="Application PWA pour suivre votre consommation d'alcool avec scanner de codes-barres, statistiques détaillées et fonctionnement hors ligne.">
+    <meta name="description"
+        content="Application PWA pour suivre votre consommation d'alcool avec scanner de codes-barres, statistiques détaillées et fonctionnement hors ligne.">
     <meta name="keywords" content="alcool, consommation, suivi, PWA, scanner, statistiques, santé">
     <meta name="author" content="AlcoNote">
 
@@ -58,6 +60,7 @@
     </script>
     <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
 </head>
+
 <body>
     <!-- Conteneur principal de l'application -->
     <div id="app">
@@ -149,7 +152,8 @@
                 <div class="form-group">
                     <label for="drink-name">Nom de la boisson</label>
                     <input type="text" id="drink-name" name="name" required>
-                    <button type="button" id="scan-barcode-btn" class="btn-secondary" aria-label="Scanner un code-barres" style="margin-top: 8px;">📷 Scanner</button>
+                    <button type="button" id="scan-barcode-btn" class="btn-secondary"
+                        aria-label="Scanner un code-barres" style="margin-top: 8px;">📷 Scanner</button>
                     <div id="drink-suggestions" class="suggestions-list"></div>
                 </div>
 
@@ -309,11 +313,11 @@
     <script src="js/utils.js"></script>
     <script src="js/geolocation.js"></script>
     <script src="js/scanner.js"></script>
-    
+
     <!-- Nouveau système de statistiques modulaire -->
     <!-- Configuration des statistiques -->
     <script src="js/stats-config.js"></script>
-    
+
     <!-- Calculateurs -->
     <script src="js/stats-calculators/general.js"></script>
     <script src="js/stats-calculators/temporal.js"></script>
@@ -321,7 +325,7 @@
     <script src="js/stats-calculators/drinks.js"></script>
     <script src="js/stats-calculators/health.js"></script>
     <script src="js/stats-calculators/location.js"></script>
-    
+
     <!-- Renderers -->
     <script src="js/stats-renderers/general-renderer.js"></script>
     <script src="js/stats-renderers/temporal-renderer.js"></script>
@@ -329,13 +333,14 @@
     <script src="js/stats-renderers/drinks-renderer.js"></script>
     <script src="js/stats-renderers/health-renderer.js"></script>
     <script src="js/stats-renderers/location-renderer.js"></script>
-    
+
     <!-- Ancien système (gardé en backup) -->
     <script src="js/statistics.js"></script>
-    
+
     <!-- Nouveau gestionnaire -->
     <script src="js/statistics-new.js"></script>
-    
+
     <script src="js/app.js"></script>
 </body>
+
 </html>

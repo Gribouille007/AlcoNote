@@ -10,7 +10,7 @@ function renderTemporalStats(stats, currentPeriod = 'today') {
     if (!stats) {
         return '<div class="error-message">Erreur lors du chargement des statistiques temporelles</div>';
     }
-    
+
     const section = document.createElement('div');
     section.className = 'stats-section';
     section.innerHTML = `
@@ -34,7 +34,7 @@ function renderTemporalStats(stats, currentPeriod = 'today') {
             </div>
         </div>
     `;
-    
+
     return section;
 }
 
@@ -52,7 +52,7 @@ function renderHourlyDistributionChart(hourlyData) {
             <canvas id="hourly-chart"></canvas>
         </div>
     `;
-    
+
     return chartContainer;
 }
 
@@ -70,7 +70,7 @@ function renderDailyDistributionChart(dailyData) {
             <canvas id="daily-chart"></canvas>
         </div>
     `;
-    
+
     return chartContainer;
 }
 
@@ -81,11 +81,11 @@ function renderDailyDistributionChart(dailyData) {
 function initializeHourlyChart(hourlyData) {
     const canvas = document.getElementById('hourly-chart');
     if (!canvas || !window.Chart) return;
-    
+
     const ctx = canvas.getContext('2d');
     const labels = Object.keys(hourlyData).map(hour => `${hour}h`);
     const data = Object.values(hourlyData);
-    
+
     new Chart(ctx, {
         type: 'bar',
         data: {
@@ -120,14 +120,14 @@ function initializeHourlyChart(hourlyData) {
 function initializeDailyChart(dailyData) {
     const canvas = document.getElementById('daily-chart');
     if (!canvas || !window.Chart) return;
-    
+
     const ctx = canvas.getContext('2d');
-    
+
     // Ordre des jours : Lundi à Dimanche
     const orderedDays = [1, 2, 3, 4, 5, 6, 0];
     const labels = orderedDays.map(day => Utils.getDayName(day));
     const data = orderedDays.map(day => dailyData[day] || 0);
-    
+
     new Chart(ctx, {
         type: 'radar',
         data: {
@@ -156,7 +156,7 @@ function initializeDailyChart(dailyData) {
                 tooltip: {
                     enabled: true,
                     callbacks: {
-                        label: function(context) {
+                        label: function (context) {
                             const value = context.parsed.r;
                             return value + ' boisson' + (value > 1 ? 's' : '');
                         }
