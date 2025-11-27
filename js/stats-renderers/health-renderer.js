@@ -119,6 +119,20 @@ async function renderBACEstimation(context = {}) {
             return section;
         }
 
+        // Try to record this BAC if it's a peak (only for current time, not historical)
+        const isCurrentTime = Math.abs(referenceTime - new Date()) < 60000; // Within 1 minute
+        if (isCurrentTime && bacStats.currentBAC > 0) {
+            await Utils.recordBACIfPeak(
+                bacStats.currentBAC,
+                bacStats.relevantDrinks.length,
+                bacStats.relevantDrinks
+            );
+        }
+
+        // Fetch BAC records for display
+        const bacRecords = await dbManager.getBACRecords(5);
+        const highestRecord = await dbManager.getHighestBACRecord();
+
         // Render BAC estimation with current values in mg/L
         const bacLevel = bacStats.currentBAC; // Already in mg/L from utils.js
         const bacLevelClass = getBACLevelClass(bacLevel);
@@ -187,6 +201,8 @@ async function renderBACEstimation(context = {}) {
             </div>
             ` : ''}
             
+            ${renderBACRecordsSection(bacRecords, highestRecord)}
+            
             <div class="bac-disclaimer">
                 <p><strong>⚠️ Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
             </div>
@@ -211,6 +227,71 @@ async function renderBACEstimation(context = {}) {
 }
 
 /**
+ * Render BAC records section
+ */
+function renderBACRecordsSection(records, highestRecord) {
+    if (!records || records.length === 0) {
+        return '';
+    }
+
+    return `
+        <div class="bac-records-section">
+            <h4>📊 Records de taux d'alcoolémie</h4>
+            ${highestRecord ? `
+            <div class="bac-record-card bac-record-highest">
+                <div class="record-badge ${getBACLevelClass(highestRecord.bacValue)}">
+                    <span class="badge-icon">👑</span>
+                    <span class="badge-value">${highestRecord.bacValue.toFixed(0)} mg/L</span>
+                </div>
+                <div class="record-info">
+                    <div class="record-label">Record absolu</div>
+                    <div class="record-date">${formatRecordDate(highestRecord.timestamp)}</div>
+                    <div class="record-drinks">${highestRecord.drinkCount} consommation${highestRecord.drinkCount > 1 ? 's' : ''}</div>
+                </div>
+            </div>
+            ` : ''}
+            <div class="bac-records-list">
+                ${records.slice(0, 5).map(record => `
+                    <div class="bac-record-card">
+                        <div class="record-badge ${getBACLevelClass(record.bacValue)}">
+                            <span class="badge-value">${record.bacValue.toFixed(0)} mg/L</span>
+                        </div>
+                        <div class="record-info">
+                            <div class="record-date">${formatRecordDate(record.timestamp)}</div>
+                            <div class="record-drinks">${record.drinkCount} consommation${record.drinkCount > 1 ? 's' : ''}</div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            ${records.length > 5 ? `
+                <button class="btn-secondary view-all-records" id="view-all-records-btn">Voir tout l'historique (${records.length})</button>
+            ` : ''}
+        </div>
+    `;
+}
+
+/**
+ * Format record timestamp to readable date
+ */
+function formatRecordDate(timestamp) {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffHours < 24) {
+        return `Aujourd'hui à ${date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+    } else if (diffDays === 1) {
+        return `Hier à ${date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+    } else if (diffDays < 7) {
+        return `${diffDays} jours • ${date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+    } else {
+        return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    }
+}
+
+/**
  * Get BAC level CSS class for styling (bacLevel in mg/L)
  */
 function getBACLevelClass(bacLevel) {
@@ -225,10 +306,11 @@ function getBACLevelClass(bacLevel) {
  */
 function getBACLevelText(bacLevel) {
     if (bacLevel < 200) return 'Sobre';
-    if (bacLevel <= 500) return 'Conduite autorisée';
-    if (bacLevel <= 800) return 'Conduite interdite';
-    if (bacLevel <= 1999) return 'État d\'ébriété dangereux';
-    return 'Brieuc arrête de boire';
+    if (bacLevel <= 500) return 'OK GARMIN TROUVE MES CLÉS DE VOITURE';
+    if (bacLevel <= 800) return 'OK GARMIN CACHE MES CLÉS DE VOITURE';
+    if (bacLevel <= 1999) return 'Il est l\'heure d\'aller nager dans le lac';
+    if (bacLevel <= 2999) return 'Brieuc arrête de boire';
+    return 'Y a qu\'une persone pour arriver à ce stade';
 }
 
 /**

@@ -4,39 +4,51 @@
 class AlcoNoteDB extends Dexie {
     constructor() {
         super('AlcoNoteDB');
-        
-        // Define database schema
+
+        // Define database schema - Version 1
         this.version(1).stores({
             categories: '++id, name, drinkCount, createdAt, updatedAt',
             drinks: '++id, name, category, quantity, unit, alcoholContent, date, time, location, barcode, createdAt, updatedAt',
             settings: 'key, value, updatedAt'
         });
-        
+
+        // Version 2 - Add BAC records tracking
+        this.version(2).stores({
+            categories: '++id, name, drinkCount, createdAt, updatedAt',
+            drinks: '++id, name, category, quantity, unit, alcoholContent, date, time, location, barcode, createdAt, updatedAt',
+            settings: 'key, value, updatedAt',
+            bacRecords: '++id, bacValue, timestamp, date, drinkCount, createdAt'
+        });
+
         // Add hooks for automatic timestamps
         this.categories.hook('creating', function (primKey, obj, trans) {
             obj.createdAt = new Date();
             obj.updatedAt = new Date();
         });
-        
+
         this.categories.hook('updating', function (modifications, primKey, obj, trans) {
             modifications.updatedAt = new Date();
         });
-        
+
         this.drinks.hook('creating', function (primKey, obj, trans) {
             obj.createdAt = new Date();
             obj.updatedAt = new Date();
         });
-        
+
         this.drinks.hook('updating', function (modifications, primKey, obj, trans) {
             modifications.updatedAt = new Date();
         });
-        
+
         this.settings.hook('creating', function (primKey, obj, trans) {
             obj.updatedAt = new Date();
         });
-        
+
         this.settings.hook('updating', function (modifications, primKey, obj, trans) {
             modifications.updatedAt = new Date();
+        });
+
+        this.bacRecords.hook('creating', function (primKey, obj, trans) {
+            obj.createdAt = new Date();
         });
     }
 }
@@ -50,7 +62,7 @@ class DatabaseManager {
         this.db = db;
         this.initializeDefaultData();
     }
-    
+
     // Initialize default settings if database is empty
     async initializeDefaultData() {
         try {
@@ -63,7 +75,7 @@ class DatabaseManager {
             console.error('Error initializing default data:', error);
         }
     }
-    
+
     async initializeDefaultSettings() {
         const defaultSettings = [
             { key: 'userWeight', value: null },
@@ -72,7 +84,7 @@ class DatabaseManager {
             { key: 'theme', value: 'light' },
             { key: 'language', value: 'fr' }
         ];
-        
+
         try {
             await this.db.settings.bulkAdd(defaultSettings);
             console.log('Default settings initialized');
@@ -80,7 +92,7 @@ class DatabaseManager {
             console.error('Error initializing default settings:', error);
         }
     }
-    
+
     // Category operations
     async getAllCategories() {
         try {
@@ -90,7 +102,7 @@ class DatabaseManager {
             return [];
         }
     }
-    
+
     async getCategoryById(id) {
         try {
             return await this.db.categories.get(id);
@@ -99,7 +111,7 @@ class DatabaseManager {
             return null;
         }
     }
-    
+
     async getCategoryByName(name) {
         try {
             return await this.db.categories.where('name').equals(name).first();
@@ -108,19 +120,19 @@ class DatabaseManager {
             return null;
         }
     }
-    
+
     async addCategory(categoryData) {
         try {
             const existingCategory = await this.getCategoryByName(categoryData.name);
             if (existingCategory) {
                 throw new Error('Une catégorie avec ce nom existe déjà');
             }
-            
+
             const categoryToAdd = {
                 name: categoryData.name,
                 drinkCount: 0
             };
-            
+
             const id = await this.db.categories.add(categoryToAdd);
             return await this.getCategoryById(id);
         } catch (error) {
@@ -128,7 +140,7 @@ class DatabaseManager {
             throw error;
         }
     }
-    
+
     async updateCategory(id, updates) {
         try {
             await this.db.categories.update(id, updates);
@@ -138,7 +150,7 @@ class DatabaseManager {
             throw error;
         }
     }
-    
+
     async deleteCategory(id) {
         try {
             // Get category name first
@@ -146,13 +158,13 @@ class DatabaseManager {
             if (!category) {
                 throw new Error('Catégorie non trouvée');
             }
-            
+
             // Check if category has drinks (using category name, not ID)
             const drinksInCategory = await this.db.drinks.where('category').equals(category.name).count();
             if (drinksInCategory > 0) {
                 throw new Error('Impossible de supprimer une catégorie qui contient des boissons');
             }
-            
+
             await this.db.categories.delete(id);
             return true;
         } catch (error) {
@@ -160,7 +172,7 @@ class DatabaseManager {
             throw error;
         }
     }
-    
+
     async updateCategoryDrinkCount(categoryName) {
         try {
             const category = await this.getCategoryByName(categoryName);
@@ -206,7 +218,7 @@ class DatabaseManager {
             throw error;
         }
     }
-    
+
     // Drink operations
     async getAllDrinks() {
         try {
@@ -216,7 +228,7 @@ class DatabaseManager {
             return [];
         }
     }
-    
+
     async getDrinkById(id) {
         try {
             return await this.db.drinks.get(id);
@@ -225,7 +237,7 @@ class DatabaseManager {
             return null;
         }
     }
-    
+
     async getDrinksByCategory(category) {
         try {
             return await this.db.drinks.where('category').equals(category).toArray();
@@ -234,7 +246,7 @@ class DatabaseManager {
             return [];
         }
     }
-    
+
     async getDrinksByName(name) {
         try {
             return await this.db.drinks.where('name').equals(name).toArray();
@@ -243,7 +255,7 @@ class DatabaseManager {
             return [];
         }
     }
-    
+
     async getDrinksByDateRange(startDate, endDate) {
         try {
             return await this.db.drinks
@@ -255,12 +267,12 @@ class DatabaseManager {
             return [];
         }
     }
-    
+
     async getGroupedDrinks() {
         try {
             const drinks = await this.getAllDrinks();
             const grouped = {};
-            
+
             drinks.forEach(drink => {
                 const key = `${drink.name} - ${drink.quantity}${drink.unit}`;
                 if (!grouped[key]) {
@@ -277,7 +289,7 @@ class DatabaseManager {
                 grouped[key].count++;
                 grouped[key].drinks.push(drink);
             });
-            
+
             // Sort by count (descending) then by name (ascending)
             return Object.values(grouped).sort((a, b) => {
                 if (b.count !== a.count) {
@@ -290,7 +302,7 @@ class DatabaseManager {
             return [];
         }
     }
-    
+
     async addDrink(drinkData) {
         try {
             // Convert quantity based on unit
@@ -300,7 +312,7 @@ class DatabaseManager {
             } else if (drinkData.unit === 'L') {
                 quantityInCL = drinkData.quantity * 100; // Convert L to cL
             }
-            
+
             const drinkToAdd = {
                 name: drinkData.name,
                 category: drinkData.category,
@@ -313,28 +325,28 @@ class DatabaseManager {
                 location: drinkData.location || null,
                 barcode: drinkData.barcode || null
             };
-            
+
             const id = await this.db.drinks.add(drinkToAdd);
-            
+
             // Update category drink count
             await this.updateCategoryDrinkCount(drinkData.category);
-            
+
             return await this.getDrinkById(id);
         } catch (error) {
             console.error('Error adding drink:', error);
             throw error;
         }
     }
-    
+
     async updateDrink(id, updates) {
         try {
             const oldDrink = await this.getDrinkById(id);
-            
+
             // Convert quantity based on unit if quantity or unit is being updated
             if (updates.quantity !== undefined || updates.unit !== undefined) {
                 const quantity = updates.quantity !== undefined ? updates.quantity : oldDrink.quantity;
                 const unit = updates.unit !== undefined ? updates.unit : oldDrink.unit;
-                
+
                 let quantityInCL = quantity;
                 if (unit === 'EcoCup') {
                     quantityInCL = 25;
@@ -343,41 +355,41 @@ class DatabaseManager {
                 }
                 updates.quantityInCL = quantityInCL;
             }
-            
+
             await this.db.drinks.update(id, updates);
-            
+
             // Update category drink counts if category changed
             if (updates.category && updates.category !== oldDrink.category) {
                 await this.updateCategoryDrinkCount(oldDrink.category);
                 await this.updateCategoryDrinkCount(updates.category);
             }
-            
+
             return await this.getDrinkById(id);
         } catch (error) {
             console.error('Error updating drink:', error);
             throw error;
         }
     }
-    
+
     async deleteDrink(id) {
         try {
             const drink = await this.getDrinkById(id);
             if (!drink) {
                 throw new Error('Boisson non trouvée');
             }
-            
+
             await this.db.drinks.delete(id);
-            
+
             // Update category drink count
             await this.updateCategoryDrinkCount(drink.category);
-            
+
             return true;
         } catch (error) {
             console.error('Error deleting drink:', error);
             throw error;
         }
     }
-    
+
     async getDrinkSuggestions(query) {
         try {
             const drinks = await this.db.drinks
@@ -385,7 +397,7 @@ class DatabaseManager {
                 .startsWithIgnoreCase(query)
                 .limit(5)
                 .toArray();
-            
+
             // Remove duplicates and return unique names with their most common quantity/unit
             const suggestions = {};
             drinks.forEach(drink => {
@@ -402,7 +414,7 @@ class DatabaseManager {
                 }
                 suggestions[key].count++;
             });
-            
+
             return Object.values(suggestions)
                 .sort((a, b) => b.count - a.count)
                 .slice(0, 5);
@@ -411,7 +423,7 @@ class DatabaseManager {
             return [];
         }
     }
-    
+
     // Settings operations
     async getSetting(key) {
         try {
@@ -422,7 +434,7 @@ class DatabaseManager {
             return null;
         }
     }
-    
+
     async setSetting(key, value) {
         try {
             await this.db.settings.put({ key, value });
@@ -432,7 +444,7 @@ class DatabaseManager {
             return false;
         }
     }
-    
+
     async getAllSettings() {
         try {
             const settings = await this.db.settings.toArray();
@@ -446,12 +458,81 @@ class DatabaseManager {
             return {};
         }
     }
-    
+
+    // BAC Records operations
+    async addBACRecord(recordData) {
+        try {
+            const recordToAdd = {
+                bacValue: recordData.bacValue,
+                timestamp: recordData.timestamp || new Date(),
+                date: recordData.date,
+                drinkCount: recordData.drinkCount || 0,
+                relevantDrinkIds: recordData.relevantDrinkIds || []
+            };
+
+            const id = await this.db.bacRecords.add(recordToAdd);
+            return await this.db.bacRecords.get(id);
+        } catch (error) {
+            console.error('Error adding BAC record:', error);
+            throw error;
+        }
+    }
+
+    async getBACRecords(limit = 10) {
+        try {
+            return await this.db.bacRecords
+                .orderBy('timestamp')
+                .reverse()
+                .limit(limit)
+                .toArray();
+        } catch (error) {
+            console.error('Error getting BAC records:', error);
+            return [];
+        }
+    }
+
+    async getBACRecordsByDateRange(startDate, endDate) {
+        try {
+            return await this.db.bacRecords
+                .where('date')
+                .between(startDate, endDate, true, true)
+                .reverse()
+                .toArray();
+        } catch (error) {
+            console.error('Error getting BAC records by date range:', error);
+            return [];
+        }
+    }
+
+    async getHighestBACRecord() {
+        try {
+            const records = await this.db.bacRecords
+                .orderBy('bacValue')
+                .reverse()
+                .limit(1)
+                .toArray();
+            return records.length > 0 ? records[0] : null;
+        } catch (error) {
+            console.error('Error getting highest BAC record:', error);
+            return null;
+        }
+    }
+
+    async deleteBACRecord(id) {
+        try {
+            await this.db.bacRecords.delete(id);
+            return true;
+        } catch (error) {
+            console.error('Error deleting BAC record:', error);
+            throw error;
+        }
+    }
+
     // Statistics operations
     async getStatistics(startDate, endDate) {
         try {
             const drinks = await this.getDrinksByDateRange(startDate, endDate);
-            
+
             const stats = {
                 totalDrinks: drinks.length,
                 totalVolume: 0,
@@ -462,7 +543,7 @@ class DatabaseManager {
                 uniqueDrinks: new Set(),
                 sessions: []
             };
-            
+
             drinks.forEach(drink => {
                 // Total volume in cL
                 let volumeInCL = drink.quantity;
@@ -471,55 +552,55 @@ class DatabaseManager {
                 } else if (drink.unit === 'L') {
                     volumeInCL = drink.quantity * 100;
                 }
-                
+
                 stats.totalVolume += volumeInCL;
-                
+
                 // Total alcohol in grams (approximation: 1cL at X% = X * 0.8g of alcohol)
                 if (drink.alcoholContent) {
                     stats.totalAlcohol += (volumeInCL * drink.alcoholContent * 0.8) / 100;
                 }
-                
+
                 // Categories
                 if (!stats.categories[drink.category]) {
                     stats.categories[drink.category] = { count: 0, volume: 0 };
                 }
                 stats.categories[drink.category].count++;
                 stats.categories[drink.category].volume += volumeInCL;
-                
+
                 // Hours
                 const hour = parseInt(drink.time.split(':')[0]);
                 if (!stats.hours[hour]) {
                     stats.hours[hour] = 0;
                 }
                 stats.hours[hour]++;
-                
+
                 // Days of week
                 const dayOfWeek = new Date(drink.date).getDay();
                 if (!stats.days[dayOfWeek]) {
                     stats.days[dayOfWeek] = 0;
                 }
                 stats.days[dayOfWeek]++;
-                
+
                 // Unique drinks
                 stats.uniqueDrinks.add(drink.name);
             });
-            
+
             stats.uniqueDrinks = stats.uniqueDrinks.size;
-            
+
             return stats;
         } catch (error) {
             console.error('Error getting statistics:', error);
             return null;
         }
     }
-    
+
     // Data export/import
     async exportData() {
         try {
             const categories = await this.db.categories.toArray();
             const drinks = await this.db.drinks.toArray();
             const settings = await this.db.settings.toArray();
-            
+
             const exportData = {
                 version: '1.0',
                 exportDate: new Date().toISOString(),
@@ -527,28 +608,28 @@ class DatabaseManager {
                 drinks,
                 settings
             };
-            
+
             return JSON.stringify(exportData, null, 2);
         } catch (error) {
             console.error('Error exporting data:', error);
             throw error;
         }
     }
-    
+
     async importData(jsonData) {
         try {
             const data = JSON.parse(jsonData);
-            
+
             if (!data.version || !data.categories || !data.drinks) {
                 throw new Error('Format de données invalide');
             }
-            
+
             // Clear existing data
             await this.db.transaction('rw', this.db.categories, this.db.drinks, this.db.settings, async () => {
                 await this.db.categories.clear();
                 await this.db.drinks.clear();
                 await this.db.settings.clear();
-                
+
                 // Import data
                 await this.db.categories.bulkAdd(data.categories);
                 await this.db.drinks.bulkAdd(data.drinks);
@@ -556,14 +637,14 @@ class DatabaseManager {
                     await this.db.settings.bulkAdd(data.settings);
                 }
             });
-            
+
             return true;
         } catch (error) {
             console.error('Error importing data:', error);
             throw error;
         }
     }
-    
+
     async clearAllData() {
         try {
             await this.db.transaction('rw', this.db.categories, this.db.drinks, this.db.settings, async () => {
@@ -571,10 +652,10 @@ class DatabaseManager {
                 await this.db.drinks.clear();
                 await this.db.settings.clear();
             });
-            
+
             // Reinitialize default settings only
             await this.initializeDefaultSettings();
-            
+
             return true;
         } catch (error) {
             console.error('Error clearing all data:', error);

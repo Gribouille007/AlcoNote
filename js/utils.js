@@ -394,6 +394,64 @@ class Utils {
         return `${wholeHours}h ${minutes}min`;
     }
 
+    /**
+     * Record BAC if it's a peak worth saving
+     * @param {number} currentBACMgL - Current BAC in mg/L
+     * @param {number} drinkCount - Number of drinks contributing to this BAC
+     * @param {Array} relevantDrinks - Array of drinks contributing to this BAC
+     * @param {number} minThreshold - Minimum BAC to record (default: 200 mg/L)
+     * @returns {Promise<Object|null>} Created record or null if not saved
+     */
+    static async recordBACIfPeak(currentBACMgL, drinkCount = 0, relevantDrinks = [], minThreshold = 200) {
+        try {
+            // Don't record if below threshold
+            if (currentBACMgL < minThreshold) {
+                return null;
+            }
+
+            // Get recent records to check for duplicates (last 30 minutes)
+            const recentRecords = await dbManager.getBACRecords(5);
+            const now = new Date();
+            const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
+
+            // Check if we have a very recent similar record (avoid spam)
+            const hasSimilarRecentRecord = recentRecords.some(record => {
+                const recordTime = new Date(record.timestamp);
+                const timeDiff = Math.abs(now - recordTime);
+                const bacDiff = Math.abs(record.bacValue - currentBACMgL);
+
+                // If within 30 minutes and BAC difference is less than 50 mg/L, skip
+                return timeDiff < 30 * 60 * 1000 && bacDiff < 50;
+            });
+
+            if (hasSimilarRecentRecord) {
+                return null; // Don't create duplicate
+            }
+
+            // Extract drink IDs if available
+            const drinkIds = relevantDrinks
+                .filter(d => d.id)
+                .map(d => d.id);
+
+            // Create the record
+            const recordData = {
+                bacValue: Math.round(currentBACMgL * 100) / 100,
+                timestamp: now,
+                date: this.getCurrentDate(),
+                drinkCount: drinkCount,
+                relevantDrinkIds: drinkIds
+            };
+
+            const record = await dbManager.addBACRecord(recordData);
+            console.log('BAC record saved:', record);
+            return record;
+
+        } catch (error) {
+            console.error('Error recording BAC peak:', error);
+            return null;
+        }
+    }
+
 
     static getWHORecommendation(gender) {
         // Get WHO recommended alcohol limit
