@@ -98,6 +98,10 @@ class BarcodeScanner {
     setupEventListeners() {
         Quagga.onDetected((result) => {
             if (this.isScanning) {
+                if (!result || !result.codeResult || !result.codeResult.code) {
+                    console.warn('Invalid barcode detection result:', result);
+                    return;
+                }
                 this.hasDetected = true;
                 const code = result.codeResult.code;
                 console.log('Barcode detected:', code);
@@ -707,6 +711,14 @@ class BarcodeScanner {
             if (document.hidden && this.isScanning) {
                 console.log('Page became hidden, stopping scanner to save battery');
                 this.stop();
+            }
+        });
+
+        // Handle Escape key to close scanner
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && scannerModal.classList.contains('active')) {
+                this.stop();
+                Utils.closeModal('scanner-modal');
             }
         });
 

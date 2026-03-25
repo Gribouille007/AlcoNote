@@ -150,6 +150,10 @@ function initializeCategoryChart(categories) {
     // Utilise les couleurs de l'ancien système pour maintenir la cohérence visuelle
     const colors = Utils.getChartColors(labels.length);
 
+    // Destroy existing chart on this canvas to prevent memory leaks
+    const existingChart = Chart.getChart(canvas);
+    if (existingChart) existingChart.destroy();
+
     new Chart(ctx, {
         type: 'doughnut',
         data: {

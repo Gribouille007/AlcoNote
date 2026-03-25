@@ -628,9 +628,22 @@ class Utils {
         let isValid = true;
 
         inputs.forEach(input => {
+            // Remove any previous inline error message
+            const existingError = input.parentElement.querySelector('.field-error');
+            if (existingError) existingError.remove();
+
             if (!input.value.trim()) {
                 input.classList.add('error');
+                input.classList.remove('valid');
                 isValid = false;
+
+                // Add inline error message
+                const errorMsg = document.createElement('span');
+                errorMsg.className = 'field-error';
+                const label = input.parentElement.querySelector('label');
+                const fieldName = label ? label.textContent : 'Ce champ';
+                errorMsg.textContent = `${fieldName} est requis`;
+                input.parentElement.appendChild(errorMsg);
             } else {
                 input.classList.remove('error');
                 input.classList.add('valid');
