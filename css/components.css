@@ -179,6 +179,21 @@
     color: var(--text-tertiary);
 }
 
+/* Inline form validation error messages */
+.form-group input.error,
+.form-group select.error,
+.form-group textarea.error {
+    border-color: #FF3B30;
+    box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.15);
+}
+
+.field-error {
+    display: block;
+    color: #FF3B30;
+    font-size: 12px;
+    margin-top: 4px;
+}
+
 .form-row {
     display: flex;
     gap: var(--spacing-md);
@@ -953,6 +968,107 @@ select:focus-visible,
 textarea:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
+}
+
+/* History Toolbar */
+.history-toolbar {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+}
+
+.history-search {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid var(--separator);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-md);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.history-filter {
+    padding: 10px 14px;
+    border: 1px solid var(--separator);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-md);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    min-width: 140px;
+}
+
+/* History Pagination */
+.history-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md) 0;
+}
+
+.page-info {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+/* Undo Toast */
+.undo-toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background-color: #333;
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    z-index: 9999;
+    box-shadow: var(--shadow-lg);
+    transition: transform 0.3s ease;
+    font-size: var(--font-size-md);
+}
+
+.undo-toast.active {
+    transform: translateX(-50%) translateY(0);
+}
+
+.undo-btn {
+    background: none;
+    border: none;
+    color: #4DA3FF;
+    font-weight: var(--font-weight-semibold);
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: var(--font-size-md);
+}
+
+/* Drink Detail Modal */
+.drink-detail-content {
+    padding: var(--spacing-md);
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--separator);
+}
+
+.detail-row:last-child {
+    border-bottom: none;
+}
+
+.detail-label {
+    color: var(--text-secondary);
+    font-size: var(--font-size-md);
+}
+
+.detail-value {
+    color: var(--text-primary);
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-md);
 }
 
 /* History Tab Styles */

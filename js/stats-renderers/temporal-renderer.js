@@ -86,6 +86,10 @@ function initializeHourlyChart(hourlyData) {
     const labels = Object.keys(hourlyData).map(hour => `${hour}h`);
     const data = Object.values(hourlyData);
 
+    // Destroy existing chart on this canvas to prevent memory leaks
+    const existingChart = Chart.getChart(canvas);
+    if (existingChart) existingChart.destroy();
+
     new Chart(ctx, {
         type: 'bar',
         data: {
@@ -127,6 +131,10 @@ function initializeDailyChart(dailyData) {
     const orderedDays = [1, 2, 3, 4, 5, 6, 0];
     const labels = orderedDays.map(day => Utils.getDayName(day));
     const data = orderedDays.map(day => dailyData[day] || 0);
+
+    // Destroy existing chart on this canvas to prevent memory leaks
+    const existingDailyChart = Chart.getChart(canvas);
+    if (existingDailyChart) existingDailyChart.destroy();
 
     new Chart(ctx, {
         type: 'radar',
