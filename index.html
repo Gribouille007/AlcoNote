@@ -21,8 +21,7 @@
     <meta name="apple-mobile-web-app-title" content="AlcoNote">
 
     <!-- En-têtes de sécurité pour protéger l'application -->
-    <!-- CSP temporairement désactivée pour diagnostic -->
-    <!-- <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https:; connect-src 'self' https://world.openfoodfacts.org https://nominatim.openstreetmap.org https://api.upcitemdb.com https://api.barcodelookup.com; media-src 'self'; worker-src 'self' blob:; child-src 'self' blob:;"> -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https: blob:; connect-src 'self' https://world.openfoodfacts.org https://nominatim.openstreetmap.org https://api.upcitemdb.com https://api.barcodelookup.com https://api.timezonedb.com; font-src 'self' https://cdn.jsdelivr.net; media-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:;">
     <meta http-equiv="X-Content-Type-Options" content="nosniff">
     <meta http-equiv="X-Frame-Options" content="DENY">
     <meta http-equiv="X-XSS-Protection" content="1; mode=block">
@@ -99,8 +98,19 @@
             <!-- Onglet Historique - liste chronologique des consommations -->
             <section id="history-tab" class="tab-content">
                 <div class="history-container">
+                    <div class="history-toolbar">
+                        <input type="search" id="history-search" class="history-search" placeholder="Rechercher une boisson...">
+                        <select id="history-category-filter" class="history-filter">
+                            <option value="">Toutes les catégories</option>
+                        </select>
+                    </div>
                     <div id="history-list" class="history-list">
                         <!-- L'historique sera chargé dynamiquement ici -->
+                    </div>
+                    <div id="history-pagination" class="history-pagination" style="display:none;">
+                        <button id="history-prev" class="btn-secondary" disabled>Précédent</button>
+                        <span id="history-page-info" class="page-info"></span>
+                        <button id="history-next" class="btn-secondary">Suivant</button>
                     </div>
                 </div>
             </section>
@@ -142,19 +152,18 @@
 
     <!-- Fenêtres modales de l'application -->
     <!-- Modal d'ajout de boisson -->
-    <div id="add-drink-modal" class="modal popup-modal">
-        <div class="modal-backdrop"></div>
+    <dialog id="add-drink-modal" class="modal popup-modal">
         <div class="modal-content popup-content">
             <div class="modal-header">
                 <h2>Ajouter une boisson</h2>
-                <button class="modal-close" data-modal="add-drink-modal">&times;</button>
+                <button class="modal-close" data-modal="add-drink-modal" aria-label="Fermer">&times;</button>
             </div>
             <form id="add-drink-form" class="modal-form">
                 <div class="form-group">
                     <label for="drink-name">Nom de la boisson</label>
                     <input type="text" id="drink-name" name="name" required>
                     <button type="button" id="scan-barcode-btn" class="btn-secondary"
-                        aria-label="Scanner un code-barres" style="margin-top: 8px;">📷 Scanner</button>
+                        aria-label="Scanner un code-barres" style="margin-top: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg> Scanner</button>
                     <div id="drink-suggestions" class="suggestions-list"></div>
                 </div>
 
@@ -203,15 +212,14 @@
                 </div>
             </form>
         </div>
-    </div>
+    </dialog>
 
     <!-- Modal d'ajout de catégorie -->
-    <div id="add-category-modal" class="modal popup-modal">
-        <div class="modal-backdrop"></div>
+    <dialog id="add-category-modal" class="modal popup-modal">
         <div class="modal-content popup-content">
             <div class="modal-header">
                 <h2>Ajouter une catégorie</h2>
-                <button class="modal-close" data-modal="add-category-modal">&times;</button>
+                <button class="modal-close" data-modal="add-category-modal" aria-label="Fermer">&times;</button>
             </div>
             <form id="add-category-form" class="modal-form">
                 <div class="form-group">
@@ -225,14 +233,14 @@
                 </div>
             </form>
         </div>
-    </div>
+    </dialog>
 
     <!-- Modal du scanner de code-barres -->
-    <div id="scanner-modal" class="modal">
+    <dialog id="scanner-modal" class="modal">
         <div class="modal-content scanner-content">
             <div class="modal-header">
                 <h2>Scanner un code-barres</h2>
-                <button class="modal-close" data-modal="scanner-modal">&times;</button>
+                <button class="modal-close" data-modal="scanner-modal" aria-label="Fermer">&times;</button>
             </div>
             <div id="scanner-container" class="scanner-container">
                 <div id="scanner-viewport" class="scanner-viewport"></div>
@@ -244,14 +252,14 @@
                 <p id="scanner-status-text">Positionnez le code-barres dans le cadre</p>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <!-- Menu des paramètres -->
     <div id="settings-menu" class="settings-menu">
         <div class="settings-content">
             <div class="settings-header">
                 <h2>Paramètres</h2>
-                <button id="settings-close" class="settings-close">&times;</button>
+                <button id="settings-close" class="settings-close" aria-label="Fermer">&times;</button>
             </div>
             <div class="settings-body">
                 <div class="settings-section">
@@ -259,6 +267,7 @@
                     <div class="form-group">
                         <label for="theme-toggle">Thème</label>
                         <select id="theme-toggle">
+                            <option value="auto">Automatique</option>
                             <option value="light">Clair</option>
                             <option value="dark">Sombre</option>
                         </select>
@@ -292,11 +301,11 @@
     </div>
 
     <!-- Modal de détails de boisson -->
-    <div id="drink-detail-modal" class="modal">
+    <dialog id="drink-detail-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="drink-detail-title"></h2>
-                <button class="modal-close" data-modal="drink-detail-modal">&times;</button>
+                <button class="modal-close" data-modal="drink-detail-modal" aria-label="Fermer">&times;</button>
             </div>
             <div id="drink-detail-content" class="drink-detail-content">
                 <!-- Les détails de la boisson seront chargés dynamiquement ici -->
@@ -305,7 +314,7 @@
                 <button id="add-same-drink" class="btn-primary">Ajouter cette boisson</button>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <!-- Scripts JavaScript de l'application -->
     <!-- Chargés dans l'ordre des dépendances -->
@@ -336,10 +345,7 @@
     <script src="js/stats-renderers/health-renderer.js"></script>
     <script src="js/stats-renderers/location-renderer.js"></script>
 
-    <!-- Ancien système (gardé en backup) -->
-    <script src="js/statistics.js"></script>
-
-    <!-- Nouveau gestionnaire -->
+    <!-- Gestionnaire de statistiques modulaire -->
     <script src="js/statistics-new.js"></script>
 
     <script src="js/app.js"></script>

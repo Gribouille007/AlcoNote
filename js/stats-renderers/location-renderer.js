@@ -33,7 +33,7 @@ function renderInteractiveConsumptionMap(container, locationStats) {
         noLocationContainer.className = 'no-location-data';
         noLocationContainer.innerHTML = `
             <div class="empty-state">
-                <div class="empty-state-icon">📍</div>
+                <div class="empty-state-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
                 <p>Aucune donnée de localisation disponible pour cette période.</p>
             </div>
         `;
@@ -47,7 +47,7 @@ function renderInteractiveConsumptionMap(container, locationStats) {
         <div id="interactive-consumption-map" class="interactive-consumption-map">
             <div class="map-controls-overlay">
                 <button id="recenter-map-btn" class="map-control-btn" title="Recentrer sur ma position">
-                    <span class="control-icon">📍</span>
+                    <span class="control-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
                 </button>
             </div>
         </div>
@@ -255,18 +255,18 @@ function initializeInteractiveMap(locationStats) {
                 if (!coords) return;
 
                 const popupContent = `
-                    <div class="map-popup enhanced" style="max-width:320px;">
-                        <div class="popup-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                            <h4 style="margin:0;font-size:14px;">${getAddress(drink)}</h4>
-                            <div class="popup-count" style="font-size:12px;opacity:0.8;">1 consommation</div>
+                    <div class="map-popup enhanced">
+                        <div class="popup-header">
+                            <h4>${getAddress(drink)}</h4>
+                            <div class="popup-count">1 consommation</div>
                         </div>
-                        <div class="popup-drinks" style="max-height:240px;overflow:auto;padding-right:4px;">
-                            <div class="popup-drink-item" style="padding:6px 0;border-bottom:1px solid #eee;">
-                                <div class="drink-main" style="display:flex;justify-content:space-between;">
-                                    <span class="drink-name" style="font-weight:600;">${drink.name}</span>
-                                    <span class="drink-category" style="font-size:12px;opacity:0.8;">${drink.category || ''}</span>
+                        <div class="popup-drinks">
+                            <div class="popup-drink-item">
+                                <div class="drink-main">
+                                    <span class="drink-name">${drink.name}</span>
+                                    <span class="drink-category">${drink.category || ''}</span>
                                 </div>
-                                <div class="drink-meta" style="font-size:12px;opacity:0.9;display:flex;gap:6px;flex-wrap:wrap;">
+                                <div class="drink-meta">
                                     <span class="drink-datetime">${Utils.formatDate(drink.date)} ${drink.time || ''}</span>
                                     ${drink.quantity && drink.unit ? `<span class="drink-quantity">${Utils.formatQuantity(drink.quantity, drink.unit)}</span>` : ''}
                                     ${typeof drink.alcoholContent === 'number' ? `<span class="drink-abv">${drink.alcoholContent}%</span>` : ''}
@@ -279,7 +279,7 @@ function initializeInteractiveMap(locationStats) {
                 const marker = L.circleMarker([coords.lat, coords.lng], {
                     radius: 8,
                     fillColor: getInteractiveMarkerColor(1),
-                    color: '#fff',
+                    color: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim() || '#fff',
                     weight: 2,
                     opacity: 1,
                     fillOpacity: 0.9,
@@ -419,10 +419,11 @@ function initializeInteractiveMap(locationStats) {
  * Get marker color for interactive map based on consumption count
  */
 function getInteractiveMarkerColor(count) {
-    if (count >= 10) return '#FF3B30'; // Red for very frequent locations
-    if (count >= 5) return '#FF9500';  // Orange for frequent locations
-    if (count >= 2) return '#FFCC00';  // Yellow for occasional locations
-    return '#007AFF';                  // Blue for single consumption locations
+    const style = getComputedStyle(document.documentElement);
+    if (count >= 10) return style.getPropertyValue('--error-color').trim() || '#FF3B30';
+    if (count >= 5) return style.getPropertyValue('--warning-color').trim() || '#FF9500';
+    if (count >= 2) return '#FFCC00';
+    return style.getPropertyValue('--primary-color').trim() || '#007AFF';
 }
 
 /**
