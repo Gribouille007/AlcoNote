@@ -181,15 +181,6 @@ class Utils {
         return (volumeCL * alcoholPercent * 0.8) / 10;
     }
 
-    static calculateBAC(alcoholGrams, weightKg, gender, hours = 0) {
-        // Calculate blood alcohol concentration
-        const r = gender === 'female' ? 0.55 : 0.68; // Body water percentage
-        // Correct formula: BAC (g/L) = (Alcohol (g) / (Weight (kg) × r)) - (0.15 × hours)
-        const bacGL = (alcoholGrams / (weightKg * r)) - (0.15 * hours);
-        const bacMgL = bacGL * 1000; // Convert g/L to mg/L
-        return Math.max(0, bacMgL);
-    }
-
     /**
      * Calculate current Blood Alcohol Content using Widmark formula
      * @param {Array} drinks - Array of drink objects with date, time, quantity, unit, alcoholContent
@@ -217,7 +208,7 @@ class Utils {
                 if (isNaN(date.getTime())) return null;
 
                 const volumeCL = this.convertToStandardUnit(drink.quantity, drink.unit).quantity;
-                const alcoholGrams = this.calculateAlcoholGrams(volumeCL, drink.alcoholContent || 0);
+                const alcoholGrams = this.calculateAlcoholGrams(volumeCL, parseFloat(drink.alcoholContent) || 0);
 
                 return {
                     date: date,
