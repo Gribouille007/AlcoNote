@@ -39,15 +39,15 @@ function renderStatsGrid(stats, options = {}) {
         let changeHTML = '';
         if (comp !== null && comp !== undefined && comp !== 0) {
             const absChange = Math.abs(comp);
-            let icon = '';
             let trend = '';
+            let arrowSvg = '';
 
             if (comp > 0) {
-                icon = '📈';
                 trend = 'en hausse';
+                arrowSvg = '<svg class="stat-change-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>';
             } else {
-                icon = '📉';
                 trend = 'en baisse';
+                arrowSvg = '<svg class="stat-change-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>';
             }
 
             // Contextual period name
@@ -58,9 +58,10 @@ function renderStatsGrid(stats, options = {}) {
             else if (period === 'year') periodName = 'année dernière';
 
             changeHTML = `
-                <div class="stat-change ${comp >= 0 ? 'positive' : 'negative'}" 
-                     title="${icon} ${absChange}% ${trend} par rapport à la ${periodName}">
-                    ${icon} ${comp >= 0 ? '+' : ''}${comp}%
+                <div class="stat-change ${comp >= 0 ? 'positive' : 'negative'}"
+                     title="${absChange}% ${trend} par rapport à la ${periodName}"
+                     aria-label="${absChange}% ${trend}">
+                    ${arrowSvg} ${comp >= 0 ? '+' : ''}${comp}%
                 </div>
             `;
         }
@@ -162,7 +163,7 @@ function initializeCategoryChart(categories) {
                 data: data,
                 backgroundColor: colors,
                 borderWidth: 2,
-                borderColor: '#ffffff'
+                borderColor: Utils.getChartThemeColors().borderColor
             }]
         },
         options: {
@@ -170,7 +171,10 @@ function initializeCategoryChart(categories) {
             maintainAspectRatio: false,
             plugins: {
                 legend: {
-                    position: 'bottom'
+                    position: 'bottom',
+                    labels: {
+                        color: Utils.getChartThemeColors().legendColor
+                    }
                 }
             }
         }
@@ -185,7 +189,7 @@ function initializeCategoryChart(categories) {
 function renderEmptyState(message = 'Aucune donnée disponible') {
     return `
         <div class="empty-state">
-            <div class="empty-state-icon">📊</div>
+            <div class="empty-state-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
             <h3 class="empty-state-title">Aucune statistique</h3>
             <p class="empty-state-description">${message}</p>
         </div>

@@ -114,21 +114,30 @@ class AlcoNoteApp {
             button.addEventListener('click', () => {
                 const targetTab = button.dataset.tab;
 
-                // Update active tab button
-                tabButtons.forEach(btn => btn.classList.remove('active'));
-                button.classList.add('active');
+                const doSwitch = () => {
+                    // Update active tab button
+                    tabButtons.forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
 
-                // Update active tab content
-                tabContents.forEach(content => content.classList.remove('active'));
-                const targetContent = document.getElementById(`${targetTab}-tab`);
-                if (targetContent) {
-                    targetContent.classList.add('active');
+                    // Update active tab content
+                    tabContents.forEach(content => content.classList.remove('active'));
+                    const targetContent = document.getElementById(`${targetTab}-tab`);
+                    if (targetContent) {
+                        targetContent.classList.add('active');
+                    }
+
+                    // Update current tab and load data
+                    this.currentTab = targetTab;
+                    this.updateFABVisibility();
+                    this.loadTabData(targetTab);
+                };
+
+                // Use View Transitions API if available for smooth tab switching
+                if (document.startViewTransition) {
+                    document.startViewTransition(doSwitch);
+                } else {
+                    doSwitch();
                 }
-
-                // Update current tab and load data
-                this.currentTab = targetTab;
-                this.updateFABVisibility();
-                this.loadTabData(targetTab);
             });
         });
     }
@@ -162,22 +171,33 @@ class AlcoNoteApp {
     setupModalHandlers() {
         // Generic modal close handlers
         document.addEventListener('click', (e) => {
-            // Close modal when clicking on backdrop
-            if (e.target.classList.contains('modal')) {
-                Utils.closeModal(e.target.id);
+            // Close modal when clicking on backdrop (works for both <div> and <dialog>)
+            if (e.target.classList.contains('modal') || e.target.classList.contains('modal-backdrop')) {
+                Utils.closeModal(e.target.id || e.target.closest('.modal')?.id);
             }
 
             // Close modal when clicking close button or cancel button
             if (e.target.classList.contains('modal-close') ||
                 e.target.hasAttribute('data-modal')) {
-                const modalId = e.target.dataset.modal || e.target.closest('.modal').id;
+                const modalId = e.target.dataset.modal || e.target.closest('.modal')?.id;
                 if (modalId) {
                     Utils.closeModal(modalId);
                 }
             }
         });
 
-        // Escape key to close modals
+        // For native <dialog> elements, close on backdrop click via the dialog click event
+        document.querySelectorAll('dialog.modal').forEach(dialog => {
+            dialog.addEventListener('click', (e) => {
+                if (e.target === dialog) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    Utils.closeModal(dialog.id);
+                }
+            });
+        });
+
+        // Escape key to close modals (native <dialog> handles this automatically, but keep for non-dialog modals)
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 Utils.closeAllModals();
@@ -546,7 +566,7 @@ class AlcoNoteApp {
             if (categories.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-state-icon">📁</div>
+                        <div class="empty-state-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></div>
                         <h3 class="empty-state-title">Aucune catégorie</h3>
                         <p class="empty-state-description">
                             Commencez par ajouter une catégorie pour organiser vos boissons.
@@ -578,7 +598,7 @@ class AlcoNoteApp {
                 <div class="category-name"></div>
                 <div class="category-actions">
                     <span class="category-count">${typeof category.drinkCount === 'number' ? category.drinkCount : 0}</span>
-                    <button class="category-edit-btn" aria-label="Modifier la catégorie" title="Modifier la catégorie">✏️</button>
+                    <button class="category-edit-btn" aria-label="Modifier la catégorie" title="Modifier la catégorie"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                 </div>
             </div>
             <div class="category-editor" style="display:none;">
@@ -694,11 +714,11 @@ class AlcoNoteApp {
         optionsMenu.className = 'add-options-menu';
         optionsMenu.innerHTML = `
             <button class="add-option" data-action="manual" data-category="${categoryName}">
-                <span class="option-icon">✏️</span>
+                <span class="option-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>
                 <span class="option-label">Manuel</span>
             </button>
             <button class="add-option" data-action="scan" data-category="${categoryName}">
-                <span class="option-icon">📷</span>
+                <span class="option-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
                 <span class="option-label">Scanner</span>
             </button>
         `;
@@ -808,7 +828,7 @@ class AlcoNoteApp {
             const isFiltered = this.historyState.searchQuery || this.historyState.categoryFilter;
             container.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-state-icon">${isFiltered ? '🔍' : '📅'}</div>
+                    <div class="empty-state-icon">${isFiltered ? '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>' : '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'}</div>
                     <h3 class="empty-state-title">${isFiltered ? 'Aucun résultat' : 'Aucun historique'}</h3>
                     <p class="empty-state-description">
                         ${isFiltered ? 'Aucune boisson ne correspond à votre recherche.' : 'Vos boissons ajoutées apparaîtront ici organisées par date.'}
@@ -996,10 +1016,9 @@ class AlcoNoteApp {
         const toggle = element.querySelector('.toggle-icon');
 
         header.addEventListener('click', () => {
-            const isExpanded = content.style.display !== 'none';
-            content.style.display = isExpanded ? 'none' : 'block';
-            toggle.textContent = isExpanded ? '▶' : '▼';
-            element.classList.toggle('collapsed', isExpanded);
+            element.classList.toggle('collapsed');
+            const isCollapsed = element.classList.contains('collapsed');
+            toggle.textContent = isCollapsed ? '▶' : '▼';
         });
 
         // Setup swipe to delete
@@ -1078,7 +1097,7 @@ class AlcoNoteApp {
             if (groupedDrinks.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-state-icon">🍺</div>
+                        <div class="empty-state-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a3 3 0 010 6h-1"/><path d="M5 8h12v9a3 3 0 01-3 3H8a3 3 0 01-3-3V8z"/><path d="M8 5a2 2 0 012-2c1.1 0 2 1 2 2"/><path d="M10 5a2 2 0 012-2c1.1 0 2 1 2 2"/></svg></div>
                         <h3 class="empty-state-title">Aucune boisson</h3>
                         <p class="empty-state-description">
                             Ajoutez votre première boisson en utilisant le bouton + ou le scanner.
@@ -1523,7 +1542,7 @@ class AlcoNoteApp {
         if (drinkGroups.length === 0) {
             content.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-state-icon">🍺</div>
+                    <div class="empty-state-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a3 3 0 010 6h-1"/><path d="M5 8h12v9a3 3 0 01-3 3H8a3 3 0 01-3-3V8z"/><path d="M8 5a2 2 0 012-2c1.1 0 2 1 2 2"/><path d="M10 5a2 2 0 012-2c1.1 0 2 1 2 2"/></svg></div>
                     <h3 class="empty-state-title">Aucune boisson</h3>
                     <p class="empty-state-description">
                         Ajoutez votre première boisson dans cette catégorie.
@@ -1642,11 +1661,10 @@ class AlcoNoteApp {
 
     // Create category detail modal
     createCategoryDetailModal() {
-        const modal = document.createElement('div');
+        const modal = document.createElement('dialog');
         modal.id = 'category-detail-modal';
         modal.className = 'modal';
         modal.innerHTML = `
-            <div class="modal-backdrop"></div>
             <div class="modal-content">
                 <div class="modal-header">
                     <h2 class="modal-title"></h2>
@@ -1660,6 +1678,13 @@ class AlcoNoteApp {
                 </div>
             </div>
         `;
+
+        // Close on backdrop click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                Utils.closeModal('category-detail-modal');
+            }
+        });
 
         document.body.appendChild(modal);
         return modal;
@@ -2217,17 +2242,16 @@ class AlcoNoteApp {
             const settings = await dbManager.getAllSettings();
             const savedTheme = settings.theme;
 
-            // Only keep dark if explicitly set, otherwise default to light
-            if (savedTheme === 'dark') {
-                this.setTheme('dark');
+            if (savedTheme === 'dark' || savedTheme === 'light' || savedTheme === 'auto') {
+                this.setTheme(savedTheme);
             } else {
-                // Default to light theme (includes cases where savedTheme is null, 'light', 'auto', etc.)
-                this.setTheme('light');
+                // Default to auto theme
+                this.setTheme('auto');
             }
         } catch (error) {
             console.error('Error initializing theme:', error);
-            // Fallback to light theme
-            this.setTheme('light');
+            // Fallback to auto theme
+            this.setTheme('auto');
         }
     }
 
@@ -2237,13 +2261,33 @@ class AlcoNoteApp {
         // Remove existing theme attributes
         html.removeAttribute('data-theme');
 
-        // Set new theme
-        if (theme === 'dark') {
+        // Remove previous media query listener if any
+        if (this._themeMediaListener) {
+            window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', this._themeMediaListener);
+            this._themeMediaListener = null;
+        }
+
+        if (theme === 'auto') {
+            // Follow system preference
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            html.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+
+            // Listen for system theme changes
+            this._themeMediaListener = (e) => {
+                html.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+            };
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', this._themeMediaListener);
+        } else if (theme === 'dark') {
             html.setAttribute('data-theme', 'dark');
-        } else if (theme === 'light') {
+        } else {
             html.setAttribute('data-theme', 'light');
         }
-        // If theme is 'auto', don't set attribute to use CSS media query
+
+        // Update the theme toggle selector to reflect current theme
+        const themeToggle = document.getElementById('theme-toggle');
+        if (themeToggle && themeToggle.value !== theme) {
+            themeToggle.value = theme;
+        }
 
         // Save theme preference
         dbManager.setSetting('theme', theme);

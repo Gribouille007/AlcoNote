@@ -66,6 +66,10 @@
     --overlay: rgba(0, 0, 0, 0.4);
     /* Overlay pour les modales */
 
+    /* Toast */
+    --toast-bg: #333333;
+    --toast-text: #FFFFFF;
+
     /* Espacement */
     --spacing-xs: 4px;
     --spacing-sm: 8px;
@@ -152,6 +156,10 @@
     --gray-1: #8E8E93;
 
     --overlay: rgba(0, 0, 0, 0.6);
+
+    /* Toast */
+    --toast-bg: #1C1C1E;
+    --toast-text: #FFFFFF;
 }
 
 /* Mode sombre uniquement contrôlé par l'application (pas par le système) */
@@ -424,6 +432,7 @@ body {
     gap: 4px;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
+    scroll-snap-type: x mandatory;
 }
 
 .period-selector::-webkit-scrollbar {
@@ -443,12 +452,13 @@ body {
     white-space: nowrap;
     flex-shrink: 0;
     min-height: 36px;
+    scroll-snap-align: center;
 }
 
 .period-btn.active {
     background-color: var(--primary-color);
     color: white;
-    box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--primary-color) 25%, transparent);
 }
 
 .period-btn:hover:not(.active) {
@@ -526,7 +536,7 @@ body {
     border-radius: 50%;
     background-color: var(--primary-color);
     border: none;
-    box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3), var(--shadow-lg);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--primary-color) 30%, transparent), var(--shadow-lg);
     cursor: pointer;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
@@ -539,7 +549,7 @@ body {
 
 .fab-main:hover {
     transform: scale(1.08) translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0, 122, 255, 0.4), var(--shadow-xl);
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--primary-color) 40%, transparent), var(--shadow-xl);
 }
 
 .fab-main:active {
@@ -718,7 +728,7 @@ body {
 
 .stat-card.warning {
     border-color: var(--warning-color);
-    background-color: rgba(255, 149, 0, 0.08);
+    background-color: color-mix(in srgb, var(--warning-color) 8%, transparent);
 }
 
 .stat-value {
@@ -742,16 +752,24 @@ body {
     margin-top: var(--spacing-xs);
     padding: 2px 6px;
     border-radius: var(--radius-sm);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .stat-change.positive {
     color: var(--success-color);
-    background-color: rgba(52, 199, 89, 0.2);
+    background-color: color-mix(in srgb, var(--success-color) 15%, transparent);
 }
 
 .stat-change.negative {
     color: var(--error-color);
-    background-color: rgba(255, 59, 48, 0.2);
+    background-color: color-mix(in srgb, var(--error-color) 15%, transparent);
+}
+
+.stat-change-icon {
+    display: inline-block;
+    vertical-align: middle;
 }
 
 .chart-container {
@@ -781,10 +799,7 @@ body {
     background-color: transparent !important;
 }
 
-/* Dark mode chart adjustments */
-[data-theme="dark"] .chart-wrapper canvas {
-    filter: brightness(0.9);
-}
+/* Chart colors are now theme-aware via Utils.getChartThemeColors() */
 
 /* Category statistics */
 .category-stats {
@@ -1133,4 +1148,84 @@ body {
 
 .animate-slide-down {
     animation: slideDown var(--transition-normal) ease-out;
+}
+
+/* =============================================================================
+   VIEW TRANSITIONS API
+   =============================================================================
+   Smooth tab switching animations using the View Transitions API
+   ============================================================================= */
+
+.tab-content {
+    view-transition-name: tab-content;
+}
+
+::view-transition-old(tab-content) {
+    animation: 200ms ease-out both fade-out;
+}
+
+::view-transition-new(tab-content) {
+    animation: 200ms ease-in both fade-in;
+}
+
+@keyframes fade-out {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-8px); }
+}
+
+@keyframes fade-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* =============================================================================
+   SKELETON LOADING
+   =============================================================================
+   Shimmer animation placeholders for loading states
+   ============================================================================= */
+
+@keyframes skeleton-shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.skeleton {
+    background: linear-gradient(
+        90deg,
+        var(--gray-5) 25%,
+        var(--gray-4) 50%,
+        var(--gray-5) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s ease-in-out infinite;
+    border-radius: var(--radius-sm);
+}
+
+.skeleton-text {
+    height: 14px;
+    margin-bottom: var(--spacing-sm);
+    width: 80%;
+}
+
+.skeleton-text.short {
+    width: 40%;
+}
+
+.skeleton-card {
+    height: 80px;
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-md);
+}
+
+.skeleton-chart {
+    height: 200px;
+    border-radius: var(--radius-md);
+}
+
+/* Skeleton grid for stat cards */
+.skeleton-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
 }
