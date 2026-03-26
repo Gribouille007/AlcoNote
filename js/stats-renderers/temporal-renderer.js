@@ -109,7 +109,19 @@ function initializeHourlyChart(hourlyData) {
                 y: {
                     beginAtZero: true,
                     ticks: {
-                        stepSize: 1
+                        stepSize: 1,
+                        color: Utils.getChartThemeColors().tickColor
+                    },
+                    grid: {
+                        color: Utils.getChartThemeColors().gridColor
+                    }
+                },
+                x: {
+                    ticks: {
+                        color: Utils.getChartThemeColors().tickColor
+                    },
+                    grid: {
+                        color: Utils.getChartThemeColors().gridColor
                     }
                 }
             }
@@ -180,11 +192,11 @@ function initializeDailyChart(dailyData) {
                         maxTicksLimit: 5
                     },
                     grid: {
-                        color: 'rgba(0, 0, 0, 0.1)',
+                        color: Utils.getChartThemeColors().gridColor,
                         lineWidth: 1
                     },
                     angleLines: {
-                        color: 'rgba(0, 0, 0, 0.1)',
+                        color: Utils.getChartThemeColors().gridColor,
                         lineWidth: 1
                     },
                     pointLabels: {
@@ -192,7 +204,7 @@ function initializeDailyChart(dailyData) {
                             size: 12,
                             weight: 'normal'
                         },
-                        color: '#333'
+                        color: Utils.getChartThemeColors().textColor
                     }
                 }
             }

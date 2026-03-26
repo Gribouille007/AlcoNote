@@ -646,17 +646,17 @@ class BarcodeScanner {
         return null;
     }
 
-    // Get category icon
+    // Get category icon (SVG)
     getCategoryIcon(categoryName) {
-        const iconMap = {
-            'Bière': '🍺',
-            'Vin': '🍷',
-            'Spiritueux': '🥃',
-            'Cocktail': '🍹',
-            'Champagne': '🥂',
-            'Autre': '🥤'
+        const icons = {
+            'Bière': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a3 3 0 010 6h-1"/><path d="M5 8h12v9a3 3 0 01-3 3H8a3 3 0 01-3-3V8z"/><path d="M8 5a2 2 0 012-2c1.1 0 2 1 2 2"/><path d="M10 5a2 2 0 012-2c1.1 0 2 1 2 2"/></svg>',
+            'Vin': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 22h8"/><path d="M12 11v11"/><path d="M6 2l.58 5.23a6 6 0 0010.84 0L18 2z"/></svg>',
+            'Spiritueux': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 22h8"/><path d="M12 15v7"/><path d="M5 3h14l-3 12H8L5 3z"/></svg>',
+            'Cocktail': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 22h8"/><path d="M12 11v11"/><path d="M3 2l9 9 9-9"/><path d="M3 2h18"/></svg>',
+            'Champagne': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 22h8"/><path d="M12 11v11"/><path d="M6 2l.58 5.23a6 6 0 0010.84 0L18 2z"/><path d="M17 6l3-3"/><circle cx="21" cy="2" r="1"/></svg>',
+            'Autre': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/></svg>'
         };
-        return iconMap[categoryName] || '🥤';
+        return icons[categoryName] || icons['Autre'];
     }
 
     // Initialize scanner modal

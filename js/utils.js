@@ -557,10 +557,15 @@ class Utils {
 
     // Modal utilities
     static openModal(modalId) {
-        // Show modal dialog
+        // Show modal dialog using native <dialog> API
         const modal = document.getElementById(modalId);
         if (modal) {
-            modal.classList.add('active');
+            if (modal.tagName === 'DIALOG') {
+                modal.showModal();
+                modal.classList.add('active');
+            } else {
+                modal.classList.add('active');
+            }
             document.body.style.overflow = 'hidden';
 
             // Focus first input if available
@@ -576,15 +581,21 @@ class Utils {
         const modal = document.getElementById(modalId);
         if (modal) {
             modal.classList.remove('active');
+            if (modal.tagName === 'DIALOG') {
+                modal.close();
+            }
             document.body.style.overflow = '';
         }
     }
 
     static closeAllModals() {
         // Hide all open modals
-        const modals = document.querySelectorAll('.modal.active');
+        const modals = document.querySelectorAll('.modal.active, dialog[open]');
         modals.forEach(modal => {
             modal.classList.remove('active');
+            if (modal.tagName === 'DIALOG') {
+                modal.close();
+            }
         });
         document.body.style.overflow = '';
     }
@@ -726,6 +737,18 @@ class Utils {
             result.push(colors[i % colors.length]);
         }
         return result;
+    }
+
+    // Theme-aware chart colors for dark/light mode
+    static getChartThemeColors() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        return {
+            gridColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+            textColor: isDark ? '#EBEBF5' : '#3C3C43',
+            borderColor: isDark ? '#1C1C1E' : '#ffffff',
+            tickColor: isDark ? '#EBEBF599' : '#3C3C4399',
+            legendColor: isDark ? '#EBEBF5' : '#3C3C43',
+        };
     }
 
     static hexToRgba(hex, alpha = 1) {
