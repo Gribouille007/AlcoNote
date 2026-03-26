@@ -3585,8 +3585,6 @@ textarea:focus-visible {
 }
 
 .bac-record-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-lg);
     border-color: var(--primary-color);
 }
 
@@ -3602,60 +3600,31 @@ textarea:focus-visible {
     background: linear-gradient(135deg, rgba(255, 215, 0, 0.15) 0%, rgba(255, 193, 7, 0.08) 100%);
 }
 
-.bac-record-delete {
-    margin-left: auto;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: var(--spacing-sm);
-    border-radius: var(--radius-md);
-    opacity: 0.4;
-    transition: opacity var(--transition-fast), background var(--transition-fast);
-    font-size: 1.1rem;
-    flex-shrink: 0;
+.bac-record-card.swipeable {
+    position: relative;
+    overflow: hidden;
 }
 
-.bac-record-delete:hover {
+.bac-record-card.swipe-left {
+    transform: translateX(-80px);
+    opacity: 0.7;
+}
+
+.bac-record-card .delete-indicator {
+    position: absolute;
+    right: var(--spacing-md);
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--danger-color, #ff3b30);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+    pointer-events: none;
+}
+
+.bac-record-card.swipe-left .delete-indicator {
     opacity: 1;
-    background: rgba(255, 59, 48, 0.1);
-}
-
-.bac-delete-confirm {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-xs) 0;
-}
-
-.bac-delete-confirm span {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-}
-
-.bac-delete-confirm-actions {
-    display: flex;
-    gap: var(--spacing-sm);
-}
-
-.bac-delete-confirm .btn-danger,
-.bac-delete-confirm .btn-secondary {
-    font-size: var(--font-size-sm);
-    padding: var(--spacing-xs) var(--spacing-md);
-    border-radius: var(--radius-sm);
-    border: none;
-    cursor: pointer;
-}
-
-.bac-delete-confirm .btn-danger {
-    background: var(--danger-color, #ff3b30);
-    color: white;
-}
-
-.bac-delete-confirm .btn-secondary {
-    background: var(--bg-secondary);
-    color: var(--text-primary);
 }
 
 .record-badge {

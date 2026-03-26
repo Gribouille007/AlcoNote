@@ -129,8 +129,10 @@ async function renderBACEstimation(context = {}) {
             // Using current time as referenceTime (no dateRange in context)
         }
 
-        // Get drinks from context if available, otherwise fetch
-        const drinksForBAC = context.drinks || [];
+        // Always fetch drinks from the last 24h for BAC — context.drinks may only
+        // contain the current period (e.g. "today") and miss yesterday's late drinks
+        // that still affect BAC across midnight.
+        const drinksForBAC = await Utils.getRelevantDrinksForBAC(referenceTime);
 
         // Calculate BAC statistics with reference time and drinks
         const bacStats = await Utils.calculateBACStats(userWeight, userGender, referenceTime, drinksForBAC);
@@ -256,18 +258,22 @@ async function renderBACEstimation(context = {}) {
 }
 
 /**
- * Render BAC records section
+ * Render BAC records section — swipe-to-delete like history tab
  */
 function renderBACRecordsSection(records, highestRecord) {
     if (!records || records.length === 0) {
         return '';
     }
 
+    // Deduplicate: don't show highest record twice in the list
+    const highestId = highestRecord ? highestRecord.id : null;
+    const otherRecords = records.filter(r => r.id !== highestId);
+
     return `
         <div class="bac-records-section">
             <h4>${HEALTH_ICONS.chart} Records de taux d'alcoolémie</h4>
             ${highestRecord ? `
-            <div class="bac-record-card bac-record-highest" data-record-id="${highestRecord.id}">
+            <div class="bac-record-card bac-record-highest swipeable" data-record-id="${highestRecord.id}">
                 <div class="record-badge ${getBACLevelClass(highestRecord.bacValue)}">
                     <span class="badge-icon">${HEALTH_ICONS.trophy}</span>
                     <span class="badge-value">${highestRecord.bacValue.toFixed(0)} mg/L</span>
@@ -277,12 +283,12 @@ function renderBACRecordsSection(records, highestRecord) {
                     <div class="record-date">${formatRecordDate(highestRecord.timestamp)}</div>
                     <div class="record-drinks">${highestRecord.drinkCount} consommation${highestRecord.drinkCount > 1 ? 's' : ''}</div>
                 </div>
-                <button class="bac-record-delete" data-record-id="${highestRecord.id}" title="Supprimer">🗑️</button>
+                <div class="delete-indicator">Supprimer</div>
             </div>
             ` : ''}
             <div class="bac-records-list">
-                ${records.slice(0, 5).map(record => `
-                    <div class="bac-record-card" data-record-id="${record.id}">
+                ${otherRecords.slice(0, 5).map(record => `
+                    <div class="bac-record-card swipeable" data-record-id="${record.id}">
                         <div class="record-badge ${getBACLevelClass(record.bacValue)}">
                             <span class="badge-value">${record.bacValue.toFixed(0)} mg/L</span>
                         </div>
@@ -290,13 +296,10 @@ function renderBACRecordsSection(records, highestRecord) {
                             <div class="record-date">${formatRecordDate(record.timestamp)}</div>
                             <div class="record-drinks">${record.drinkCount} consommation${record.drinkCount > 1 ? 's' : ''}</div>
                         </div>
-                        <button class="bac-record-delete" data-record-id="${record.id}" title="Supprimer">🗑️</button>
+                        <div class="delete-indicator">Supprimer</div>
                     </div>
                 `).join('')}
             </div>
-            ${records.length > 5 ? `
-                <button class="btn-secondary view-all-records" id="view-all-records-btn">Voir tout l'historique (${records.length})</button>
-            ` : ''}
         </div>
     `;
 }
@@ -326,7 +329,7 @@ function formatRecordDate(timestamp) {
  * Get BAC level CSS class for styling (bacLevel in mg/L)
  */
 function getBACLevelClass(bacLevel) {
-    const level = BAC_LEVELS.find(l => bacLevel < l.max || bacLevel <= l.max);
+    const level = BAC_LEVELS.find(l => bacLevel <= l.max);
     return level ? level.class : 'danger';
 }
 
@@ -334,75 +337,45 @@ function getBACLevelClass(bacLevel) {
  * Get BAC level descriptive text (bacLevel in mg/L)
  */
 function getBACLevelText(bacLevel) {
-    const level = BAC_LEVELS.find(l => bacLevel < l.max || bacLevel <= l.max);
+    const level = BAC_LEVELS.find(l => bacLevel <= l.max);
     return level ? level.text : BAC_LEVELS[BAC_LEVELS.length - 1].text;
 }
 
 /**
- * Confirmation inline de suppression d'un record BAC
+ * Attache le swipe-to-delete sur toutes les cartes de record BAC
  */
-function confirmDeleteBACRecord(recordId, cardElement) {
-    const originalContent = cardElement.innerHTML;
-    const isHighest = cardElement.classList.contains('bac-record-highest');
+function attachRecordSwipeHandlers() {
+    document.querySelectorAll('.bac-record-card.swipeable').forEach(card => {
+        const recordId = parseInt(card.dataset.recordId);
+        if (!recordId) return;
 
-    cardElement.innerHTML = `
-        <div class="bac-delete-confirm">
-            <span>Supprimer ${isHighest ? 'le record absolu' : 'cet enregistrement'} ?</span>
-            <div class="bac-delete-confirm-actions">
-                <button class="btn-danger confirm-yes">Oui</button>
-                <button class="btn-secondary confirm-no">Non</button>
-            </div>
-        </div>
-    `;
-
-    cardElement.querySelector('.confirm-yes').addEventListener('click', async () => {
-        try {
-            await dbManager.deleteBACRecord(recordId);
-            // If it was the highest record, re-render the whole records section
-            if (isHighest) {
-                const section = cardElement.closest('.bac-records-section');
-                if (section) {
-                    const records = await dbManager.getBACRecords(5);
-                    const newHighest = await dbManager.getHighestBACRecord();
-                    section.outerHTML = renderBACRecordsSection(records, newHighest);
-                    // Re-attach delete handlers on the new DOM
-                    attachDeleteHandlers();
+        Utils.addSwipeListener(
+            card,
+            // onSwipeLeft — delete
+            async (el) => {
+                try {
+                    await dbManager.deleteBACRecord(recordId);
+                    el.classList.add('deleting');
+                    el.addEventListener('transitionend', () => {
+                        el.remove();
+                        // If no records left, remove the whole section
+                        const section = document.querySelector('.bac-records-section');
+                        if (section && !section.querySelector('.bac-record-card')) {
+                            section.remove();
+                        }
+                    }, { once: true });
+                    // Fallback if transitionend doesn't fire
+                    setTimeout(() => { if (el.parentNode) el.remove(); }, 500);
+                } catch (e) {
+                    console.error('Error deleting BAC record:', e);
+                    el.classList.remove('swipe-left', 'deleting');
                 }
-            } else {
-                cardElement.remove();
+            },
+            // onSwipeRight — cancel
+            (el) => {
+                el.classList.remove('swipe-left');
             }
-        } catch (e) {
-            console.error('Error deleting BAC record:', e);
-            cardElement.innerHTML = originalContent;
-        }
-    });
-
-    cardElement.querySelector('.confirm-no').addEventListener('click', () => {
-        cardElement.innerHTML = originalContent;
-        // Re-attach delete handler on the restored button
-        const btn = cardElement.querySelector('.bac-record-delete');
-        if (btn) {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                confirmDeleteBACRecord(parseInt(btn.dataset.recordId), cardElement);
-            });
-        }
-    });
-}
-
-/**
- * Attache les handlers de suppression sur tous les boutons .bac-record-delete
- */
-function attachDeleteHandlers() {
-    document.querySelectorAll('.bac-record-delete').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const recordId = parseInt(btn.dataset.recordId);
-            const card = btn.closest('.bac-record-card');
-            if (card) {
-                confirmDeleteBACRecord(recordId, card);
-            }
-        });
+        );
     });
 }
 
@@ -435,8 +408,8 @@ function postRenderHealthStats(stats) {
         });
     }
 
-    // Attach delete handlers on BAC record cards
-    attachDeleteHandlers();
+    // Attach swipe-to-delete on BAC record cards
+    attachRecordSwipeHandlers();
 }
 
 /**
