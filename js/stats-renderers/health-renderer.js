@@ -1,5 +1,18 @@
 // Composant de rendu pour les statistiques de santé - AlcoNote PWA
 
+// ── Configuration des paliers d'alcoolémie ──────────────────────────
+// Modifie ce tableau pour ajouter, supprimer ou changer les paliers.
+// Chaque entrée : { max: seuil en mg/L, class: classe CSS, text: texte affiché }
+// Les entrées doivent être triées par max croissant.
+const BAC_LEVELS = [
+    { max: 200,      class: 'safe',    text: 'Sobre' },
+    { max: 500,      class: 'caution', text: 'OK GARMIN TROUVE MES CLÉS DE VOITURE' },
+    { max: 800,      class: 'warning', text: 'OK GARMIN CACHE MES CLÉS DE VOITURE' },
+    { max: 1999,     class: 'warning', text: "Il est l'heure d'aller nager dans le lac" },
+    { max: 2999,     class: 'danger',  text: 'Brieuc arrête de boire' },
+    { max: Infinity, class: 'danger',  text: "Y a qu'une personne pour arriver à ce stade" },
+];
+
 // SVG icon constants to replace emoji
 const HEALTH_ICONS = {
     info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
@@ -254,7 +267,7 @@ function renderBACRecordsSection(records, highestRecord) {
         <div class="bac-records-section">
             <h4>${HEALTH_ICONS.chart} Records de taux d'alcoolémie</h4>
             ${highestRecord ? `
-            <div class="bac-record-card bac-record-highest">
+            <div class="bac-record-card bac-record-highest" data-record-id="${highestRecord.id}">
                 <div class="record-badge ${getBACLevelClass(highestRecord.bacValue)}">
                     <span class="badge-icon">${HEALTH_ICONS.trophy}</span>
                     <span class="badge-value">${highestRecord.bacValue.toFixed(0)} mg/L</span>
@@ -264,11 +277,12 @@ function renderBACRecordsSection(records, highestRecord) {
                     <div class="record-date">${formatRecordDate(highestRecord.timestamp)}</div>
                     <div class="record-drinks">${highestRecord.drinkCount} consommation${highestRecord.drinkCount > 1 ? 's' : ''}</div>
                 </div>
+                <button class="bac-record-delete" data-record-id="${highestRecord.id}" title="Supprimer">🗑️</button>
             </div>
             ` : ''}
             <div class="bac-records-list">
                 ${records.slice(0, 5).map(record => `
-                    <div class="bac-record-card">
+                    <div class="bac-record-card" data-record-id="${record.id}">
                         <div class="record-badge ${getBACLevelClass(record.bacValue)}">
                             <span class="badge-value">${record.bacValue.toFixed(0)} mg/L</span>
                         </div>
@@ -276,6 +290,7 @@ function renderBACRecordsSection(records, highestRecord) {
                             <div class="record-date">${formatRecordDate(record.timestamp)}</div>
                             <div class="record-drinks">${record.drinkCount} consommation${record.drinkCount > 1 ? 's' : ''}</div>
                         </div>
+                        <button class="bac-record-delete" data-record-id="${record.id}" title="Supprimer">🗑️</button>
                     </div>
                 `).join('')}
             </div>
@@ -311,22 +326,84 @@ function formatRecordDate(timestamp) {
  * Get BAC level CSS class for styling (bacLevel in mg/L)
  */
 function getBACLevelClass(bacLevel) {
-    if (bacLevel < 200) return 'safe';
-    if (bacLevel <= 500) return 'caution';
-    if (bacLevel <= 800) return 'warning';
-    return 'danger';
+    const level = BAC_LEVELS.find(l => bacLevel < l.max || bacLevel <= l.max);
+    return level ? level.class : 'danger';
 }
 
 /**
  * Get BAC level descriptive text (bacLevel in mg/L)
  */
 function getBACLevelText(bacLevel) {
-    if (bacLevel < 200) return 'Sobre';
-    if (bacLevel <= 500) return 'OK GARMIN TROUVE MES CLÉS DE VOITURE';
-    if (bacLevel <= 800) return 'OK GARMIN CACHE MES CLÉS DE VOITURE';
-    if (bacLevel <= 1999) return 'Il est l\'heure d\'aller nager dans le lac';
-    if (bacLevel <= 2999) return 'Brieuc arrête de boire';
-    return 'Y a qu\'une persone pour arriver à ce stade';
+    const level = BAC_LEVELS.find(l => bacLevel < l.max || bacLevel <= l.max);
+    return level ? level.text : BAC_LEVELS[BAC_LEVELS.length - 1].text;
+}
+
+/**
+ * Confirmation inline de suppression d'un record BAC
+ */
+function confirmDeleteBACRecord(recordId, cardElement) {
+    const originalContent = cardElement.innerHTML;
+    const isHighest = cardElement.classList.contains('bac-record-highest');
+
+    cardElement.innerHTML = `
+        <div class="bac-delete-confirm">
+            <span>Supprimer ${isHighest ? 'le record absolu' : 'cet enregistrement'} ?</span>
+            <div class="bac-delete-confirm-actions">
+                <button class="btn-danger confirm-yes">Oui</button>
+                <button class="btn-secondary confirm-no">Non</button>
+            </div>
+        </div>
+    `;
+
+    cardElement.querySelector('.confirm-yes').addEventListener('click', async () => {
+        try {
+            await dbManager.deleteBACRecord(recordId);
+            // If it was the highest record, re-render the whole records section
+            if (isHighest) {
+                const section = cardElement.closest('.bac-records-section');
+                if (section) {
+                    const records = await dbManager.getBACRecords(5);
+                    const newHighest = await dbManager.getHighestBACRecord();
+                    section.outerHTML = renderBACRecordsSection(records, newHighest);
+                    // Re-attach delete handlers on the new DOM
+                    attachDeleteHandlers();
+                }
+            } else {
+                cardElement.remove();
+            }
+        } catch (e) {
+            console.error('Error deleting BAC record:', e);
+            cardElement.innerHTML = originalContent;
+        }
+    });
+
+    cardElement.querySelector('.confirm-no').addEventListener('click', () => {
+        cardElement.innerHTML = originalContent;
+        // Re-attach delete handler on the restored button
+        const btn = cardElement.querySelector('.bac-record-delete');
+        if (btn) {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                confirmDeleteBACRecord(parseInt(btn.dataset.recordId), cardElement);
+            });
+        }
+    });
+}
+
+/**
+ * Attache les handlers de suppression sur tous les boutons .bac-record-delete
+ */
+function attachDeleteHandlers() {
+    document.querySelectorAll('.bac-record-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const recordId = parseInt(btn.dataset.recordId);
+            const card = btn.closest('.bac-record-card');
+            if (card) {
+                confirmDeleteBACRecord(recordId, card);
+            }
+        });
+    });
 }
 
 /**
@@ -357,6 +434,9 @@ function postRenderHealthStats(stats) {
             openProfileSettings();
         });
     }
+
+    // Attach delete handlers on BAC record cards
+    attachDeleteHandlers();
 }
 
 /**

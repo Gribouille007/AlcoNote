@@ -1,9 +1,9 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v2.0.0';
-const STATIC_CACHE = 'alconote-static-v2.0.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v1.1.0';
+const CACHE_NAME = 'alconote-v2.0.1';
+const STATIC_CACHE = 'alconote-static-v2.0.1';
+const DYNAMIC_CACHE = 'alconote-dynamic-v1.1.1';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
