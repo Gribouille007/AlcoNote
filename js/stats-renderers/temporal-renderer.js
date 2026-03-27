@@ -86,6 +86,10 @@ function initializeHourlyChart(hourlyData) {
     const labels = Object.keys(hourlyData).map(hour => `${hour}h`);
     const data = Object.values(hourlyData);
 
+    // Destroy existing chart on this canvas to prevent memory leaks
+    const existingChart = Chart.getChart(canvas);
+    if (existingChart) existingChart.destroy();
+
     new Chart(ctx, {
         type: 'bar',
         data: {
@@ -105,7 +109,19 @@ function initializeHourlyChart(hourlyData) {
                 y: {
                     beginAtZero: true,
                     ticks: {
-                        stepSize: 1
+                        stepSize: 1,
+                        color: Utils.getChartThemeColors().tickColor
+                    },
+                    grid: {
+                        color: Utils.getChartThemeColors().gridColor
+                    }
+                },
+                x: {
+                    ticks: {
+                        color: Utils.getChartThemeColors().tickColor
+                    },
+                    grid: {
+                        color: Utils.getChartThemeColors().gridColor
                     }
                 }
             }
@@ -127,6 +143,10 @@ function initializeDailyChart(dailyData) {
     const orderedDays = [1, 2, 3, 4, 5, 6, 0];
     const labels = orderedDays.map(day => Utils.getDayName(day));
     const data = orderedDays.map(day => dailyData[day] || 0);
+
+    // Destroy existing chart on this canvas to prevent memory leaks
+    const existingDailyChart = Chart.getChart(canvas);
+    if (existingDailyChart) existingDailyChart.destroy();
 
     new Chart(ctx, {
         type: 'radar',
@@ -172,11 +192,11 @@ function initializeDailyChart(dailyData) {
                         maxTicksLimit: 5
                     },
                     grid: {
-                        color: 'rgba(0, 0, 0, 0.1)',
+                        color: Utils.getChartThemeColors().gridColor,
                         lineWidth: 1
                     },
                     angleLines: {
-                        color: 'rgba(0, 0, 0, 0.1)',
+                        color: Utils.getChartThemeColors().gridColor,
                         lineWidth: 1
                     },
                     pointLabels: {
@@ -184,7 +204,7 @@ function initializeDailyChart(dailyData) {
                             size: 12,
                             weight: 'normal'
                         },
-                        color: '#333'
+                        color: Utils.getChartThemeColors().textColor
                     }
                 }
             }

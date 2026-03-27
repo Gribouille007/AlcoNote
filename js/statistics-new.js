@@ -441,7 +441,18 @@ class ModularStatisticsManager {
             return;
         }
 
-        const loading = Utils.showLoading(container, 'Calcul des statistiques...');
+        // Show skeleton loading placeholders
+        container.innerHTML = `
+            <div class="skeleton-grid">
+                <div class="skeleton skeleton-card"></div>
+                <div class="skeleton skeleton-card"></div>
+                <div class="skeleton skeleton-card"></div>
+            </div>
+            <div class="skeleton skeleton-chart"></div>
+            <div style="height:var(--spacing-lg)"></div>
+            <div class="skeleton skeleton-text"></div>
+            <div class="skeleton skeleton-text short"></div>
+        `;
 
         try {
             // Clean up previous charts and maps
@@ -650,7 +661,7 @@ class ModularStatisticsManager {
     showEmptyState(container) {
         container.innerHTML = `
             <div class="empty-state">
-                <div class="empty-state-icon">📊</div>
+                <div class="empty-state-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
                 <h3 class="empty-state-title">Aucune donnée</h3>
                 <p class="empty-state-description">
                     Aucune boisson enregistrée pour cette période.
@@ -725,7 +736,7 @@ class ModularStatisticsManager {
         if (container) {
             container.innerHTML = `
                 <div class="empty-state error-state">
-                    <div class="empty-state-icon">❌</div>
+                    <div class="empty-state-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
                     <h3 class="empty-state-title">Erreur système</h3>
                     <p class="empty-state-description">
                         Impossible de charger les statistiques. 
