@@ -103,6 +103,9 @@ class AlcoNoteApp {
 
         // Window events
         this.setupWindowEvents();
+
+        // Category search
+        this.setupCategorySearch();
     }
 
     // Setup tab navigation
@@ -581,6 +584,13 @@ class AlcoNoteApp {
                 container.appendChild(categoryElement);
             });
 
+            // Background reconciliation of drinkCount values
+            queueMicrotask(async () => {
+                for (const category of categories) {
+                    await dbManager.updateCategoryDrinkCount(category.name);
+                }
+            });
+
         } catch (error) {
             Utils.handleError(error, 'loading categories');
         } finally {
@@ -626,8 +636,8 @@ class AlcoNoteApp {
         if (editBtn && editor && input) {
             editBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                editor.style.display = editor.style.display === 'none' ? 'flex' : 'none';
-                if (editor.style.display !== 'none') {
+                editor.classList.toggle('active');
+                if (editor.classList.contains('active')) {
                     input.focus();
                     input.select();
                 }
@@ -658,7 +668,11 @@ class AlcoNoteApp {
                     await this.loadCategories();
                     await this.loadCategoriesForForm();
                 } catch (error) {
-                    Utils.handleError(error, 'renaming category');
+                    if (error.message && error.message.includes('existe déjà')) {
+                        Utils.showMessage('Ce nom de catégorie existe déjà', 'error');
+                    } else {
+                        Utils.handleError(error, 'renaming category');
+                    }
                 }
             });
         }
@@ -669,14 +683,10 @@ class AlcoNoteApp {
             deleteBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 try {
-                    // Get current value from input (in case user changed it)
-                    const nameToDelete = input ? input.value.trim() : category.name;
-                    const cat = await dbManager.getCategoryByName(nameToDelete);
-                    if (!cat) {
-                        Utils.showMessage('Catégorie introuvable', 'error');
-                        return;
-                    }
-                    await dbManager.deleteCategory(cat.id);
+                    const confirmed = confirm(`Supprimer la catégorie "${category.name}" ? Cette action est irréversible.`);
+                    if (!confirmed) return;
+
+                    await dbManager.deleteCategory(category.id);
                     Utils.showMessage('Catégorie supprimée', 'success');
 
                     // Refresh lists and form options
@@ -694,11 +704,70 @@ class AlcoNoteApp {
         if (cancelBtn && editor) {
             cancelBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                editor.style.display = 'none';
+                editor.classList.remove('active');
+                input.value = category.name;
             });
         }
 
         return element;
+    }
+
+    // Setup category search bar
+    setupCategorySearch() {
+        const searchInput = document.getElementById('categories-search');
+        const clearBtn = document.getElementById('categories-search-clear');
+        if (!searchInput || !clearBtn) return;
+
+        const debouncedFilter = Utils.debounce((query) => {
+            this.filterCategories(query);
+        }, 200);
+
+        searchInput.addEventListener('input', (e) => {
+            const val = e.target.value;
+            clearBtn.style.display = val ? 'flex' : 'none';
+            debouncedFilter(val);
+        });
+
+        clearBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            clearBtn.style.display = 'none';
+            this.filterCategories('');
+            searchInput.focus();
+        });
+    }
+
+    // Filter categories by name or drink name
+    async filterCategories(query) {
+        const container = document.getElementById('categories-list');
+        const q = query.trim().toLowerCase();
+
+        if (!q) {
+            container.querySelectorAll('.category-item').forEach(el => {
+                el.style.display = '';
+            });
+            return;
+        }
+
+        try {
+            const allDrinks = await dbManager.getAllDrinks();
+
+            // Build set of category names that have matching drinks
+            const categoriesWithMatchingDrinks = new Set();
+            allDrinks.forEach(drink => {
+                if (drink.name.toLowerCase().includes(q)) {
+                    categoriesWithMatchingDrinks.add(drink.category);
+                }
+            });
+
+            container.querySelectorAll('.category-item').forEach(el => {
+                const catName = el.querySelector('.category-main')?.dataset.category;
+                const nameMatches = catName && catName.toLowerCase().includes(q);
+                const drinkMatches = categoriesWithMatchingDrinks.has(catName);
+                el.style.display = (nameMatches || drinkMatches) ? '' : 'none';
+            });
+        } catch (error) {
+            console.warn('Filter error:', error);
+        }
     }
 
     // Show add drink options (scanner or manual)
@@ -1650,6 +1719,24 @@ class AlcoNoteApp {
             });
         }
 
+        // Setup click on drink variant rows to open edit modal
+        content.querySelectorAll('.category-drink-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                // Don't trigger if clicking the + button
+                if (e.target.closest('.counter-add-btn')) return;
+
+                const variantIndex = parseInt(item.dataset.variantIndex);
+                const familyEl = item.closest('.drink-family');
+                const familyIndex = Array.from(content.querySelectorAll('.drink-family')).indexOf(familyEl);
+                if (familyIndex >= 0 && drinkGroups[familyIndex]) {
+                    const variant = drinkGroups[familyIndex].variants[variantIndex];
+                    if (variant) {
+                        this.openEditDrinkFamilyModal(variant, category);
+                    }
+                }
+            });
+        });
+
         // Setup add new drink button
         addButton.onclick = () => {
             Utils.closeModal('category-detail-modal');
@@ -1746,6 +1833,219 @@ class AlcoNoteApp {
     openCategoryDrinks(category) {
         // Use the new category detail page instead
         this.openCategoryDetailPage(category);
+    }
+
+    // Open edit modal for a drink variant (from category detail view)
+    openEditDrinkFamilyModal(variant, category) {
+        const nameInput = document.getElementById('edit-family-name');
+        const quantityInput = document.getElementById('edit-family-quantity');
+        const unitSelect = document.getElementById('edit-family-unit');
+        const alcoholInput = document.getElementById('edit-family-alcohol');
+
+        nameInput.value = variant.name;
+        quantityInput.value = variant.quantity;
+        unitSelect.value = variant.unit;
+        alcoholInput.value = variant.alcoholContent || '';
+
+        // Store context for save handler
+        const form = document.getElementById('edit-drink-family-form');
+        form.dataset.originalName = variant.name;
+        form.dataset.originalQuantity = variant.quantity;
+        form.dataset.originalUnit = variant.unit;
+        form.dataset.categoryName = category.name;
+
+        // Setup form submit handler
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            await this.handleEditDrinkFamily(form, category);
+        };
+
+        // Setup extra actions
+        document.getElementById('edit-family-delete-all').onclick = async () => {
+            await this.handleDeleteAllVariants(form.dataset.originalName, category);
+        };
+
+        document.getElementById('edit-family-change-category').onclick = async () => {
+            await this.handleChangeCategoryForFamily(form.dataset.originalName, category);
+        };
+
+        const editModal = document.getElementById('edit-drink-family-modal');
+        editModal.style.zIndex = '1060';
+        Utils.openModal('edit-drink-family-modal');
+    }
+
+    // Handle edit drink family form submission
+    async handleEditDrinkFamily(form, category) {
+        const originalName = form.dataset.originalName;
+        const originalQuantity = parseFloat(form.dataset.originalQuantity);
+        const originalUnit = form.dataset.originalUnit;
+
+        const newName = document.getElementById('edit-family-name').value.trim();
+        const newQuantity = parseFloat(document.getElementById('edit-family-quantity').value);
+        const newUnit = document.getElementById('edit-family-unit').value;
+        const newAlcohol = parseFloat(document.getElementById('edit-family-alcohol').value) || 0;
+
+        if (!newName) {
+            Utils.showMessage('Le nom ne peut pas être vide', 'error');
+            return;
+        }
+
+        try {
+            // Get ALL drinks with the original name
+            const drinksToUpdate = await dbManager.getDrinksByName(originalName);
+
+            const nameChanged = newName !== originalName;
+            const quantityChanged = newQuantity !== originalQuantity;
+            const unitChanged = newUnit !== originalUnit;
+
+            let updateCount = 0;
+
+            for (const drink of drinksToUpdate) {
+                const isMatchingVariant = drink.quantity == originalQuantity && drink.unit === originalUnit;
+
+                const updates = {};
+
+                // Name changes apply to ALL drinks in the family
+                if (nameChanged) {
+                    updates.name = newName;
+                }
+
+                // Quantity/unit/alcohol changes apply only to matching variant
+                if (isMatchingVariant) {
+                    if (quantityChanged) updates.quantity = newQuantity;
+                    if (unitChanged) updates.unit = newUnit;
+                    updates.alcoholContent = newAlcohol;
+
+                    // Recalculate quantityInCL
+                    if (quantityChanged || unitChanged) {
+                        const converted = Utils.convertToStandardUnit(
+                            updates.quantity || drink.quantity,
+                            updates.unit || drink.unit
+                        );
+                        updates.quantityInCL = converted.quantity;
+                    }
+                }
+
+                if (Object.keys(updates).length > 0) {
+                    await dbManager.updateDrink(drink.id, updates);
+                    updateCount++;
+                }
+            }
+
+            Utils.showMessage(`${updateCount} boisson(s) modifiée(s)`, 'success');
+            Utils.closeModal('edit-drink-family-modal');
+
+            // Dispatch event and refresh
+            window.dispatchEvent(new CustomEvent('drinkDataChanged', {
+                detail: { action: 'bulk-update' }
+            }));
+
+            // Refresh the category detail view
+            const updatedCategory = await dbManager.getCategoryByName(category.name);
+            if (updatedCategory) {
+                this.openCategoryDetailPage(updatedCategory);
+            }
+
+            this.loadCategories();
+
+        } catch (error) {
+            Utils.handleError(error, 'modifying drink family');
+        }
+    }
+
+    // Delete all drinks with a given name
+    async handleDeleteAllVariants(drinkName, category) {
+        const confirmed = confirm(`Supprimer toutes les "${drinkName}" ? Cette action est irréversible.`);
+        if (!confirmed) return;
+
+        try {
+            const drinks = await dbManager.getDrinksByName(drinkName);
+            for (const drink of drinks) {
+                await dbManager.deleteDrink(drink.id);
+            }
+
+            Utils.showMessage(`${drinks.length} boisson(s) supprimée(s)`, 'success');
+            Utils.closeModal('edit-drink-family-modal');
+
+            window.dispatchEvent(new CustomEvent('drinkDataChanged', {
+                detail: { action: 'bulk-delete' }
+            }));
+
+            // Refresh category detail
+            const updatedCategory = await dbManager.getCategoryByName(category.name);
+            if (updatedCategory) {
+                this.openCategoryDetailPage(updatedCategory);
+            }
+
+            this.loadCategories();
+
+        } catch (error) {
+            Utils.handleError(error, 'deleting all variants');
+        }
+    }
+
+    // Change category for all drinks with a given name
+    async handleChangeCategoryForFamily(drinkName, currentCategory) {
+        try {
+            const categories = await dbManager.getAllCategories();
+            const pickerList = document.getElementById('category-picker-list');
+
+            pickerList.innerHTML = categories.map(cat => `
+                <button type="button" class="category-picker-item ${cat.name === currentCategory.name ? 'current' : ''}"
+                        data-category-name="${cat.name}">
+                    <span>${cat.name}</span>
+                    <span class="picker-count">${cat.drinkCount} boisson(s)</span>
+                </button>
+            `).join('');
+
+            // Wire click handlers
+            pickerList.querySelectorAll('.category-picker-item').forEach(item => {
+                item.addEventListener('click', async () => {
+                    const newCategoryName = item.dataset.categoryName;
+                    if (newCategoryName === currentCategory.name) {
+                        Utils.showMessage('La boisson est déjà dans cette catégorie', 'warning');
+                        return;
+                    }
+
+                    try {
+                        const drinks = await dbManager.getDrinksByName(drinkName);
+                        for (const drink of drinks) {
+                            await dbManager.updateDrink(drink.id, { category: newCategoryName });
+                        }
+
+                        // Update drink counts
+                        await dbManager.updateCategoryDrinkCount(currentCategory.name);
+                        await dbManager.updateCategoryDrinkCount(newCategoryName);
+
+                        Utils.showMessage(`${drinks.length} boisson(s) déplacée(s) vers "${newCategoryName}"`, 'success');
+                        Utils.closeModal('category-picker-modal');
+                        Utils.closeModal('edit-drink-family-modal');
+
+                        window.dispatchEvent(new CustomEvent('drinkDataChanged', {
+                            detail: { action: 'bulk-update' }
+                        }));
+
+                        // Refresh
+                        const updatedCategory = await dbManager.getCategoryByName(currentCategory.name);
+                        if (updatedCategory) {
+                            this.openCategoryDetailPage(updatedCategory);
+                        }
+
+                        this.loadCategories();
+
+                    } catch (error) {
+                        Utils.handleError(error, 'changing category');
+                    }
+                });
+            });
+
+            const pickerModal = document.getElementById('category-picker-modal');
+            pickerModal.style.zIndex = '1070';
+            Utils.openModal('category-picker-modal');
+
+        } catch (error) {
+            Utils.handleError(error, 'loading categories for picker');
+        }
     }
 
     // Open drink detail modal
