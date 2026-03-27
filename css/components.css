@@ -1818,10 +1818,8 @@ textarea:focus-visible {
 }
 
 /* Edit Drink Family Modal */
-#edit-drink-family-modal,
-#category-picker-modal {
-    z-index: 1060;
-}
+/* edit-drink-family-modal and category-picker-modal are <dialog> elements,
+   stacking is handled by the browser top-layer (showModal) */
 
 #edit-drink-family-modal .modal-form {
     padding: var(--spacing-md);

@@ -611,7 +611,7 @@ class AlcoNoteApp {
                     <button class="category-edit-btn" aria-label="Modifier la catégorie" title="Modifier la catégorie"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                 </div>
             </div>
-            <div class="category-editor" style="display:none;">
+            <div class="category-editor">
                 <input type="text" class="category-name-input" aria-label="Nouveau nom de catégorie">
                 <button class="btn-primary save-rename-btn">Enregistrer</button>
                 <button class="btn-danger delete-category-btn">Supprimer</button>
@@ -1869,8 +1869,6 @@ class AlcoNoteApp {
             await this.handleChangeCategoryForFamily(form.dataset.originalName, category);
         };
 
-        const editModal = document.getElementById('edit-drink-family-modal');
-        editModal.style.zIndex = '1060';
         Utils.openModal('edit-drink-family-modal');
     }
 
@@ -2039,8 +2037,6 @@ class AlcoNoteApp {
                 });
             });
 
-            const pickerModal = document.getElementById('category-picker-modal');
-            pickerModal.style.zIndex = '1070';
             Utils.openModal('category-picker-modal');
 
         } catch (error) {
