@@ -300,6 +300,10 @@ body {
 }
 
 /* Categories */
+#categories-tab {
+    flex: none;
+}
+
 .categories-container {
     flex: none;
 }

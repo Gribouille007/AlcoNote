@@ -34,10 +34,10 @@
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192x192.png">
 
     <!-- Feuilles de style principales -->
-    <link rel="stylesheet" href="css/main.css?v=1.0.16">
-    <link rel="stylesheet" href="css/components.css?v=1.0.16">
-    <link rel="stylesheet" href="css/responsive.css?v=1.0.16">
-    <link rel="stylesheet" href="css/accessibility.css?v=1.0.16">
+    <link rel="stylesheet" href="css/main.css?v=2.0.4">
+    <link rel="stylesheet" href="css/components.css?v=2.0.4">
+    <link rel="stylesheet" href="css/responsive.css?v=2.0.4">
+    <link rel="stylesheet" href="css/accessibility.css?v=2.0.4">
 
     <!-- Bibliothèques JavaScript externes -->
     <!-- Chart.js pour les graphiques statistiques -->
@@ -324,8 +324,7 @@
     </dialog>
 
     <!-- Modal d'édition de boisson (famille/variante) -->
-    <div id="edit-drink-family-modal" class="modal popup-modal">
-        <div class="modal-backdrop"></div>
+    <dialog id="edit-drink-family-modal" class="modal popup-modal">
         <div class="modal-content popup-content">
             <div class="modal-header">
                 <h2>Modifier la boisson</h2>
@@ -373,11 +372,10 @@
                 </button>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <!-- Modal de sélection de catégorie -->
-    <div id="category-picker-modal" class="modal popup-modal">
-        <div class="modal-backdrop"></div>
+    <dialog id="category-picker-modal" class="modal popup-modal">
         <div class="modal-content popup-content">
             <div class="modal-header">
                 <h2>Changer de catégorie</h2>
@@ -387,7 +385,7 @@
                 <!-- Dynamically populated -->
             </div>
         </div>
-    </div>
+    </dialog>
 
     <!-- Scripts JavaScript de l'application -->
     <!-- Chargés dans l'ordre des dépendances -->
