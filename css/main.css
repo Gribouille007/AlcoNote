@@ -301,7 +301,7 @@ body {
 
 /* Categories */
 .categories-container {
-    flex: 1;
+    flex: none;
 }
 
 .categories-list {
