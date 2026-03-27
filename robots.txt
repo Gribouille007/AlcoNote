@@ -18,5 +18,5 @@ Allow: /js/app.js
 Allow: /js/database.js
 Allow: /js/utils.js
 Allow: /js/geolocation.js
-Allow: /js/scanner.js
+Allow: /js/scanner/
 Allow: /js/statistics.js
