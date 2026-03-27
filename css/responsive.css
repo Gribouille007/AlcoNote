@@ -559,7 +559,9 @@
     .category-item:hover,
     .drink-group-header:hover,
     .stat-card:hover,
-    .fab-option:hover {
+    .fab-option:hover,
+    .category-drink-item:hover,
+    .drink-family:hover {
         transform: none;
         box-shadow: var(--shadow-sm);
     }
