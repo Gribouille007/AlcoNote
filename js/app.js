@@ -998,14 +998,14 @@ class AlcoNoteApp {
         // If productInfo is provided, pre-fill all fields
         if (productInfo) {
             if (nameInput) nameInput.value = productInfo.name || '';
-            if (alcoholInput && productInfo.alcoholContent) {
+            if (alcoholInput && productInfo.alcoholContent != null) {
                 alcoholInput.value = productInfo.alcoholContent;
             }
-            if (quantityInput && productInfo.quantity) {
-                quantityInput.value = productInfo.quantity;
+            if (quantityInput && productInfo.servingQuantity != null) {
+                quantityInput.value = productInfo.servingQuantity;
             }
-            if (unitSelect && productInfo.unit) {
-                unitSelect.value = productInfo.unit;
+            if (unitSelect && productInfo.servingUnit) {
+                unitSelect.value = productInfo.servingUnit;
             }
 
             // Store barcode for later use
@@ -1051,14 +1051,9 @@ class AlcoNoteApp {
     }
 
     openScannerModal(categoryName = null) {
-        if (!BarcodeScanner.isSupported()) {
+        if (!BarcodeHandler.isSupported()) {
             Utils.showMessage('Scanner non supporté sur cet appareil', 'error');
             return;
-        }
-
-        // Store category for pre-selection after scan
-        if (categoryName) {
-            this.pendingScanCategory = categoryName;
         }
 
         Utils.openModal('scanner-modal');
@@ -1126,6 +1121,7 @@ class AlcoNoteApp {
 
             const formData = Utils.getFormData(form);
             const isEditing = form.dataset.editingDrinkId;
+            const barcode = form.dataset.barcode || null;
 
             // Get category from hidden input if it exists, otherwise from select
             let category = formData.category;
@@ -1189,7 +1185,7 @@ class AlcoNoteApp {
                 alcoholContent: formData.alcoholContent ? parseFloat(formData.alcoholContent) : null,
                 date: formData.date,
                 time: formData.time,
-                barcode: form.dataset.barcode || null
+                barcode: barcode
             };
 
             if (!isEditing) {

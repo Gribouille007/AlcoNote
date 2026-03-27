@@ -1,9 +1,9 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v1.0.14';
-const STATIC_CACHE = 'alconote-static-v1.0.14';
-const DYNAMIC_CACHE = 'alconote-dynamic-v1.0.14';
+const CACHE_NAME = 'alconote-v1.0.15';
+const STATIC_CACHE = 'alconote-static-v1.0.15';
+const DYNAMIC_CACHE = 'alconote-dynamic-v1.0.15';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -18,7 +18,9 @@ const STATIC_FILES = [
     '/js/database.js',
     '/js/utils.js',
     '/js/geolocation.js',
-    '/js/scanner.js',
+    '/js/scanner/product-lookup.js',
+    '/js/scanner/camera-scanner.js',
+    '/js/scanner/barcode-handler.js',
     '/js/statistics.js',
     // External CDN resources
     'https://cdn.jsdelivr.net/npm/chart.js',
