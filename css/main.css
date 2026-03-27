@@ -302,48 +302,7 @@ body {
     gap: var(--spacing-sm);
 }
 
-.category-item {
-    background-color: var(--bg-primary);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-lg);
-    box-shadow: var(--shadow-sm);
-    cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border: 1px solid var(--separator);
-    min-height: 60px;
-}
-
-.category-item:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
-    border-color: var(--primary-color);
-}
-
-.category-item:active {
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-sm);
-    transition: all 0.1s ease-out;
-}
-
-.category-name {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-primary);
-}
-
-.category-count {
-    background-color: var(--primary-color);
-    color: white;
-    padding: var(--spacing-xs) var(--spacing-sm);
-    border-radius: var(--radius-xl);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    min-width: 24px;
-    text-align: center;
-}
+/* Category item styles are defined in components.css */
 
 /* Drinks */
 .drinks-container {
