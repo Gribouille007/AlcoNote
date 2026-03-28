@@ -245,17 +245,24 @@
     <!-- Modal du scanner de code-barres -->
     <dialog id="scanner-modal" class="modal">
         <div class="modal-content scanner-content">
-            <div class="modal-header">
-                <h2>Scanner un code-barres</h2>
+            <div class="modal-header scanner-modal-header">
+                <h2><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: text-bottom; margin-right: 6px;"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="16" x2="17" y2="16"/></svg>Scanner</h2>
                 <button class="modal-close" data-modal="scanner-modal" aria-label="Fermer">&times;</button>
             </div>
             <div id="scanner-container" class="scanner-container">
                 <div id="scanner-viewport" class="scanner-viewport"></div>
                 <div class="scanner-overlay">
-                    <div class="scanner-frame"></div>
+                    <div class="scanner-frame">
+                        <span class="scanner-corner scanner-corner-tl"></span>
+                        <span class="scanner-corner scanner-corner-tr"></span>
+                        <span class="scanner-corner scanner-corner-bl"></span>
+                        <span class="scanner-corner scanner-corner-br"></span>
+                        <div class="scanner-line"></div>
+                    </div>
                 </div>
             </div>
             <div class="scanner-status">
+                <div class="scanner-status-indicator"></div>
                 <p id="scanner-status-text">Positionnez le code-barres dans le cadre</p>
             </div>
         </div>

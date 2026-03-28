@@ -438,19 +438,32 @@ dialog.modal[open].active {
 
 /* Scanner Modal Specific Styles */
 .scanner-content {
-    max-width: 600px;
+    max-width: 560px;
     max-height: 85vh;
+    padding: 0;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.scanner-modal-header {
+    padding: var(--spacing-md) var(--spacing-lg);
+    background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.scanner-modal-header h2 {
+    color: #fff;
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    letter-spacing: 0.02em;
 }
 
 .scanner-container {
     position: relative;
     width: 100%;
-    height: 400px;
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-    border-radius: var(--radius-lg);
+    height: 380px;
+    background: #000;
     overflow: hidden;
-    margin: var(--spacing-lg) 0;
-    box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.5);
 }
 
 .scanner-viewport {
@@ -464,7 +477,6 @@ dialog.modal[open].active {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    border-radius: var(--radius-lg);
 }
 
 .scanner-overlay {
@@ -477,93 +489,109 @@ dialog.modal[open].active {
     align-items: center;
     justify-content: center;
     pointer-events: none;
-    background: radial-gradient(circle at center, transparent 30%, rgba(0, 0, 0, 0.4) 70%);
+    background:
+        linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, transparent 25%, transparent 75%, rgba(0,0,0,0.55) 100%),
+        linear-gradient(to right, rgba(0,0,0,0.55) 0%, transparent 20%, transparent 80%, rgba(0,0,0,0.55) 100%);
 }
 
 .scanner-frame {
     width: 280px;
-    height: 120px;
-    border: 3px solid var(--primary-color);
-    border-radius: var(--radius-lg);
+    height: 140px;
     position: relative;
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-color) 20%, transparent),
-        0 0 20px color-mix(in srgb, var(--primary-color) 40%, transparent);
-    animation: scannerPulse 2s ease-in-out infinite;
-}
-
-@keyframes scannerPulse {
-
-    0%,
-    100% {
-        box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-color) 20%, transparent),
-            0 0 20px color-mix(in srgb, var(--primary-color) 40%, transparent);
-        transform: scale(1);
-    }
-
-    50% {
-        box-shadow: 0 0 0 8px color-mix(in srgb, var(--primary-color) 30%, transparent),
-            0 0 30px color-mix(in srgb, var(--primary-color) 60%, transparent);
-        transform: scale(1.02);
-    }
-}
-
-.scanner-frame::before,
-.scanner-frame::after {
-    content: '';
-    position: absolute;
-    width: 30px;
-    height: 30px;
-    border: 4px solid #fff;
-    box-shadow: 0 0 10px color-mix(in srgb, var(--primary-color) 80%, transparent);
-}
-
-.scanner-frame::before {
-    top: -4px;
-    left: -4px;
-    border-right: none;
-    border-bottom: none;
-    border-top-left-radius: var(--radius-md);
-}
-
-.scanner-frame::after {
-    bottom: -4px;
-    right: -4px;
-    border-left: none;
-    border-top: none;
-    border-bottom-right-radius: var(--radius-md);
-}
-
-/* Scanning line animation */
-.scanner-frame::after {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
     animation: none;
 }
 
-@keyframes scanLine {
-    0% {
-        top: 0;
-    }
-
-    50% {
-        top: calc(100% - 3px);
-    }
-
-    100% {
-        top: 0;
-    }
+/* Corner brackets */
+.scanner-corner {
+    position: absolute;
+    width: 28px;
+    height: 28px;
+    border-color: #fff;
+    border-style: solid;
+    border-width: 0;
+    transition: border-color 0.3s ease;
 }
 
+.scanner-corner-tl {
+    top: 0; left: 0;
+    border-top-width: 3px;
+    border-left-width: 3px;
+    border-top-left-radius: 6px;
+}
+
+.scanner-corner-tr {
+    top: 0; right: 0;
+    border-top-width: 3px;
+    border-right-width: 3px;
+    border-top-right-radius: 6px;
+}
+
+.scanner-corner-bl {
+    bottom: 0; left: 0;
+    border-bottom-width: 3px;
+    border-left-width: 3px;
+    border-bottom-left-radius: 6px;
+}
+
+.scanner-corner-br {
+    bottom: 0; right: 0;
+    border-bottom-width: 3px;
+    border-right-width: 3px;
+    border-bottom-right-radius: 6px;
+}
+
+/* Animated scan line */
+.scanner-line {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent 0%, var(--primary-color) 20%, var(--primary-color) 80%, transparent 100%);
+    box-shadow: 0 0 12px 2px color-mix(in srgb, var(--primary-color) 60%, transparent);
+    border-radius: 2px;
+    animation: scanLine 2.2s ease-in-out infinite;
+}
+
+@keyframes scanLine {
+    0%, 100% { top: 4px; opacity: 0.4; }
+    50%      { top: calc(100% - 6px); opacity: 1; }
+}
+
+/* Status bar */
 .scanner-status {
-    text-align: center;
-    padding: var(--spacing-lg);
-    background: linear-gradient(180deg, transparent 0%, var(--bg-primary) 40%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md) var(--spacing-lg);
+    background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.scanner-status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--primary-color) 80%, transparent);
+    animation: statusPulse 1.5s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+@keyframes statusPulse {
+    0%, 100% { opacity: 0.5; transform: scale(0.9); }
+    50%      { opacity: 1;   transform: scale(1.1); }
 }
 
 .scanner-status p {
-    color: var(--text-primary);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
     margin: 0;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    letter-spacing: 0.01em;
 }
 
 /* Settings Menu */

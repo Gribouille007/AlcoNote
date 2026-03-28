@@ -18,14 +18,14 @@ class CameraScanner {
                     height: 480,
                     facingMode: "environment"
                 },
-                area: { top: "10%", right: "5%", left: "5%", bottom: "10%" }
+                area: { top: "15%", right: "10%", left: "10%", bottom: "15%" }
             },
             locator: {
-                patchSize: "medium",
+                patchSize: "small",
                 halfSample: true
             },
-            numOfWorkers: navigator.hardwareConcurrency > 2 ? 2 : 1,
-            frequency: 15,
+            numOfWorkers: Math.min(navigator.hardwareConcurrency || 2, 4),
+            frequency: 20,
             decoder: {
                 readers: [
                     "ean_reader",
@@ -52,8 +52,8 @@ class CameraScanner {
         // Debounce state
         this._detectionBuffer = {};
         this._isProcessing = false;
-        this._confirmThreshold = 3;
-        this._bufferMaxAge = 2000;
+        this._confirmThreshold = 2;
+        this._bufferMaxAge = 1500;
 
         // Broader reader set for fallback
         this.broadReaders = [
