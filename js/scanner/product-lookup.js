@@ -34,14 +34,17 @@ class ProductLookup {
             const product = data.product;
             const category = this._mapCategory(product.categories);
             const serving = this._computeServingDefaults(category);
+            const alcoholContent = this._extractAlcoholContent(product)
+                ?? this._defaultAlcoholContent(category);
+            const rawName = product.product_name || product.product_name_fr || `Produit ${barcode}`;
 
             return {
                 barcode,
-                name: product.product_name || product.product_name_fr || `Produit ${barcode}`,
+                name: this._cleanProductName(rawName, product.brands),
                 brand: product.brands || null,
                 source: 'openfoodfacts',
                 category,
-                alcoholContent: this._extractAlcoholContent(product),
+                alcoholContent,
                 packageSize: product.quantity || null,
                 servingQuantity: serving.servingQuantity,
                 servingUnit: serving.servingUnit,
@@ -65,14 +68,16 @@ class ProductLookup {
             const item = data.items[0];
             const category = this._mapCategoryFromTitle(item.title);
             const serving = this._computeServingDefaults(category);
+            const alcoholContent = this._extractAlcoholFromTitle(item.title)
+                ?? this._defaultAlcoholContent(category);
 
             return {
                 barcode,
-                name: item.title || `Produit ${barcode}`,
+                name: this._cleanProductName(item.title || `Produit ${barcode}`, item.brand),
                 brand: item.brand || null,
                 source: 'upcitemdb',
                 category,
-                alcoholContent: this._extractAlcoholFromTitle(item.title),
+                alcoholContent,
                 packageSize: null,
                 servingQuantity: serving.servingQuantity,
                 servingUnit: serving.servingUnit,
@@ -176,12 +181,53 @@ class ProductLookup {
         const match = title.match(/(\d+(?:\.\d+)?)\s*%/);
         if (match) return parseFloat(match[1]);
 
-        const s = title.toLowerCase();
-        if (s.includes('beer') || s.includes('bière')) return 5.0;
-        if (s.includes('wine') || s.includes('vin')) return 12.0;
-        if (s.includes('whisky') || s.includes('vodka') || s.includes('gin')) return 40.0;
-
         return null;
+    }
+
+    /**
+     * Return a sensible default alcohol % based on drink category.
+     * Used when APIs don't provide a value.
+     */
+    _defaultAlcoholContent(category) {
+        switch (category) {
+            case 'Bière':      return 5.0;
+            case 'Vin':        return 12.0;
+            case 'Spiritueux': return 40.0;
+            case 'Cocktail':   return 8.0;
+            default:           return null;
+        }
+    }
+
+    /**
+     * Strip metadata from the product name: brand prefix, volume/weight,
+     * alcohol percentage, and trailing noise so the field shows only the
+     * human-readable product name.
+     */
+    _cleanProductName(rawName, brand) {
+        if (!rawName) return rawName;
+
+        let name = rawName.trim();
+
+        // Remove brand prefix if it duplicates the separate brand field
+        if (brand) {
+            const brands = brand.split(',').map(b => b.trim()).filter(Boolean);
+            for (const b of brands) {
+                const re = new RegExp(`^${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[-–—,]?\\s*`, 'i');
+                name = name.replace(re, '');
+            }
+        }
+
+        // Remove volume/weight info  (e.g. "50 cL", "33cl", "75 cl", "1L", "500ml", "330 mL", "6x25cl", "6 x 25cl")
+        name = name.replace(/\d+\s*[xX×]\s*\d+\s*(cl|ml|l|g|kg)\b/gi, '');
+        name = name.replace(/\b\d+(\.\d+)?\s*(cl|ml|l|g|kg)\b/gi, '');
+
+        // Remove alcohol percentage  (e.g. "5%", "5.5% vol", "12,5 % vol.", "alc. 5%")
+        name = name.replace(/\b(alc\.?\s*)?\d+([.,]\d+)?\s*%\s*(vol\.?)?\b/gi, '');
+
+        // Remove trailing separators and whitespace
+        name = name.replace(/[\s\-–—,|/]+$/, '').replace(/^\s*[\-–—,|/]+\s*/, '').trim();
+
+        return name || rawName.trim();
     }
 }
 
