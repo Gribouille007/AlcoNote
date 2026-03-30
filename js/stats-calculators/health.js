@@ -44,7 +44,7 @@ async function calculateHealthStats(drinks, dateRange, options = {}) {
             dailyAlcohol[drink.date] += alcoholGrams;
 
             // Par semaine (numéro de semaine)
-            const weekNumber = getWeekNumber(new Date(drink.date));
+            const weekNumber = getWeekNumber(new Date(drink.date + 'T00:00:00'));
             if (!weeklyAlcoholByWeek[weekNumber]) {
                 weeklyAlcoholByWeek[weekNumber] = 0;
             }

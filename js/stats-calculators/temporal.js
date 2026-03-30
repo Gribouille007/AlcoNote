@@ -37,7 +37,7 @@ async function calculateTemporalStats(drinks, dateRange, options = {}) {
         }
 
         // Distribution par jour de la semaine (0=Dimanche, 1=Lundi, etc.)
-        const dayOfWeek = new Date(drink.date).getDay();
+        const dayOfWeek = new Date(drink.date + 'T00:00:00').getDay();
         if (dayOfWeek >= 0 && dayOfWeek <= 6) {
             dailyDistribution[dayOfWeek]++;
         }
@@ -213,7 +213,7 @@ function analyzeConsumptionPatterns(drinks) {
     let nightDrinks = 0;   // 23h-2h
     
     drinks.forEach(drink => {
-        const dayOfWeek = new Date(drink.date).getDay();
+        const dayOfWeek = new Date(drink.date + 'T00:00:00').getDay();
         const hour = parseInt(drink.time.split(':')[0]);
         
         // Weekend (Vendredi soir, Samedi, Dimanche)

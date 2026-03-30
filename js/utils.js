@@ -36,7 +36,8 @@ class Utils {
      */
     static formatDate(dateString) {
         // Convert date string to Date object and format in French with weekday
-        const date = new Date(dateString);
+        // Use T00:00:00 to avoid UTC midnight shift on iOS Safari
+        const date = new Date(dateString + 'T00:00:00');
         const options = {
             weekday: 'long',
             year: 'numeric',
@@ -98,7 +99,9 @@ class Utils {
                 const dayOfWeek = start.getDay();
                 const mondayDiff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday as first day
                 start.setDate(start.getDate() + mondayDiff);
-                end.setDate(start.getDate() + 6);
+                // Set end to 6 days after start (copy start first to handle month boundaries)
+                end.setTime(start.getTime());
+                end.setDate(end.getDate() + 6);
                 break;
 
             case 'month':

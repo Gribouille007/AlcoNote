@@ -164,7 +164,7 @@ function calculateLocationGroupStats(locationGroups) {
 
         // Distribution par jour de la semaine
         group.drinks.forEach(drink => {
-            const dayOfWeek = new Date(drink.date).getDay();
+            const dayOfWeek = new Date(drink.date + 'T00:00:00').getDay();
             stats.dayDistribution[dayOfWeek] = (stats.dayDistribution[dayOfWeek] || 0) + 1;
         });
 
