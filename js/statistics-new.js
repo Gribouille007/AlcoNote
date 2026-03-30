@@ -499,9 +499,8 @@ class ModularStatisticsManager {
             this.fallbackToOldSystem();
 
         } finally {
-            // Release loading lock and hide loader
+            // Release loading lock
             this.loading = false;
-            Utils.hideLoading(loading);
         }
     }
 

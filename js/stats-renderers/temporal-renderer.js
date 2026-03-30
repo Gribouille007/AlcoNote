@@ -255,7 +255,7 @@ function formatDuration(hoursDecimal) {
     const hours = Math.floor(hoursDecimal);
     const minutes = Math.round((hoursDecimal - hours) * 60);
 
-    const formattedHours = hours.toString().padStart(1, '0');
+    const formattedHours = hours.toString().padStart(2, '0');
     const formattedMinutes = minutes.toString().padStart(2, '0');
 
     return `${formattedHours}h${formattedMinutes}`;

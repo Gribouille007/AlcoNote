@@ -422,7 +422,7 @@ class AlcoNoteApp {
                     this.switchToTab('categories');
                     break;
                 case '2':
-                    this.switchToTab('drinks');
+                    this.switchToTab('history');
                     break;
                 case '3':
                     this.switchToTab('statistics');
@@ -1222,10 +1222,10 @@ class AlcoNoteApp {
             delete form.dataset.editingDrinkId;
 
             // Reset form title and button text
-            const modalTitle = document.querySelector('#add-drink-modal .modal-title');
+            const modalHeader = document.querySelector('#add-drink-modal .modal-header h2');
             const submitButton = document.querySelector('#add-drink-form button[type="submit"]');
 
-            if (modalTitle) modalTitle.textContent = 'Ajouter une boisson';
+            if (modalHeader) modalHeader.textContent = 'Ajouter une boisson';
             if (submitButton) submitButton.textContent = 'Ajouter';
         }
 
@@ -1348,10 +1348,10 @@ class AlcoNoteApp {
                 form.dataset.editingDrinkId = drinkId;
 
                 // Change form title and button text
-                const modalTitle = document.querySelector('#add-drink-modal .modal-title');
+                const modalHeader = document.querySelector('#add-drink-modal .modal-header h2');
                 const submitButton = document.querySelector('#add-drink-form button[type="submit"]');
 
-                if (modalTitle) modalTitle.textContent = 'Modifier la boisson';
+                if (modalHeader) modalHeader.textContent = 'Modifier la boisson';
                 if (submitButton) submitButton.textContent = 'Modifier';
             }
 
@@ -1364,6 +1364,7 @@ class AlcoNoteApp {
 
     // Handle form submissions with ultra-fast optimistic updates
     async handleAddDrink(form) {
+        let isEditing = null;
         try {
             if (!Utils.validateForm(form)) {
                 Utils.showMessage('Veuillez remplir tous les champs requis', 'error');
@@ -1371,7 +1372,7 @@ class AlcoNoteApp {
             }
 
             const formData = Utils.getFormData(form);
-            const isEditing = form.dataset.editingDrinkId;
+            isEditing = form.dataset.editingDrinkId;
             const barcode = form.dataset.barcode || null;
 
             // Get category from hidden input if it exists, otherwise from select
@@ -1388,13 +1389,13 @@ class AlcoNoteApp {
             // Reset form state immediately
             delete form.dataset.editingDrinkId;
             delete form.dataset.barcode;
-            const modalTitle = document.querySelector('#add-drink-modal .modal-title');
+            const modalHeader = document.querySelector('#add-drink-modal .modal-header h2');
             const submitButton = document.querySelector('#add-drink-form button[type="submit"]');
-            if (modalTitle) modalTitle.textContent = 'Ajouter une boisson';
+            if (modalHeader) modalHeader.textContent = 'Ajouter une boisson';
             if (submitButton) submitButton.textContent = 'Ajouter';
 
             // Show success message immediately (optimistic)
-            Utils.showMessage(`${formData.name} ajouté!`, 'success');
+            Utils.showMessage(`${formData.name} ${isEditing ? 'modifié' : 'ajouté'}!`, 'success');
 
             // Get location for new drinks (ultra-fast or fallback to coordinates 0,0)
             let location = null;
@@ -1403,28 +1404,6 @@ class AlcoNoteApp {
                 if (!location) {
                     // Don't wait for consent or location - use fallback
                     location = { latitude: 0, longitude: 0, accuracy: null, address: 'Localisation en cours...' };
-
-                    // Try to get real location in background (non-blocking)
-                    setTimeout(async () => {
-                        try {
-                            await geoManager.ensureConsent();
-                            const realLocation = await geoManager.getLocationForDrinkFast(200);
-                            if (realLocation && location.latitude === 0) {
-                                // Update the drink with real location
-                                location.latitude = realLocation.latitude;
-                                location.longitude = realLocation.longitude;
-                                location.accuracy = realLocation.accuracy;
-                                location.address = realLocation.address;
-
-                                // Update in database without blocking UI
-                                if (savedDrink) {
-                                    dbManager.updateDrink(savedDrink.id, { location: realLocation }).catch(console.warn);
-                                }
-                            }
-                        } catch (e) {
-                            console.warn('Background location failed:', e);
-                        }
-                    }, 50);
                 }
             }
 
@@ -1444,9 +1423,10 @@ class AlcoNoteApp {
             }
 
             // BACKGROUND OPERATIONS (non-blocking)
-            let savedDrink = null;
+            const needsLocationUpdate = !isEditing && location && location.latitude === 0;
             setTimeout(async () => {
                 try {
+                    let savedDrink = null;
                     if (isEditing) {
                         await dbManager.updateDrink(parseInt(isEditing), drinkData);
                         window.dispatchEvent(new CustomEvent('drinkDataChanged', {
@@ -1457,6 +1437,19 @@ class AlcoNoteApp {
                         window.dispatchEvent(new CustomEvent('drinkDataChanged', {
                             detail: { action: 'add', drink: drinkData }
                         }));
+                    }
+
+                    // Try to get real location in background after saving
+                    if (needsLocationUpdate && savedDrink) {
+                        try {
+                            await geoManager.ensureConsent();
+                            const realLocation = await geoManager.getLocationForDrinkFast(1500);
+                            if (realLocation) {
+                                dbManager.updateDrink(savedDrink.id, { location: realLocation }).catch(console.warn);
+                            }
+                        } catch (e) {
+                            console.warn('Background location failed:', e);
+                        }
                     }
 
                     // Background UI refresh (throttled)
@@ -2185,12 +2178,8 @@ class AlcoNoteApp {
                 }
             }
             if (!location) {
-                Utils.showMessage('Localisation requise pour ajouter une boisson. Veuillez autoriser la localisation puis réessayer.', 'error');
-                return;
-            }
-            // Background refresh to keep cache fresh (non-blocking)
-            if (geoManager && typeof geoManager.getLocationForDrinkFast === 'function') {
-                geoManager.getLocationForDrinkFast(1500).catch(() => { });
+                // Fallback: allow drink without location rather than blocking
+                location = { latitude: 0, longitude: 0, accuracy: null, address: null };
             }
 
             const drinkData = {
