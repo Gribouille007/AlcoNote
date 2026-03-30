@@ -224,9 +224,9 @@ function analyzeConsumptionPatterns(drinks) {
         }
         
         // Heures de consommation
-        if (hour >= 18 && hour <= 23) {
+        if (hour >= 18 && hour <= 22) {
             eveningDrinks++;
-        } else if ((hour >= 23 && hour <= 23) || (hour >= 0 && hour <= 2)) {
+        } else if (hour >= 23 || (hour >= 0 && hour <= 2)) {
             nightDrinks++;
         }
     });
