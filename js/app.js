@@ -1131,7 +1131,6 @@ class AlcoNoteApp {
                 // Background location update if needed
                 if (location.latitude === 0) {
                     try {
-                        await geoManager.ensureConsent();
                         const realLocation = await geoManager.getLocationForDrinkFast(200);
                         if (realLocation && result) {
                             dbManager.updateDrink(result.id, { location: realLocation }).catch(console.warn);
@@ -1213,8 +1212,10 @@ class AlcoNoteApp {
 
     // Open modal functions
     async openAddDrinkModal(categoryName = null, productInfo = null) {
-        // Ensure we request geolocation permission once before adding
-        try { await geoManager.ensureConsent(); } catch (e) { /* ignore */ }
+        // Silently prepare geolocation if consent was already given (no prompt)
+        if (geoManager.consent === 'granted') {
+            geoManager.prewarmQuickPosition();
+        }
 
         // Reset form state to ensure we're in add mode, not edit mode
         const form = document.getElementById('add-drink-form');
@@ -1442,7 +1443,6 @@ class AlcoNoteApp {
                     // Try to get real location in background after saving
                     if (needsLocationUpdate && savedDrink) {
                         try {
-                            await geoManager.ensureConsent();
                             const realLocation = await geoManager.getLocationForDrinkFast(1500);
                             if (realLocation) {
                                 dbManager.updateDrink(savedDrink.id, { location: realLocation }).catch(console.warn);
@@ -1801,7 +1801,6 @@ class AlcoNoteApp {
                 // Background location update if needed
                 if (location.latitude === 0) {
                     try {
-                        await geoManager.ensureConsent();
                         const realLocation = await geoManager.getLocationForDrinkFast(200);
                         if (realLocation && result) {
                             dbManager.updateDrink(result.id, { location: realLocation }).catch(console.warn);
@@ -2170,7 +2169,6 @@ class AlcoNoteApp {
 
             // Only if we have no last known, attempt quick fetch with short timeout
             if (!location) {
-                try { await geoManager.ensureConsent(); } catch (e) { }
                 try {
                     location = await geoManager.getLocationForDrinkFast(400);
                 } catch (geoError) {
