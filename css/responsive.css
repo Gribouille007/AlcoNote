@@ -22,13 +22,27 @@
     }
     
     .main-content {
-        padding-bottom: 90px;
+        padding-bottom: var(--spacing-sm);
+    }
+
+    #categories-tab.active {
+        padding-bottom: 80px;
     }
     
     .tab-content {
         padding: var(--spacing-sm);
     }
     
+    /* History toolbar stacks on small screens */
+    .history-toolbar {
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+
+    .history-filter {
+        min-width: 100%;
+    }
+
     /* FAB adjustments for small screens */
     .fab-main {
         width: 48px;
@@ -187,7 +201,7 @@
     }
     
     .main-content {
-        padding-bottom: 120px;
+        padding-bottom: var(--spacing-md);
     }
     
     .tab-content {
@@ -271,7 +285,7 @@
     }
     
     .main-content {
-        padding-bottom: 140px;
+        padding-bottom: var(--spacing-md);
     }
     
     .tab-content {
@@ -415,7 +429,7 @@
     }
     
     .main-content {
-        padding-bottom: 80px;
+        padding-bottom: var(--spacing-sm);
     }
     
     .tab-content {
@@ -667,7 +681,17 @@
         padding-right: max(var(--spacing-md), env(safe-area-inset-right));
         padding-top: max(var(--spacing-md), env(safe-area-inset-top));
     }
-    
+
+    .tab-navigation {
+        padding-left: max(var(--spacing-md), env(safe-area-inset-left));
+        padding-right: max(var(--spacing-md), env(safe-area-inset-right));
+    }
+
+    .tab-content {
+        padding-left: max(var(--spacing-md), env(safe-area-inset-left));
+        padding-right: max(var(--spacing-md), env(safe-area-inset-right));
+    }
+
     .fab-container {
         bottom: max(var(--spacing-lg), env(safe-area-inset-bottom));
         left: 50%;
@@ -676,12 +700,45 @@
         display: flex;
         justify-content: center;
     }
-    
+
     .modal {
         padding-bottom: max(var(--spacing-md), env(safe-area-inset-bottom));
     }
-    
+
     .settings-content {
         padding-left: max(0px, env(safe-area-inset-left));
+        padding-bottom: max(var(--spacing-md), env(safe-area-inset-bottom));
+    }
+
+    .history-pagination {
+        padding-bottom: max(var(--spacing-md), env(safe-area-inset-bottom));
+    }
+}
+
+/* Prevent any overflow on all screen sizes */
+.tab-content,
+.categories-container,
+.history-container,
+.statistics-container {
+    overflow-x: hidden;
+    max-width: 100%;
+}
+
+/* Ensure images and media don't overflow */
+img, video, canvas, svg {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Prevent text inputs from zooming on iOS (font-size < 16px triggers zoom) */
+@media screen and (max-width: 768px) {
+    input[type="text"],
+    input[type="search"],
+    input[type="number"],
+    input[type="date"],
+    input[type="time"],
+    select,
+    textarea {
+        font-size: 16px !important;
     }
 }
