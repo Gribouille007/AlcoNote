@@ -836,11 +836,25 @@ class AlcoNoteApp {
         const nextBtn = document.getElementById('history-next');
 
         if (searchInput) {
+            const clearBtn = document.getElementById('history-search-clear');
             searchInput.addEventListener('input', Utils.debounce(() => {
                 this.historyState.searchQuery = searchInput.value.trim().toLowerCase();
                 this.historyState.page = 0;
                 this.applyHistoryFilters();
+                if (clearBtn) {
+                    clearBtn.style.display = searchInput.value.length > 0 ? 'flex' : 'none';
+                }
             }, 250));
+            if (clearBtn) {
+                clearBtn.addEventListener('click', () => {
+                    searchInput.value = '';
+                    clearBtn.style.display = 'none';
+                    this.historyState.searchQuery = '';
+                    this.historyState.page = 0;
+                    this.applyHistoryFilters();
+                    searchInput.focus();
+                });
+            }
         }
 
         if (categoryFilter) {
