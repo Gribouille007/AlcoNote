@@ -33,14 +33,23 @@
         padding: var(--spacing-sm);
     }
     
-    /* History toolbar stacks on small screens */
+    /* History toolbar stays side by side on small screens */
     .history-toolbar {
-        flex-direction: column;
-        gap: var(--spacing-sm);
+        flex-direction: row;
+        gap: var(--spacing-xs);
+    }
+
+    .history-search-wrapper {
+        flex: 1 1 0%;
+        max-width: calc(50% - 4px);
     }
 
     .history-filter {
-        min-width: 100%;
+        flex: 1 1 0%;
+        max-width: calc(50% - 4px);
+        min-width: 0;
+        font-size: var(--font-size-sm);
+        padding: 8px 10px;
     }
 
     /* FAB adjustments for small screens */
