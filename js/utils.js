@@ -556,6 +556,8 @@ class Utils {
         if (modal) {
             if (modal.tagName === 'DIALOG') {
                 modal.showModal();
+                // Force a repaint before adding .active so CSS transitions fire on iOS Safari
+                void modal.offsetHeight;
                 modal.classList.add('active');
             } else {
                 modal.classList.add('active');
