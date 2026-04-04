@@ -6,11 +6,11 @@
 // Les entrées doivent être triées par max croissant.
 const BAC_LEVELS = [
     { max: 200,      class: 'safe',    text: 'Sobre' },
-    { max: 500,      class: 'caution', text: 'OK GARMIN TROUVE MES CLÉS DE VOITURE' },
-    { max: 800,      class: 'warning', text: 'OK GARMIN CACHE MES CLÉS DE VOITURE' },
-    { max: 1999,     class: 'warning', text: "Il est l'heure d'aller nager dans le lac" },
-    { max: 2999,     class: 'danger',  text: 'Brieuc arrête de boire' },
-    { max: Infinity, class: 'danger',  text: "Y a qu'une personne pour arriver à ce stade" },
+    { max: 500,      class: 'caution', text: 'Légèrement alcoolisé' },
+    { max: 800,      class: 'warning', text: 'Dépassement limite légale' },
+    { max: 1999,     class: 'warning', text: 'Ivresse' },
+    { max: 2999,     class: 'danger',  text: 'Ivresse sévère' },
+    { max: Infinity, class: 'danger',  text: 'Danger vital — appelez le 112' },
 ];
 
 // SVG icon constants to replace emoji

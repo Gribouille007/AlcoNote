@@ -555,9 +555,9 @@ class DatabaseManager {
 
                 stats.totalVolume += volumeInCL;
 
-                // Total alcohol in grams (approximation: 1cL at X% = X * 0.8g of alcohol)
+                // Total alcohol in grams: volume(cL) × degree(%) × density(0.8) / 10
                 if (drink.alcoholContent) {
-                    stats.totalAlcohol += (volumeInCL * drink.alcoholContent * 0.8) / 100;
+                    stats.totalAlcohol += (volumeInCL * drink.alcoholContent * 0.8) / 10;
                 }
 
                 // Categories
