@@ -278,16 +278,18 @@ class ModularStatisticsManager {
             case 'week':
                 this.currentDate = Utils.addDays(this.currentDate, direction * 7);
                 break;
-            case 'month':
-                const newMonth = new Date(this.currentDate);
-                newMonth.setMonth(newMonth.getMonth() + direction);
+            case 'month': {
+                // Use the 1st of the month to avoid day-overflow (e.g. Jan 31 → March)
+                const newMonth = new Date(this.currentDate.getFullYear(), this.currentDate.getMonth() + direction, 1);
                 this.currentDate = newMonth;
                 break;
-            case 'year':
+            }
+            case 'year': {
                 const newYear = new Date(this.currentDate);
                 newYear.setFullYear(newYear.getFullYear() + direction);
                 this.currentDate = newYear;
                 break;
+            }
         }
         this.updateDateDisplay();
         this.loadStatistics();
@@ -299,10 +301,14 @@ class ModularStatisticsManager {
         if (dateElement) {
             let displayText = '';
             switch (this.currentPeriod) {
-                case 'today':
-                    displayText = Utils.formatDate(this.currentDate.toISOString().split('T')[0]);
+                case 'today': {
+                    const y = this.currentDate.getFullYear();
+                    const m = String(this.currentDate.getMonth() + 1).padStart(2, '0');
+                    const d = String(this.currentDate.getDate()).padStart(2, '0');
+                    displayText = Utils.formatDate(`${y}-${m}-${d}`);
                     break;
-                case 'week':
+                }
+                case 'week': {
                     const weekStart = new Date(this.currentDate);
                     const dayOfWeek = weekStart.getDay();
                     const diff = weekStart.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
@@ -311,6 +317,7 @@ class ModularStatisticsManager {
                     weekEnd.setDate(weekStart.getDate() + 6);
                     displayText = `${weekStart.getDate()}/${weekStart.getMonth() + 1} - ${weekEnd.getDate()}/${weekEnd.getMonth() + 1}`;
                     break;
+                }
                 case 'month':
                     displayText = this.currentDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
                     break;

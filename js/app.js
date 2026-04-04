@@ -1210,12 +1210,15 @@ class AlcoNoteApp {
                 <div class="drink-group-info">
                     <div class="drink-count">${group.count}</div>
                     <div>
-                        <div class="drink-name">${group.name}</div>
-                        <div class="drink-quantity">${Utils.formatQuantity(group.quantity, group.unit)}</div>
+                        <div class="drink-name"></div>
+                        <div class="drink-quantity"></div>
                     </div>
                 </div>
             </div>
         `;
+        // Use textContent to avoid XSS from user-supplied drink names/units
+        element.querySelector('.drink-name').textContent = group.name;
+        element.querySelector('.drink-quantity').textContent = Utils.formatQuantity(group.quantity, group.unit);
 
         element.addEventListener('click', () => {
             this.openDrinkDetail(group);
@@ -1627,7 +1630,7 @@ class AlcoNoteApp {
                     ${drinkGroups.map(drinkGroup => `
                         <div class="drink-family ${drinkGroup.hasMultipleVariants ? 'has-variants' : ''}">
                             <div class="drink-family-header">
-                                <span class="drink-family-name">${drinkGroup.name}</span>
+                                <span class="drink-family-name"></span>
                                 <span class="drink-family-count">${drinkGroup.totalCount} total</span>
                             </div>
                             <div class="drink-variants">
@@ -1668,6 +1671,14 @@ class AlcoNoteApp {
                     `).join('')}
                 </div>
             `;
+
+            // Set drink family names via textContent to prevent XSS
+            content.querySelectorAll('.drink-family').forEach((el, i) => {
+                const nameEl = el.querySelector('.drink-family-name');
+                if (nameEl && drinkGroups[i]) {
+                    nameEl.textContent = drinkGroups[i].name;
+                }
+            });
 
             // Setup + button functionality for each drink variant
             content.querySelectorAll('.counter-add-btn').forEach(btn => {
@@ -1990,13 +2001,24 @@ class AlcoNoteApp {
             const categories = await dbManager.getAllCategories();
             const pickerList = document.getElementById('category-picker-list');
 
-            pickerList.innerHTML = categories.map(cat => `
-                <button type="button" class="category-picker-item ${cat.name === currentCategory.name ? 'current' : ''}"
-                        data-category-name="${cat.name}">
-                    <span>${cat.name}</span>
-                    <span class="picker-count">${cat.drinkCount} boisson(s)</span>
-                </button>
-            `).join('');
+            pickerList.innerHTML = '';
+            categories.forEach(cat => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = `category-picker-item${cat.name === currentCategory.name ? ' current' : ''}`;
+                btn.dataset.categoryName = cat.name;
+
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = cat.name;
+
+                const countSpan = document.createElement('span');
+                countSpan.className = 'picker-count';
+                countSpan.textContent = `${cat.drinkCount} boisson(s)`;
+
+                btn.appendChild(nameSpan);
+                btn.appendChild(countSpan);
+                pickerList.appendChild(btn);
+            });
 
             // Wire click handlers
             pickerList.querySelectorAll('.category-picker-item').forEach(item => {
@@ -2068,6 +2090,9 @@ class AlcoNoteApp {
             // Sort dates (most recent first)
             const sortedDates = Object.keys(drinksByDate).sort((a, b) => new Date(b) - new Date(a));
 
+            // Helper to escape text for safe insertion into HTML attributes/content
+            const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
             content.innerHTML = sortedDates.map(date => {
                 const drinks = drinksByDate[date].sort((a, b) => b.time.localeCompare(a.time));
 
@@ -2078,12 +2103,12 @@ class AlcoNoteApp {
                             ${drinks.map(drink => `
                                 <div class="drink-entry swipeable" data-drink-id="${drink.id}">
                                     <div class="drink-entry-info">
-                                        <div class="drink-entry-time">${drink.time}</div>
+                                        <div class="drink-entry-time">${esc(drink.time)}</div>
                                         <div class="drink-entry-details">
-                                            ${Utils.formatQuantity(drink.quantity, drink.unit)}
-                                            ${drink.alcoholContent ? ` - ${drink.alcoholContent}%` : ''}
+                                            ${esc(Utils.formatQuantity(drink.quantity, drink.unit))}
+                                            ${drink.alcoholContent ? ` - ${esc(drink.alcoholContent)}%` : ''}
                                         </div>
-                                        ${drink.location ? `<div class="drink-entry-location">${drink.location.address || 'Géolocalisé'}</div>` : ''}
+                                        ${drink.location ? `<div class="drink-entry-location">${esc(drink.location.address || 'Géolocalisé')}</div>` : ''}
                                     </div>
                                     <div class="delete-indicator">Supprimer</div>
                                 </div>
