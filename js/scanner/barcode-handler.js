@@ -97,8 +97,12 @@ class BarcodeHandler {
             const product = await this.lookup.lookup(barcode);
             console.log('Product info:', product);
 
-            // Ensure category exists in DB before opening form (fixes race condition)
-            await this._ensureCategoryExists(product.category);
+            // If a category was pre-selected by the user, honour it over the auto-detected one
+            const targetCategory = this.pendingCategory || product.category;
+            this.pendingCategory = null;
+
+            // Ensure target category exists in DB before opening form
+            await this._ensureCategoryExists(targetCategory);
 
             // Stop camera
             this.camera.stop();
@@ -108,7 +112,7 @@ class BarcodeHandler {
 
             // Open add drink modal with normalized product — SOLE form population point
             if (window.app && window.app.openAddDrinkModal) {
-                window.app.openAddDrinkModal(product.category, product);
+                window.app.openAddDrinkModal(targetCategory, product);
             } else {
                 Utils.openModal('add-drink-modal');
             }

@@ -1020,7 +1020,7 @@ class AlcoNoteApp {
                 <div class="history-day-info">
                     <h3 class="history-day-date">${Utils.formatDate(date)}</h3>
                     <div class="history-day-summary">
-                        ${drinks.length} boisson${drinks.length > 1 ? 's' : ''} • ${(totalVolume / 100).toFixed(1)}L
+                        ${drinks.length} boisson${drinks.length > 1 ? 's' : ''} • ${totalVolume >= 100 ? (totalVolume / 100).toFixed(1) + 'L' : Math.round(totalVolume) + 'cL'}
                     </div>
                 </div>
                 <button class="history-day-toggle">
@@ -1324,6 +1324,9 @@ class AlcoNoteApp {
             Utils.showMessage('Scanner non supporté sur cet appareil', 'error');
             return;
         }
+
+        // Store category context so barcode handler can pre-select it after scan
+        barcodeScanner.pendingCategory = categoryName || null;
 
         Utils.openModal('scanner-modal');
     }
@@ -1894,7 +1897,8 @@ class AlcoNoteApp {
         const newName = document.getElementById('edit-family-name').value.trim();
         const newQuantity = parseFloat(document.getElementById('edit-family-quantity').value);
         const newUnit = document.getElementById('edit-family-unit').value;
-        const newAlcohol = parseFloat(document.getElementById('edit-family-alcohol').value) || 0;
+        const alcoholRaw = document.getElementById('edit-family-alcohol').value.trim();
+        const newAlcohol = alcoholRaw !== '' ? parseFloat(alcoholRaw) : null;
 
         if (!newName) {
             Utils.showMessage('Le nom ne peut pas être vide', 'error');
