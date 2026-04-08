@@ -92,12 +92,16 @@ async function calculateHealthStats(drinks, dateRange, options = {}) {
     // Calcul des jours de dépassement des seuils
     const exceedanceDays = calculateExceedanceDays(dailyAlcohol, userGender);
 
+    // BAC moyen par session
+    const avgSessionBAC = await calculateAveragePeakBACPerSession(drinks, userWeight, userGender);
+
     return {
         totalAlcoholGrams: Math.round(totalAlcoholGrams * 10) / 10,
         weeklyAlcohol: Math.round(weeklyAlcoholAvg * 10) / 10,
         whoRecommendation,
         whoComparison: whoComparison ? Math.round(whoComparison) : null,
         bacEstimation,
+        avgSessionBAC,
         riskAnalysis,
         exceedanceDays,
         dailyAlcohol,
@@ -385,6 +389,46 @@ function generateHealthAdvice(healthStats) {
     }
 
     return advice;
+}
+
+/**
+ * Calcule le BAC moyen par session sur la période
+ * @param {Array} drinks - Liste des boissons
+ * @param {number} userWeight - Poids en kg
+ * @param {string} userGender - 'male' ou 'female'
+ * @returns {Object|null} { avgPeakBAC, maxPeakBAC, minPeakBAC, sessionCount }
+ */
+async function calculateAveragePeakBACPerSession(drinks, userWeight, userGender) {
+    if (!userWeight || !userGender || !drinks || drinks.length === 0) return null;
+
+    // calculateSessions est défini globalement dans general.js (chargé avant)
+    if (typeof calculateSessions !== 'function') return null;
+
+    const sessions = calculateSessions(drinks);
+    if (sessions.length === 0) return null;
+
+    const peakBACs = [];
+
+    for (const session of sessions) {
+        if (session.drinks.length === 0) continue;
+        // Calculer le BAC au moment de la dernière boisson de la session
+        const bacResult = await calculateCurrentBAC(userWeight, userGender, session.drinks, session.endTime);
+        if (bacResult && bacResult.currentBAC > 0) {
+            peakBACs.push(bacResult.currentBAC);
+        }
+    }
+
+    if (peakBACs.length === 0) return null;
+
+    const avg = peakBACs.reduce((s, v) => s + v, 0) / peakBACs.length;
+
+    return {
+        avgPeakBAC: Math.round(avg),
+        maxPeakBAC: Math.round(Math.max(...peakBACs)),
+        minPeakBAC: Math.round(Math.min(...peakBACs)),
+        sessionCount: sessions.length,
+        sessionsWithBAC: peakBACs.length
+    };
 }
 
 // Export pour utilisation dans d'autres modules

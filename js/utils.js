@@ -117,6 +117,33 @@ class Utils {
                 end.setMonth(11, 31);
                 break;
 
+            case 'ytd':
+                // Year to date: January 1st to today
+                start.setMonth(0, 1);
+                // end remains today
+                break;
+
+            case 'all':
+                // All time: fallback to very early date, caller overrides with earliest drink
+                start.setFullYear(2000, 0, 1);
+                // end remains today
+                break;
+
+            case 'school':
+                // School year: Sept 1 - Aug 31
+                if (start.getMonth() >= 8) {
+                    // Current month >= September: current year Sept 1 → next year Aug 31
+                    start.setMonth(8, 1);
+                    end.setFullYear(end.getFullYear() + 1);
+                    end.setMonth(7, 31);
+                } else {
+                    // Current month < September: previous year Sept 1 → current year Aug 31
+                    start.setFullYear(start.getFullYear() - 1);
+                    start.setMonth(8, 1);
+                    end.setMonth(7, 31);
+                }
+                break;
+
             default:
                 // Default to today
                 break;

@@ -20,6 +20,15 @@ class AlcoNoteDB extends Dexie {
             bacRecords: '++id, bacValue, timestamp, date, drinkCount, createdAt'
         });
 
+        // Version 3 - Add drink ratings
+        this.version(3).stores({
+            categories: '++id, name, drinkCount, createdAt, updatedAt',
+            drinks: '++id, name, category, quantity, unit, alcoholContent, date, time, location, barcode, createdAt, updatedAt',
+            settings: 'key, value, updatedAt',
+            bacRecords: '++id, bacValue, timestamp, date, drinkCount, createdAt',
+            drinkRatings: 'drinkName, rating, updatedAt'
+        });
+
         // Add hooks for automatic timestamps
         this.categories.hook('creating', function (primKey, obj, trans) {
             obj.createdAt = new Date();
@@ -49,6 +58,14 @@ class AlcoNoteDB extends Dexie {
 
         this.bacRecords.hook('creating', function (primKey, obj, trans) {
             obj.createdAt = new Date();
+        });
+
+        this.drinkRatings.hook('creating', function (primKey, obj, trans) {
+            obj.updatedAt = new Date();
+        });
+
+        this.drinkRatings.hook('updating', function (modifications, primKey, obj, trans) {
+            modifications.updatedAt = new Date();
         });
     }
 }
@@ -528,6 +545,35 @@ class DatabaseManager {
         }
     }
 
+    // Drink ratings operations
+    async getRating(drinkName) {
+        try {
+            return await this.db.drinkRatings.get(drinkName);
+        } catch (error) {
+            console.error('Error getting rating:', error);
+            return null;
+        }
+    }
+
+    async setRating(drinkName, rating) {
+        try {
+            await this.db.drinkRatings.put({ drinkName, rating });
+            return true;
+        } catch (error) {
+            console.error('Error setting rating:', error);
+            return false;
+        }
+    }
+
+    async getAllRatings() {
+        try {
+            return await this.db.drinkRatings.toArray();
+        } catch (error) {
+            console.error('Error getting all ratings:', error);
+            return [];
+        }
+    }
+
     // Statistics operations
     async getStatistics(startDate, endDate) {
         try {
@@ -600,13 +646,15 @@ class DatabaseManager {
             const categories = await this.db.categories.toArray();
             const drinks = await this.db.drinks.toArray();
             const settings = await this.db.settings.toArray();
+            const drinkRatings = await this.db.drinkRatings.toArray();
 
             const exportData = {
                 version: '1.0',
                 exportDate: new Date().toISOString(),
                 categories,
                 drinks,
-                settings
+                settings,
+                drinkRatings
             };
 
             return JSON.stringify(exportData, null, 2);
@@ -625,16 +673,20 @@ class DatabaseManager {
             }
 
             // Clear existing data
-            await this.db.transaction('rw', this.db.categories, this.db.drinks, this.db.settings, async () => {
+            await this.db.transaction('rw', this.db.categories, this.db.drinks, this.db.settings, this.db.drinkRatings, async () => {
                 await this.db.categories.clear();
                 await this.db.drinks.clear();
                 await this.db.settings.clear();
+                await this.db.drinkRatings.clear();
 
                 // Import data
                 await this.db.categories.bulkAdd(data.categories);
                 await this.db.drinks.bulkAdd(data.drinks);
                 if (data.settings) {
                     await this.db.settings.bulkAdd(data.settings);
+                }
+                if (data.drinkRatings) {
+                    await this.db.drinkRatings.bulkAdd(data.drinkRatings);
                 }
             });
 

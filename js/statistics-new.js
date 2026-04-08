@@ -233,7 +233,8 @@ class ModularStatisticsManager {
 
                 // Show/hide period navigation
                 const periodNavigation = document.getElementById('period-navigation');
-                if (this.currentPeriod !== 'custom') {
+                const noNavPeriods = ['custom', 'ytd', 'all', 'school'];
+                if (!noNavPeriods.includes(this.currentPeriod)) {
                     periodNavigation.classList.add('active');
                     this.updateDateDisplay();
                 } else {
@@ -324,6 +325,18 @@ class ModularStatisticsManager {
                 case 'year':
                     displayText = this.currentDate.getFullYear().toString();
                     break;
+                case 'ytd':
+                    displayText = 'Depuis le 1er janvier';
+                    break;
+                case 'all':
+                    displayText = 'Toutes les données';
+                    break;
+                case 'school': {
+                    const now = this.currentDate;
+                    const startYear = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+                    displayText = `Année scolaire ${startYear}-${startYear + 1}`;
+                    break;
+                }
                 default:
                     displayText = 'Période personnalisée';
             }
@@ -423,14 +436,30 @@ class ModularStatisticsManager {
     }
 
     // Get date range based on current period
-    getDateRange() {
+    async getDateRange() {
         if (this.currentPeriod === 'custom') {
             const startDate = document.getElementById('start-date')?.value || Utils.getCurrentDate();
             const endDate = document.getElementById('end-date')?.value || Utils.getCurrentDate();
             return { start: startDate, end: endDate };
-        } else {
-            return Utils.getDateRangeFixed(this.currentPeriod, this.currentDate);
         }
+
+        const range = Utils.getDateRangeFixed(this.currentPeriod, this.currentDate);
+
+        if (this.currentPeriod === 'all') {
+            // Override start with earliest drink date
+            try {
+                const allDrinks = await dbManager.getAllDrinks();
+                if (allDrinks.length > 0) {
+                    const sorted = allDrinks.sort((a, b) => a.date.localeCompare(b.date));
+                    range.start = sorted[sorted.length - 1].date; // getAllDrinks returns reverse order
+                }
+            } catch (e) {
+                console.warn('Could not fetch earliest drink date:', e);
+            }
+            range.end = Utils.getCurrentDate();
+        }
+
+        return range;
     }
 
     // Main method to load and display statistics
@@ -465,7 +494,7 @@ class ModularStatisticsManager {
             // Clean up previous charts and maps
             this.cleanup();
 
-            const dateRange = this.getDateRange();
+            const dateRange = await this.getDateRange();
             const drinks = await dbManager.getDrinksByDateRange(dateRange.start, dateRange.end);
 
             // Clear existing content
@@ -579,7 +608,7 @@ class ModularStatisticsManager {
                         maps: this.maps,
                         section: section,
                         currentPeriod: this.currentPeriod,
-                        dateRange: this.getDateRange(),
+                        dateRange: await this.getDateRange(),
                         drinks: drinks
                     });
 
@@ -595,12 +624,13 @@ class ModularStatisticsManager {
 
                         // Generic post-render hook
                         if (typeof renderer.postRender === 'function') {
+                            const dateRangeForPostRender = await this.getDateRange();
                             const ctx = {
                                 charts: this.charts,
                                 maps: this.maps,
                                 section: section,
                                 currentPeriod: this.currentPeriod,
-                                dateRange: this.getDateRange(),
+                                dateRange: dateRangeForPostRender,
                                 containerEl: sectionElement
                             };
                             setTimeout(() => {

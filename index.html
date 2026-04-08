@@ -136,6 +136,9 @@
                         <button class="period-btn" data-period="month">Mois</button>
                         <button class="period-btn" data-period="year">Année</button>
                         <button class="period-btn" data-period="custom">Personnalisé</button>
+                        <button class="period-btn" data-period="ytd">YTD</button>
+                        <button class="period-btn" data-period="all">All Time</button>
+                        <button class="period-btn" data-period="school">A. scolaire</button>
                     </div>
 
                     <!-- Navigation temporelle (précédent/suivant) -->
@@ -176,6 +179,18 @@
                     <button type="button" id="scan-barcode-btn" class="btn-secondary"
                         aria-label="Scanner un code-barres" style="margin-top: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h2"/><path d="M3 10h2"/><path d="M3 15h2"/><path d="M3 20h2"/><path d="M19 5h2"/><path d="M19 10h2"/><path d="M19 15h2"/><path d="M19 20h2"/><rect x="7" y="3" width="10" height="18" rx="1"/></svg> Scanner</button>
                     <div id="drink-suggestions" class="suggestions-list"></div>
+                </div>
+
+                <div class="form-group drink-rating-group" id="drink-rating-group" style="display: none;">
+                    <label>Note</label>
+                    <div class="star-rating" id="drink-star-rating">
+                        <span class="star" data-value="1">&#9733;</span>
+                        <span class="star" data-value="2">&#9733;</span>
+                        <span class="star" data-value="3">&#9733;</span>
+                        <span class="star" data-value="4">&#9733;</span>
+                        <span class="star" data-value="5">&#9733;</span>
+                    </div>
+                    <input type="hidden" id="drink-rating-value" name="rating" value="">
                 </div>
 
                 <div class="form-group" id="category-form-group">
@@ -404,6 +419,7 @@
     <script src="js/performance-optimizer.js"></script>
     <script src="js/database.js"></script>
     <script src="js/utils.js"></script>
+    <script src="js/bac-curve.js"></script>
     <script src="js/geolocation.js"></script>
     <script src="js/scanner/product-lookup.js"></script>
     <script src="js/scanner/camera-scanner.js"></script>

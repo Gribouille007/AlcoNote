@@ -65,6 +65,12 @@ function renderHealthStats(stats) {
                 <div class="stat-label">Taux estimé</div>
             </div>
             ` : ''}
+            ${stats.avgSessionBAC ? `
+            <div class="stat-card">
+                <div class="stat-value">${stats.avgSessionBAC.avgPeakBAC} mg/L</div>
+                <div class="stat-label">BAC moy./session</div>
+            </div>
+            ` : ''}
         </div>
     `;
 
@@ -150,8 +156,14 @@ async function renderBACEstimation(context = {}) {
             return section;
         }
 
+        // Generate BAC curve data for projection chart
+        const isCurrentTime = Math.abs(referenceTime - new Date()) < 60000;
+        if (typeof generateBACCurveData === 'function') {
+            window._bacCurveData = generateBACCurveData(drinksForBAC, userWeight, userGender, referenceTime);
+            window._bacCurveIsToday = isCurrentTime;
+        }
+
         // Try to record this BAC if it's a peak (only for current time, not historical)
-        const isCurrentTime = Math.abs(referenceTime - new Date()) < 60000; // Within 1 minute
         if (isCurrentTime && bacStats.currentBAC > 0) {
             await Utils.recordBACIfPeak(
                 bacStats.currentBAC,
@@ -232,8 +244,15 @@ async function renderBACEstimation(context = {}) {
             </div>
             ` : ''}
             
+            <div class="bac-chart-section" id="bac-chart-section">
+                <h4>Projection d'alcoolémie</h4>
+                <div class="bac-chart-container">
+                    <canvas id="bac-projection-chart"></canvas>
+                </div>
+            </div>
+
             ${renderBACRecordsSection(bacRecords, highestRecord)}
-            
+
             <div class="bac-disclaimer">
                 <p><strong>${HEALTH_ICONS.warning} Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
             </div>

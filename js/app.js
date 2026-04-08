@@ -228,6 +228,9 @@ class AlcoNoteApp {
                     this.openScannerModal();
                 });
             }
+
+            // Star rating setup
+            this.setupStarRating();
         }
 
         // Add category form
@@ -267,6 +270,87 @@ class AlcoNoteApp {
                 suggestionsContainer.classList.remove('active');
             }
         });
+    }
+
+    // Setup star rating in add-drink modal
+    setupStarRating() {
+        const ratingGroup = document.getElementById('drink-rating-group');
+        const starContainer = document.getElementById('drink-star-rating');
+        const ratingInput = document.getElementById('drink-rating-value');
+        const nameInput = document.getElementById('drink-name');
+
+        if (!starContainer || !ratingInput || !nameInput) return;
+
+        const stars = starContainer.querySelectorAll('.star');
+
+        // Click handler for stars
+        stars.forEach(star => {
+            star.addEventListener('click', () => {
+                const value = parseInt(star.dataset.value);
+                ratingInput.value = value;
+                this.updateStarDisplay(stars, value);
+            });
+
+            star.addEventListener('mouseenter', () => {
+                const value = parseInt(star.dataset.value);
+                stars.forEach(s => {
+                    s.classList.toggle('hover', parseInt(s.dataset.value) <= value);
+                });
+            });
+
+            star.addEventListener('mouseleave', () => {
+                stars.forEach(s => s.classList.remove('hover'));
+            });
+        });
+
+        // Show/hide rating group and load existing rating when name changes
+        const debouncedRatingLoad = Utils.debounce(async (name) => {
+            if (name.length < 2) {
+                ratingGroup.style.display = 'none';
+                ratingInput.value = '';
+                this.updateStarDisplay(stars, 0);
+                return;
+            }
+            ratingGroup.style.display = '';
+            const existing = await dbManager.getRating(name);
+            if (existing) {
+                ratingInput.value = existing.rating;
+                this.updateStarDisplay(stars, existing.rating);
+            } else {
+                ratingInput.value = '';
+                this.updateStarDisplay(stars, 0);
+            }
+        }, 400);
+
+        nameInput.addEventListener('input', (e) => {
+            debouncedRatingLoad(e.target.value.trim());
+        });
+    }
+
+    // Update star display to show active stars up to given value
+    updateStarDisplay(stars, value) {
+        stars.forEach(s => {
+            s.classList.toggle('active', parseInt(s.dataset.value) <= value);
+        });
+    }
+
+    // Load rating for a drink name into the form
+    async loadRatingForDrink(drinkName) {
+        const ratingGroup = document.getElementById('drink-rating-group');
+        const ratingInput = document.getElementById('drink-rating-value');
+        const stars = document.querySelectorAll('#drink-star-rating .star');
+
+        if (!ratingGroup || !ratingInput || !stars.length) return;
+
+        ratingGroup.style.display = '';
+        const existing = await dbManager.getRating(drinkName);
+        if (existing) {
+            ratingInput.value = existing.rating;
+            this.updateStarDisplay(stars, existing.rating);
+        } else {
+            ratingInput.value = '';
+            this.updateStarDisplay(stars, 0);
+        }
     }
 
     // Display drink suggestions
@@ -315,6 +399,9 @@ class AlcoNoteApp {
         if (alcoholInput && suggestion.alcoholContent) {
             alcoholInput.value = suggestion.alcoholContent;
         }
+
+        // Load rating for the suggested drink
+        this.loadRatingForDrink(suggestion.name);
     }
 
     // Setup settings menu
@@ -1250,6 +1337,14 @@ class AlcoNoteApp {
         // Clear the form completely
         Utils.resetForm(form);
 
+        // Reset star rating
+        const ratingGroup = document.getElementById('drink-rating-group');
+        const ratingInput = document.getElementById('drink-rating-value');
+        if (ratingGroup) ratingGroup.style.display = 'none';
+        if (ratingInput) ratingInput.value = '';
+        const stars = document.querySelectorAll('#drink-star-rating .star');
+        stars.forEach(s => s.classList.remove('active'));
+
         // Get form elements
         const dateInput = document.getElementById('drink-date');
         const timeInput = document.getElementById('drink-time');
@@ -1402,6 +1497,10 @@ class AlcoNoteApp {
             if (hiddenCategoryInput && hiddenCategoryInput.value) {
                 category = hiddenCategoryInput.value;
             }
+
+            // Save rating before closing modal
+            const ratingValue = document.getElementById('drink-rating-value')?.value;
+            const drinkNameForRating = formData.name;
 
             // INSTANT UI FEEDBACK - Close modal and show success immediately
             Utils.closeModal('add-drink-modal');

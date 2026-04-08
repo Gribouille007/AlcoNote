@@ -17,6 +17,7 @@ const STATIC_FILES = [
     '/js/app.js',
     '/js/database.js',
     '/js/utils.js',
+    '/js/bac-curve.js',
     '/js/geolocation.js',
     '/js/scanner/product-lookup.js',
     '/js/scanner/camera-scanner.js',
