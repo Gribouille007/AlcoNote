@@ -36,6 +36,12 @@ function renderHealthStats(stats) {
                 <div class="stat-label">Taux estimé</div>
             </div>
             ` : ''}
+            ${stats.avgSessionBAC ? `
+            <div class="stat-card">
+                <div class="stat-value">${stats.avgSessionBAC.avgPeakBAC} mg/L</div>
+                <div class="stat-label">BAC moy./session</div>
+            </div>
+            ` : ''}
         </div>
     `;
 
@@ -119,8 +125,14 @@ async function renderBACEstimation(context = {}) {
             return section;
         }
 
+        // Generate BAC curve data for projection chart
+        const isCurrentTime = Math.abs(referenceTime - new Date()) < 60000;
+        if (typeof generateBACCurveData === 'function') {
+            window._bacCurveData = generateBACCurveData(drinksForBAC, userWeight, userGender, referenceTime);
+            window._bacCurveIsToday = isCurrentTime;
+        }
+
         // Try to record this BAC if it's a peak (only for current time, not historical)
-        const isCurrentTime = Math.abs(referenceTime - new Date()) < 60000; // Within 1 minute
         if (isCurrentTime && bacStats.currentBAC > 0) {
             await Utils.recordBACIfPeak(
                 bacStats.currentBAC,
@@ -201,8 +213,15 @@ async function renderBACEstimation(context = {}) {
             </div>
             ` : ''}
             
+            <div class="bac-chart-section" id="bac-chart-section">
+                <h4>Projection d'alcoolémie</h4>
+                <div class="bac-chart-container">
+                    <canvas id="bac-projection-chart"></canvas>
+                </div>
+            </div>
+
             ${renderBACRecordsSection(bacRecords, highestRecord)}
-            
+
             <div class="bac-disclaimer">
                 <p><strong>⚠️ Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
             </div>
@@ -341,6 +360,168 @@ function postRenderHealthStats(stats) {
             openProfileSettings();
         });
     }
+
+    // Initialize BAC projection chart
+    initBACProjectionChart();
+}
+
+/**
+ * Initialize the BAC projection Chart.js line chart
+ */
+function initBACProjectionChart() {
+    const canvas = document.getElementById('bac-projection-chart');
+    const curveData = window._bacCurveData;
+    const isToday = window._bacCurveIsToday;
+
+    if (!canvas || !curveData || !curveData.points || curveData.points.length === 0) {
+        // Hide the chart section if no data
+        const section = document.getElementById('bac-chart-section');
+        if (section) section.style.display = 'none';
+        return;
+    }
+
+    // Destroy previous chart if exists
+    if (window._bacProjectionChart) {
+        window._bacProjectionChart.destroy();
+        window._bacProjectionChart = null;
+    }
+
+    // Format time labels
+    const labels = curveData.points.map(p => {
+        const d = p.time;
+        const h = String(d.getHours()).padStart(2, '0');
+        const m = String(d.getMinutes()).padStart(2, '0');
+        // Include date if span > 24h
+        const spanMs = curveData.points[curveData.points.length - 1].time - curveData.points[0].time;
+        if (spanMs > 24 * 3600 * 1000) {
+            return `${d.getDate()}/${d.getMonth() + 1} ${h}:${m}`;
+        }
+        return `${h}:${m}`;
+    });
+
+    const data = curveData.points.map(p => p.bac);
+    const maxBAC = Math.max(...data, 500);
+
+    // Check if any point exceeds legal limit
+    const hasLegalExceedance = data.some(v => v > 500);
+
+    // Datasets
+    const datasets = [
+        {
+            label: 'Alcoolémie (mg/L)',
+            data: data,
+            borderColor: '#FF3B30',
+            backgroundColor: 'rgba(255, 59, 48, 0.1)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+            pointHitRadius: 10,
+            borderWidth: 2
+        }
+    ];
+
+    // Add legal limit line only if relevant
+    if (hasLegalExceedance || maxBAC > 300) {
+        datasets.push({
+            label: 'Limite légale (500 mg/L)',
+            data: data.map(() => 500),
+            borderColor: '#FF9500',
+            borderDash: [8, 4],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            pointHitRadius: 0,
+            fill: false
+        });
+    }
+
+    // Custom plugin for current time vertical line
+    const plugins = [];
+    if (isToday && curveData.currentTimeIndex >= 0) {
+        plugins.push({
+            id: 'currentTimeLine',
+            afterDraw: (chart) => {
+                const idx = curveData.currentTimeIndex;
+                const meta = chart.getDatasetMeta(0);
+                if (!meta.data[idx]) return;
+                const x = meta.data[idx].x;
+                const ctx = chart.ctx;
+                ctx.save();
+                ctx.beginPath();
+                ctx.setLineDash([4, 4]);
+                ctx.strokeStyle = '#007AFF';
+                ctx.lineWidth = 2;
+                ctx.moveTo(x, chart.chartArea.top);
+                ctx.lineTo(x, chart.chartArea.bottom);
+                ctx.stroke();
+                // Label
+                ctx.fillStyle = '#007AFF';
+                ctx.font = '11px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Maintenant', x, chart.chartArea.top - 4);
+                ctx.restore();
+            }
+        });
+    }
+
+    // Create chart
+    const now = new Date();
+    window._bacProjectionChart = new Chart(canvas, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        title: (items) => {
+                            if (!items.length) return '';
+                            return items[0].label;
+                        },
+                        label: (item) => {
+                            if (item.datasetIndex !== 0) return null;
+                            const bac = item.raw;
+                            const pointTime = curveData.points[item.dataIndex]?.time;
+                            let line = `BAC: ${bac.toFixed(0)} mg/L`;
+                            if (pointTime && isToday) {
+                                const diffMs = pointTime - now;
+                                const diffMin = Math.round(diffMs / 60000);
+                                if (diffMin > 0) {
+                                    const h = Math.floor(diffMin / 60);
+                                    const m = diffMin % 60;
+                                    line += h > 0 ? ` (dans ${h}h${m > 0 ? m + 'min' : ''})` : ` (dans ${m}min)`;
+                                } else if (diffMin < 0) {
+                                    const ago = Math.abs(diffMin);
+                                    const h = Math.floor(ago / 60);
+                                    const m = ago % 60;
+                                    line += h > 0 ? ` (il y a ${h}h${m > 0 ? m + 'min' : ''})` : ` (il y a ${m}min)`;
+                                }
+                            }
+                            return line;
+                        }
+                    }
+                },
+                legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    suggestedMax: Math.max(maxBAC * 1.1, 100),
+                    title: { display: true, text: 'mg/L', font: { size: 11 } },
+                    ticks: { font: { size: 10 } }
+                },
+                x: {
+                    ticks: { maxTicksLimit: 8, maxRotation: 45, font: { size: 10 } }
+                }
+            }
+        },
+        plugins: plugins
+    });
+
+    // Clean up globals
+    delete window._bacCurveData;
+    delete window._bacCurveIsToday;
 }
 
 /**

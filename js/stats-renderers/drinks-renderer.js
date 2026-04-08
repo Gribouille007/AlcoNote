@@ -5,11 +5,30 @@
  * @param {Object} drinkStats - Statistiques des boissons individuelles
  * @returns {HTMLElement} Section des statistiques de boissons
  */
-function renderIndividualDrinkStats(drinkStats) {
+async function renderIndividualDrinkStats(drinkStats) {
     if (!drinkStats || Object.keys(drinkStats).length === 0) {
         return null;
     }
-    
+
+    // Fetch all ratings for display
+    let ratingsMap = {};
+    try {
+        const ratings = await dbManager.getAllRatings();
+        ratings.forEach(r => { ratingsMap[r.drinkName] = r.rating; });
+    } catch (e) {
+        console.warn('Could not load drink ratings:', e);
+    }
+
+    function renderStars(rating) {
+        if (!rating) return '';
+        let html = '<span class="star-rating-readonly">';
+        for (let i = 1; i <= 5; i++) {
+            html += `<span class="star${i <= rating ? ' active' : ''}">&#9733;</span>`;
+        }
+        html += '</span>';
+        return html;
+    }
+
     const section = document.createElement('div');
     section.className = 'stats-section';
     section.innerHTML = `
@@ -19,7 +38,7 @@ function renderIndividualDrinkStats(drinkStats) {
                 <div class="drink-stat-item">
                     <div class="drink-rank">${index + 1}</div>
                     <div class="drink-info">
-                        <div class="drink-name">${name}</div>
+                        <div class="drink-name">${name} ${renderStars(ratingsMap[name])}</div>
                         <div class="drink-details">
                             ${stats.count} fois • ${(stats.totalVolume / 100).toFixed(1)}L total
                             ${stats.lastConsumed ? ` • Dernière: ${Utils.formatDate(stats.lastConsumed)}` : ''}
@@ -30,7 +49,7 @@ function renderIndividualDrinkStats(drinkStats) {
             `).join('')}
         </div>
     `;
-    
+
     return section;
 }
 

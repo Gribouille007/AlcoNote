@@ -4114,3 +4114,57 @@ textarea:focus-visible {
         }
     }
 }
+
+/* Star Rating */
+.star-rating {
+    display: flex;
+    gap: 4px;
+}
+
+.star-rating .star {
+    font-size: 28px;
+    color: var(--gray-4);
+    cursor: pointer;
+    transition: color 0.15s, transform 0.15s;
+    user-select: none;
+}
+
+.star-rating .star.active,
+.star-rating .star.hover {
+    color: #FFD700;
+}
+
+.star-rating .star:hover {
+    transform: scale(1.15);
+}
+
+.star-rating-readonly {
+    display: inline-flex;
+    gap: 2px;
+}
+
+.star-rating-readonly .star {
+    font-size: 14px;
+    color: var(--gray-4);
+}
+
+.star-rating-readonly .star.active {
+    color: #FFD700;
+}
+
+/* BAC Projection Chart */
+.bac-chart-section {
+    margin-top: var(--spacing-md);
+}
+
+.bac-chart-section h4 {
+    margin-bottom: var(--spacing-sm);
+}
+
+.bac-chart-container {
+    position: relative;
+    height: 250px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-sm);
+}
