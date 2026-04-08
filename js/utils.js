@@ -36,7 +36,8 @@ class Utils {
      */
     static formatDate(dateString) {
         // Convert date string to Date object and format in French with weekday
-        const date = new Date(dateString);
+        // Use T00:00:00 to avoid UTC midnight shift on iOS Safari
+        const date = new Date(dateString + 'T00:00:00');
         const options = {
             weekday: 'long',
             year: 'numeric',
@@ -98,7 +99,9 @@ class Utils {
                 const dayOfWeek = start.getDay();
                 const mondayDiff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday as first day
                 start.setDate(start.getDate() + mondayDiff);
-                end.setDate(start.getDate() + 6);
+                // Set end to 6 days after start (copy start first to handle month boundaries)
+                end.setTime(start.getTime());
+                end.setDate(end.getDate() + 6);
                 break;
 
             case 'month':
@@ -208,15 +211,6 @@ class Utils {
         return (volumeCL * alcoholPercent * 0.8) / 10;
     }
 
-    static calculateBAC(alcoholGrams, weightKg, gender, hours = 0) {
-        // Calculate blood alcohol concentration
-        const r = gender === 'female' ? 0.55 : 0.68; // Body water percentage
-        // Correct formula: BAC (g/L) = (Alcohol (g) / (Weight (kg) × r)) - (0.15 × hours)
-        const bacGL = (alcoholGrams / (weightKg * r)) - (0.15 * hours);
-        const bacMgL = bacGL * 1000; // Convert g/L to mg/L
-        return Math.max(0, bacMgL);
-    }
-
     /**
      * Calculate current Blood Alcohol Content using Widmark formula
      * @param {Array} drinks - Array of drink objects with date, time, quantity, unit, alcoholContent
@@ -244,7 +238,7 @@ class Utils {
                 if (isNaN(date.getTime())) return null;
 
                 const volumeCL = this.convertToStandardUnit(drink.quantity, drink.unit).quantity;
-                const alcoholGrams = this.calculateAlcoholGrams(volumeCL, drink.alcoholContent || 0);
+                const alcoholGrams = this.calculateAlcoholGrams(volumeCL, parseFloat(drink.alcoholContent) || 0);
 
                 return {
                     date: date,
@@ -584,10 +578,17 @@ class Utils {
 
     // Modal utilities
     static openModal(modalId) {
-        // Show modal dialog
+        // Show modal dialog using native <dialog> API
         const modal = document.getElementById(modalId);
         if (modal) {
-            modal.classList.add('active');
+            if (modal.tagName === 'DIALOG') {
+                modal.showModal();
+                // Force a repaint before adding .active so CSS transitions fire on iOS Safari
+                void modal.offsetHeight;
+                modal.classList.add('active');
+            } else {
+                modal.classList.add('active');
+            }
             document.body.style.overflow = 'hidden';
 
             // Focus first input if available
@@ -603,15 +604,21 @@ class Utils {
         const modal = document.getElementById(modalId);
         if (modal) {
             modal.classList.remove('active');
+            if (modal.tagName === 'DIALOG') {
+                modal.close();
+            }
             document.body.style.overflow = '';
         }
     }
 
     static closeAllModals() {
         // Hide all open modals
-        const modals = document.querySelectorAll('.modal.active');
+        const modals = document.querySelectorAll('.modal.active, dialog[open]');
         modals.forEach(modal => {
             modal.classList.remove('active');
+            if (modal.tagName === 'DIALOG') {
+                modal.close();
+            }
         });
         document.body.style.overflow = '';
     }
@@ -655,9 +662,22 @@ class Utils {
         let isValid = true;
 
         inputs.forEach(input => {
+            // Remove any previous inline error message
+            const existingError = input.parentElement.querySelector('.field-error');
+            if (existingError) existingError.remove();
+
             if (!input.value.trim()) {
                 input.classList.add('error');
+                input.classList.remove('valid');
                 isValid = false;
+
+                // Add inline error message
+                const errorMsg = document.createElement('span');
+                errorMsg.className = 'field-error';
+                const label = input.parentElement.querySelector('label');
+                const fieldName = label ? label.textContent : 'Ce champ';
+                errorMsg.textContent = `${fieldName} est requis`;
+                input.parentElement.appendChild(errorMsg);
             } else {
                 input.classList.remove('error');
                 input.classList.add('valid');
@@ -740,6 +760,18 @@ class Utils {
             result.push(colors[i % colors.length]);
         }
         return result;
+    }
+
+    // Theme-aware chart colors for dark/light mode
+    static getChartThemeColors() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        return {
+            gridColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+            textColor: isDark ? '#EBEBF5' : '#3C3C43',
+            borderColor: isDark ? '#1C1C1E' : '#ffffff',
+            tickColor: isDark ? '#EBEBF599' : '#3C3C4399',
+            legendColor: isDark ? '#EBEBF5' : '#3C3C43',
+        };
     }
 
     static hexToRgba(hex, alpha = 1) {

@@ -44,7 +44,7 @@ async function calculateHealthStats(drinks, dateRange, options = {}) {
             dailyAlcohol[drink.date] += alcoholGrams;
 
             // Par semaine (numéro de semaine)
-            const weekNumber = getWeekNumber(new Date(drink.date));
+            const weekNumber = getWeekNumber(new Date(drink.date + 'T00:00:00'));
             if (!weeklyAlcoholByWeek[weekNumber]) {
                 weeklyAlcoholByWeek[weekNumber] = 0;
             }
@@ -87,7 +87,7 @@ async function calculateHealthStats(drinks, dateRange, options = {}) {
     const bacEstimation = await calculateCurrentBAC(userWeight, userGender, drinks, lastDrinkDate);
 
     // Analyse des risques
-    const riskAnalysis = analyzeHealthRisks(weeklyAlcoholAvg, dailyAlcohol, userGender);
+    const riskAnalysis = analyzeHealthRisks(weeklyAlcoholAvg, dailyAlcohol, userGender, daysDiff);
 
     // Calcul des jours de dépassement des seuils
     const exceedanceDays = calculateExceedanceDays(dailyAlcohol, userGender);
@@ -172,7 +172,7 @@ async function calculateCurrentBAC(userWeight, userGender, drinks, referenceDate
  * @param {string} userGender - Sexe de l'utilisateur
  * @returns {Object} Analyse des risques
  */
-function analyzeHealthRisks(weeklyAlcohol, dailyAlcohol, userGender) {
+function analyzeHealthRisks(weeklyAlcohol, dailyAlcohol, userGender, totalDaysInPeriod = 7) {
     const risks = {
         level: 'low',
         score: 0,
@@ -224,10 +224,10 @@ function analyzeHealthRisks(weeklyAlcohol, dailyAlcohol, userGender) {
         }
     }
 
-    // Évaluation de la fréquence
+    // Évaluation de la fréquence (jours avec alcool / jours totaux de la période)
     const drinkingDays = Object.keys(dailyAlcohol).length;
-    const totalDays = Object.keys(dailyAlcohol).length > 0 ? Object.keys(dailyAlcohol).length : 7; // Adapter à la période réelle
-    const frequency = drinkingDays / totalDays;
+    const totalDays = Math.max(totalDaysInPeriod, drinkingDays); // at least as many days as days with drinks
+    const frequency = totalDays > 0 ? drinkingDays / totalDays : 0;
 
     if (frequency > 0.8) {
         risks.score += 20;

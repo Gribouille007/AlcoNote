@@ -1,5 +1,34 @@
 // Composant de rendu pour les statistiques de santé - AlcoNote PWA
 
+// ── Configuration des paliers d'alcoolémie ──────────────────────────
+// Modifie ce tableau pour ajouter, supprimer ou changer les paliers.
+// Chaque entrée : { max: seuil en mg/L, class: classe CSS, text: texte affiché }
+// Les entrées doivent être triées par max croissant.
+const BAC_LEVELS = [
+    { max: 200,      class: 'safe',    text: 'Sobre' },
+    { max: 500,      class: 'caution', text: 'Légèrement alcoolisé' },
+    { max: 800,      class: 'warning', text: 'Dépassement limite légale' },
+    { max: 1999,     class: 'warning', text: 'Ivresse' },
+    { max: 2999,     class: 'danger',  text: 'Ivresse sévère' },
+    { max: Infinity, class: 'danger',  text: 'Danger vital — appelez le 112' },
+];
+
+// SVG icon constants to replace emoji
+const HEALTH_ICONS = {
+    info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+    beer: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a3 3 0 010 6h-1"/><path d="M5 8h12v9a3 3 0 01-3 3H8a3 3 0 01-3-3V8z"/><path d="M8 5a2 2 0 012-2c1.1 0 2 1 2 2"/><path d="M10 5a2 2 0 012-2c1.1 0 2 1 2 2"/></svg>',
+    warning: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+    clock: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+    car: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 16H9m10 0h3v-3.15a1 1 0 00-.84-.99L16 11l-2.7-3.6a1 1 0 00-.8-.4H5.24a2 2 0 00-1.8 1.1l-.8 1.63A6 6 0 002 12.42V16h2"/><circle cx="6.5" cy="16.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg>',
+    gear: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
+    chart: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+    trophy: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0012 0V2z"/></svg>',
+    hospital: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9h1"/><path d="M9 13h1"/><path d="M9 17h1"/></svg>',
+    formula: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+    ruler: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 010 3.4l-2.6 2.6a2.4 2.4 0 01-3.4 0L2.7 8.7a2.4 2.4 0 010-3.4l2.6-2.6a2.4 2.4 0 013.4 0z"/><path d="M14.5 12.5l2-2"/><path d="M11.5 9.5l2-2"/><path d="M8.5 6.5l2-2"/><path d="M17.5 15.5l2-2"/></svg>',
+    hash: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>',
+};
+
 /**
  * Rend les statistiques de santé
  * @param {Object} stats - Statistiques de santé calculées
@@ -15,7 +44,7 @@ function renderHealthStats(stats) {
     section.innerHTML = `
         <div class="section-header">
             <h3>Indicateurs de santé</h3>
-            <button class="info-btn" id="health-info-btn" title="Informations sur les indicateurs de santé">ℹ️</button>
+            <button class="info-btn" id="health-info-btn" title="Informations sur les indicateurs de santé" aria-label="Informations"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
         </div>
         <div class="stats-grid">
             ${stats.weeklyAlcohol !== null && stats.weeklyAlcohol !== undefined ? `
@@ -67,17 +96,17 @@ async function renderBACEstimation(context = {}) {
             // Show setup message if user data is missing
             section.innerHTML = `
                 <div class="section-header">
-                    <h3>🍺 Estimation alcoolémie</h3>
-                    <button class="info-btn" id="bac-info-btn" title="Informations sur l'estimation d'alcoolémie">ℹ️</button>
+                    <h3>${HEALTH_ICONS.beer} Estimation alcoolémie</h3>
+                    <button class="info-btn" id="bac-info-btn" title="Informations sur l'estimation d'alcoolémie" aria-label="Informations">${HEALTH_ICONS.info}</button>
                 </div>
                 <div class="bac-setup-message">
-                    <div class="setup-icon">⚙️</div>
+                    <div class="setup-icon">${HEALTH_ICONS.gear}</div>
                     <h4>Configuration requise</h4>
                     <p>Pour calculer votre taux d'alcoolémie, veuillez renseigner votre poids et sexe dans les paramètres.</p>
                     <button id="open-profile-settings" class="btn-primary">Configurer mon profil</button>
                 </div>
                 <div class="bac-disclaimer">
-                    <p><strong>⚠️ Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
+                    <p><strong>${HEALTH_ICONS.warning} Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
                 </div>
             `;
 
@@ -106,8 +135,10 @@ async function renderBACEstimation(context = {}) {
             // Using current time as referenceTime (no dateRange in context)
         }
 
-        // Get drinks from context if available, otherwise fetch
-        const drinksForBAC = context.drinks || [];
+        // Always fetch drinks from the last 24h for BAC — context.drinks may only
+        // contain the current period (e.g. "today") and miss yesterday's late drinks
+        // that still affect BAC across midnight.
+        const drinksForBAC = await Utils.getRelevantDrinksForBAC(referenceTime);
 
         // Calculate BAC statistics with reference time and drinks
         const bacStats = await Utils.calculateBACStats(userWeight, userGender, referenceTime, drinksForBAC);
@@ -115,8 +146,8 @@ async function renderBACEstimation(context = {}) {
         if (!bacStats) {
             section.innerHTML = `
                 <div class="section-header">
-                    <h3>🍺 Estimation alcoolémie</h3>
-                    <button class="info-btn" id="bac-info-btn" title="Informations sur l'estimation d'alcoolémie">ℹ️</button>
+                    <h3>${HEALTH_ICONS.beer} Estimation alcoolémie</h3>
+                    <button class="info-btn" id="bac-info-btn" title="Informations sur l'estimation d'alcoolémie" aria-label="Informations">${HEALTH_ICONS.info}</button>
                 </div>
                 <div class="bac-error">
                     <p>Impossible de calculer l'alcoolémie. Vérifiez vos données de profil.</p>
@@ -152,8 +183,8 @@ async function renderBACEstimation(context = {}) {
 
         section.innerHTML = `
             <div class="section-header">
-                <h3>🍺 Estimation alcoolémie</h3>
-                <button class="info-btn" id="bac-info-btn" title="Informations sur l'estimation d'alcoolémie">ℹ️</button>
+                <h3>${HEALTH_ICONS.beer} Estimation alcoolémie</h3>
+                <button class="info-btn" id="bac-info-btn" title="Informations sur l'estimation d'alcoolémie" aria-label="Informations">${HEALTH_ICONS.info}</button>
             </div>
             
             <div class="bac-main-display">
@@ -170,14 +201,14 @@ async function renderBACEstimation(context = {}) {
             
             <div class="bac-times-grid">
                 <div class="bac-time-card">
-                    <div class="time-icon">🕐</div>
+                    <div class="time-icon">${HEALTH_ICONS.clock}</div>
                     <div class="time-info">
                         <div class="time-label">Sobriété complète (0 mg/L)</div>
                         <div class="time-value">${Utils.formatTimeToSobriety(bacStats.timeToSobriety)}</div>
                     </div>
                 </div>
                 <div class="bac-time-card">
-                    <div class="time-icon">🚗</div>
+                    <div class="time-icon">${HEALTH_ICONS.car}</div>
                     <div class="time-info">
                         <div class="time-label">Conduite autorisée (< 500 mg/L)</div>
                         <div class="time-value">${Utils.formatTimeToSobriety(bacStats.timeToLegalLimit)}</div>
@@ -223,7 +254,7 @@ async function renderBACEstimation(context = {}) {
             ${renderBACRecordsSection(bacRecords, highestRecord)}
 
             <div class="bac-disclaimer">
-                <p><strong>⚠️ Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
+                <p><strong>${HEALTH_ICONS.warning} Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
             </div>
         `;
 
@@ -235,7 +266,7 @@ async function renderBACEstimation(context = {}) {
         section.className = 'stats-section bac-estimation-section';
         section.innerHTML = `
             <div class="section-header">
-                <h3>🍺 Estimation alcoolémie</h3>
+                <h3>${HEALTH_ICONS.beer} Estimation alcoolémie</h3>
             </div>
             <div class="bac-error">
                 <p>Erreur lors du calcul de l'alcoolémie.</p>
@@ -246,20 +277,24 @@ async function renderBACEstimation(context = {}) {
 }
 
 /**
- * Render BAC records section
+ * Render BAC records section — swipe-to-delete like history tab
  */
 function renderBACRecordsSection(records, highestRecord) {
     if (!records || records.length === 0) {
         return '';
     }
 
+    // Deduplicate: don't show highest record twice in the list
+    const highestId = highestRecord ? highestRecord.id : null;
+    const otherRecords = records.filter(r => r.id !== highestId);
+
     return `
         <div class="bac-records-section">
-            <h4>📊 Records de taux d'alcoolémie</h4>
+            <h4>${HEALTH_ICONS.chart} Records de taux d'alcoolémie</h4>
             ${highestRecord ? `
-            <div class="bac-record-card bac-record-highest">
+            <div class="bac-record-card bac-record-highest swipeable" data-record-id="${highestRecord.id}">
                 <div class="record-badge ${getBACLevelClass(highestRecord.bacValue)}">
-                    <span class="badge-icon">👑</span>
+                    <span class="badge-icon">${HEALTH_ICONS.trophy}</span>
                     <span class="badge-value">${highestRecord.bacValue.toFixed(0)} mg/L</span>
                 </div>
                 <div class="record-info">
@@ -267,11 +302,12 @@ function renderBACRecordsSection(records, highestRecord) {
                     <div class="record-date">${formatRecordDate(highestRecord.timestamp)}</div>
                     <div class="record-drinks">${highestRecord.drinkCount} consommation${highestRecord.drinkCount > 1 ? 's' : ''}</div>
                 </div>
+                <div class="delete-indicator">Supprimer</div>
             </div>
             ` : ''}
             <div class="bac-records-list">
-                ${records.slice(0, 5).map(record => `
-                    <div class="bac-record-card">
+                ${otherRecords.slice(0, 5).map(record => `
+                    <div class="bac-record-card swipeable" data-record-id="${record.id}">
                         <div class="record-badge ${getBACLevelClass(record.bacValue)}">
                             <span class="badge-value">${record.bacValue.toFixed(0)} mg/L</span>
                         </div>
@@ -279,12 +315,10 @@ function renderBACRecordsSection(records, highestRecord) {
                             <div class="record-date">${formatRecordDate(record.timestamp)}</div>
                             <div class="record-drinks">${record.drinkCount} consommation${record.drinkCount > 1 ? 's' : ''}</div>
                         </div>
+                        <div class="delete-indicator">Supprimer</div>
                     </div>
                 `).join('')}
             </div>
-            ${records.length > 5 ? `
-                <button class="btn-secondary view-all-records" id="view-all-records-btn">Voir tout l'historique (${records.length})</button>
-            ` : ''}
         </div>
     `;
 }
@@ -314,22 +348,54 @@ function formatRecordDate(timestamp) {
  * Get BAC level CSS class for styling (bacLevel in mg/L)
  */
 function getBACLevelClass(bacLevel) {
-    if (bacLevel < 200) return 'safe';
-    if (bacLevel <= 500) return 'caution';
-    if (bacLevel <= 800) return 'warning';
-    return 'danger';
+    const level = BAC_LEVELS.find(l => bacLevel <= l.max);
+    return level ? level.class : 'danger';
 }
 
 /**
  * Get BAC level descriptive text (bacLevel in mg/L)
  */
 function getBACLevelText(bacLevel) {
-    if (bacLevel < 200) return 'Sobre';
-    if (bacLevel <= 500) return 'OK GARMIN TROUVE MES CLÉS DE VOITURE';
-    if (bacLevel <= 800) return 'OK GARMIN CACHE MES CLÉS DE VOITURE';
-    if (bacLevel <= 1999) return 'Il est l\'heure d\'aller nager dans le lac';
-    if (bacLevel <= 2999) return 'Brieuc arrête de boire';
-    return 'Y a qu\'une persone pour arriver à ce stade';
+    const level = BAC_LEVELS.find(l => bacLevel <= l.max);
+    return level ? level.text : BAC_LEVELS[BAC_LEVELS.length - 1].text;
+}
+
+/**
+ * Attache le swipe-to-delete sur toutes les cartes de record BAC
+ */
+function attachRecordSwipeHandlers() {
+    document.querySelectorAll('.bac-record-card.swipeable').forEach(card => {
+        const recordId = parseInt(card.dataset.recordId);
+        if (!recordId) return;
+
+        Utils.addSwipeListener(
+            card,
+            // onSwipeLeft — delete
+            async (el) => {
+                try {
+                    await dbManager.deleteBACRecord(recordId);
+                    el.classList.add('deleting');
+                    el.addEventListener('transitionend', () => {
+                        el.remove();
+                        // If no records left, remove the whole section
+                        const section = document.querySelector('.bac-records-section');
+                        if (section && !section.querySelector('.bac-record-card')) {
+                            section.remove();
+                        }
+                    }, { once: true });
+                    // Fallback if transitionend doesn't fire
+                    setTimeout(() => { if (el.parentNode) el.remove(); }, 500);
+                } catch (e) {
+                    console.error('Error deleting BAC record:', e);
+                    el.classList.remove('swipe-left', 'deleting');
+                }
+            },
+            // onSwipeRight — cancel
+            (el) => {
+                el.classList.remove('swipe-left');
+            }
+        );
+    });
 }
 
 /**
@@ -361,167 +427,8 @@ function postRenderHealthStats(stats) {
         });
     }
 
-    // Initialize BAC projection chart
-    initBACProjectionChart();
-}
-
-/**
- * Initialize the BAC projection Chart.js line chart
- */
-function initBACProjectionChart() {
-    const canvas = document.getElementById('bac-projection-chart');
-    const curveData = window._bacCurveData;
-    const isToday = window._bacCurveIsToday;
-
-    if (!canvas || !curveData || !curveData.points || curveData.points.length === 0) {
-        // Hide the chart section if no data
-        const section = document.getElementById('bac-chart-section');
-        if (section) section.style.display = 'none';
-        return;
-    }
-
-    // Destroy previous chart if exists
-    if (window._bacProjectionChart) {
-        window._bacProjectionChart.destroy();
-        window._bacProjectionChart = null;
-    }
-
-    // Format time labels
-    const labels = curveData.points.map(p => {
-        const d = p.time;
-        const h = String(d.getHours()).padStart(2, '0');
-        const m = String(d.getMinutes()).padStart(2, '0');
-        // Include date if span > 24h
-        const spanMs = curveData.points[curveData.points.length - 1].time - curveData.points[0].time;
-        if (spanMs > 24 * 3600 * 1000) {
-            return `${d.getDate()}/${d.getMonth() + 1} ${h}:${m}`;
-        }
-        return `${h}:${m}`;
-    });
-
-    const data = curveData.points.map(p => p.bac);
-    const maxBAC = Math.max(...data, 500);
-
-    // Check if any point exceeds legal limit
-    const hasLegalExceedance = data.some(v => v > 500);
-
-    // Datasets
-    const datasets = [
-        {
-            label: 'Alcoolémie (mg/L)',
-            data: data,
-            borderColor: '#FF3B30',
-            backgroundColor: 'rgba(255, 59, 48, 0.1)',
-            fill: true,
-            tension: 0.3,
-            pointRadius: 0,
-            pointHitRadius: 10,
-            borderWidth: 2
-        }
-    ];
-
-    // Add legal limit line only if relevant
-    if (hasLegalExceedance || maxBAC > 300) {
-        datasets.push({
-            label: 'Limite légale (500 mg/L)',
-            data: data.map(() => 500),
-            borderColor: '#FF9500',
-            borderDash: [8, 4],
-            borderWidth: 1.5,
-            pointRadius: 0,
-            pointHitRadius: 0,
-            fill: false
-        });
-    }
-
-    // Custom plugin for current time vertical line
-    const plugins = [];
-    if (isToday && curveData.currentTimeIndex >= 0) {
-        plugins.push({
-            id: 'currentTimeLine',
-            afterDraw: (chart) => {
-                const idx = curveData.currentTimeIndex;
-                const meta = chart.getDatasetMeta(0);
-                if (!meta.data[idx]) return;
-                const x = meta.data[idx].x;
-                const ctx = chart.ctx;
-                ctx.save();
-                ctx.beginPath();
-                ctx.setLineDash([4, 4]);
-                ctx.strokeStyle = '#007AFF';
-                ctx.lineWidth = 2;
-                ctx.moveTo(x, chart.chartArea.top);
-                ctx.lineTo(x, chart.chartArea.bottom);
-                ctx.stroke();
-                // Label
-                ctx.fillStyle = '#007AFF';
-                ctx.font = '11px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText('Maintenant', x, chart.chartArea.top - 4);
-                ctx.restore();
-            }
-        });
-    }
-
-    // Create chart
-    const now = new Date();
-    window._bacProjectionChart = new Chart(canvas, {
-        type: 'line',
-        data: { labels, datasets },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                tooltip: {
-                    callbacks: {
-                        title: (items) => {
-                            if (!items.length) return '';
-                            return items[0].label;
-                        },
-                        label: (item) => {
-                            if (item.datasetIndex !== 0) return null;
-                            const bac = item.raw;
-                            const pointTime = curveData.points[item.dataIndex]?.time;
-                            let line = `BAC: ${bac.toFixed(0)} mg/L`;
-                            if (pointTime && isToday) {
-                                const diffMs = pointTime - now;
-                                const diffMin = Math.round(diffMs / 60000);
-                                if (diffMin > 0) {
-                                    const h = Math.floor(diffMin / 60);
-                                    const m = diffMin % 60;
-                                    line += h > 0 ? ` (dans ${h}h${m > 0 ? m + 'min' : ''})` : ` (dans ${m}min)`;
-                                } else if (diffMin < 0) {
-                                    const ago = Math.abs(diffMin);
-                                    const h = Math.floor(ago / 60);
-                                    const m = ago % 60;
-                                    line += h > 0 ? ` (il y a ${h}h${m > 0 ? m + 'min' : ''})` : ` (il y a ${m}min)`;
-                                }
-                            }
-                            return line;
-                        }
-                    }
-                },
-                legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    suggestedMax: Math.max(maxBAC * 1.1, 100),
-                    title: { display: true, text: 'mg/L', font: { size: 11 } },
-                    ticks: { font: { size: 10 } }
-                },
-                x: {
-                    ticks: { maxTicksLimit: 8, maxRotation: 45, font: { size: 10 } }
-                }
-            }
-        },
-        plugins: plugins
-    });
-
-    // Clean up globals
-    delete window._bacCurveData;
-    delete window._bacCurveIsToday;
+    // Attach swipe-to-delete on BAC record cards
+    attachRecordSwipeHandlers();
 }
 
 /**
@@ -549,20 +456,19 @@ function showHealthInfoModal() {
     const existing = document.getElementById('health-info-modal');
     if (existing) existing.remove();
 
-    const modal = document.createElement('div');
+    const modal = document.createElement('dialog');
     modal.id = 'health-info-modal';
     modal.className = 'modal active';
     modal.innerHTML = `
-        <div class="modal-backdrop"></div>
         <div class="modal-content health-info-modal">
             <div class="modal-header">
-                <h2>📊 Indicateurs de santé</h2>
+                <h2>${HEALTH_ICONS.chart} Indicateurs de santé</h2>
                 <button class="modal-close" onclick="document.getElementById('health-info-modal').remove()">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="info-card">
                     <div class="info-header">
-                        <h3>🍺 Alcool/semaine (g)</h3>
+                        <h3>${HEALTH_ICONS.beer} Alcool/semaine (g)</h3>
                         <div class="info-badge">Gramme d'éthanol</div>
                     </div>
                     <div class="info-body">
@@ -572,7 +478,7 @@ function showHealthInfoModal() {
                 </div>
                 <div class="info-card">
                     <div class="info-header">
-                        <h3>🏥 Comparaison OMS</h3>
+                        <h3>${HEALTH_ICONS.hospital} Comparaison OMS</h3>
                         <div class="info-badge">Référence santé publique</div>
                     </div>
                     <div class="info-body">
@@ -586,7 +492,8 @@ function showHealthInfoModal() {
         </div>
     `;
     document.body.appendChild(modal);
-    modal.querySelector('.modal-backdrop').addEventListener('click', () => modal.remove());
+    modal.showModal();
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
 }
 
 /**
@@ -596,19 +503,18 @@ function showBACInfoModal() {
     const existing = document.getElementById('bac-info-modal');
     if (existing) existing.remove();
 
-    const modal = document.createElement('div');
+    const modal = document.createElement('dialog');
     modal.id = 'bac-info-modal';
     modal.className = 'modal active';
     modal.innerHTML = `
-        <div class="modal-backdrop"></div>
         <div class="modal-content">
             <div class="modal-header">
-                <h2>🍺 Estimation d'alcoolémie</h2>
+                <h2>${HEALTH_ICONS.beer} Estimation d'alcoolémie</h2>
                 <button class="modal-close" onclick="document.getElementById('bac-info-modal').remove()">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="info-section">
-                    <h3>🧮 Formule de Widmark (LaTeX)</h3>
+                    <h3>${HEALTH_ICONS.formula} Formule de Widmark (LaTeX)</h3>
                     <p><strong>Modèle avec élimination :</strong></p>
                     <div class="formula-box">
                         <p>$$ C(t) = \\max\\left(0, \\frac{A}{m\\,\\cdot\\,r} - \\beta\\, t \\right) \\quad [\\text{g/L}] $$</p>
@@ -621,7 +527,7 @@ function showBACInfoModal() {
                     </ul>
                 </div>
                 <div class="info-section">
-                    <h3>🔢 Calcul de l'alcool ingéré</h3>
+                    <h3>${HEALTH_ICONS.hash} Calcul de l'alcool ingéré</h3>
                     <p><strong>À partir des volumes (en litres) et degrés :</strong></p>
                     <div class="formula-box">
                         <p>$$ A = \\sum_i V_i\\, \\cdot\\, \\frac{p_i}{100} \\cdot 0{,}8 \\cdot 1000 \\quad [\\text{g}] $$</p>
@@ -635,7 +541,7 @@ function showBACInfoModal() {
                     <p><em>Si volumes en cL:</em> \\(V_i\\,[\\text{L}] = \\frac{V_i\\,[\\text{cL}]}{100}\\).</p>
                 </div>
                 <div class="info-section">
-                    <h3>📏 Unités et seuils</h3>
+                    <h3>${HEALTH_ICONS.ruler} Unités et seuils</h3>
                     <ul>
                         <li>Conversion: \\(1\\ \\text{g/L} = 1000\\ \\text{mg/L}\\)</li>
                         <li>Affichage dans l'app: \\(\\text{mg/L}\\)</li>
@@ -644,7 +550,7 @@ function showBACInfoModal() {
                     </ul>
                 </div>
                 <div class="info-section">
-                    <h3>ℹ️ Remarques importantes</h3>
+                    <h3>${HEALTH_ICONS.info} Remarques importantes</h3>
                     <ul>
                         <li>Le modèle est une estimation théorique, non un diagnostic médical</li>
                         <li>De nombreux facteurs individuels influencent \\(\\beta\\) et l'absorption</li>
@@ -658,13 +564,14 @@ function showBACInfoModal() {
         </div>
     `;
     document.body.appendChild(modal);
+    modal.showModal();
     // Typeset LaTeX if MathJax is available
     try {
         if (window.MathJax && window.MathJax.typesetPromise) {
             window.MathJax.typesetPromise([modal]).catch(() => { });
         }
     } catch (e) { }
-    modal.querySelector('.modal-backdrop').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
 }
 
 // Export pour utilisation dans d'autres modules

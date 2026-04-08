@@ -149,7 +149,7 @@ textarea {
 
 /* Error message styling */
 .error-message {
-    color: #dc3545;
+    color: var(--error-color);
     font-size: 14px;
     margin-top: 4px;
     display: flex;
@@ -157,13 +157,22 @@ textarea {
 }
 
 .error-message::before {
-    content: "⚠️";
+    content: "";
+    display: inline-block;
+    width: 16px;
+    height: 16px;
     margin-right: 4px;
+    flex-shrink: 0;
+    background-color: var(--error-color);
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z'/%3E%3Cline x1='12' y1='9' x2='12' y2='13'/%3E%3Cline x1='12' y1='17' x2='12.01' y2='17'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z'/%3E%3Cline x1='12' y1='9' x2='12' y2='13'/%3E%3Cline x1='12' y1='17' x2='12.01' y2='17'/%3E%3C/svg%3E");
+    -webkit-mask-size: contain;
+    mask-size: contain;
 }
 
 /* Success message styling */
 .success-message {
-    color: #28a745;
+    color: var(--success-color);
     font-size: 14px;
     margin-top: 4px;
     display: flex;
@@ -171,8 +180,17 @@ textarea {
 }
 
 .success-message::before {
-    content: "✅";
+    content: "";
+    display: inline-block;
+    width: 16px;
+    height: 16px;
     margin-right: 4px;
+    flex-shrink: 0;
+    background-color: var(--success-color);
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M22 11.08V12a10 10 0 11-5.93-9.14'/%3E%3Cpolyline points='22 4 12 14.01 9 11.01'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M22 11.08V12a10 10 0 11-5.93-9.14'/%3E%3Cpolyline points='22 4 12 14.01 9 11.01'/%3E%3C/svg%3E");
+    -webkit-mask-size: contain;
+    mask-size: contain;
 }
 
 /* Enhanced modal accessibility */
@@ -296,12 +314,12 @@ textarea {
 
 /* Color contrast improvements */
 .text-muted {
-    color: #6c757d;
+    color: var(--text-tertiary);
 }
 
 @media (prefers-contrast: high) {
     .text-muted {
-        color: #495057;
+        color: var(--text-secondary);
     }
 }
 
@@ -309,24 +327,24 @@ textarea {
 .form-group.has-error input,
 .form-group.has-error select,
 .form-group.has-error textarea {
-    border-color: #dc3545;
-    background-color: #fff5f5;
+    border-color: var(--error-color);
+    background-color: color-mix(in srgb, var(--error-color) 5%, var(--bg-primary));
 }
 
 .form-group.has-error label {
-    color: #dc3545;
+    color: var(--error-color);
 }
 
 /* Enhanced success states */
 .form-group.has-success input,
 .form-group.has-success select,
 .form-group.has-success textarea {
-    border-color: #28a745;
-    background-color: #f8fff9;
+    border-color: var(--success-color);
+    background-color: color-mix(in srgb, var(--success-color) 5%, var(--bg-primary));
 }
 
 .form-group.has-success label {
-    color: #28a745;
+    color: var(--success-color);
 }
 
 /* Keyboard navigation indicators */
@@ -394,8 +412,8 @@ textarea {
     bottom: 100%;
     left: 50%;
     transform: translateX(-50%);
-    background-color: #333;
-    color: white;
+    background-color: var(--toast-bg);
+    color: var(--toast-text);
     padding: 8px 12px;
     border-radius: 4px;
     font-size: 14px;

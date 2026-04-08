@@ -325,7 +325,7 @@ class DatabaseManager {
             // Convert quantity based on unit
             let quantityInCL = drinkData.quantity;
             if (drinkData.unit === 'EcoCup') {
-                quantityInCL = 25; // EcoCup = 25cL
+                quantityInCL = drinkData.quantity * 25; // EcoCup = 25cL each
             } else if (drinkData.unit === 'L') {
                 quantityInCL = drinkData.quantity * 100; // Convert L to cL
             }
@@ -366,7 +366,7 @@ class DatabaseManager {
 
                 let quantityInCL = quantity;
                 if (unit === 'EcoCup') {
-                    quantityInCL = 25;
+                    quantityInCL = quantity * 25;
                 } else if (unit === 'L') {
                     quantityInCL = quantity * 100;
                 }
@@ -594,16 +594,16 @@ class DatabaseManager {
                 // Total volume in cL
                 let volumeInCL = drink.quantity;
                 if (drink.unit === 'EcoCup') {
-                    volumeInCL = 25;
+                    volumeInCL = drink.quantity * 25;
                 } else if (drink.unit === 'L') {
                     volumeInCL = drink.quantity * 100;
                 }
 
                 stats.totalVolume += volumeInCL;
 
-                // Total alcohol in grams (approximation: 1cL at X% = X * 0.8g of alcohol)
+                // Total alcohol in grams: volume(cL) × degree(%) × density(0.8) / 10
                 if (drink.alcoholContent) {
-                    stats.totalAlcohol += (volumeInCL * drink.alcoholContent * 0.8) / 100;
+                    stats.totalAlcohol += (volumeInCL * drink.alcoholContent * 0.8) / 10;
                 }
 
                 // Categories
@@ -621,7 +621,7 @@ class DatabaseManager {
                 stats.hours[hour]++;
 
                 // Days of week
-                const dayOfWeek = new Date(drink.date).getDay();
+                const dayOfWeek = new Date(drink.date + 'T00:00:00').getDay();
                 if (!stats.days[dayOfWeek]) {
                     stats.days[dayOfWeek] = 0;
                 }
