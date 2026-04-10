@@ -42,6 +42,10 @@
     <!-- Bibliothèques JavaScript externes -->
     <!-- Chart.js pour les graphiques statistiques -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chart.js plugins pour interactivité (zoom/pan) et annotations -->
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
     <!-- QuaggaJS pour la lecture de codes-barres -->
     <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
     <!-- Dexie.js pour IndexedDB -->
@@ -135,6 +139,7 @@
                         <button class="period-btn" data-period="week">Semaine</button>
                         <button class="period-btn" data-period="month">Mois</button>
                         <button class="period-btn" data-period="year">Année</button>
+                        <button class="period-btn" data-period="all">Tout</button>
                         <button class="period-btn" data-period="custom">Personnalisé</button>
                         <button class="period-btn" data-period="ytd">YTD</button>
                         <button class="period-btn" data-period="all">All Time</button>
@@ -436,6 +441,9 @@
     <script src="js/stats-calculators/drinks.js"></script>
     <script src="js/stats-calculators/health.js"></script>
     <script src="js/stats-calculators/location.js"></script>
+    <script src="js/stats-calculators/heatmap.js"></script>
+    <script src="js/stats-calculators/timeline.js"></script>
+    <script src="js/stats-calculators/trends.js"></script>
 
     <!-- Renderers -->
     <script src="js/stats-renderers/general-renderer.js"></script>
@@ -444,6 +452,13 @@
     <script src="js/stats-renderers/drinks-renderer.js"></script>
     <script src="js/stats-renderers/health-renderer.js"></script>
     <script src="js/stats-renderers/location-renderer.js"></script>
+    <script src="js/stats-renderers/heatmap-renderer.js"></script>
+    <script src="js/stats-renderers/timeline-renderer.js"></script>
+    <script src="js/stats-renderers/trends-renderer.js"></script>
+
+    <!-- Utilitaires statistiques -->
+    <script src="js/stats-collapsible.js"></script>
+    <script src="js/stats-bac-projection.js"></script>
 
     <!-- Gestionnaire de statistiques modulaire -->
     <script src="js/statistics-new.js"></script>

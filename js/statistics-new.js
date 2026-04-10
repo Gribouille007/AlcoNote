@@ -98,6 +98,21 @@ class ModularStatisticsManager {
             console.log('Registered LocationStatsCalculator');
         }
 
+        if (typeof HeatmapStatsCalculator !== 'undefined' && typeof HeatmapStatsCalculator.calculateHeatmapStats === 'function') {
+            this.calculators.heatmap = wrap(HeatmapStatsCalculator, 'calculateHeatmapStats');
+            console.log('Registered HeatmapStatsCalculator');
+        }
+
+        if (typeof TimelineStatsCalculator !== 'undefined' && typeof TimelineStatsCalculator.calculateTimelineStats === 'function') {
+            this.calculators.timeline = wrap(TimelineStatsCalculator, 'calculateTimelineStats');
+            console.log('Registered TimelineStatsCalculator');
+        }
+
+        if (typeof TrendsStatsCalculator !== 'undefined' && typeof TrendsStatsCalculator.calculateTrendsStats === 'function') {
+            this.calculators.trends = wrap(TrendsStatsCalculator, 'calculateTrendsStats');
+            console.log('Registered TrendsStatsCalculator');
+        }
+
         console.log(`Registered ${Object.keys(this.calculators).length} calculators`);
     }
 
@@ -212,6 +227,33 @@ class ModularStatisticsManager {
             console.log('Registered LocationStatsRenderer');
         }
 
+        // Heatmap
+        if (typeof HeatmapStatsRenderer !== 'undefined' && typeof HeatmapStatsRenderer.renderHeatmapStats === 'function') {
+            this.renderers.heatmap = wrap(
+                (stats) => HeatmapStatsRenderer.renderHeatmapStats(stats),
+                (stats) => HeatmapStatsRenderer.postRenderHeatmapStats && HeatmapStatsRenderer.postRenderHeatmapStats(stats)
+            );
+            console.log('Registered HeatmapStatsRenderer');
+        }
+
+        // Timeline
+        if (typeof TimelineStatsRenderer !== 'undefined' && typeof TimelineStatsRenderer.renderTimelineStats === 'function') {
+            this.renderers.timeline = wrap(
+                (stats) => TimelineStatsRenderer.renderTimelineStats(stats),
+                (stats) => TimelineStatsRenderer.postRenderTimelineStats && TimelineStatsRenderer.postRenderTimelineStats(stats)
+            );
+            console.log('Registered TimelineStatsRenderer');
+        }
+
+        // Trends
+        if (typeof TrendsStatsRenderer !== 'undefined' && typeof TrendsStatsRenderer.renderTrendsStats === 'function') {
+            this.renderers.trends = wrap(
+                (stats) => TrendsStatsRenderer.renderTrendsStats(stats),
+                (stats) => TrendsStatsRenderer.postRenderTrendsStats && TrendsStatsRenderer.postRenderTrendsStats(stats)
+            );
+            console.log('Registered TrendsStatsRenderer');
+        }
+
         console.log(`Registered ${Object.keys(this.renderers).length} renderers`);
     }
 
@@ -273,6 +315,8 @@ class ModularStatisticsManager {
     // Navigate between periods
     navigatePeriod(direction) {
         switch (this.currentPeriod) {
+            case 'all':
+                return; // No navigation for "all time"
             case 'today':
                 this.currentDate = Utils.addDays(this.currentDate, direction);
                 break;
@@ -583,7 +627,10 @@ class ModularStatisticsManager {
             categories: {},
             drinks: {},
             health: { totalAlcoholGrams: 0, weeklyAlcohol: 0, message: 'Données indisponibles' },
-            location: { stats: null, message: 'Aucune donnée de localisation' }
+            location: { stats: null, message: 'Aucune donnée de localisation' },
+            heatmap: { weeks: [], dailyData: {}, maxAlcohol: 0, totalDays: 0, activeDays: 0 },
+            timeline: { sessions: [], totalSessions: 0 },
+            trends: { months: [], totalMonths: 0 }
         };
 
         return emptyStats[sectionId] || { message: 'Données non disponibles' };
@@ -616,7 +663,8 @@ class ModularStatisticsManager {
                     if (typeof sectionElement === 'string') {
                         const tempDiv = document.createElement('div');
                         tempDiv.innerHTML = sectionElement;
-                        sectionElement = tempDiv.firstElementChild || tempDiv;
+                        // Use the wrapper if there are multiple children, otherwise unwrap
+                        sectionElement = tempDiv.children.length === 1 ? tempDiv.firstElementChild : tempDiv;
                     }
 
                     if (sectionElement) {
@@ -633,13 +681,30 @@ class ModularStatisticsManager {
                                 dateRange: dateRangeForPostRender,
                                 containerEl: sectionElement
                             };
-                            setTimeout(() => {
-                                try {
-                                    renderer.postRender(stats, ctx);
-                                } catch (e) {
-                                    console.warn(`Post-render error for section ${section.id}:`, e);
-                                }
-                            }, 100);
+                            try {
+                                renderer.postRender(stats, ctx);
+                            } catch (e) {
+                                console.warn(`Post-render error for section ${section.id}:`, e);
+                            }
+                        } : null;
+
+                        if (typeof CollapsibleSection !== 'undefined') {
+                            const island = CollapsibleSection.wrap(
+                                sectionElement,
+                                section.id,
+                                section.title,
+                                postRenderFn // deferred postRender on first expand
+                            );
+                            container.appendChild(island);
+
+                            // If section is already expanded, run postRender now
+                            if (!CollapsibleSection.isCollapsed(section.id) && postRenderFn) {
+                                setTimeout(postRenderFn, 100);
+                            }
+                        } else {
+                            // Fallback without collapsible
+                            container.appendChild(sectionElement);
+                            if (postRenderFn) setTimeout(postRenderFn, 100);
                         }
                     }
                 } else if (stats === null) {

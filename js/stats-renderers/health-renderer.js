@@ -215,7 +215,20 @@ async function renderBACEstimation(context = {}) {
                     </div>
                 </div>
             </div>
-            
+
+            ${bacStats.relevantDrinks.length > 0 ? `
+            <div class="bac-projection-container">
+                <h4>📈 Projection d'alcoolémie</h4>
+                <div class="bac-chart-wrapper">
+                    <canvas id="bac-projection-chart"></canvas>
+                </div>
+                <div class="bac-slider-container">
+                    <input type="range" id="bac-time-slider" class="bac-time-slider" min="0" max="100" value="50">
+                    <div id="bac-slider-readout" class="bac-slider-readout"></div>
+                </div>
+            </div>
+            ` : ''}
+
             ${bacStats.relevantDrinks.length > 0 ? `
             <div class="bac-drinks-summary">
                 <h4>Consommations prises en compte (${bacStats.relevantDrinks.length})</h4>
@@ -257,6 +270,15 @@ async function renderBACEstimation(context = {}) {
                 <p><strong>${HEALTH_ICONS.warning} Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
             </div>
         `;
+
+        // Store projection data on element for postRender chart init
+        section._bacProjectionData = {
+            drinks: bacStats.relevantDrinks,
+            currentBAC: bacStats.currentBAC,
+            referenceTime: referenceTime,
+            userWeight: userWeight,
+            userGender: userGender
+        };
 
         return section;
 

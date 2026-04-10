@@ -105,6 +105,10 @@ function initializeHourlyChart(hourlyData) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
             scales: {
                 y: {
                     beginAtZero: true,
@@ -122,6 +126,16 @@ function initializeHourlyChart(hourlyData) {
                     },
                     grid: {
                         color: Utils.getChartThemeColors().gridColor
+                    }
+                }
+            },
+            plugins: {
+                zoom: {
+                    pan: { enabled: true, mode: 'x' },
+                    zoom: {
+                        wheel: { enabled: true },
+                        pinch: { enabled: true },
+                        mode: 'x'
                     }
                 }
             }

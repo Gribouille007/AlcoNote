@@ -38,6 +38,9 @@ const STATIC_FILES = [
     '/js/statistics-new.js',
     // External CDN resources
     'https://cdn.jsdelivr.net/npm/chart.js',
+    'https://cdn.jsdelivr.net/npm/hammerjs@2.0.8',
+    'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1',
+    'https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation',
     'https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js',
     'https://unpkg.com/dexie@3.2.4/dist/dexie.js'
 ];
