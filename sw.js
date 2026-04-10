@@ -1,9 +1,9 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v1.0.14';
-const STATIC_CACHE = 'alconote-static-v1.0.14';
-const DYNAMIC_CACHE = 'alconote-dynamic-v1.0.14';
+const CACHE_NAME = 'alconote-v1.0.15';
+const STATIC_CACHE = 'alconote-static-v1.0.15';
+const DYNAMIC_CACHE = 'alconote-dynamic-v1.0.15';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -20,8 +20,19 @@ const STATIC_FILES = [
     '/js/geolocation.js',
     '/js/scanner.js',
     '/js/statistics.js',
+    '/js/stats-collapsible.js',
+    '/js/stats-bac-projection.js',
+    '/js/stats-calculators/heatmap.js',
+    '/js/stats-calculators/timeline.js',
+    '/js/stats-calculators/trends.js',
+    '/js/stats-renderers/heatmap-renderer.js',
+    '/js/stats-renderers/timeline-renderer.js',
+    '/js/stats-renderers/trends-renderer.js',
     // External CDN resources
     'https://cdn.jsdelivr.net/npm/chart.js',
+    'https://cdn.jsdelivr.net/npm/hammerjs@2.0.8',
+    'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1',
+    'https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation',
     'https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js',
     'https://unpkg.com/dexie@3.2.4/dist/dexie.js'
 ];

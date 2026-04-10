@@ -1134,3 +1134,464 @@ body {
 .animate-slide-down {
     animation: slideDown var(--transition-normal) ease-out;
 }
+
+/* ============================================================
+   COLLAPSIBLE ISLANDS
+   ============================================================ */
+
+.stats-island {
+    background-color: var(--bg-primary);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--separator);
+    margin-bottom: var(--spacing-md);
+    overflow: hidden;
+    transition: box-shadow var(--transition-normal);
+}
+
+.stats-island:hover {
+    box-shadow: var(--shadow-md);
+}
+
+.stats-island-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-md) var(--spacing-lg);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background-color var(--transition-fast);
+    border-left: 3px solid var(--primary-color);
+}
+
+.stats-island-header:hover {
+    background-color: var(--bg-secondary);
+}
+
+.stats-island-title {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+    margin: 0;
+    line-height: var(--line-height-tight);
+}
+
+.stats-island-chevron {
+    width: 20px;
+    height: 20px;
+    position: relative;
+    flex-shrink: 0;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stats-island-chevron::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid var(--text-secondary);
+    border-bottom: 2px solid var(--text-secondary);
+    transform: translate(-50%, -70%) rotate(45deg);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stats-island.collapsed .stats-island-chevron::before {
+    transform: translate(-50%, -30%) rotate(-135deg);
+}
+
+.stats-island-content {
+    overflow: hidden;
+    transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stats-island.collapsed .stats-island-content {
+    max-height: 0 !important;
+}
+
+.stats-island-content > .stats-section {
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+    margin-bottom: 0;
+}
+
+/* ============================================================
+   BAC PROJECTION CHART
+   ============================================================ */
+
+.bac-projection-container {
+    margin-top: var(--spacing-lg);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--separator);
+}
+
+.bac-projection-container h4 {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-md);
+}
+
+.bac-chart-wrapper {
+    position: relative;
+    height: 250px;
+    width: 100%;
+    margin-bottom: var(--spacing-md);
+}
+
+.bac-chart-wrapper canvas {
+    background-color: transparent !important;
+}
+
+.bac-slider-container {
+    padding: 0 var(--spacing-sm);
+}
+
+.bac-time-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-secondary);
+    outline: none;
+    cursor: pointer;
+}
+
+.bac-time-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 122, 255, 0.3);
+    transition: transform 0.15s ease;
+}
+
+.bac-time-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.bac-time-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 6px rgba(0, 122, 255, 0.3);
+}
+
+.bac-slider-readout {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-secondary);
+}
+
+.slider-time {
+    color: var(--text-primary);
+    font-weight: var(--font-weight-semibold);
+}
+
+.slider-bac {
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-weight: var(--font-weight-bold);
+}
+
+.slider-bac.safe {
+    color: var(--success-color);
+    background-color: rgba(52, 199, 89, 0.15);
+}
+
+.slider-bac.warning {
+    color: var(--warning-color);
+    background-color: rgba(255, 149, 0, 0.15);
+}
+
+.slider-bac.danger {
+    color: var(--error-color);
+    background-color: rgba(255, 59, 48, 0.15);
+}
+
+/* ============================================================
+   HEATMAP CALENDAR
+   ============================================================ */
+
+.heatmap-summary {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.heatmap-stat-sep {
+    color: var(--gray-4);
+}
+
+.heatmap-scroll-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    padding-bottom: var(--spacing-sm);
+}
+
+.heatmap-grid {
+    display: flex;
+    gap: 2px;
+    min-width: fit-content;
+}
+
+.heatmap-day-labels {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-right: 4px;
+}
+
+.heatmap-day-label {
+    width: 14px;
+    height: 14px;
+    font-size: 9px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.heatmap-weeks {
+    display: flex;
+    gap: 2px;
+}
+
+.heatmap-week {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.heatmap-cell {
+    width: 14px;
+    height: 14px;
+    border-radius: 2px;
+    transition: transform 0.1s ease;
+    cursor: default;
+}
+
+.heatmap-cell:hover {
+    transform: scale(1.3);
+}
+
+.heatmap-cell.out-of-range {
+    opacity: 0.15;
+}
+
+.heatmap-cell.level-0 {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--separator);
+}
+
+.heatmap-cell.level-1 {
+    background-color: rgba(52, 199, 89, 0.35);
+}
+
+.heatmap-cell.level-2 {
+    background-color: rgba(52, 199, 89, 0.55);
+}
+
+.heatmap-cell.level-3 {
+    background-color: rgba(255, 149, 0, 0.6);
+}
+
+.heatmap-cell.level-4 {
+    background-color: rgba(255, 59, 48, 0.7);
+}
+
+.heatmap-legend {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    justify-content: flex-end;
+    margin-top: var(--spacing-sm);
+    padding-right: var(--spacing-sm);
+}
+
+.heatmap-legend .heatmap-cell {
+    cursor: default;
+}
+
+.heatmap-legend .heatmap-cell:hover {
+    transform: none;
+}
+
+.heatmap-legend-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin: 0 2px;
+}
+
+/* ============================================================
+   SESSION TIMELINE
+   ============================================================ */
+
+.timeline-summary {
+    margin-bottom: var(--spacing-md);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.timeline-scroll-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    padding-bottom: var(--spacing-sm);
+}
+
+.timeline-track {
+    display: flex;
+    gap: var(--spacing-md);
+    min-width: fit-content;
+    padding: var(--spacing-sm) 0;
+}
+
+.timeline-session {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 100px;
+    max-width: 140px;
+    flex-shrink: 0;
+}
+
+.session-bar {
+    width: 100%;
+    height: 48px;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    margin-bottom: var(--spacing-sm);
+    position: relative;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--separator);
+}
+
+.session-fill {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: calc(var(--intensity, 0.5) * 100%);
+    min-height: 4px;
+    border-radius: var(--radius-sm);
+    transition: height 0.3s ease;
+}
+
+.timeline-session.low .session-fill {
+    background: linear-gradient(to top, rgba(52, 199, 89, 0.6), rgba(52, 199, 89, 0.2));
+}
+
+.timeline-session.medium .session-fill {
+    background: linear-gradient(to top, rgba(255, 149, 0, 0.7), rgba(255, 149, 0, 0.2));
+}
+
+.timeline-session.high .session-fill {
+    background: linear-gradient(to top, rgba(255, 59, 48, 0.7), rgba(255, 59, 48, 0.2));
+}
+
+.session-info {
+    text-align: center;
+    width: 100%;
+}
+
+.session-date {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.session-time {
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
+.session-details {
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.session-alcohol {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-bold);
+    color: var(--primary-color);
+    margin-top: 2px;
+}
+
+/* ============================================================
+   MONTHLY TRENDS CHART
+   ============================================================ */
+
+.trends-chart-wrapper {
+    position: relative;
+    height: 280px;
+    width: 100%;
+}
+
+.trends-chart-wrapper canvas {
+    background-color: transparent !important;
+}
+
+/* ============================================================
+   DARK MODE REFINEMENTS FOR NEW COMPONENTS
+   ============================================================ */
+
+[data-theme="dark"] .stats-island {
+    border-color: var(--separator);
+}
+
+[data-theme="dark"] .stats-island-header:hover {
+    background-color: var(--bg-tertiary);
+}
+
+[data-theme="dark"] .heatmap-cell.level-0 {
+    background-color: var(--bg-tertiary);
+    border-color: var(--separator);
+}
+
+[data-theme="dark"] .session-bar {
+    background-color: var(--bg-tertiary);
+}
+
+[data-theme="dark"] .bac-time-slider {
+    background: var(--bg-tertiary);
+}
+
+/* Improved dark mode for all chart canvases — remove harsh filter */
+[data-theme="dark"] .chart-wrapper canvas,
+[data-theme="dark"] .bac-chart-wrapper canvas,
+[data-theme="dark"] .trends-chart-wrapper canvas {
+    filter: none;
+}
+
+/* ============================================================
+   EMPTY / ERROR MESSAGE STYLING
+   ============================================================ */
+
+.empty-message {
+    padding: var(--spacing-lg);
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}

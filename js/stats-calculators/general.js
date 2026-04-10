@@ -251,7 +251,11 @@ function getPreviousPeriodRange(currentRange, periodType) {
             previousEnd = new Date(currentEnd);
             previousEnd.setFullYear(previousEnd.getFullYear() - 1);
             break;
-            
+
+        case 'all':
+            // No comparison for "all time"
+            return null;
+
         default:
             // Pour les périodes personnalisées, calculer la durée équivalente
             const periodLength = getDaysDifference(currentRange.start, currentRange.end);

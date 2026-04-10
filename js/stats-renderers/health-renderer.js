@@ -172,7 +172,20 @@ async function renderBACEstimation(context = {}) {
                     </div>
                 </div>
             </div>
-            
+
+            ${bacStats.relevantDrinks.length > 0 ? `
+            <div class="bac-projection-container">
+                <h4>📈 Projection d'alcoolémie</h4>
+                <div class="bac-chart-wrapper">
+                    <canvas id="bac-projection-chart"></canvas>
+                </div>
+                <div class="bac-slider-container">
+                    <input type="range" id="bac-time-slider" class="bac-time-slider" min="0" max="100" value="50">
+                    <div id="bac-slider-readout" class="bac-slider-readout"></div>
+                </div>
+            </div>
+            ` : ''}
+
             ${bacStats.relevantDrinks.length > 0 ? `
             <div class="bac-drinks-summary">
                 <h4>Consommations prises en compte (${bacStats.relevantDrinks.length})</h4>
@@ -207,6 +220,15 @@ async function renderBACEstimation(context = {}) {
                 <p><strong>⚠️ Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
             </div>
         `;
+
+        // Store projection data on element for postRender chart init
+        section._bacProjectionData = {
+            drinks: bacStats.relevantDrinks,
+            currentBAC: bacStats.currentBAC,
+            referenceTime: referenceTime,
+            userWeight: userWeight,
+            userGender: userGender
+        };
 
         return section;
 
@@ -340,6 +362,34 @@ function postRenderHealthStats(stats) {
         openSettingsBtn.addEventListener('click', () => {
             openProfileSettings();
         });
+    }
+
+    // Initialize BAC projection chart
+    initBACProjectionChart();
+}
+
+/**
+ * Initialize the BAC projection chart from stored data
+ */
+function initBACProjectionChart() {
+    if (typeof BACProjectionCalculator === 'undefined') return;
+
+    const bacSection = document.getElementById('bac-estimation-section');
+    if (!bacSection || !bacSection._bacProjectionData) return;
+
+    const { drinks, currentBAC, referenceTime, userWeight, userGender } = bacSection._bacProjectionData;
+    if (!drinks || !drinks.length || !currentBAC) return;
+
+    const { fromTime, toTime } = BACProjectionCalculator.calculateTimeRange(drinks, currentBAC, referenceTime);
+    const dataPoints = BACProjectionCalculator.generateBACCurve(drinks, userWeight, userGender, fromTime, toTime, 5);
+
+    if (!dataPoints.length) return;
+
+    const chartStorage = window.modularStatsManager ? window.modularStatsManager.charts : {};
+    const chart = BACProjectionCalculator.renderChart('bac-projection-chart', dataPoints, referenceTime, chartStorage);
+
+    if (chart) {
+        BACProjectionCalculator.initSlider('bac-time-slider', 'bac-slider-readout', dataPoints, referenceTime, chart);
     }
 }
 

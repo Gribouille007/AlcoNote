@@ -114,6 +114,12 @@ class Utils {
                 end.setMonth(11, 31);
                 break;
 
+            case 'all':
+                // All time: from a very early date to today
+                start.setFullYear(2000, 0, 1);
+                // end is already set to today
+                break;
+
             default:
                 // Default to today
                 break;
