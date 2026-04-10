@@ -33,6 +33,9 @@ function normalizeDaysForPeriod(periodType, startDate, endDate) {
       const yearDays = isLeapYear(start.getFullYear()) ? 366 : 365;
       return Math.min(days, yearDays);
     }
+    case "ytd":
+    case "all":
+    case "school":
     default:
       return days;
   }

@@ -12,6 +12,7 @@ class GeolocationManager {
         };
         this.consent = this.getStoredConsent(); // 'granted' | 'denied' | null
         this.lastKnownLocation = this.getStoredLocation();
+        this._consentPromise = null; // Deduplicates concurrent ensureConsent() calls
     }
 
     // Check if geolocation is supported and permission is granted
@@ -145,14 +146,29 @@ class GeolocationManager {
     async ensureConsent() {
         if (!this.isSupported) return false;
 
-        // CRITICAL FIX: Check stored consent FIRST before doing anything else
-        // If user has already made a decision, respect it without asking again
-        if (this.consent === 'granted') {
-            return true;
+        // Fast path: if user already made a decision (stored in localStorage),
+        // return immediately without querying browser APIs.
+        // This prevents repeated permission prompts on mobile PWAs.
+        if (this.consent === 'granted') return true;
+        if (this.consent === 'denied') return false;
+
+        // Deduplicate concurrent calls: if a consent flow is already in progress,
+        // wait for it instead of showing multiple prompts.
+        if (this._consentPromise) return this._consentPromise;
+
+        this._consentPromise = this._doEnsureConsent();
+        try {
+            return await this._consentPromise;
+        } finally {
+            this._consentPromise = null;
         }
-        if (this.consent === 'denied') {
-            return false;
-        }
+    }
+
+    // Internal: actual consent logic, called only once at a time
+    async _doEnsureConsent() {
+        // Re-check after awaiting (another call may have resolved it)
+        if (this.consent === 'granted') return true;
+        if (this.consent === 'denied') return false;
 
         // Check browser permission state
         let permissionState = 'unknown';
@@ -164,7 +180,7 @@ class GeolocationManager {
         }
 
         if (permissionState === 'granted') {
-            if (this.consent !== 'granted') this.setStoredConsent('granted');
+            this.setStoredConsent('granted');
             return true;
         }
         if (permissionState === 'denied') {
@@ -443,15 +459,6 @@ class GeolocationManager {
             if (!consent) {
                 return null;
             }
-            const support = await this.checkSupport();
-
-            if (!support.supported) {
-                return null;
-            }
-
-            if (support.permission === 'denied') {
-                return null;
-            }
 
             // Use cached position if recent (less than 5 minutes old)
             if (this.currentPosition &&
@@ -517,10 +524,6 @@ class GeolocationManager {
         try {
             const consent = await this.ensureConsent();
             if (!consent) {
-                return null;
-            }
-            const support = await this.checkSupport();
-            if (!support.supported || support.permission === 'denied') {
                 return null;
             }
 

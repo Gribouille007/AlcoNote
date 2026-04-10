@@ -22,13 +22,36 @@
     }
     
     .main-content {
-        padding-bottom: 90px;
+        padding-bottom: var(--spacing-sm);
+    }
+
+    #categories-tab.active {
+        padding-bottom: 80px;
     }
     
     .tab-content {
         padding: var(--spacing-sm);
     }
     
+    /* History toolbar stays side by side on small screens */
+    .history-toolbar {
+        flex-direction: row;
+        gap: var(--spacing-xs);
+    }
+
+    .history-search-wrapper {
+        flex: 1 1 0%;
+        max-width: calc(50% - 4px);
+    }
+
+    .history-filter {
+        flex: 1 1 0%;
+        max-width: calc(50% - 4px);
+        min-width: 0;
+        font-size: var(--font-size-sm);
+        padding: 8px 10px;
+    }
+
     /* FAB adjustments for small screens */
     .fab-main {
         width: 48px;
@@ -130,9 +153,7 @@
     
     .period-btn {
         flex-shrink: 0;
-        min-width: 64px;
-        padding: 8px 10px;
-        font-size: 12px;
+        min-width: 65px;
     }
     
     /* Settings menu full width on small screens */
@@ -189,7 +210,7 @@
     }
     
     .main-content {
-        padding-bottom: 120px;
+        padding-bottom: var(--spacing-md);
     }
     
     .tab-content {
@@ -273,7 +294,7 @@
     }
     
     .main-content {
-        padding-bottom: 140px;
+        padding-bottom: var(--spacing-md);
     }
     
     .tab-content {
@@ -417,7 +438,7 @@
     }
     
     .main-content {
-        padding-bottom: 80px;
+        padding-bottom: var(--spacing-sm);
     }
     
     .tab-content {
@@ -561,7 +582,9 @@
     .category-item:hover,
     .drink-group-header:hover,
     .stat-card:hover,
-    .fab-option:hover {
+    .fab-option:hover,
+    .category-drink-item:hover,
+    .drink-family:hover {
         transform: none;
         box-shadow: var(--shadow-sm);
     }
@@ -596,27 +619,66 @@
     }
 }
 
-/* Container Queries Support (Future-proofing) */
+/* Container Queries Support */
 @supports (container-type: inline-size) {
     .statistics-container {
         container-type: inline-size;
+        container-name: stats;
     }
-    
-    @container (min-width: 600px) {
+
+    .chart-container {
+        container-type: inline-size;
+        container-name: chart;
+    }
+
+    .stats-section {
+        container-type: inline-size;
+        container-name: section;
+    }
+
+    /* Stats grid adapts to container width */
+    @container stats (min-width: 400px) {
+        .stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @container stats (min-width: 600px) {
         .stats-grid {
             grid-template-columns: repeat(4, 1fr);
         }
+
+        .category-stats {
+            grid-template-columns: repeat(2, 1fr);
+        }
     }
-    
-    @container (min-width: 900px) {
+
+    @container stats (min-width: 900px) {
         .stats-grid {
             grid-template-columns: repeat(6, 1fr);
         }
-        
+
         .charts-row {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: var(--spacing-lg);
+        }
+
+        .category-stats {
+            grid-template-columns: repeat(3, 1fr);
+        }
+    }
+
+    /* Chart containers adapt to their available space */
+    @container chart (max-width: 350px) {
+        .chart-wrapper {
+            height: 200px;
+        }
+    }
+
+    @container chart (min-width: 500px) {
+        .chart-wrapper {
+            height: 350px;
         }
     }
 }
@@ -628,7 +690,17 @@
         padding-right: max(var(--spacing-md), env(safe-area-inset-right));
         padding-top: max(var(--spacing-md), env(safe-area-inset-top));
     }
-    
+
+    .tab-navigation {
+        padding-left: max(var(--spacing-md), env(safe-area-inset-left));
+        padding-right: max(var(--spacing-md), env(safe-area-inset-right));
+    }
+
+    .tab-content {
+        padding-left: max(var(--spacing-md), env(safe-area-inset-left));
+        padding-right: max(var(--spacing-md), env(safe-area-inset-right));
+    }
+
     .fab-container {
         bottom: max(var(--spacing-lg), env(safe-area-inset-bottom));
         left: 50%;
@@ -637,12 +709,45 @@
         display: flex;
         justify-content: center;
     }
-    
+
     .modal {
         padding-bottom: max(var(--spacing-md), env(safe-area-inset-bottom));
     }
-    
+
     .settings-content {
         padding-left: max(0px, env(safe-area-inset-left));
+        padding-bottom: max(var(--spacing-md), env(safe-area-inset-bottom));
+    }
+
+    .history-pagination {
+        padding-bottom: max(var(--spacing-md), env(safe-area-inset-bottom));
+    }
+}
+
+/* Prevent any overflow on all screen sizes */
+.tab-content,
+.categories-container,
+.history-container,
+.statistics-container {
+    overflow-x: hidden;
+    max-width: 100%;
+}
+
+/* Ensure images and media don't overflow */
+img, video, canvas, svg {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Prevent text inputs from zooming on iOS (font-size < 16px triggers zoom) */
+@media screen and (max-width: 768px) {
+    input[type="text"],
+    input[type="search"],
+    input[type="number"],
+    input[type="date"],
+    input[type="time"],
+    select,
+    textarea {
+        font-size: 16px !important;
     }
 }

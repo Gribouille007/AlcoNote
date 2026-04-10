@@ -275,7 +275,8 @@ class ModularStatisticsManager {
 
                 // Show/hide period navigation
                 const periodNavigation = document.getElementById('period-navigation');
-                if (this.currentPeriod !== 'custom' && this.currentPeriod !== 'all') {
+                const noNavPeriods = ['custom', 'ytd', 'all', 'school'];
+                if (!noNavPeriods.includes(this.currentPeriod)) {
                     periodNavigation.classList.add('active');
                     this.updateDateDisplay();
                 } else {
@@ -322,16 +323,18 @@ class ModularStatisticsManager {
             case 'week':
                 this.currentDate = Utils.addDays(this.currentDate, direction * 7);
                 break;
-            case 'month':
-                const newMonth = new Date(this.currentDate);
-                newMonth.setMonth(newMonth.getMonth() + direction);
+            case 'month': {
+                // Use the 1st of the month to avoid day-overflow (e.g. Jan 31 → March)
+                const newMonth = new Date(this.currentDate.getFullYear(), this.currentDate.getMonth() + direction, 1);
                 this.currentDate = newMonth;
                 break;
-            case 'year':
+            }
+            case 'year': {
                 const newYear = new Date(this.currentDate);
                 newYear.setFullYear(newYear.getFullYear() + direction);
                 this.currentDate = newYear;
                 break;
+            }
         }
         this.updateDateDisplay();
         this.loadStatistics();
@@ -343,10 +346,14 @@ class ModularStatisticsManager {
         if (dateElement) {
             let displayText = '';
             switch (this.currentPeriod) {
-                case 'today':
-                    displayText = Utils.formatDate(this.currentDate.toISOString().split('T')[0]);
+                case 'today': {
+                    const y = this.currentDate.getFullYear();
+                    const m = String(this.currentDate.getMonth() + 1).padStart(2, '0');
+                    const d = String(this.currentDate.getDate()).padStart(2, '0');
+                    displayText = Utils.formatDate(`${y}-${m}-${d}`);
                     break;
-                case 'week':
+                }
+                case 'week': {
                     const weekStart = new Date(this.currentDate);
                     const dayOfWeek = weekStart.getDay();
                     const diff = weekStart.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
@@ -355,15 +362,25 @@ class ModularStatisticsManager {
                     weekEnd.setDate(weekStart.getDate() + 6);
                     displayText = `${weekStart.getDate()}/${weekStart.getMonth() + 1} - ${weekEnd.getDate()}/${weekEnd.getMonth() + 1}`;
                     break;
+                }
                 case 'month':
                     displayText = this.currentDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
                     break;
                 case 'year':
                     displayText = this.currentDate.getFullYear().toString();
                     break;
-                case 'all':
-                    displayText = 'Depuis le début';
+                case 'ytd':
+                    displayText = 'Depuis le 1er janvier';
                     break;
+                case 'all':
+                    displayText = 'Toutes les données';
+                    break;
+                case 'school': {
+                    const now = this.currentDate;
+                    const startYear = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+                    displayText = `Année scolaire ${startYear}-${startYear + 1}`;
+                    break;
+                }
                 default:
                     displayText = 'Période personnalisée';
             }
@@ -463,14 +480,30 @@ class ModularStatisticsManager {
     }
 
     // Get date range based on current period
-    getDateRange() {
+    async getDateRange() {
         if (this.currentPeriod === 'custom') {
             const startDate = document.getElementById('start-date')?.value || Utils.getCurrentDate();
             const endDate = document.getElementById('end-date')?.value || Utils.getCurrentDate();
             return { start: startDate, end: endDate };
-        } else {
-            return Utils.getDateRangeFixed(this.currentPeriod, this.currentDate);
         }
+
+        const range = Utils.getDateRangeFixed(this.currentPeriod, this.currentDate);
+
+        if (this.currentPeriod === 'all') {
+            // Override start with earliest drink date
+            try {
+                const allDrinks = await dbManager.getAllDrinks();
+                if (allDrinks.length > 0) {
+                    const sorted = allDrinks.sort((a, b) => a.date.localeCompare(b.date));
+                    range.start = sorted[sorted.length - 1].date; // getAllDrinks returns reverse order
+                }
+            } catch (e) {
+                console.warn('Could not fetch earliest drink date:', e);
+            }
+            range.end = Utils.getCurrentDate();
+        }
+
+        return range;
     }
 
     // Main method to load and display statistics
@@ -488,13 +521,24 @@ class ModularStatisticsManager {
             return;
         }
 
-        const loading = Utils.showLoading(container, 'Calcul des statistiques...');
+        // Show skeleton loading placeholders
+        container.innerHTML = `
+            <div class="skeleton-grid">
+                <div class="skeleton skeleton-card"></div>
+                <div class="skeleton skeleton-card"></div>
+                <div class="skeleton skeleton-card"></div>
+            </div>
+            <div class="skeleton skeleton-chart"></div>
+            <div style="height:var(--spacing-lg)"></div>
+            <div class="skeleton skeleton-text"></div>
+            <div class="skeleton skeleton-text short"></div>
+        `;
 
         try {
             // Clean up previous charts and maps
             this.cleanup();
 
-            const dateRange = this.getDateRange();
+            const dateRange = await this.getDateRange();
             const drinks = await dbManager.getDrinksByDateRange(dateRange.start, dateRange.end);
 
             // Clear existing content
@@ -535,9 +579,8 @@ class ModularStatisticsManager {
             this.fallbackToOldSystem();
 
         } finally {
-            // Release loading lock and hide loader
+            // Release loading lock
             this.loading = false;
-            Utils.hideLoading(loading);
         }
     }
 
@@ -612,7 +655,7 @@ class ModularStatisticsManager {
                         maps: this.maps,
                         section: section,
                         currentPeriod: this.currentPeriod,
-                        dateRange: this.getDateRange(),
+                        dateRange: await this.getDateRange(),
                         drinks: drinks
                     });
 
@@ -625,14 +668,17 @@ class ModularStatisticsManager {
                     }
 
                     if (sectionElement) {
-                        // Wrap in collapsible island
-                        const postRenderFn = typeof renderer.postRender === 'function' ? () => {
+                        container.appendChild(sectionElement);
+
+                        // Generic post-render hook
+                        if (typeof renderer.postRender === 'function') {
+                            const dateRangeForPostRender = await this.getDateRange();
                             const ctx = {
                                 charts: this.charts,
                                 maps: this.maps,
                                 section: section,
                                 currentPeriod: this.currentPeriod,
-                                dateRange: this.getDateRange(),
+                                dateRange: dateRangeForPostRender,
                                 containerEl: sectionElement
                             };
                             try {
@@ -716,7 +762,7 @@ class ModularStatisticsManager {
     showEmptyState(container) {
         container.innerHTML = `
             <div class="empty-state">
-                <div class="empty-state-icon">📊</div>
+                <div class="empty-state-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
                 <h3 class="empty-state-title">Aucune donnée</h3>
                 <p class="empty-state-description">
                     Aucune boisson enregistrée pour cette période.
@@ -791,7 +837,7 @@ class ModularStatisticsManager {
         if (container) {
             container.innerHTML = `
                 <div class="empty-state error-state">
-                    <div class="empty-state-icon">❌</div>
+                    <div class="empty-state-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
                     <h3 class="empty-state-title">Erreur système</h3>
                     <p class="empty-state-description">
                         Impossible de charger les statistiques. 

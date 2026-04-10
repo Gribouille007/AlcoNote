@@ -44,7 +44,7 @@ async function calculateHealthStats(drinks, dateRange, options = {}) {
             dailyAlcohol[drink.date] += alcoholGrams;
 
             // Par semaine (numéro de semaine)
-            const weekNumber = getWeekNumber(new Date(drink.date));
+            const weekNumber = getWeekNumber(new Date(drink.date + 'T00:00:00'));
             if (!weeklyAlcoholByWeek[weekNumber]) {
                 weeklyAlcoholByWeek[weekNumber] = 0;
             }
@@ -87,10 +87,13 @@ async function calculateHealthStats(drinks, dateRange, options = {}) {
     const bacEstimation = await calculateCurrentBAC(userWeight, userGender, drinks, lastDrinkDate);
 
     // Analyse des risques
-    const riskAnalysis = analyzeHealthRisks(weeklyAlcoholAvg, dailyAlcohol, userGender);
+    const riskAnalysis = analyzeHealthRisks(weeklyAlcoholAvg, dailyAlcohol, userGender, daysDiff);
 
     // Calcul des jours de dépassement des seuils
     const exceedanceDays = calculateExceedanceDays(dailyAlcohol, userGender);
+
+    // BAC moyen par session
+    const avgSessionBAC = await calculateAveragePeakBACPerSession(drinks, userWeight, userGender);
 
     return {
         totalAlcoholGrams: Math.round(totalAlcoholGrams * 10) / 10,
@@ -98,6 +101,7 @@ async function calculateHealthStats(drinks, dateRange, options = {}) {
         whoRecommendation,
         whoComparison: whoComparison ? Math.round(whoComparison) : null,
         bacEstimation,
+        avgSessionBAC,
         riskAnalysis,
         exceedanceDays,
         dailyAlcohol,
@@ -168,7 +172,7 @@ async function calculateCurrentBAC(userWeight, userGender, drinks, referenceDate
  * @param {string} userGender - Sexe de l'utilisateur
  * @returns {Object} Analyse des risques
  */
-function analyzeHealthRisks(weeklyAlcohol, dailyAlcohol, userGender) {
+function analyzeHealthRisks(weeklyAlcohol, dailyAlcohol, userGender, totalDaysInPeriod = 7) {
     const risks = {
         level: 'low',
         score: 0,
@@ -220,10 +224,10 @@ function analyzeHealthRisks(weeklyAlcohol, dailyAlcohol, userGender) {
         }
     }
 
-    // Évaluation de la fréquence
+    // Évaluation de la fréquence (jours avec alcool / jours totaux de la période)
     const drinkingDays = Object.keys(dailyAlcohol).length;
-    const totalDays = Object.keys(dailyAlcohol).length > 0 ? Object.keys(dailyAlcohol).length : 7; // Adapter à la période réelle
-    const frequency = drinkingDays / totalDays;
+    const totalDays = Math.max(totalDaysInPeriod, drinkingDays); // at least as many days as days with drinks
+    const frequency = totalDays > 0 ? drinkingDays / totalDays : 0;
 
     if (frequency > 0.8) {
         risks.score += 20;
@@ -385,6 +389,46 @@ function generateHealthAdvice(healthStats) {
     }
 
     return advice;
+}
+
+/**
+ * Calcule le BAC moyen par session sur la période
+ * @param {Array} drinks - Liste des boissons
+ * @param {number} userWeight - Poids en kg
+ * @param {string} userGender - 'male' ou 'female'
+ * @returns {Object|null} { avgPeakBAC, maxPeakBAC, minPeakBAC, sessionCount }
+ */
+async function calculateAveragePeakBACPerSession(drinks, userWeight, userGender) {
+    if (!userWeight || !userGender || !drinks || drinks.length === 0) return null;
+
+    // calculateSessions est défini globalement dans general.js (chargé avant)
+    if (typeof calculateSessions !== 'function') return null;
+
+    const sessions = calculateSessions(drinks);
+    if (sessions.length === 0) return null;
+
+    const peakBACs = [];
+
+    for (const session of sessions) {
+        if (session.drinks.length === 0) continue;
+        // Calculer le BAC au moment de la dernière boisson de la session
+        const bacResult = await calculateCurrentBAC(userWeight, userGender, session.drinks, session.endTime);
+        if (bacResult && bacResult.currentBAC > 0) {
+            peakBACs.push(bacResult.currentBAC);
+        }
+    }
+
+    if (peakBACs.length === 0) return null;
+
+    const avg = peakBACs.reduce((s, v) => s + v, 0) / peakBACs.length;
+
+    return {
+        avgPeakBAC: Math.round(avg),
+        maxPeakBAC: Math.round(Math.max(...peakBACs)),
+        minPeakBAC: Math.round(Math.min(...peakBACs)),
+        sessionCount: sessions.length,
+        sessionsWithBAC: peakBACs.length
+    };
 }
 
 // Export pour utilisation dans d'autres modules
