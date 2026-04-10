@@ -1,8 +1,8 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v2.1.0';
-const STATIC_CACHE = 'alconote-static-v2.1.0';
+const CACHE_NAME = 'alconote-v2.2.0';
+const STATIC_CACHE = 'alconote-static-v2.2.0';
 const DYNAMIC_CACHE = 'alconote-dynamic-v1.2.0';
 
 // Detect local development environment to avoid stale caches on localhost
@@ -10,6 +10,8 @@ const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname
 
 // Files to cache for offline functionality
 const STATIC_FILES = [
+    '/',
+    '/index.html',
     '/manifest.json',
     '/css/main.css',
     '/css/components.css',
@@ -23,18 +25,26 @@ const STATIC_FILES = [
     '/js/scanner/camera-scanner.js',
     '/js/scanner/barcode-handler.js',
     '/js/stats-config.js',
+    '/js/stats-collapsible.js',
+    '/js/stats-bac-projection.js',
     '/js/stats-calculators/general.js',
     '/js/stats-calculators/temporal.js',
     '/js/stats-calculators/categories.js',
     '/js/stats-calculators/drinks.js',
     '/js/stats-calculators/health.js',
     '/js/stats-calculators/location.js',
+    '/js/stats-calculators/heatmap.js',
+    '/js/stats-calculators/timeline.js',
+    '/js/stats-calculators/trends.js',
     '/js/stats-renderers/general-renderer.js',
     '/js/stats-renderers/temporal-renderer.js',
     '/js/stats-renderers/category-renderer.js',
     '/js/stats-renderers/drinks-renderer.js',
     '/js/stats-renderers/health-renderer.js',
     '/js/stats-renderers/location-renderer.js',
+    '/js/stats-renderers/heatmap-renderer.js',
+    '/js/stats-renderers/timeline-renderer.js',
+    '/js/stats-renderers/trends-renderer.js',
     '/js/statistics-new.js',
     // External CDN resources
     'https://cdn.jsdelivr.net/npm/chart.js',
