@@ -668,9 +668,8 @@ class ModularStatisticsManager {
                     }
 
                     if (sectionElement) {
-                        container.appendChild(sectionElement);
-
-                        // Generic post-render hook
+                        // Build postRenderFn closure (or null)
+                        let postRenderFn = null;
                         if (typeof renderer.postRender === 'function') {
                             const dateRangeForPostRender = await this.getDateRange();
                             const ctx = {
@@ -681,12 +680,14 @@ class ModularStatisticsManager {
                                 dateRange: dateRangeForPostRender,
                                 containerEl: sectionElement
                             };
-                            try {
-                                renderer.postRender(stats, ctx);
-                            } catch (e) {
-                                console.warn(`Post-render error for section ${section.id}:`, e);
-                            }
-                        } : null;
+                            postRenderFn = () => {
+                                try {
+                                    renderer.postRender(stats, ctx);
+                                } catch (e) {
+                                    console.warn(`Post-render error for section ${section.id}:`, e);
+                                }
+                            };
+                        }
 
                         if (typeof CollapsibleSection !== 'undefined') {
                             const island = CollapsibleSection.wrap(
