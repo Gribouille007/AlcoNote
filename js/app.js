@@ -631,10 +631,10 @@ class AlcoNoteApp {
                     await this.loadHistory();
                     break;
                 case 'statistics':
-                    if (!modularStatsManager.isInitialized) {
-                        modularStatsManager.init();
+                    if (!window.modularStatsManager || !window.modularStatsManager.isInitialized) {
+                        window.modularStatsManager.init();
                     } else {
-                        modularStatsManager.loadStatistics();
+                        window.modularStatsManager.loadStatistics();
                     }
                     break;
             }
