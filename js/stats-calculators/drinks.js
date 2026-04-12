@@ -132,8 +132,8 @@ async function calculateDrinkStats(drinks, dateRange, options = {}) {
 function calculateRegularity(dates) {
     if (dates.length < 2) return 0;
     
-    // Tri des dates
-    const sortedDates = dates.sort();
+    // Tri des dates (copie pour ne pas muter l'original)
+    const sortedDates = [...dates].sort();
     
     // Calcul des intervalles en jours
     const intervals = [];
@@ -299,19 +299,7 @@ function generateDrinkRecommendations(drinkStats) {
     return recommendations;
 }
 
-/**
- * Calcule la différence en jours entre deux dates (inclut début et fin)
- * @param {string} startDate - Date de début
- * @param {string} endDate - Date de fin
- * @returns {number} Nombre de jours
- */
-function getDaysDifference(startDate, endDate) {
-    const start = new Date(startDate + 'T00:00:00');
-    const end = new Date(endDate + 'T00:00:00');
-    const diffTime = end - start;
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    return Math.max(1, diffDays);
-}
+// getDaysDifference is defined in general.js (loaded before this file)
 
 // Export pour utilisation dans d'autres modules
 if (typeof module !== 'undefined' && module.exports) {

@@ -495,7 +495,7 @@ class ModularStatisticsManager {
                 const allDrinks = await dbManager.getAllDrinks();
                 if (allDrinks.length > 0) {
                     const sorted = allDrinks.sort((a, b) => a.date.localeCompare(b.date));
-                    range.start = sorted[sorted.length - 1].date; // getAllDrinks returns reverse order
+                    range.start = sorted[0].date; // earliest date (ascending sort)
                 }
             } catch (e) {
                 console.warn('Could not fetch earliest drink date:', e);
@@ -518,6 +518,7 @@ class ModularStatisticsManager {
         const container = document.getElementById('statistics-content');
         if (!container) {
             console.error('Statistics container not found');
+            this.loading = false;
             return;
         }
 
