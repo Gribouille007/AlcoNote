@@ -83,6 +83,20 @@ class Utils {
      * @returns {object} {start: 'YYYY-MM-DD', end: 'YYYY-MM-DD'}
      */
 
+    /**
+     * Calcule la différence en jours entre deux dates (inclut début et fin)
+     * @param {string} startDate - Date de début YYYY-MM-DD
+     * @param {string} endDate - Date de fin YYYY-MM-DD
+     * @returns {number} Nombre de jours (minimum 1)
+     */
+    static getDaysDifference(startDate, endDate) {
+        const start = new Date(startDate + 'T00:00:00');
+        const end = new Date(endDate + 'T00:00:00');
+        const diffTime = end - start;
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        return Math.max(1, diffDays);
+    }
+
     // Fixed version that ensures proper date ranges without overlapping
     static getDateRangeFixed(period, currentDate = new Date()) {
         // Improved date range calculation

@@ -218,7 +218,7 @@ async function renderBACEstimation(context = {}) {
 
             ${bacStats.relevantDrinks.length > 0 ? `
             <div class="bac-projection-container">
-                <h4>📈 Projection d'alcoolémie</h4>
+                <h4>Projection d'alcoolémie</h4>
                 <div class="bac-chart-wrapper">
                     <canvas id="bac-projection-chart"></canvas>
                 </div>
@@ -256,13 +256,6 @@ async function renderBACEstimation(context = {}) {
                 </div>
             </div>
             ` : ''}
-            
-            <div class="bac-chart-section" id="bac-chart-section">
-                <h4>Projection d'alcoolémie</h4>
-                <div class="bac-chart-container">
-                    <canvas id="bac-projection-chart"></canvas>
-                </div>
-            </div>
 
             ${renderBACRecordsSection(bacRecords, highestRecord)}
 

@@ -73,48 +73,8 @@ async function calculateGeneralStats(drinks, dateRange, options = {}) {
     };
 }
 
-/**
- * Calcule les sessions de consommation
- * @param {Array} drinks - Liste des boissons
- * @returns {Array} Sessions de consommation
- */
-function calculateSessions(drinks) {
-    if (drinks.length === 0) return [];
-    
-    const sessions = [];
-    let currentSession = null;
-    const sessionGapHours = 4; // 4 heures d'écart définit une nouvelle session
-    
-    // Tri des boissons par date et heure
-    const sortedDrinks = [...drinks].sort((a, b) => {
-        const dateTimeA = new Date(`${a.date}T${a.time}`);
-        const dateTimeB = new Date(`${b.date}T${b.time}`);
-        return dateTimeA - dateTimeB;
-    });
-    
-    sortedDrinks.forEach(drink => {
-        const drinkDateTime = new Date(`${drink.date}T${drink.time}`);
-        
-        if (!currentSession || 
-            (drinkDateTime - currentSession.endTime) > (sessionGapHours * 60 * 60 * 1000)) {
-            // Nouvelle session
-            currentSession = {
-                startTime: drinkDateTime,
-                endTime: drinkDateTime,
-                drinks: [drink],
-                duration: 0
-            };
-            sessions.push(currentSession);
-        } else {
-            // Ajout à la session courante
-            currentSession.drinks.push(drink);
-            currentSession.endTime = drinkDateTime;
-            currentSession.duration = (currentSession.endTime - currentSession.startTime) / (1000 * 60 * 60); // heures
-        }
-    });
-    
-    return sessions.reverse(); // Plus récentes en premier
-}
+// calculateSessions is defined in temporal.js (loaded after this file)
+// It includes totalVolume/totalAlcohol per session, used by health.js too.
 
 /**
  * Calcule la différence en jours entre deux dates (inclut début et fin)
@@ -314,8 +274,9 @@ async function calculateBasicStats(drinks, dateRange) {
         ? normalizeDaysForPeriod("custom", dateRange.start, dateRange.end)
         : getDaysDifference(dateRange.start, dateRange.end);
     const avgPerDay = daysDiff > 0 ? drinks.length / daysDiff : 0;
-    const avgPerWeek = avgPerDay * 7;
-    
+    // Match the same logic as calculateGeneralStats to keep comparison consistent
+    const avgPerWeek = daysDiff >= 7 ? avgPerDay * 7 : drinks.length;
+
     // Calcul des jours sobres pour cette période spécifique
     const drinksPerDay = {};
     drinks.forEach(drink => {
