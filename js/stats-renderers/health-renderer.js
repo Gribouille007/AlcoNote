@@ -444,6 +444,29 @@ function postRenderHealthStats(stats) {
 
     // Attach swipe-to-delete on BAC record cards
     attachRecordSwipeHandlers();
+
+    // Initialize BAC projection chart and slider
+    // _bacProjectionData is stored on the section element during renderBACEstimation
+    const bacSection = document.getElementById('bac-estimation-section');
+    if (bacSection && bacSection._bacProjectionData && typeof BACProjectionCalculator !== 'undefined') {
+        const { drinks, currentBAC, referenceTime, userWeight, userGender } = bacSection._bacProjectionData;
+
+        if (drinks.length > 0) {
+            try {
+                const { fromTime, toTime } = BACProjectionCalculator.calculateTimeRange(drinks, currentBAC, referenceTime);
+                const dataPoints = BACProjectionCalculator.generateBACCurve(drinks, userWeight, userGender, fromTime, toTime);
+
+                if (dataPoints.length > 0) {
+                    const chart = BACProjectionCalculator.renderChart('bac-projection-chart', dataPoints, referenceTime, {});
+                    if (chart) {
+                        BACProjectionCalculator.initSlider('bac-time-slider', 'bac-slider-readout', dataPoints, referenceTime, chart);
+                    }
+                }
+            } catch (e) {
+                console.error('Error initializing BAC projection chart:', e);
+            }
+        }
+    }
 }
 
 /**
