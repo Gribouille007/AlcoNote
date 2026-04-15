@@ -221,6 +221,7 @@ async function renderBACEstimation(context = {}) {
                 <h4>Projection d'alcoolémie</h4>
                 <div class="bac-chart-wrapper">
                     <canvas id="bac-projection-chart"></canvas>
+                    <button class="bac-zoom-reset" id="bac-zoom-reset" title="Réinitialiser le zoom">↺</button>
                 </div>
                 <div class="bac-slider-container">
                     <input type="range" id="bac-time-slider" class="bac-time-slider" min="0" max="100" value="50">
@@ -453,7 +454,7 @@ function postRenderHealthStats(stats) {
 
         if (drinks.length > 0) {
             try {
-                const { fromTime, toTime } = BACProjectionCalculator.calculateTimeRange(drinks, currentBAC, referenceTime);
+                const { fromTime, toTime } = BACProjectionCalculator.calculateTimeRange(drinks, userWeight, userGender, referenceTime);
                 const dataPoints = BACProjectionCalculator.generateBACCurve(drinks, userWeight, userGender, fromTime, toTime);
 
                 if (dataPoints.length > 0) {
