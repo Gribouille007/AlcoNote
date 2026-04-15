@@ -229,7 +229,6 @@ const BACProjectionCalculator = (() => {
                             },
                             nowLine: {
                                 type: 'line',
-                                xScaleID: 'x',
                                 xMin: labels[nowIndex],
                                 xMax: labels[nowIndex],
                                 borderColor: 'rgba(0, 122, 255, 0.7)',
@@ -315,7 +314,6 @@ const BACProjectionCalculator = (() => {
                 const label = dataPoints[idx].time.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
                 chart.options.plugins.annotation.annotations.sliderLine = {
                     type: 'line',
-                    xScaleID: 'x',
                     xMin: label,
                     xMax: label,
                     borderColor: 'rgba(88, 86, 214, 0.7)',
