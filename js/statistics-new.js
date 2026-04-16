@@ -113,6 +113,11 @@ class ModularStatisticsManager {
             console.log('Registered TrendsStatsCalculator');
         }
 
+        if (typeof AdvancedStatsCalculator !== 'undefined' && typeof AdvancedStatsCalculator.calculateAdvancedStats === 'function') {
+            this.calculators.advanced = wrap(AdvancedStatsCalculator, 'calculateAdvancedStats');
+            console.log('Registered AdvancedStatsCalculator');
+        }
+
         console.log(`Registered ${Object.keys(this.calculators).length} calculators`);
     }
 
@@ -254,6 +259,15 @@ class ModularStatisticsManager {
             console.log('Registered TrendsStatsRenderer');
         }
 
+        // Advanced analytics (rolling avg, polar, session distribution, comparison)
+        if (typeof AdvancedStatsRenderer !== 'undefined' && typeof AdvancedStatsRenderer.renderAdvancedStats === 'function') {
+            this.renderers.advanced = wrap(
+                (stats) => AdvancedStatsRenderer.renderAdvancedStats(stats),
+                (stats) => AdvancedStatsRenderer.postRenderAdvancedStats && AdvancedStatsRenderer.postRenderAdvancedStats(stats)
+            );
+            console.log('Registered AdvancedStatsRenderer');
+        }
+
         console.log(`Registered ${Object.keys(this.renderers).length} renderers`);
     }
 
@@ -275,7 +289,7 @@ class ModularStatisticsManager {
 
                 // Show/hide period navigation
                 const periodNavigation = document.getElementById('period-navigation');
-                const noNavPeriods = ['custom', 'ytd', 'all', 'school'];
+                const noNavPeriods = ['custom', 'all', 'school'];
                 if (!noNavPeriods.includes(this.currentPeriod)) {
                     periodNavigation.classList.add('active');
                     this.updateDateDisplay();
@@ -368,9 +382,6 @@ class ModularStatisticsManager {
                     break;
                 case 'year':
                     displayText = this.currentDate.getFullYear().toString();
-                    break;
-                case 'ytd':
-                    displayText = 'Depuis le 1er janvier';
                     break;
                 case 'all':
                     displayText = 'Toutes les données';
@@ -490,15 +501,23 @@ class ModularStatisticsManager {
         const range = Utils.getDateRangeFixed(this.currentPeriod, this.currentDate);
 
         if (this.currentPeriod === 'all') {
-            // Override start with earliest drink date
+            // Override start with earliest drink date (do NOT mutate the DB-returned array)
             try {
                 const allDrinks = await dbManager.getAllDrinks();
-                if (allDrinks.length > 0) {
-                    const sorted = allDrinks.sort((a, b) => a.date.localeCompare(b.date));
-                    range.start = sorted[0].date; // earliest date (ascending sort)
+                if (allDrinks && allDrinks.length > 0) {
+                    let earliest = null;
+                    for (const d of allDrinks) {
+                        if (d && d.date && (!earliest || d.date < earliest)) earliest = d.date;
+                    }
+                    if (earliest) range.start = earliest;
+                    else range.start = '1970-01-01';
+                } else {
+                    // No drinks at all — keep a wide window so the "empty state" still renders
+                    range.start = '1970-01-01';
                 }
             } catch (e) {
                 console.warn('Could not fetch earliest drink date:', e);
+                range.start = '1970-01-01';
             }
             range.end = Utils.getCurrentDate();
         }
