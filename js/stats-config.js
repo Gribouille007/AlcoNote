@@ -87,6 +87,15 @@ const STATS_CONFIG = {
             calculator: 'trends',
             renderer: 'trends',
             order: 9
+        },
+        {
+            id: 'advanced',
+            title: 'Analyses avancées',
+            description: 'Moyennes mobiles, horloge des conso, distribution des sessions',
+            enabled: true,
+            calculator: 'advanced',
+            renderer: 'advanced',
+            order: 10
         }
     ],
 

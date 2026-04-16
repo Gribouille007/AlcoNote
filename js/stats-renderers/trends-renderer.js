@@ -1,13 +1,15 @@
-// Monthly Trends Renderer - AlcoNote PWA
-// Renders a line chart showing monthly consumption evolution
+// Monthly Trends Renderer - AlcoNote PWA (ECharts)
+// Dual-axis line chart with zoom/pan and rich tooltips.
 
-const TrendsStatsRenderer = {
-    /**
-     * Render the monthly trends section
-     * @param {Object} stats - From TrendsStatsCalculator
-     * @returns {HTMLElement}
-     */
-    renderTrendsStats(stats) {
+const TrendsStatsRenderer = (() => {
+    'use strict';
+
+    function cssVar(name, fallback) {
+        const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        return v || fallback;
+    }
+
+    function renderTrendsStats(stats) {
         const section = document.createElement('div');
         section.className = 'stats-section trends-section';
 
@@ -20,129 +22,120 @@ const TrendsStatsRenderer = {
         }
 
         section.innerHTML = `
-            <div class="trends-chart-wrapper">
-                <canvas id="trends-monthly-chart"></canvas>
-            </div>
+            <div class="echarts-wrapper" id="trends-monthly-chart" style="height: 300px;"></div>
         `;
-
-        // Store stats on element for postRender
         section._trendsData = stats;
-
         return section;
-    },
+    }
 
-    /**
-     * Post-render: initialize Chart.js line chart
-     */
-    postRenderTrendsStats(stats) {
+    function postRenderTrendsStats(stats) {
         const section = document.querySelector('.trends-section');
         const data = section?._trendsData || stats;
-        if (!data || !data.months || data.months.length < 2) return;
+        if (!data?.months || data.months.length < 2) return;
+        const dom = document.getElementById('trends-monthly-chart');
+        if (!dom || typeof echarts === 'undefined') return;
 
-        const canvas = document.getElementById('trends-monthly-chart');
-        if (!canvas) return;
+        const prev = echarts.getInstanceByDom(dom);
+        if (prev) prev.dispose();
 
-        const ctx = canvas.getContext('2d');
-        const style = getComputedStyle(document.documentElement);
-        const textColor = style.getPropertyValue('--text-secondary').trim() || '#666';
-        const gridColor = style.getPropertyValue('--gray-4').trim() || '#e0e0e0';
+        const chart = echarts.init(dom, null, { renderer: 'canvas' });
+        const primary = cssVar('--primary-color', '#007AFF');
+        const warning = cssVar('--warning-color', '#FF9500');
+        const text = cssVar('--text-secondary', '#666');
+        const grid = cssVar('--separator', '#e5e5ea');
 
-        const labels = data.months.map(m => m.label);
-        const drinkCounts = data.months.map(m => m.drinkCount);
-        const alcoholGrams = data.months.map(m => m.alcoholGrams);
-
-        const chart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels,
-                datasets: [
-                    {
-                        label: 'Verres',
-                        data: drinkCounts,
-                        borderColor: '#007AFF',
-                        backgroundColor: 'rgba(0, 122, 255, 0.1)',
-                        fill: true,
-                        tension: 0.3,
-                        pointRadius: 3,
-                        pointHoverRadius: 6,
-                        borderWidth: 2,
-                        yAxisID: 'y'
-                    },
-                    {
-                        label: 'Alcool (g)',
-                        data: alcoholGrams,
-                        borderColor: '#FF9500',
-                        backgroundColor: 'rgba(255, 149, 0, 0.1)',
-                        fill: true,
-                        tension: 0.3,
-                        pointRadius: 3,
-                        pointHoverRadius: 6,
-                        borderWidth: 2,
-                        yAxisID: 'y1'
-                    }
-                ]
+        chart.setOption({
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: cssVar('--bg-primary', '#fff'),
+                borderColor: grid,
+                borderWidth: 1,
+                textStyle: { color: cssVar('--text-primary', '#000'), fontSize: 12 },
+                axisPointer: { type: 'cross', crossStyle: { color: grid } }
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false
+            legend: {
+                data: ['Verres', 'Alcool (g)'],
+                bottom: 0,
+                textStyle: { color: text }
+            },
+            grid: { left: 48, right: 56, top: 20, bottom: 48 },
+            dataZoom: [
+                { type: 'inside', throttle: 50 },
+                { type: 'slider', height: 18, bottom: 30, borderColor: 'transparent',
+                  fillerColor: primary + '33', handleStyle: { color: primary } }
+            ],
+            xAxis: {
+                type: 'category',
+                data: data.months.map(m => m.label),
+                axisLine: { lineStyle: { color: grid } },
+                axisLabel: { color: text, fontSize: 11 }
+            },
+            yAxis: [
+                {
+                    type: 'value', name: 'Verres', position: 'left',
+                    axisLine: { show: true, lineStyle: { color: primary } },
+                    axisLabel: { color: text, fontSize: 10 },
+                    splitLine: { lineStyle: { color: grid, type: 'dashed' } }
                 },
-                scales: {
-                    x: {
-                        ticks: { color: textColor, maxRotation: 45 },
-                        grid: { display: false }
-                    },
-                    y: {
-                        type: 'linear',
-                        display: true,
-                        position: 'left',
-                        beginAtZero: true,
-                        title: { display: true, text: 'Verres', color: textColor },
-                        ticks: { color: textColor },
-                        grid: { color: gridColor, drawBorder: false }
-                    },
-                    y1: {
-                        type: 'linear',
-                        display: true,
-                        position: 'right',
-                        beginAtZero: true,
-                        title: { display: true, text: 'Alcool (g)', color: textColor },
-                        ticks: { color: textColor },
-                        grid: { drawOnChartArea: false }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: { color: textColor, usePointStyle: true, pointStyle: 'circle' }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: (item) => {
-                                const unit = item.datasetIndex === 0 ? ' verres' : 'g';
-                                return `${item.dataset.label}: ${item.parsed.y}${unit}`;
-                            }
-                        }
-                    },
-                    zoom: {
-                        pan: { enabled: true, mode: 'x' },
-                        zoom: {
-                            wheel: { enabled: true },
-                            pinch: { enabled: true },
-                            mode: 'x'
-                        }
-                    }
+                {
+                    type: 'value', name: 'Alcool (g)', position: 'right',
+                    axisLine: { show: true, lineStyle: { color: warning } },
+                    axisLabel: { color: text, fontSize: 10 },
+                    splitLine: { show: false }
                 }
-            }
+            ],
+            series: [
+                {
+                    name: 'Verres', type: 'line', smooth: true,
+                    data: data.months.map(m => m.drinkCount),
+                    lineStyle: { width: 2.5, color: primary },
+                    itemStyle: { color: primary },
+                    areaStyle: {
+                        color: {
+                            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                            colorStops: [
+                                { offset: 0, color: primary + '55' },
+                                { offset: 1, color: primary + '00' }
+                            ]
+                        }
+                    },
+                    symbol: 'circle', symbolSize: 6
+                },
+                {
+                    name: 'Alcool (g)', type: 'line', smooth: true,
+                    yAxisIndex: 1,
+                    data: data.months.map(m => m.alcoholGrams),
+                    lineStyle: { width: 2.5, color: warning },
+                    itemStyle: { color: warning },
+                    areaStyle: {
+                        color: {
+                            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                            colorStops: [
+                                { offset: 0, color: warning + '44' },
+                                { offset: 1, color: warning + '00' }
+                            ]
+                        }
+                    },
+                    symbol: 'circle', symbolSize: 6
+                }
+            ]
         });
 
-        // Store for cleanup
+        // Resize on window resize
+        const resize = () => chart.resize();
+        window.addEventListener('resize', resize);
+
         if (window.modularStatsManager) {
-            window.modularStatsManager.charts['trends-monthly'] = chart;
+            window.modularStatsManager.charts['trends-monthly'] = {
+                destroy: () => {
+                    window.removeEventListener('resize', resize);
+                    chart.dispose();
+                }
+            };
         }
     }
-};
+
+    return { renderTrendsStats, postRenderTrendsStats };
+})();
 
 window.TrendsStatsRenderer = TrendsStatsRenderer;

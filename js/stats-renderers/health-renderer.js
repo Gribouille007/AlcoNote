@@ -156,12 +156,8 @@ async function renderBACEstimation(context = {}) {
             return section;
         }
 
-        // Generate BAC curve data for projection chart
+        // Track whether we're looking at "now" (used for peak-BAC recording)
         const isCurrentTime = Math.abs(referenceTime - new Date()) < 60000;
-        if (typeof generateBACCurveData === 'function') {
-            window._bacCurveData = generateBACCurveData(drinksForBAC, userWeight, userGender, referenceTime);
-            window._bacCurveIsToday = isCurrentTime;
-        }
 
         // Try to record this BAC if it's a peak (only for current time, not historical)
         if (isCurrentTime && bacStats.currentBAC > 0) {
@@ -219,14 +215,11 @@ async function renderBACEstimation(context = {}) {
             ${bacStats.relevantDrinks.length > 0 ? `
             <div class="bac-projection-container">
                 <h4>Projection d'alcoolémie</h4>
-                <div class="bac-chart-wrapper">
+                <div class="bac-chart-wrapper" id="bac-chart-wrapper">
                     <canvas id="bac-projection-chart"></canvas>
-                    <button class="bac-zoom-reset" id="bac-zoom-reset" title="Réinitialiser le zoom">↺</button>
+                    <div id="bac-chart-tooltip" class="bac-chart-tooltip" aria-hidden="true"></div>
                 </div>
-                <div class="bac-slider-container">
-                    <input type="range" id="bac-time-slider" class="bac-time-slider" min="0" max="100" value="50">
-                    <div id="bac-slider-readout" class="bac-slider-readout"></div>
-                </div>
+                <div class="bac-chart-hint">Glissez sur le graphe pour voir le taux à un moment précis</div>
             </div>
             ` : ''}
 
@@ -446,25 +439,23 @@ function postRenderHealthStats(stats) {
     // Attach swipe-to-delete on BAC record cards
     attachRecordSwipeHandlers();
 
-    // Initialize BAC projection chart and slider
+    // Initialize BAC projection chart (modern Canvas, Revolut-style interaction)
     // _bacProjectionData is stored on the section element during renderBACEstimation
     const bacSection = document.getElementById('bac-estimation-section');
-    if (bacSection && bacSection._bacProjectionData && typeof BACProjectionCalculator !== 'undefined') {
-        const { drinks, currentBAC, referenceTime, userWeight, userGender } = bacSection._bacProjectionData;
+    if (bacSection && bacSection._bacProjectionData && typeof BACChart !== 'undefined') {
+        const { drinks, referenceTime, userWeight, userGender } = bacSection._bacProjectionData;
 
         if (drinks.length > 0) {
             try {
-                const { fromTime, toTime } = BACProjectionCalculator.calculateTimeRange(drinks, userWeight, userGender, referenceTime);
-                const dataPoints = BACProjectionCalculator.generateBACCurve(drinks, userWeight, userGender, fromTime, toTime);
-
-                if (dataPoints.length > 0) {
-                    const chart = BACProjectionCalculator.renderChart('bac-projection-chart', dataPoints, referenceTime, {});
-                    if (chart) {
-                        BACProjectionCalculator.initSlider('bac-time-slider', 'bac-slider-readout', dataPoints, referenceTime, chart);
-                    }
-                }
+                BACChart.create('bac-projection-chart', {
+                    drinks,
+                    weightKg: userWeight,
+                    gender: userGender,
+                    referenceTime,
+                    tooltipEl: document.getElementById('bac-chart-tooltip')
+                });
             } catch (e) {
-                console.error('Error initializing BAC projection chart:', e);
+                console.error('Error initializing BAC chart:', e);
             }
         }
     }

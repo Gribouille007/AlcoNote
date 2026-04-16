@@ -212,14 +212,6 @@ function getPreviousPeriodRange(currentRange, periodType) {
             previousEnd.setFullYear(previousEnd.getFullYear() - 1);
             break;
 
-        case 'ytd':
-            // YTD de l'année précédente (1er jan → même jour, année -1)
-            previousStart = new Date(currentStart);
-            previousStart.setFullYear(previousStart.getFullYear() - 1);
-            previousEnd = new Date(currentEnd);
-            previousEnd.setFullYear(previousEnd.getFullYear() - 1);
-            break;
-
         case 'school':
             // Année scolaire précédente
             previousStart = new Date(currentStart);

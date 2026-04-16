@@ -1,9 +1,9 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v2.8.0';
-const STATIC_CACHE = 'alconote-static-v2.8.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v1.8.0';
+const CACHE_NAME = 'alconote-v2.9.0';
+const STATIC_CACHE = 'alconote-static-v2.9.0';
+const DYNAMIC_CACHE = 'alconote-dynamic-v1.9.0';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -22,14 +22,13 @@ const STATIC_FILES = [
     '/js/app.js',
     '/js/database.js',
     '/js/utils.js',
-    '/js/bac-curve.js',
+    '/js/bac-chart.js',
     '/js/geolocation.js',
     '/js/scanner/product-lookup.js',
     '/js/scanner/camera-scanner.js',
     '/js/scanner/barcode-handler.js',
     '/js/stats-config.js',
     '/js/stats-collapsible.js',
-    '/js/stats-bac-projection.js',
     '/js/stats-calculators/general.js',
     '/js/stats-calculators/temporal.js',
     '/js/stats-calculators/categories.js',
@@ -39,6 +38,7 @@ const STATIC_FILES = [
     '/js/stats-calculators/heatmap.js',
     '/js/stats-calculators/timeline.js',
     '/js/stats-calculators/trends.js',
+    '/js/stats-calculators/advanced.js',
     '/js/stats-renderers/general-renderer.js',
     '/js/stats-renderers/temporal-renderer.js',
     '/js/stats-renderers/category-renderer.js',
@@ -48,12 +48,11 @@ const STATIC_FILES = [
     '/js/stats-renderers/heatmap-renderer.js',
     '/js/stats-renderers/timeline-renderer.js',
     '/js/stats-renderers/trends-renderer.js',
+    '/js/stats-renderers/advanced-renderer.js',
     '/js/statistics-new.js',
     // External CDN resources
     'https://cdn.jsdelivr.net/npm/chart.js',
-    'https://cdn.jsdelivr.net/npm/hammerjs@2.0.8',
-    'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1',
-    'https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation',
+    'https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js',
     'https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js',
     'https://unpkg.com/dexie@3.2.4/dist/dexie.js'
 ];

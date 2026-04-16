@@ -131,12 +131,6 @@ class Utils {
                 end.setMonth(11, 31);
                 break;
 
-            case 'ytd':
-                // Year to date: January 1st to today
-                start.setMonth(0, 1);
-                // end remains today
-                break;
-
             case 'all':
                 // All time: fallback to very early date, caller overrides with earliest drink
                 start.setFullYear(2000, 0, 1);
