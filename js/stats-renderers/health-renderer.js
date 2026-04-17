@@ -297,36 +297,33 @@ function renderBACRecordsSection(records, highestRecord) {
     const highestId = highestRecord ? highestRecord.id : null;
     const otherRecords = records.filter(r => r.id !== highestId);
 
+    const renderRow = (record, isHighest) => `
+        <div class="bac-record-row swipeable${isHighest ? ' is-highest' : ''}" data-record-id="${record.id}">
+            <span class="bac-dot ${getBACLevelClass(record.bacValue)}"></span>
+            <div class="bac-record-main">
+                <div class="bac-record-top">
+                    <span class="bac-record-value">${record.bacValue.toFixed(0)}<span class="bac-record-unit"> mg/L</span></span>
+                    ${isHighest ? '<span class="bac-record-label">Record</span>' : ''}
+                </div>
+                <div class="bac-record-meta">
+                    <span>${formatRecordDate(record.timestamp)}</span>
+                    <span class="bac-record-dot-sep">·</span>
+                    <span>${record.drinkCount} conso${record.drinkCount > 1 ? 's' : ''}</span>
+                </div>
+            </div>
+            <div class="delete-indicator">Supprimer</div>
+        </div>
+    `;
+
     return `
         <div class="bac-records-section">
-            <h4>${HEALTH_ICONS.chart} Records de taux d'alcoolémie</h4>
-            ${highestRecord ? `
-            <div class="bac-record-card bac-record-highest swipeable" data-record-id="${highestRecord.id}">
-                <div class="record-badge ${getBACLevelClass(highestRecord.bacValue)}">
-                    <span class="badge-icon">${HEALTH_ICONS.trophy}</span>
-                    <span class="badge-value">${highestRecord.bacValue.toFixed(0)} mg/L</span>
-                </div>
-                <div class="record-info">
-                    <div class="record-label">Record absolu</div>
-                    <div class="record-date">${formatRecordDate(highestRecord.timestamp)}</div>
-                    <div class="record-drinks">${highestRecord.drinkCount} consommation${highestRecord.drinkCount > 1 ? 's' : ''}</div>
-                </div>
-                <div class="delete-indicator">Supprimer</div>
+            <div class="bac-records-header">
+                <h4>Records d'alcoolémie</h4>
+                <span class="bac-records-count">${records.length}</span>
             </div>
-            ` : ''}
             <div class="bac-records-list">
-                ${otherRecords.slice(0, 5).map(record => `
-                    <div class="bac-record-card swipeable" data-record-id="${record.id}">
-                        <div class="record-badge ${getBACLevelClass(record.bacValue)}">
-                            <span class="badge-value">${record.bacValue.toFixed(0)} mg/L</span>
-                        </div>
-                        <div class="record-info">
-                            <div class="record-date">${formatRecordDate(record.timestamp)}</div>
-                            <div class="record-drinks">${record.drinkCount} consommation${record.drinkCount > 1 ? 's' : ''}</div>
-                        </div>
-                        <div class="delete-indicator">Supprimer</div>
-                    </div>
-                `).join('')}
+                ${highestRecord ? renderRow(highestRecord, true) : ''}
+                ${otherRecords.slice(0, 5).map(r => renderRow(r, false)).join('')}
             </div>
         </div>
     `;
@@ -373,7 +370,7 @@ function getBACLevelText(bacLevel) {
  * Attache le swipe-to-delete sur toutes les cartes de record BAC
  */
 function attachRecordSwipeHandlers() {
-    document.querySelectorAll('.bac-record-card.swipeable').forEach(card => {
+    document.querySelectorAll('.bac-record-row.swipeable').forEach(card => {
         const recordId = parseInt(card.dataset.recordId);
         if (!recordId) return;
 
@@ -388,7 +385,7 @@ function attachRecordSwipeHandlers() {
                         el.remove();
                         // If no records left, remove the whole section
                         const section = document.querySelector('.bac-records-section');
-                        if (section && !section.querySelector('.bac-record-card')) {
+                        if (section && !section.querySelector('.bac-record-row')) {
                             section.remove();
                         }
                     }, { once: true });

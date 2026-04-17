@@ -178,8 +178,8 @@ const BACChart = (() => {
             ctx.strokeStyle = separator;
             ctx.lineWidth = 1;
             ctx.setLineDash([2, 4]);
-            ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillStyle = textQuaternary;
+            ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillStyle = textSecondary;
             const yTicks = [0, 200, 500];
             for (const v of yTicks) {
                 if (v > yMax) continue;
@@ -294,8 +294,8 @@ const BACChart = (() => {
 
             // ── X-axis labels (start, now, end) ─────────────────────────
             ctx.save();
-            ctx.fillStyle = textQuaternary;
-            ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillStyle = textSecondary;
+            ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
             const fmtH = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });

@@ -59,7 +59,7 @@ const TrendsStatsRenderer = (() => {
                 bottom: 0,
                 textStyle: { color: text }
             },
-            grid: { left: 48, right: 56, top: 20, bottom: 48 },
+            grid: { left: 48, right: 56, top: 20, bottom: 64, containLabel: true },
             dataZoom: [
                 { type: 'inside', throttle: 50 },
                 { type: 'slider', height: 18, bottom: 30, borderColor: 'transparent',

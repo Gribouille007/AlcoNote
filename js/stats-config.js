@@ -62,24 +62,6 @@ const STATS_CONFIG = {
             order: 5
         },
         {
-            id: 'heatmap',
-            title: 'Calendrier de consommation',
-            description: 'Heatmap des jours de consommation',
-            enabled: true,
-            calculator: 'heatmap',
-            renderer: 'heatmap',
-            order: 7
-        },
-        {
-            id: 'timeline',
-            title: 'Timeline des sessions',
-            description: 'Chronologie des sessions de consommation',
-            enabled: true,
-            calculator: 'timeline',
-            renderer: 'timeline',
-            order: 8
-        },
-        {
             id: 'trends',
             title: 'Évolution mensuelle',
             description: 'Tendances de consommation mois par mois',

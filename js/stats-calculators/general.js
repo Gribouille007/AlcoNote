@@ -97,14 +97,26 @@ function getDaysDifference(startDate, endDate) {
  */
 async function calculateSoberDays(dateRange) {
     try {
-        // Calcul des jours sobres strictement sur la période sélectionnée
+        // Calcul des jours sobres strictement sur la période sélectionnée,
+        // en excluant les jours futurs (borner la fin à aujourd'hui)
         const start = dateRange.start;
-        const end = dateRange.end;
+        const todayStr = (() => {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        })();
+        const end = dateRange.end < todayStr ? dateRange.end : todayStr;
+
+        // Si la période démarre après aujourd'hui, aucun jour n'est encore écoulé
+        if (start > todayStr) return 0;
+
         const daysDiff = typeof normalizeDaysForPeriod !== "undefined"
             ? normalizeDaysForPeriod("custom", start, end)
             : getDaysDifference(start, end);
 
-        // Récupération des boissons uniquement pour la période sélectionnée
+        // Récupération des boissons uniquement pour la période écoulée
         const drinksInRange = await dbManager.getDrinksByDateRange(start, end);
 
         // Comptage des jours avec au moins une consommation

@@ -151,15 +151,71 @@ const AdvancedStatsCalculator = (() => {
         };
     }
 
+    /**
+     * Peak BAC (g/L) per session — bucketed histogram.
+     * Uses temporal.js calculateSessions (4h-gap sessions) and health.js
+     * calculateCurrentBAC to evaluate BAC at each session's endTime.
+     * Returns: { buckets: [counts], avgPeakBAC: number|null, sessionsWithBAC: number }
+     * or null if user profile (weight/gender) is not configured.
+     */
+    async function computeSessionBAC(drinks) {
+        if (!drinks || !drinks.length) return null;
+        if (typeof calculateSessions !== 'function') return null;
+        if (typeof calculateCurrentBAC !== 'function') return null;
+
+        let settings = {};
+        try {
+            if (window.dbManager) settings = await window.dbManager.getAllSettings();
+        } catch { settings = {}; }
+
+        const weight = settings.userWeight;
+        const gender = settings.userGender;
+        if (!weight || !gender) return null;
+
+        const sessions = calculateSessions(drinks);
+        if (!sessions.length) return null;
+
+        // 5 buckets: 0-0.2, 0.2-0.5, 0.5-0.8, 0.8-1.2, 1.2+ (g/L)
+        const buckets = [0, 0, 0, 0, 0];
+        const peaks = [];
+
+        for (const s of sessions) {
+            try {
+                const res = await calculateCurrentBAC(weight, gender, s.drinks, s.endTime);
+                if (!res) continue;
+                // currentBAC is expressed in mg/L in the rest of the app; convert to g/L
+                const bacGL = (res.currentBACgL != null) ? res.currentBACgL : (res.currentBAC / 1000);
+                if (!(bacGL >= 0)) continue;
+                peaks.push(bacGL);
+                const idx = bacGL < 0.2 ? 0
+                         : bacGL < 0.5 ? 1
+                         : bacGL < 0.8 ? 2
+                         : bacGL < 1.2 ? 3
+                         : 4;
+                buckets[idx]++;
+            } catch { /* skip session on error */ }
+        }
+
+        if (!peaks.length) return null;
+        const avg = peaks.reduce((a, b) => a + b, 0) / peaks.length;
+
+        return {
+            buckets,
+            avgPeakBAC: Math.round(avg * 100) / 100,
+            sessionsWithBAC: peaks.length
+        };
+    }
+
     async function calculateAdvancedStats(drinks, dateRange, context) {
         if (!drinks || !drinks.length) {
-            return { rolling: [], polar: Array(24).fill(0), sessions: { sessions: [], durationBuckets: [], intensityBuckets: [] }, comparison: null };
+            return { rolling: [], polar: Array(24).fill(0), sessions: { sessions: [], durationBuckets: [], intensityBuckets: [] }, comparison: null, sessionBAC: null };
         }
         const rolling = computeRollingAverages(drinks, dateRange);
         const polar = computeHourlyPolar(drinks);
         const sessions = computeSessions(drinks);
         const comparison = await computeInterPeriodComparison(drinks, dateRange, context?.currentPeriod);
-        return { rolling, polar, sessions, comparison };
+        const sessionBAC = await computeSessionBAC(drinks);
+        return { rolling, polar, sessions, comparison, sessionBAC };
     }
 
     return { calculateAdvancedStats };

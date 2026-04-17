@@ -98,16 +98,6 @@ class ModularStatisticsManager {
             console.log('Registered LocationStatsCalculator');
         }
 
-        if (typeof HeatmapStatsCalculator !== 'undefined' && typeof HeatmapStatsCalculator.calculateHeatmapStats === 'function') {
-            this.calculators.heatmap = wrap(HeatmapStatsCalculator, 'calculateHeatmapStats');
-            console.log('Registered HeatmapStatsCalculator');
-        }
-
-        if (typeof TimelineStatsCalculator !== 'undefined' && typeof TimelineStatsCalculator.calculateTimelineStats === 'function') {
-            this.calculators.timeline = wrap(TimelineStatsCalculator, 'calculateTimelineStats');
-            console.log('Registered TimelineStatsCalculator');
-        }
-
         if (typeof TrendsStatsCalculator !== 'undefined' && typeof TrendsStatsCalculator.calculateTrendsStats === 'function') {
             this.calculators.trends = wrap(TrendsStatsCalculator, 'calculateTrendsStats');
             console.log('Registered TrendsStatsCalculator');
@@ -225,24 +215,6 @@ class ModularStatisticsManager {
                 }
             );
             console.log('Registered LocationStatsRenderer');
-        }
-
-        // Heatmap
-        if (typeof HeatmapStatsRenderer !== 'undefined' && typeof HeatmapStatsRenderer.renderHeatmapStats === 'function') {
-            this.renderers.heatmap = wrap(
-                (stats) => HeatmapStatsRenderer.renderHeatmapStats(stats),
-                (stats) => HeatmapStatsRenderer.postRenderHeatmapStats && HeatmapStatsRenderer.postRenderHeatmapStats(stats)
-            );
-            console.log('Registered HeatmapStatsRenderer');
-        }
-
-        // Timeline
-        if (typeof TimelineStatsRenderer !== 'undefined' && typeof TimelineStatsRenderer.renderTimelineStats === 'function') {
-            this.renderers.timeline = wrap(
-                (stats) => TimelineStatsRenderer.renderTimelineStats(stats),
-                (stats) => TimelineStatsRenderer.postRenderTimelineStats && TimelineStatsRenderer.postRenderTimelineStats(stats)
-            );
-            console.log('Registered TimelineStatsRenderer');
         }
 
         // Trends
