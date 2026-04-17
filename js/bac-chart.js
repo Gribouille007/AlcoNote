@@ -14,7 +14,7 @@ const BACChart = (() => {
     'use strict';
 
     const ELIMINATION_RATE = 0.15;          // g/L per hour (Widmark)
-    const PADDING = { top: 32, right: 20, bottom: 28, left: 44 };
+    const PADDING = { top: 44, right: 20, bottom: 32, left: 60 };
     const TOOLTIP_OFFSET = 14;              // distance ball → tooltip base
     const STEP_MINUTES_DEFAULT = 1;         // fine resolution
 
@@ -43,7 +43,8 @@ const BACChart = (() => {
                 const [h, mi] = d.time.split(':').map(Number);
                 const time = new Date(y, m - 1, day, h, mi);
                 const cL = Utils.convertToStandardUnit(d.quantity, d.unit).quantity;
-                const grams = (cL * (d.alcoholContent || 0) * 0.8) / 100;
+                // cL × degré(%) × 0,8 (densité éthanol) ÷ 10 → grammes d'alcool pur
+                const grams = (cL * (d.alcoholContent || 0) * 0.8) / 10;
                 return grams > 0 ? { time, alcoholGrams: grams } : null;
             } catch { return null; }
         }).filter(Boolean).sort((a, b) => a.time - b.time);

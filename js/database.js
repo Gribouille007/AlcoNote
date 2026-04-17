@@ -545,6 +545,16 @@ class DatabaseManager {
         }
     }
 
+    async updateBACRecord(id, changes) {
+        try {
+            await this.db.bacRecords.update(id, changes);
+            return await this.db.bacRecords.get(id);
+        } catch (error) {
+            console.error('Error updating BAC record:', error);
+            throw error;
+        }
+    }
+
     // Drink ratings operations
     async getRating(drinkName) {
         try {

@@ -438,41 +438,58 @@ class Utils {
                 return null;
             }
 
-            // Get recent records to check for duplicates (last 30 minutes)
-            const recentRecords = await dbManager.getBACRecords(5);
             const now = new Date();
-            const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
+            const roundedBAC = Math.round(currentBACMgL * 100) / 100;
+            const drinkIds = relevantDrinks.filter(d => d.id).map(d => d.id);
 
-            // Check if we have a very recent similar record (avoid spam)
-            const hasSimilarRecentRecord = recentRecords.some(record => {
-                const recordTime = new Date(record.timestamp);
-                const timeDiff = Math.abs(now - recordTime);
-                const bacDiff = Math.abs(record.bacValue - currentBACMgL);
-
-                // If within 30 minutes and BAC difference is less than 50 mg/L, skip
-                return timeDiff < 30 * 60 * 1000 && bacDiff < 50;
-            });
-
-            if (hasSimilarRecentRecord) {
-                return null; // Don't create duplicate
+            // Determine the start of the current drinking session (earliest relevant drink)
+            // Fallback: 4h window (matches the session-gap heuristic used elsewhere)
+            let sessionStart = null;
+            for (const d of (relevantDrinks || [])) {
+                if (!d || !d.date || !d.time) continue;
+                try {
+                    const [y, m, day] = d.date.split('-').map(Number);
+                    const [h, mi] = d.time.split(':').map(Number);
+                    const t = new Date(y, m - 1, day, h, mi);
+                    if (!isNaN(t.getTime()) && (!sessionStart || t < sessionStart)) {
+                        sessionStart = t;
+                    }
+                } catch {}
+            }
+            if (!sessionStart) {
+                sessionStart = new Date(now.getTime() - 4 * 60 * 60 * 1000);
             }
 
-            // Extract drink IDs if available
-            const drinkIds = relevantDrinks
-                .filter(d => d.id)
-                .map(d => d.id);
+            // Enforce a single record per session: keep only the peak value
+            const recentRecords = await dbManager.getBACRecords(20);
+            const sessionRecord = recentRecords.find(r => {
+                const t = new Date(r.timestamp);
+                return !isNaN(t.getTime()) && t >= sessionStart;
+            });
 
-            // Create the record
-            const recordData = {
-                bacValue: Math.round(currentBACMgL * 100) / 100,
+            if (sessionRecord) {
+                // Only update when the new value strictly beats the existing session peak
+                if (roundedBAC <= sessionRecord.bacValue) {
+                    return null;
+                }
+                const updated = await dbManager.updateBACRecord(sessionRecord.id, {
+                    bacValue: roundedBAC,
+                    timestamp: now,
+                    date: this.getCurrentDate(),
+                    drinkCount: drinkCount,
+                    relevantDrinkIds: drinkIds
+                });
+                return updated;
+            }
+
+            // First peak of this session — create the record
+            const record = await dbManager.addBACRecord({
+                bacValue: roundedBAC,
                 timestamp: now,
                 date: this.getCurrentDate(),
                 drinkCount: drinkCount,
                 relevantDrinkIds: drinkIds
-            };
-
-            const record = await dbManager.addBACRecord(recordData);
-            console.log('BAC record saved:', record);
+            });
             return record;
 
         } catch (error) {

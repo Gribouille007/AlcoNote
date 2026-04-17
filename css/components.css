@@ -1845,6 +1845,16 @@ input[type="search"]::-ms-clear {
     backdrop-filter: blur(5px);
 }
 
+.drink-family.highlight-flash {
+    animation: drink-family-flash 1.6s ease-out;
+}
+
+@keyframes drink-family-flash {
+    0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary-color) 60%, transparent); }
+    30%  { box-shadow: 0 0 0 6px color-mix(in srgb, var(--primary-color) 35%, transparent); }
+    100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary-color) 0%, transparent); }
+}
+
 .drink-variants {
     display: flex;
     flex-direction: column;
