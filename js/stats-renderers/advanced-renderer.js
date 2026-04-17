@@ -45,13 +45,17 @@ const AdvancedStatsRenderer = (() => {
         }
 
         if (stats.sessions?.sessions?.length) {
+            const hasBAC = stats.sessionBAC && stats.sessionBAC.sessionsWithBAC > 0;
+            const bacSubtitle = hasBAC
+                ? `Durée et alcoolémie moyenne (${stats.sessionBAC.avgPeakBAC.toFixed(2)} g/L en moyenne)`
+                : 'Durée des sessions — configurez votre profil pour voir l\'alcoolémie par session';
             blocks.push(`
                 <div class="advanced-block">
                     <h4 class="advanced-block-title">Distribution des sessions</h4>
-                    <p class="advanced-block-subtitle">Durée et intensité des sessions de consommation</p>
+                    <p class="advanced-block-subtitle">${bacSubtitle}</p>
                     <div class="advanced-dual">
                         <div class="echarts-wrapper" id="advanced-duration" style="height: 240px;"></div>
-                        <div class="echarts-wrapper" id="advanced-intensity" style="height: 240px;"></div>
+                        ${hasBAC ? '<div class="echarts-wrapper" id="advanced-session-bac" style="height: 240px;"></div>' : ''}
                     </div>
                 </div>
             `);
@@ -86,7 +90,9 @@ const AdvancedStatsRenderer = (() => {
         if (data.polar?.some(v => v > 0)) renderPolar(data.polar, section);
         if (data.sessions?.sessions?.length) {
             renderDuration(data.sessions.durationBuckets, section);
-            renderIntensity(data.sessions.intensityBuckets, section);
+            if (data.sessionBAC && data.sessionBAC.sessionsWithBAC > 0) {
+                renderSessionBAC(data.sessionBAC, section);
+            }
         }
         if (data.comparison) renderComparison(data.comparison, section);
 
@@ -132,7 +138,7 @@ const AdvancedStatsRenderer = (() => {
                 valueFormatter: v => v.toFixed(1) + ' g'
             },
             legend: { data: ['Brut', '7 jours', '30 jours'], bottom: 0, textStyle: { color: text } },
-            grid: { left: 44, right: 16, top: 16, bottom: 48 },
+            grid: { left: 44, right: 16, top: 16, bottom: 64, containLabel: true },
             dataZoom: [
                 { type: 'inside' },
                 { type: 'slider', height: 16, bottom: 28, fillerColor: primary + '22' }
@@ -195,7 +201,7 @@ const AdvancedStatsRenderer = (() => {
                 backgroundColor: cssVar('--bg-primary', '#fff'),
                 borderColor: grid,
                 textStyle: { color: cssVar('--text-primary', '#000') },
-                formatter: p => `${p.axisValue} : <b>${p.data}</b> conso.`
+                formatter: p => `${p.name} : <b>${p.value}</b> conso.`
             },
             series: [{
                 type: 'bar',
@@ -225,9 +231,9 @@ const AdvancedStatsRenderer = (() => {
         chart.setOption({
             title: { text: 'Durée', left: 'center', top: 4, textStyle: { color: text, fontSize: 12 } },
             tooltip: { trigger: 'axis', valueFormatter: v => v + ' sessions' },
-            grid: { left: 36, right: 12, top: 34, bottom: 28 },
+            grid: { left: 44, right: 16, top: 34, bottom: 40, containLabel: true },
             xAxis: { type: 'category', data: labels, axisLabel: { color: text, fontSize: 10, rotate: 30 }, axisLine: { lineStyle: { color: grid } } },
-            yAxis: { type: 'value', axisLabel: { color: text, fontSize: 10 }, splitLine: { lineStyle: { color: grid, type: 'dashed' } } },
+            yAxis: { type: 'value', minInterval: 1, axisLabel: { color: text, fontSize: 10 }, splitLine: { lineStyle: { color: grid, type: 'dashed' } } },
             series: [{
                 type: 'bar', data: buckets,
                 itemStyle: { color: primary, borderRadius: [4, 4, 0, 0] }
@@ -235,21 +241,21 @@ const AdvancedStatsRenderer = (() => {
         });
     }
 
-    function renderIntensity(buckets, section) {
-        const chart = initChart('advanced-intensity', section);
+    function renderSessionBAC(sessionBAC, section) {
+        const chart = initChart('advanced-session-bac', section);
         if (!chart) return;
         const warning = cssVar('--warning-color', '#FF9500');
         const text = cssVar('--text-secondary', '#666');
         const grid = cssVar('--separator', '#e5e5ea');
-        const labels = ['<10g', '10-20g', '20-40g', '40-60g', '60-100g', '100g+'];
+        const labels = ['<0,2', '0,2-0,5', '0,5-0,8', '0,8-1,2', '1,2+'];
         chart.setOption({
-            title: { text: 'Intensité (alcool)', left: 'center', top: 4, textStyle: { color: text, fontSize: 12 } },
+            title: { text: 'Alcoolémie par session (g/L)', left: 'center', top: 4, textStyle: { color: text, fontSize: 12 } },
             tooltip: { trigger: 'axis', valueFormatter: v => v + ' sessions' },
-            grid: { left: 36, right: 12, top: 34, bottom: 28 },
+            grid: { left: 44, right: 16, top: 34, bottom: 40, containLabel: true },
             xAxis: { type: 'category', data: labels, axisLabel: { color: text, fontSize: 10, rotate: 30 }, axisLine: { lineStyle: { color: grid } } },
-            yAxis: { type: 'value', axisLabel: { color: text, fontSize: 10 }, splitLine: { lineStyle: { color: grid, type: 'dashed' } } },
+            yAxis: { type: 'value', minInterval: 1, axisLabel: { color: text, fontSize: 10 }, splitLine: { lineStyle: { color: grid, type: 'dashed' } } },
             series: [{
-                type: 'bar', data: buckets,
+                type: 'bar', data: sessionBAC.buckets,
                 itemStyle: { color: warning, borderRadius: [4, 4, 0, 0] }
             }]
         });
@@ -273,7 +279,7 @@ const AdvancedStatsRenderer = (() => {
                 valueFormatter: v => v.toFixed(1) + ' g'
             },
             legend: { data: [comparison.current.label, comparison.previous.label], bottom: 0, textStyle: { color: text } },
-            grid: { left: 44, right: 16, top: 10, bottom: 40 },
+            grid: { left: 44, right: 16, top: 10, bottom: 48, containLabel: true },
             xAxis: { type: 'category', data: xLabels, axisLabel: { color: text, fontSize: 10 }, axisLine: { lineStyle: { color: grid } } },
             yAxis: { type: 'value', axisLabel: { color: text, fontSize: 10, formatter: v => v.toFixed(0) + 'g' }, splitLine: { lineStyle: { color: grid, type: 'dashed' } } },
             series: [

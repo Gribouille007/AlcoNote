@@ -1,9 +1,9 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v2.11.0';
-const STATIC_CACHE = 'alconote-static-v2.11.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v1.11.0';
+const CACHE_NAME = 'alconote-v2.12.0';
+const STATIC_CACHE = 'alconote-static-v2.12.0';
+const DYNAMIC_CACHE = 'alconote-dynamic-v1.12.0';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -36,8 +36,6 @@ const STATIC_FILES = [
     '/js/stats-calculators/drinks.js',
     '/js/stats-calculators/health.js',
     '/js/stats-calculators/location.js',
-    '/js/stats-calculators/heatmap.js',
-    '/js/stats-calculators/timeline.js',
     '/js/stats-calculators/trends.js',
     '/js/stats-calculators/advanced.js',
     '/js/stats-renderers/general-renderer.js',
@@ -46,8 +44,6 @@ const STATIC_FILES = [
     '/js/stats-renderers/drinks-renderer.js',
     '/js/stats-renderers/health-renderer.js',
     '/js/stats-renderers/location-renderer.js',
-    '/js/stats-renderers/heatmap-renderer.js',
-    '/js/stats-renderers/timeline-renderer.js',
     '/js/stats-renderers/trends-renderer.js',
     '/js/stats-renderers/advanced-renderer.js',
     '/js/statistics-new.js',

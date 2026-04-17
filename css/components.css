@@ -1548,20 +1548,21 @@ input[type="search"]::-ms-clear {
 }
 
 .search-clear-btn {
-    background: var(--gray-5);
+    background: transparent;
     border: none;
-    color: var(--bg-primary);
+    color: var(--text-secondary);
     cursor: pointer;
     width: 22px;
     height: 22px;
-    border-radius: 50%;
+    border-radius: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    transition: background-color var(--transition-fast);
+    transition: color var(--transition-fast);
     padding: 0;
     position: relative;
+    margin-right: 4px;
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
 }
@@ -1578,10 +1579,14 @@ input[type="search"]::-ms-clear {
 
 .search-clear-btn svg {
     display: block;
+    width: 18px;
+    height: 18px;
+    stroke-width: 2;
 }
 
 .search-clear-btn:hover {
-    background: var(--gray-3);
+    background: transparent;
+    color: var(--text-primary);
 }
 
 /* Category Item Styles */
@@ -1637,6 +1642,35 @@ input[type="search"]::-ms-clear {
 
 .category-main:hover {
     background-color: rgba(0, 122, 255, 0.04);
+}
+
+.category-matching-drinks {
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--separator);
+    background-color: var(--bg-secondary);
+}
+
+.matching-drink-item {
+    appearance: none;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--separator);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    text-align: left;
+    padding: var(--spacing-sm) var(--spacing-lg);
+    padding-left: calc(var(--spacing-lg) + 4px);
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+}
+
+.matching-drink-item:last-child {
+    border-bottom: none;
+}
+
+.matching-drink-item:hover {
+    background-color: rgba(0, 122, 255, 0.06);
 }
 
 .category-name {
@@ -1978,6 +2012,10 @@ input[type="search"]::-ms-clear {
 #edit-drink-family-modal .form-actions .btn-secondary {
     flex: 1;
     min-width: 120px;
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.3;
+    padding: var(--spacing-sm) var(--spacing-md);
 }
 
 /* Edit Drink Family Modal - Extra Actions */
@@ -1996,6 +2034,12 @@ input[type="search"]::-ms-clear {
     width: 100%;
     justify-content: center;
     font-size: var(--font-size-sm);
+    white-space: normal;
+    word-break: break-word;
+    text-align: center;
+    padding: var(--spacing-sm) var(--spacing-md);
+    line-height: 1.3;
+    min-height: 44px;
 }
 
 .edit-family-action-btn svg {
@@ -3891,75 +3935,151 @@ input[type="search"]::-ms-clear {
     margin: 0;
 }
 
-/* BAC Records Section */
+/* BAC Records — clean minimal list (no heavy boxes) */
 .bac-records-section {
     margin-top: var(--spacing-lg);
-    padding: var(--spacing-lg);
-    background: var(--bg-secondary);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--separator);
 }
 
-.bac-records-section h4 {
-    font-size: var(--font-size-lg);
+.bac-records-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+    padding: 0 2px;
+}
+
+.bac-records-header h4 {
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
-    margin-bottom: var(--spacing-md);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
+    margin: 0;
+    letter-spacing: -0.01em;
+}
+
+.bac-records-count {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-tertiary);
+    background: var(--bg-secondary);
+    padding: 2px 8px;
+    border-radius: 999px;
 }
 
 .bac-records-list {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-sm);
-    margin-bottom: var(--spacing-md);
 }
 
-.bac-record-card {
-    background: var(--bg-primary);
-    border: 1px solid var(--separator);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-md);
+.bac-record-row {
+    position: relative;
     display: flex;
     align-items: center;
     gap: var(--spacing-md);
-    transition: all var(--transition-fast);
+    padding: var(--spacing-md) 2px;
+    border-bottom: 1px solid var(--separator);
+    transition: background var(--transition-fast);
 }
 
-.bac-record-card:hover {
-    border-color: var(--primary-color);
+.bac-record-row:last-child {
+    border-bottom: none;
 }
 
-.bac-record-highest {
-    background: linear-gradient(135deg, rgba(255, 215, 0, 0.1) 0%, rgba(255, 193, 7, 0.05) 100%);
-    border: 2px solid rgba(255, 215, 0, 0.3);
-    padding: var(--spacing-lg);
-    margin-bottom: var(--spacing-md);
+.bac-record-row.is-highest {
+    background: linear-gradient(90deg,
+        color-mix(in srgb, var(--warning-color) 10%, transparent) 0%,
+        transparent 60%);
+    padding-left: var(--spacing-sm);
+    border-left: 3px solid var(--warning-color);
+    border-bottom-color: var(--separator);
 }
 
-.bac-record-highest:hover {
-    border-color: rgba(255, 215, 0, 0.5);
-    background: linear-gradient(135deg, rgba(255, 215, 0, 0.15) 0%, rgba(255, 193, 7, 0.08) 100%);
+.bac-dot {
+    flex-shrink: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
 }
 
-.bac-record-card.swipeable {
-    position: relative;
+.bac-dot.safe { background: var(--success-color); color: var(--success-color); }
+.bac-dot.caution { background: var(--warning-color); color: var(--warning-color); }
+.bac-dot.warning { background: var(--warning-color); color: var(--warning-color); }
+.bac-dot.danger { background: var(--error-color); color: var(--error-color); }
+
+.bac-record-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.bac-record-top {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-sm);
+}
+
+.bac-record-value {
+    font-size: 18px;
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
+
+.bac-record-unit {
+    font-size: 12px;
+    font-weight: var(--font-weight-medium);
+    color: var(--text-tertiary);
+    letter-spacing: 0;
+}
+
+.bac-record-label {
+    font-size: 10px;
+    font-weight: var(--font-weight-bold);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--warning-color);
+    background: color-mix(in srgb, var(--warning-color) 12%, transparent);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.bac-record-meta {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.bac-record-dot-sep {
+    color: var(--text-quaternary);
+}
+
+.bac-record-row.swipeable {
     overflow: hidden;
+    touch-action: pan-y;
 }
 
-.bac-record-card.swipe-left {
+.bac-record-row.swipe-left {
     transform: translateX(-80px);
-    opacity: 0.7;
+    transition: transform var(--transition-fast);
 }
 
-.bac-record-card .delete-indicator {
+.bac-record-row.deleting {
+    opacity: 0;
+    transform: translateX(-100%);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.bac-record-row .delete-indicator {
     position: absolute;
-    right: var(--spacing-md);
+    right: var(--spacing-sm);
     top: 50%;
     transform: translateY(-50%);
-    color: var(--danger-color, #ff3b30);
+    color: var(--error-color);
     font-weight: var(--font-weight-semibold);
     font-size: var(--font-size-sm);
     opacity: 0;
@@ -3967,92 +4087,8 @@ input[type="search"]::-ms-clear {
     pointer-events: none;
 }
 
-.bac-record-card.swipe-left .delete-indicator {
+.bac-record-row.swipe-left .delete-indicator {
     opacity: 1;
-}
-
-.record-badge {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-xs);
-    padding: var(--spacing-sm) var(--spacing-md);
-    border-radius: var(--radius-full);
-    font-weight: var(--font-weight-bold);
-    font-size: var(--font-size-md);
-    min-width: 100px;
-    justify-content: center;
-    box-shadow: var(--shadow-sm);
-}
-
-.record-badge.safe {
-    background: linear-gradient(135deg, var(--success-color) 0%, color-mix(in srgb, var(--success-color) 90%, white) 100%);
-    color: white;
-}
-
-.record-badge.caution {
-    background: linear-gradient(135deg, var(--warning-color) 0%, color-mix(in srgb, var(--warning-color) 80%, white) 100%);
-    color: white;
-}
-
-.record-badge.warning {
-    background: linear-gradient(135deg, var(--warning-color) 0%, color-mix(in srgb, var(--warning-color) 85%, black) 100%);
-    color: white;
-}
-
-.record-badge.danger {
-    background: linear-gradient(135deg, var(--error-color) 0%, color-mix(in srgb, var(--error-color) 85%, black) 100%);
-    color: white;
-}
-
-.badge-icon {
-    font-size: var(--font-size-xl);
-    filter: drop-shadow(0 2px 4px color-mix(in srgb, black 20%, transparent));
-}
-
-.badge-value {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-bold);
-}
-
-.record-info {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xs);
-}
-
-.record-label {
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
-}
-
-.record-date {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-}
-
-.record-drinks {
-    font-size: var(--font-size-xs);
-    color: var(--text-tertiary);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-xs);
-}
-
-.record-drinks::before {
-    content: '';
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    background-color: currentColor;
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 8h1a3 3 0 010 6h-1'/%3E%3Cpath d='M5 8h12v9a3 3 0 01-3 3H8a3 3 0 01-3-3V8z'/%3E%3Cpath d='M8 5a2 2 0 012-2c1.1 0 2 1 2 2'/%3E%3Cpath d='M10 5a2 2 0 012-2c1.1 0 2 1 2 2'/%3E%3C/svg%3E");
-    mask-size: contain;
-    mask-repeat: no-repeat;
-    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 8h1a3 3 0 010 6h-1'/%3E%3Cpath d='M5 8h12v9a3 3 0 01-3 3H8a3 3 0 01-3-3V8z'/%3E%3Cpath d='M8 5a2 2 0 012-2c1.1 0 2 1 2 2'/%3E%3Cpath d='M10 5a2 2 0 012-2c1.1 0 2 1 2 2'/%3E%3C/svg%3E");
-    -webkit-mask-size: contain;
-    -webkit-mask-repeat: no-repeat;
-    flex-shrink: 0;
 }
 
 .view-all-records {
@@ -4850,11 +4886,11 @@ input[type="search"]::-ms-clear {
    ============================================================================= */
 
 .statistics-container {
-    padding: var(--spacing-md);
-    padding-bottom: calc(var(--spacing-xl) + 60px);
+    padding: 0;
+    padding-bottom: calc(var(--spacing-xl) + 120px);
     width: 100%;
-    max-width: 1200px;
-    margin: 0 auto;
+    max-width: none;
+    margin: 0;
     box-sizing: border-box;
 }
 
@@ -4863,8 +4899,8 @@ input[type="search"]::-ms-clear {
     display: flex;
     gap: 6px;
     overflow-x: auto;
-    padding: var(--spacing-xs) 2px var(--spacing-sm);
-    margin-bottom: var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+    margin: 0 0 var(--spacing-md);
     scrollbar-width: none;
     -ms-overflow-style: none;
 }
@@ -4904,7 +4940,7 @@ input[type="search"]::-ms-clear {
     align-items: center;
     justify-content: space-between;
     padding: 6px 10px;
-    margin-bottom: var(--spacing-md);
+    margin: 0 var(--spacing-md) var(--spacing-md);
     background: var(--bg-primary);
     border: 1px solid var(--separator);
     border-radius: var(--radius-md);
@@ -4935,6 +4971,11 @@ input[type="search"]::-ms-clear {
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     letter-spacing: -0.01em;
+}
+
+/* ── Statistics content — horizontal padding so islands breathe ──────── */
+.statistics-content {
+    padding: 0 var(--spacing-md);
 }
 
 /* ── Collapsible island (section container) ──────────────────────────── */

@@ -310,10 +310,20 @@ body {
     flex-direction: column;
 }
 
+/* Statistics tab — full width, no side padding */
+#statistics-tab {
+    padding: 0;
+}
+
 /* Categories */
 #categories-tab {
     flex: none;
-    padding-bottom: 100px; /* Space for FAB */
+    padding-bottom: 140px; /* Space for FAB + nav so last item clears the + button */
+}
+
+/* History tab — extra bottom space so last item clears bottom nav */
+#history-tab {
+    padding-bottom: calc(var(--spacing-md) + 80px);
 }
 
 .categories-container {

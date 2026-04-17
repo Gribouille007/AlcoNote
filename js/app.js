@@ -828,6 +828,9 @@ class AlcoNoteApp {
         const container = document.getElementById('categories-list');
         const q = query.trim().toLowerCase();
 
+        // Clear any previously rendered matching-drinks panels
+        container.querySelectorAll('.category-matching-drinks').forEach(el => el.remove());
+
         if (!q) {
             container.querySelectorAll('.category-item').forEach(el => {
                 el.style.display = '';
@@ -838,19 +841,47 @@ class AlcoNoteApp {
         try {
             const allDrinks = await dbManager.getAllDrinks();
 
-            // Build set of category names that have matching drinks
-            const categoriesWithMatchingDrinks = new Set();
+            // Group unique matching drink names (case-insensitive) per category
+            const drinksByCategory = new Map();
+            const seenKeys = new Set();
             allDrinks.forEach(drink => {
-                if (drink.name.toLowerCase().includes(q)) {
-                    categoriesWithMatchingDrinks.add(drink.category);
+                if (!drink.name || !drink.category) return;
+                if (!drink.name.toLowerCase().includes(q)) return;
+                const key = drink.category + '||' + drink.name.toLowerCase();
+                if (seenKeys.has(key)) return;
+                seenKeys.add(key);
+                if (!drinksByCategory.has(drink.category)) {
+                    drinksByCategory.set(drink.category, []);
                 }
+                drinksByCategory.get(drink.category).push(drink);
             });
 
             container.querySelectorAll('.category-item').forEach(el => {
-                const catName = el.querySelector('.category-main')?.dataset.category;
+                const catMain = el.querySelector('.category-main');
+                const catName = catMain?.dataset.category;
                 const nameMatches = catName && catName.toLowerCase().includes(q);
-                const drinkMatches = categoriesWithMatchingDrinks.has(catName);
+                const matchingDrinks = catName ? drinksByCategory.get(catName) : null;
+                const drinkMatches = Boolean(matchingDrinks && matchingDrinks.length);
+
                 el.style.display = (nameMatches || drinkMatches) ? '' : 'none';
+
+                if (drinkMatches) {
+                    const panel = document.createElement('div');
+                    panel.className = 'category-matching-drinks';
+                    matchingDrinks.forEach(drink => {
+                        const row = document.createElement('button');
+                        row.type = 'button';
+                        row.className = 'matching-drink-item';
+                        row.textContent = drink.name;
+                        row.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            const category = { name: catName };
+                            this.openCategoryDetailPage(category);
+                        });
+                        panel.appendChild(row);
+                    });
+                    el.appendChild(panel);
+                }
             });
         } catch (error) {
             console.warn('Filter error:', error);
@@ -1557,6 +1588,14 @@ class AlcoNoteApp {
                         window.dispatchEvent(new CustomEvent('drinkDataChanged', {
                             detail: { action: 'add', drink: drinkData }
                         }));
+                    }
+
+                    // Persist rating (keyed by drink name) if one was set
+                    if (drinkNameForRating && ratingValue) {
+                        const parsedRating = parseInt(ratingValue, 10);
+                        if (parsedRating >= 1 && parsedRating <= 5) {
+                            await dbManager.setRating(drinkNameForRating, parsedRating);
+                        }
                     }
 
                     // Try to get real location in background after saving
