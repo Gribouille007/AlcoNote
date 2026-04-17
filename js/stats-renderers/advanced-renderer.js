@@ -72,8 +72,9 @@ const AdvancedStatsRenderer = (() => {
         return section;
     }
 
-    function postRenderAdvancedStats(stats) {
-        const section = document.querySelector('.advanced-section');
+    function postRenderAdvancedStats(stats, ctx) {
+        const scope = ctx?.containerEl || document;
+        const section = (scope.querySelector && scope.querySelector('.advanced-section')) || document.querySelector('.advanced-section');
         const data = section?._advancedData || stats;
         if (!data || typeof echarts === 'undefined') return;
 
@@ -81,13 +82,13 @@ const AdvancedStatsRenderer = (() => {
         chartInstances.forEach(c => { try { c.dispose(); } catch {} });
         chartInstances.length = 0;
 
-        if (data.rolling?.length >= 2) renderRolling(data.rolling);
-        if (data.polar?.some(v => v > 0)) renderPolar(data.polar);
+        if (data.rolling?.length >= 2) renderRolling(data.rolling, section);
+        if (data.polar?.some(v => v > 0)) renderPolar(data.polar, section);
         if (data.sessions?.sessions?.length) {
-            renderDuration(data.sessions.durationBuckets);
-            renderIntensity(data.sessions.intensityBuckets);
+            renderDuration(data.sessions.durationBuckets, section);
+            renderIntensity(data.sessions.intensityBuckets, section);
         }
-        if (data.comparison) renderComparison(data.comparison);
+        if (data.comparison) renderComparison(data.comparison, section);
 
         // Resize observer
         const resize = () => chartInstances.forEach(c => { try { c.resize(); } catch {} });
@@ -103,8 +104,8 @@ const AdvancedStatsRenderer = (() => {
         }
     }
 
-    function initChart(id) {
-        const dom = document.getElementById(id);
+    function initChart(id, section) {
+        const dom = (section && section.querySelector && section.querySelector('#' + id)) || document.getElementById(id);
         if (!dom) return null;
         const prev = echarts.getInstanceByDom(dom);
         if (prev) prev.dispose();
@@ -113,8 +114,8 @@ const AdvancedStatsRenderer = (() => {
         return chart;
     }
 
-    function renderRolling(rolling) {
-        const chart = initChart('advanced-rolling');
+    function renderRolling(rolling, section) {
+        const chart = initChart('advanced-rolling', section);
         if (!chart) return;
         const primary = cssVar('--primary-color', '#007AFF');
         const secondary = cssVar('--secondary-color', '#5856D6');
@@ -168,8 +169,8 @@ const AdvancedStatsRenderer = (() => {
         });
     }
 
-    function renderPolar(hours) {
-        const chart = initChart('advanced-polar');
+    function renderPolar(hours, section) {
+        const chart = initChart('advanced-polar', section);
         if (!chart) return;
         const primary = cssVar('--primary-color', '#007AFF');
         const text = cssVar('--text-secondary', '#666');
@@ -214,8 +215,8 @@ const AdvancedStatsRenderer = (() => {
         });
     }
 
-    function renderDuration(buckets) {
-        const chart = initChart('advanced-duration');
+    function renderDuration(buckets, section) {
+        const chart = initChart('advanced-duration', section);
         if (!chart) return;
         const primary = cssVar('--primary-color', '#007AFF');
         const text = cssVar('--text-secondary', '#666');
@@ -234,8 +235,8 @@ const AdvancedStatsRenderer = (() => {
         });
     }
 
-    function renderIntensity(buckets) {
-        const chart = initChart('advanced-intensity');
+    function renderIntensity(buckets, section) {
+        const chart = initChart('advanced-intensity', section);
         if (!chart) return;
         const warning = cssVar('--warning-color', '#FF9500');
         const text = cssVar('--text-secondary', '#666');
@@ -254,8 +255,8 @@ const AdvancedStatsRenderer = (() => {
         });
     }
 
-    function renderComparison(comparison) {
-        const chart = initChart('advanced-comparison');
+    function renderComparison(comparison, section) {
+        const chart = initChart('advanced-comparison', section);
         if (!chart) return;
         const primary = cssVar('--primary-color', '#007AFF');
         const gray = cssVar('--gray-2', '#AEAEB2');

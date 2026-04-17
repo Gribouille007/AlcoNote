@@ -254,7 +254,7 @@ class ModularStatisticsManager {
         if (typeof TrendsStatsRenderer !== 'undefined' && typeof TrendsStatsRenderer.renderTrendsStats === 'function') {
             this.renderers.trends = wrap(
                 (stats) => TrendsStatsRenderer.renderTrendsStats(stats),
-                (stats) => TrendsStatsRenderer.postRenderTrendsStats && TrendsStatsRenderer.postRenderTrendsStats(stats)
+                (stats, ctx) => TrendsStatsRenderer.postRenderTrendsStats && TrendsStatsRenderer.postRenderTrendsStats(stats, ctx)
             );
             console.log('Registered TrendsStatsRenderer');
         }
@@ -263,7 +263,7 @@ class ModularStatisticsManager {
         if (typeof AdvancedStatsRenderer !== 'undefined' && typeof AdvancedStatsRenderer.renderAdvancedStats === 'function') {
             this.renderers.advanced = wrap(
                 (stats) => AdvancedStatsRenderer.renderAdvancedStats(stats),
-                (stats) => AdvancedStatsRenderer.postRenderAdvancedStats && AdvancedStatsRenderer.postRenderAdvancedStats(stats)
+                (stats, ctx) => AdvancedStatsRenderer.postRenderAdvancedStats && AdvancedStatsRenderer.postRenderAdvancedStats(stats, ctx)
             );
             console.log('Registered AdvancedStatsRenderer');
         }
