@@ -192,23 +192,18 @@ class ModularStatisticsManager {
         if (typeof HealthStatsRenderer !== 'undefined') {
             this.renderers.health = wrap(
                 async (stats, ctx) => {
-                    const wrapper = document.createElement('div');
-                    wrapper.className = 'stats-section-group health-group';
+                    if (typeof HealthStatsRenderer.renderBACEstimation !== 'function') return null;
                     try {
-                        if (typeof HealthStatsRenderer.renderBACEstimation === 'function') {
-                            // Pass context with dateRange and drinks for proper BAC calculation
-                            const bacContext = {
-                                dateRange: ctx?.dateRange,
-                                drinks: ctx?.drinks,
-                                currentPeriod: ctx?.currentPeriod
-                            };
-                            const bacEl = await HealthStatsRenderer.renderBACEstimation(bacContext);
-                            if (bacEl) wrapper.appendChild(bacEl);
-                        }
+                        const bacContext = {
+                            dateRange: ctx?.dateRange,
+                            drinks: ctx?.drinks,
+                            currentPeriod: ctx?.currentPeriod
+                        };
+                        return await HealthStatsRenderer.renderBACEstimation(bacContext);
                     } catch (e) {
                         console.warn('Health render error:', e);
+                        return null;
                     }
-                    return wrapper;
                 },
                 (stats) => HealthStatsRenderer.postRenderHealthStats && HealthStatsRenderer.postRenderHealthStats(stats)
             );
