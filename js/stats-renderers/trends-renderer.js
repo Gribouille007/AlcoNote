@@ -28,11 +28,12 @@ const TrendsStatsRenderer = (() => {
         return section;
     }
 
-    function postRenderTrendsStats(stats) {
-        const section = document.querySelector('.trends-section');
+    function postRenderTrendsStats(stats, ctx) {
+        const scope = ctx?.containerEl || document;
+        const section = (scope.querySelector && scope.querySelector('.trends-section')) || document.querySelector('.trends-section');
         const data = section?._trendsData || stats;
         if (!data?.months || data.months.length < 2) return;
-        const dom = document.getElementById('trends-monthly-chart');
+        const dom = (section && section.querySelector('#trends-monthly-chart')) || document.getElementById('trends-monthly-chart');
         if (!dom || typeof echarts === 'undefined') return;
 
         const prev = echarts.getInstanceByDom(dom);
