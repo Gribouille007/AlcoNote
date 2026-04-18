@@ -525,6 +525,13 @@ class ModularStatisticsManager {
             // Clean up previous charts and maps
             this.cleanup();
 
+            // Detect missing CDN dependencies (Dexie, ECharts, Chart.js) — usually caused by
+            // a stale Service Worker cache. Surface a recoverable error instead of a generic one.
+            if (typeof window.dbManager === 'undefined' || typeof Dexie === 'undefined') {
+                this.showDependencyError(container);
+                return;
+            }
+
             const dateRange = await this.getDateRange();
             const drinks = await dbManager.getDrinksByDateRange(dateRange.start, dateRange.end);
 
@@ -828,11 +835,45 @@ class ModularStatisticsManager {
                     <div class="empty-state-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
                     <h3 class="empty-state-title">Erreur système</h3>
                     <p class="empty-state-description">
-                        Impossible de charger les statistiques. 
+                        Impossible de charger les statistiques.
                         Veuillez recharger la page ou contacter le support.
                     </p>
                 </div>
             `;
+        }
+    }
+
+    // Show dependency error when CDN libs (Dexie etc.) failed to load — usually a stale
+    // Service Worker cache. Offer a one-click recovery that purges SW + caches and reloads.
+    showDependencyError(container) {
+        container.innerHTML = `
+            <div class="empty-state error-state">
+                <div class="empty-state-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
+                <h3 class="empty-state-title">Problème de chargement</h3>
+                <p class="empty-state-description">
+                    Certaines ressources n'ont pas pu être chargées (cache obsolète).
+                    Rechargez la page pour récupérer les dernières versions.
+                </p>
+                <button id="stats-recover-btn" class="btn-primary" style="margin-top: 16px;">Recharger l'application</button>
+            </div>
+        `;
+        const btn = container.querySelector('#stats-recover-btn');
+        if (btn) {
+            btn.addEventListener('click', async () => {
+                try {
+                    if ('serviceWorker' in navigator) {
+                        const regs = await navigator.serviceWorker.getRegistrations();
+                        await Promise.all(regs.map(r => r.unregister()));
+                    }
+                    if (window.caches) {
+                        const keys = await caches.keys();
+                        await Promise.all(keys.map(k => caches.delete(k)));
+                    }
+                } catch (e) {
+                    console.warn('Recovery cleanup error:', e);
+                }
+                location.reload();
+            });
         }
     }
 }

@@ -1,9 +1,9 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v2.12.0';
-const STATIC_CACHE = 'alconote-static-v2.12.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v1.12.0';
+const CACHE_NAME = 'alconote-v2.13.0';
+const STATIC_CACHE = 'alconote-static-v2.13.0';
+const DYNAMIC_CACHE = 'alconote-dynamic-v1.13.0';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -70,21 +70,25 @@ const CACHE_FIRST_URLS = [
 ];
 
 // Install event - cache static files
+// Use per-file caching so a single CDN failure doesn't empty the static cache.
 self.addEventListener('install', (event) => {
     console.log('Service Worker: Installing...');
-    
+
     event.waitUntil(
         caches.open(STATIC_CACHE)
-            .then((cache) => {
+            .then(async (cache) => {
                 console.log('Service Worker: Caching static files');
-                return cache.addAll(STATIC_FILES);
+                const results = await Promise.allSettled(
+                    STATIC_FILES.map(url => cache.add(url))
+                );
+                const failed = results.filter(r => r.status === 'rejected').length;
+                if (failed > 0) {
+                    console.warn(`Service Worker: ${failed}/${STATIC_FILES.length} static files failed to cache (will retry on demand)`);
+                }
             })
-            .then(() => {
-                console.log('Service Worker: Static files cached successfully');
-                return self.skipWaiting();
-            })
+            .then(() => self.skipWaiting())
             .catch((error) => {
-                console.error('Service Worker: Error caching static files:', error);
+                console.error('Service Worker: Error opening static cache:', error);
             })
     );
 });
