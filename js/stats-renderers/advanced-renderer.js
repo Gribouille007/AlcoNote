@@ -138,7 +138,7 @@ const AdvancedStatsRenderer = (() => {
                 valueFormatter: v => v.toFixed(1) + ' g'
             },
             legend: { data: ['Brut', '7 jours', '30 jours'], bottom: 0, textStyle: { color: text } },
-            grid: { left: 44, right: 16, top: 16, bottom: 64, containLabel: true },
+            grid: { left: 4, right: 12, top: 24, bottom: 64, containLabel: true },
             dataZoom: [
                 { type: 'inside' },
                 { type: 'slider', height: 16, bottom: 28, fillerColor: primary + '22' }

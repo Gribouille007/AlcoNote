@@ -875,8 +875,16 @@ class AlcoNoteApp {
                         row.textContent = drink.name;
                         row.addEventListener('click', (e) => {
                             e.stopPropagation();
+                            const targetDrinkName = drink.name;
                             const category = { name: catName };
-                            this.openCategoryDetailPage(category);
+                            // Close the search: reset input and restore all categories
+                            const searchInput = document.getElementById('categories-search');
+                            const clearSearchBtn = document.getElementById('categories-search-clear');
+                            if (searchInput) searchInput.value = '';
+                            if (clearSearchBtn) clearSearchBtn.style.display = 'none';
+                            this.filterCategories('');
+                            // Open category modal and scroll to the selected drink
+                            this.openCategoryDetailPage(category, targetDrinkName);
                         });
                         panel.appendChild(row);
                     });
@@ -1666,7 +1674,7 @@ class AlcoNoteApp {
     }
 
     // Open category detail page
-    async openCategoryDetailPage(category) {
+    async openCategoryDetailPage(category, targetDrinkName = null) {
         try {
             // Get drinks for this category
             const drinks = await dbManager.getDrinksByCategory(category.name);
@@ -1734,7 +1742,7 @@ class AlcoNoteApp {
             drinkGroupsWithVariants.sort((a, b) => b.totalCount - a.totalCount);
 
             // Create and show category detail modal
-            this.showCategoryDetailModal(category, drinkGroupsWithVariants);
+            this.showCategoryDetailModal(category, drinkGroupsWithVariants, targetDrinkName);
 
         } catch (error) {
             Utils.handleError(error, 'opening category detail page');
@@ -1742,7 +1750,7 @@ class AlcoNoteApp {
     }
 
     // Show category detail modal
-    showCategoryDetailModal(category, drinkGroups) {
+    showCategoryDetailModal(category, drinkGroups, targetDrinkName = null) {
         // Create modal if it doesn't exist
         let modal = document.getElementById('category-detail-modal');
         if (!modal) {
@@ -1899,6 +1907,25 @@ class AlcoNoteApp {
         };
 
         Utils.openModal('category-detail-modal');
+
+        // If coming from a search result, scroll to the matching drink family
+        if (targetDrinkName) {
+            requestAnimationFrame(() => {
+                const families = content.querySelectorAll('.drink-family');
+                let target = null;
+                families.forEach(fam => {
+                    const nameEl = fam.querySelector('.drink-family-name');
+                    if (nameEl && nameEl.textContent === targetDrinkName) {
+                        target = fam;
+                    }
+                });
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    target.classList.add('highlight-flash');
+                    setTimeout(() => target.classList.remove('highlight-flash'), 1600);
+                }
+            });
+        }
     }
 
     // Create category detail modal

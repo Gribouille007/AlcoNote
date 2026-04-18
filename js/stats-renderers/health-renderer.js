@@ -105,9 +105,6 @@ async function renderBACEstimation(context = {}) {
                     <p>Pour calculer votre taux d'alcoolémie, veuillez renseigner votre poids et sexe dans les paramètres.</p>
                     <button id="open-profile-settings" class="btn-primary">Configurer mon profil</button>
                 </div>
-                <div class="bac-disclaimer">
-                    <p><strong>${HEALTH_ICONS.warning} Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
-                </div>
             `;
 
             return section;
@@ -252,10 +249,6 @@ async function renderBACEstimation(context = {}) {
             ` : ''}
 
             ${renderBACRecordsSection(bacRecords, highestRecord)}
-
-            <div class="bac-disclaimer">
-                <p><strong>${HEALTH_ICONS.warning} Ces valeurs sont indicatives et ne remplacent pas un test certifié.</strong></p>
-            </div>
         `;
 
         // Store projection data on element for postRender chart init
