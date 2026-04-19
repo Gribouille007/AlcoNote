@@ -734,9 +734,16 @@
 }
 
 /* Ensure images and media don't overflow */
-img, video, canvas, svg {
+img, video {
     max-width: 100%;
     height: auto;
+}
+
+/* Canvas and SVG: constrain width without forcing height: auto,
+   which would override explicit height attributes used by Chart.js,
+   ECharts and inline SVG icons (causing the Statistics tab to break). */
+canvas, svg {
+    max-width: 100%;
 }
 
 /* Prevent text inputs from zooming on iOS (font-size < 16px triggers zoom) */
