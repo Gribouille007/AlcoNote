@@ -77,6 +77,23 @@ function _filterByPeriod(entries, period) {
   });
 }
 
+// Variant that keeps the family shape but trims each family's entries to
+// the selected period. Families with no remaining entries are dropped so
+// downstream rollups (top-drinks, category cards) don't show empty rows.
+function _familiesInPeriod(families, period) {
+  if (!period || period === 'all') return families;
+  const { from, to } = _periodRange(period);
+  const out = [];
+  for (const f of families) {
+    const trimmed = f.entries.filter(e => {
+      const ts = Date.parse(e.ts);
+      return !Number.isNaN(ts) && ts >= +from && ts < +to;
+    });
+    if (trimmed.length) out.push({ ...f, entries: trimmed });
+  }
+  return out;
+}
+
 // Sessions: any run of entries within 4h of each other counts as one session.
 function _sessions(entries) {
   if (!entries.length) return [];
@@ -371,7 +388,8 @@ function Card({ children, style, ...rest }) {
 // ── 1. Général ────────────────────────────────────────────────────
 function GeneralSection({ period, collapsed, toggleSection, families = [] }) {
   const hidePct = period === 'all';
-  const entries = _filterByPeriod(_flatEntries(families), period);
+  const allEntries = _flatEntries(families);
+  const entries = _filterByPeriod(allEntries, period);
 
   const totalDrinks = entries.length;
   const sessions = _sessions(entries);
@@ -389,17 +407,27 @@ function GeneralSection({ period, collapsed, toggleSection, families = [] }) {
     { v: uniqueDrinks, l: 'Boissons diff.' },
   ];
 
-  // Period-aware extras: averages need a denominator in days.
-  const { from, to } = _periodRange(period);
-  const periodDays = Math.max(1, Math.round((+to - +from) / 86400000));
-  const days = Math.min(periodDays, 366); // cap "all" at a year-equivalent
+  // Period-aware denominator. For "all" we use (today − earliest entry)
+  // rather than the synthetic 1970→year-275760 range from _periodRange,
+  // which would otherwise blow the average out by a factor of 10⁹.
+  let days;
+  if (period === 'all') {
+    const oldest = allEntries.reduce((m, e) => {
+      const ts = Date.parse(e.ts);
+      return !Number.isNaN(ts) && ts < m ? ts : m;
+    }, Date.now());
+    days = Math.max(1, Math.round((Date.now() - oldest) / 86400000) + 1);
+  } else {
+    const { from, to } = _periodRange(period);
+    days = Math.max(1, Math.round((+to - +from) / 86400000));
+  }
 
-  if (period === 'week' || period === 'month' || period === 'year') {
+  if (period === 'week' || period === 'month' || period === 'year' || period === 'all') {
     const drinkDays = new Set(entries.map(e => e.ts.slice(0, 10))).size;
     cards.push({ v: Math.max(0, days - drinkDays), l: 'Jours sobres' });
     cards.push({ v: (totalDrinks / days).toFixed(1), l: 'Boissons/jour' });
   }
-  if (period === 'month' || period === 'year') {
+  if (period === 'month' || period === 'year' || period === 'all') {
     cards.push({ v: (totalDrinks / Math.max(1, days / 7)).toFixed(0), l: 'Boissons/sem.' });
   }
 
@@ -411,6 +439,8 @@ function GeneralSection({ period, collapsed, toggleSection, families = [] }) {
   const catDist = [...catDistMap.entries()]
     .map(([name, v]) => ({ name, v }))
     .sort((a, b) => b.v - a.v);
+  // Hoisted out of the inner .map — was O(n²) when it should be O(n).
+  const catDistTotal = catDist.reduce((s, x) => s + x.v, 0) || 1;
 
   return (
     <StatSection id="general" title="Statistiques générales" sub="Vue d'ensemble de votre consommation" collapsed={collapsed} toggleSection={toggleSection}>
@@ -452,8 +482,7 @@ function GeneralSection({ period, collapsed, toggleSection, families = [] }) {
           </div>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
             {catDist.map(d => {
-              const total = catDist.reduce((s, x) => s + x.v, 0);
-              const pct = Math.round((d.v / total) * 100);
+              const pct = Math.round((d.v / catDistTotal) * 100);
               return (
                 <div key={d.name} style={{
                   display: 'flex', alignItems: 'center', gap: 8, fontSize: 11,
@@ -474,15 +503,18 @@ function GeneralSection({ period, collapsed, toggleSection, families = [] }) {
 }
 
 // ── 2. Analyse temporelle ─────────────────────────────────────────
-function TemporalSection({ collapsed, toggleSection, families = [] }) {
-  const hourly = deriveHourly(families);
-  const daily = deriveDaily(families);
+function TemporalSection({ collapsed, toggleSection, families = [], period }) {
+  // Period filter applied to the entry stream so every sub-stat below
+  // (peak hour, radar, session stats) reflects the selected window.
+  const periodFamilies = _familiesInPeriod(families, period);
+  const hourly = deriveHourly(periodFamilies);
+  const daily = deriveDaily(periodFamilies);
   const peakHour = hourly.indexOf(Math.max(...hourly));
   const peakDay = daily.reduce((a, b) => a.v > b.v ? a : b, daily[0] || { day: 0, v: 0 });
   const dayNames = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
 
-  // Avg session duration + avg gap between sessions
-  const allEntries = _flatEntries(families);
+  // Avg session duration + avg gap between sessions, period-scoped.
+  const allEntries = _flatEntries(periodFamilies);
   const sessions = _sessions(allEntries);
   const sessionMs = sessions
     .filter(s => s.length > 1)
@@ -551,10 +583,11 @@ function MiniStat({ big, label }) {
 }
 
 // ── 3. Analyse par catégorie ─────────────────────────────────────
-function CategorySection({ collapsed, toggleSection, families = [] }) {
+function CategorySection({ collapsed, toggleSection, families = [], period }) {
+  const scoped = _familiesInPeriod(families, period);
   // Aggregate per category from real entries.
   const byCat = new Map();
-  for (const e of _flatEntries(families)) {
+  for (const e of _flatEntries(scoped)) {
     const k = e.family.category || 'Autre';
     if (!byCat.has(k)) byCat.set(k, { count: 0, volumeCl: 0, abvSum: 0, names: new Map() });
     const agg = byCat.get(k);
@@ -626,8 +659,9 @@ function StatRow({ label, value, truncate }) {
 }
 
 // ── 4. Top 10 des boissons ────────────────────────────────────────
-function TopDrinksSection({ collapsed, toggleSection, families = [] }) {
-  const top = families
+function TopDrinksSection({ collapsed, toggleSection, families = [], period }) {
+  const scoped = _familiesInPeriod(families, period);
+  const top = scoped
     .map(f => {
       const count = f.entries.length;
       const volumeCl = (f.unit === 'EcoCup' ? f.quantity * 25
@@ -714,9 +748,9 @@ function bacLevel(bac) {
 }
 
 function BACSection({ collapsed, toggleSection, families = [] }) {
-  // BAC records loaded from IDB (legacy `bacRecords` store). The state is
-  // kept local so swipe-to-delete is purely visual; if you want true IDB
-  // delete that's a follow-up.
+  // BAC records loaded from IDB (legacy `bacRecords` store). Each row keeps
+  // a `__rawId` numeric key alongside the stringified `id` so swipe-delete
+  // can call deleteOne('bacRecords', rawId).
   const [records, setRecords] = React.useState([]);
   React.useEffect(() => {
     let cancelled = false;
@@ -725,6 +759,7 @@ function BACSection({ collapsed, toggleSection, families = [] }) {
       const sorted = (rs || [])
         .map(r => ({
           id: String(r.id),
+          __rawId: r.id,
           bac: r.bacValue,
           drinks: r.drinkCount,
           ts: typeof r.timestamp === 'string' ? r.timestamp : new Date(r.timestamp).toISOString(),
@@ -768,7 +803,16 @@ function BACSection({ collapsed, toggleSection, families = [] }) {
   const highest = records.find(r => r.highest);
   const others = records.filter(r => !r.highest);
 
-  const deleteRecord = (id) => setRecords(rs => rs.filter(r => r.id !== id));
+  const deleteRecord = (id) => {
+    setRecords(rs => {
+      const target = rs.find(r => r.id === id);
+      if (target && target.__rawId !== undefined) {
+        deleteOne('bacRecords', target.__rawId).catch(e =>
+          console.warn('[AlcoNote] bacRecord IDB delete failed', e));
+      }
+      return rs.filter(r => r.id !== id);
+    });
+  };
 
   return (
     <StatSection id="bac" title="Alcoolémie" collapsed={collapsed} toggleSection={toggleSection} sub="Estimation BAC · Formule de Widmark">
@@ -1009,7 +1053,10 @@ function TrendsSection({ collapsed, toggleSection, families = [] }) {
 }
 
 // ── 7. Analyses avancées ─────────────────────────────────────────
-function AdvancedSection({ collapsed, toggleSection, families = [] }) {
+function AdvancedSection({ collapsed, toggleSection, families = [], period }) {
+  // Polar clock + session histograms honor the period selector. The rolling
+  // average chart is intentionally always 30 days regardless of the picker.
+  const scoped = _familiesInPeriod(families, period);
   return (
     <StatSection id="advanced" title="Analyses avancées" collapsed={collapsed} toggleSection={toggleSection} sub="Moyennes mobiles · Horloge · Distribution des sessions">
       {/* Rolling average */}
@@ -1039,7 +1086,7 @@ function AdvancedSection({ collapsed, toggleSection, families = [] }) {
         <div style={{
           color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
         }}>Répartition sur 24 heures</div>
-        <SvgPolarClock hours={deriveHourly(families)} size={240} />
+        <SvgPolarClock hours={deriveHourly(scoped)} size={240} />
       </Card>
 
       {/* Sessions distribution: duration + BAC */}
@@ -1057,14 +1104,14 @@ function AdvancedSection({ collapsed, toggleSection, families = [] }) {
               color: T.ink2, fontSize: 10.5, marginBottom: 4, textAlign: 'center',
               letterSpacing: 0.3, textTransform: 'uppercase',
             }}>Durée</div>
-            <SvgHistogram buckets={deriveSessionDurationBuckets(families)} width={150} height={120} color={T.accent} />
+            <SvgHistogram buckets={deriveSessionDurationBuckets(scoped)} width={150} height={120} color={T.accent} />
           </div>
           <div>
             <div style={{
               color: T.ink2, fontSize: 10.5, marginBottom: 4, textAlign: 'center',
               letterSpacing: 0.3, textTransform: 'uppercase',
             }}>BAC (g/L)</div>
-            <SvgHistogram buckets={deriveSessionBacBuckets(families)} width={150} height={120} color={T.accent2} />
+            <SvgHistogram buckets={deriveSessionBacBuckets(scoped)} width={150} height={120} color={T.accent2} />
           </div>
         </div>
       </Card>

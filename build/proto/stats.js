@@ -104,6 +104,29 @@ function _filterByPeriod(entries, period) {
   });
 }
 
+// Variant that keeps the family shape but trims each family's entries to
+// the selected period. Families with no remaining entries are dropped so
+// downstream rollups (top-drinks, category cards) don't show empty rows.
+function _familiesInPeriod(families, period) {
+  if (!period || period === 'all') return families;
+  const {
+    from,
+    to
+  } = _periodRange(period);
+  const out = [];
+  for (const f of families) {
+    const trimmed = f.entries.filter(e => {
+      const ts = Date.parse(e.ts);
+      return !Number.isNaN(ts) && ts >= +from && ts < +to;
+    });
+    if (trimmed.length) out.push({
+      ...f,
+      entries: trimmed
+    });
+  }
+  return out;
+}
+
 // Sessions: any run of entries within 4h of each other counts as one session.
 function _sessions(entries) {
   if (!entries.length) return [];
@@ -472,7 +495,8 @@ function GeneralSection({
   families = []
 }) {
   const hidePct = period === 'all';
-  const entries = _filterByPeriod(_flatEntries(families), period);
+  const allEntries = _flatEntries(families);
+  const entries = _filterByPeriod(allEntries, period);
   const totalDrinks = entries.length;
   const sessions = _sessions(entries);
   const totalVolumeCl = entries.reduce((s, e) => s + _entryVolumeCl(e), 0);
@@ -499,15 +523,24 @@ function GeneralSection({
     l: 'Boissons diff.'
   }];
 
-  // Period-aware extras: averages need a denominator in days.
-  const {
-    from,
-    to
-  } = _periodRange(period);
-  const periodDays = Math.max(1, Math.round((+to - +from) / 86400000));
-  const days = Math.min(periodDays, 366); // cap "all" at a year-equivalent
-
-  if (period === 'week' || period === 'month' || period === 'year') {
+  // Period-aware denominator. For "all" we use (today − earliest entry)
+  // rather than the synthetic 1970→year-275760 range from _periodRange,
+  // which would otherwise blow the average out by a factor of 10⁹.
+  let days;
+  if (period === 'all') {
+    const oldest = allEntries.reduce((m, e) => {
+      const ts = Date.parse(e.ts);
+      return !Number.isNaN(ts) && ts < m ? ts : m;
+    }, Date.now());
+    days = Math.max(1, Math.round((Date.now() - oldest) / 86400000) + 1);
+  } else {
+    const {
+      from,
+      to
+    } = _periodRange(period);
+    days = Math.max(1, Math.round((+to - +from) / 86400000));
+  }
+  if (period === 'week' || period === 'month' || period === 'year' || period === 'all') {
     const drinkDays = new Set(entries.map(e => e.ts.slice(0, 10))).size;
     cards.push({
       v: Math.max(0, days - drinkDays),
@@ -518,7 +551,7 @@ function GeneralSection({
       l: 'Boissons/jour'
     });
   }
-  if (period === 'month' || period === 'year') {
+  if (period === 'month' || period === 'year' || period === 'all') {
     cards.push({
       v: (totalDrinks / Math.max(1, days / 7)).toFixed(0),
       l: 'Boissons/sem.'
@@ -533,6 +566,8 @@ function GeneralSection({
     name,
     v
   })).sort((a, b) => b.v - a.v);
+  // Hoisted out of the inner .map — was O(n²) when it should be O(n).
+  const catDistTotal = catDist.reduce((s, x) => s + x.v, 0) || 1;
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "general",
     title: "Statistiques g\xE9n\xE9rales",
@@ -612,8 +647,7 @@ function GeneralSection({
       gap: 7
     }
   }, catDist.map(d => {
-    const total = catDist.reduce((s, x) => s + x.v, 0);
-    const pct = Math.round(d.v / total * 100);
+    const pct = Math.round(d.v / catDistTotal * 100);
     return /*#__PURE__*/React.createElement("div", {
       key: d.name,
       style: {
@@ -648,10 +682,14 @@ function GeneralSection({
 function TemporalSection({
   collapsed,
   toggleSection,
-  families = []
+  families = [],
+  period
 }) {
-  const hourly = deriveHourly(families);
-  const daily = deriveDaily(families);
+  // Period filter applied to the entry stream so every sub-stat below
+  // (peak hour, radar, session stats) reflects the selected window.
+  const periodFamilies = _familiesInPeriod(families, period);
+  const hourly = deriveHourly(periodFamilies);
+  const daily = deriveDaily(periodFamilies);
   const peakHour = hourly.indexOf(Math.max(...hourly));
   const peakDay = daily.reduce((a, b) => a.v > b.v ? a : b, daily[0] || {
     day: 0,
@@ -659,8 +697,8 @@ function TemporalSection({
   });
   const dayNames = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
 
-  // Avg session duration + avg gap between sessions
-  const allEntries = _flatEntries(families);
+  // Avg session duration + avg gap between sessions, period-scoped.
+  const allEntries = _flatEntries(periodFamilies);
   const sessions = _sessions(allEntries);
   const sessionMs = sessions.filter(s => s.length > 1).map(s => Date.parse(s[s.length - 1].ts) - Date.parse(s[0].ts));
   const avgSessionH = sessionMs.length ? sessionMs.reduce((a, b) => a + b, 0) / sessionMs.length / 3600000 : 0;
@@ -767,11 +805,13 @@ function MiniStat({
 function CategorySection({
   collapsed,
   toggleSection,
-  families = []
+  families = [],
+  period
 }) {
+  const scoped = _familiesInPeriod(families, period);
   // Aggregate per category from real entries.
   const byCat = new Map();
-  for (const e of _flatEntries(families)) {
+  for (const e of _flatEntries(scoped)) {
     const k = e.family.category || 'Autre';
     if (!byCat.has(k)) byCat.set(k, {
       count: 0,
@@ -900,9 +940,11 @@ function StatRow({
 function TopDrinksSection({
   collapsed,
   toggleSection,
-  families = []
+  families = [],
+  period
 }) {
-  const top = families.map(f => {
+  const scoped = _familiesInPeriod(families, period);
+  const top = scoped.map(f => {
     const count = f.entries.length;
     const volumeCl = (f.unit === 'EcoCup' ? f.quantity * 25 : f.unit === 'L' ? f.quantity * 100 : f.quantity) * count;
     const last = f.entries[0]?.ts.slice(0, 10) || '';
@@ -1051,9 +1093,9 @@ function BACSection({
   toggleSection,
   families = []
 }) {
-  // BAC records loaded from IDB (legacy `bacRecords` store). The state is
-  // kept local so swipe-to-delete is purely visual; if you want true IDB
-  // delete that's a follow-up.
+  // BAC records loaded from IDB (legacy `bacRecords` store). Each row keeps
+  // a `__rawId` numeric key alongside the stringified `id` so swipe-delete
+  // can call deleteOne('bacRecords', rawId).
   const [records, setRecords] = React.useState([]);
   React.useEffect(() => {
     let cancelled = false;
@@ -1061,6 +1103,7 @@ function BACSection({
       if (cancelled) return;
       const sorted = (rs || []).map(r => ({
         id: String(r.id),
+        __rawId: r.id,
         bac: r.bacValue,
         drinks: r.drinkCount,
         ts: typeof r.timestamp === 'string' ? r.timestamp : new Date(r.timestamp).toISOString()
@@ -1099,7 +1142,15 @@ function BACSection({
   }));
   const highest = records.find(r => r.highest);
   const others = records.filter(r => !r.highest);
-  const deleteRecord = id => setRecords(rs => rs.filter(r => r.id !== id));
+  const deleteRecord = id => {
+    setRecords(rs => {
+      const target = rs.find(r => r.id === id);
+      if (target && target.__rawId !== undefined) {
+        deleteOne('bacRecords', target.__rawId).catch(e => console.warn('[AlcoNote] bacRecord IDB delete failed', e));
+      }
+      return rs.filter(r => r.id !== id);
+    });
+  };
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "bac",
     title: "Alcool\xE9mie",
@@ -1575,8 +1626,12 @@ function TrendsSection({
 function AdvancedSection({
   collapsed,
   toggleSection,
-  families = []
+  families = [],
+  period
 }) {
+  // Polar clock + session histograms honor the period selector. The rolling
+  // average chart is intentionally always 30 days regardless of the picker.
+  const scoped = _familiesInPeriod(families, period);
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "advanced",
     title: "Analyses avanc\xE9es",
@@ -1645,7 +1700,7 @@ function AdvancedSection({
       fontFamily: fontSerif
     }
   }, "R\xE9partition sur 24 heures"), /*#__PURE__*/React.createElement(SvgPolarClock, {
-    hours: deriveHourly(families),
+    hours: deriveHourly(scoped),
     size: 240
   })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1679,7 +1734,7 @@ function AdvancedSection({
       textTransform: 'uppercase'
     }
   }, "Dur\xE9e"), /*#__PURE__*/React.createElement(SvgHistogram, {
-    buckets: deriveSessionDurationBuckets(families),
+    buckets: deriveSessionDurationBuckets(scoped),
     width: 150,
     height: 120,
     color: T.accent
@@ -1693,7 +1748,7 @@ function AdvancedSection({
       textTransform: 'uppercase'
     }
   }, "BAC (g/L)"), /*#__PURE__*/React.createElement(SvgHistogram, {
-    buckets: deriveSessionBacBuckets(families),
+    buckets: deriveSessionBacBuckets(scoped),
     width: 150,
     height: 120,
     color: T.accent2

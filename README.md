@@ -1,194 +1,146 @@
-# AlcoNote - PWA de Suivi de Consommation d'Alcool
+# AlcoNote — PWA de suivi de consommation d'alcool
 
-AlcoNote est une Progressive Web App (PWA) complète pour le suivi de la consommation d'alcool avec des fonctionnalités avancées de scanner de code-barres, géolocalisation, et statistiques détaillées.
+AlcoNote est une Progressive Web App de suivi personnel : catégories de
+boissons, historique chronologique, statistiques détaillées (temporel,
+alcoolémie estimée par formule de Widmark, distributions de sessions,
+moyennes mobiles).
 
-## 🚀 Fonctionnalités
+L'interface est un redesign éditorial — palette ambre / ivoire chaude,
+typographie Instrument Serif × Geist — livrée par Claude Design et
+implémentée comme un prototype React monté dans une coque PWA classique.
 
-### ✨ Interface Utilisateur
-- **Design Apple-like** : Interface moderne inspirée d'iOS
-- **Responsive** : S'adapte à tous les appareils (mobile, tablette, desktop)
-- **PWA** : Installable comme une application native
-- **Mode hors ligne** : Fonctionne sans connexion internet
+## Démarrage rapide
 
-### 📱 Navigation
-- **3 onglets principaux** : Catégories, Boissons, Statistiques
-- **Menu paramètres** : Accessible via l'icône hamburger
-- **FAB (Floating Action Button)** : Bouton + central pour ajouter du contenu
-- **Raccourcis clavier** : Navigation rapide (1, 2, 3, A, S)
+```bash
+git clone <repo>
+cd AlcoNote
+python3 -m http.server 8000  # ou tout serveur statique HTTPS
+# ouvrir http://localhost:8000
+```
 
-### 🍺 Gestion des Boissons
-- **Ajout manuel** : Formulaire complet avec suggestions automatiques
-- **Scanner de code-barres** : Reconnaissance automatique via QuaggaJS
-- **Auto-sauvegarde** : Les bières sont automatiquement sauvegardées après scan
-- **Unités multiples** : EcoCup (25cL), cL, L
-- **Géolocalisation** : Position automatique lors de l'ajout
-- **Groupement intelligent** : Boissons regroupées par nom et quantité
-- **Tri alphabétique** : Organisation claire des boissons
+Aucune étape `npm install` n'est nécessaire pour servir le site : les
+sources JSX sont **déjà précompilées** dans `build/proto/*.js` et
+commitées avec le code.
 
-### 📊 Statistiques Complètes
-- **Périodes flexibles** : Aujourd'hui, semaine, mois, année, personnalisé
-- **Navigation par jour** : Flèches pour naviguer jour par jour
-- **Statistiques générales** :
-  - Nombre total de boissons
-  - Volume total consommé
-  - Grammes d'alcool pur
-  - Nombre de sessions
-  - Jours sobres
-  - Moyennes par période
-
-- **Analyse temporelle** :
-  - Heures de consommation
-  - Jours de la semaine
-  - Durée des sessions
-  - Temps entre sessions
-
-- **Statistiques par catégorie** :
-  - Répartition par type
-  - Volume moyen
-  - Degré d'alcool moyen
-  - Boisson préférée
-
-- **Indicateurs de santé** :
-  - Comparaison aux recommandations OMS
-  - Estimation du taux d'alcoolémie
-  - Consommation hebdomadaire
-
-### 🗂️ Organisation
-- **Catégories** : Bière, Vin, Spiritueux, Cocktail, Autre
-- **Tri intelligent** : Catégories triées par nombre de boissons
-- **Détail des boissons** : Vue détaillée avec historique par date
-- **Sections pliables** : Organisation par date avec possibilité de replier
-
-### 🔧 Fonctionnalités Avancées
-- **Swipe to delete** : Glisser vers la gauche pour supprimer
-- **Géolocalisation** : Tracking automatique des lieux de consommation
-- **Export/Import** : Sauvegarde et restauration des données
-- **Suggestions** : Auto-complétion basée sur l'historique
-- **Mode hors ligne** : Fonctionnement complet sans internet
-
-## 🛠️ Technologies Utilisées
-
-### Frontend
-- **HTML5** : Structure sémantique
-- **CSS3** : Design moderne avec variables CSS et animations
-- **JavaScript ES6+** : Logique applicative moderne
-- **PWA** : Service Worker, Web App Manifest
-
-### Stockage
-- **IndexedDB** : Base de données locale avec Dexie.js
-- **LocalStorage** : Paramètres utilisateur
-
-### APIs Externes
-- **OpenFoodFacts** : Reconnaissance des produits par code-barres
-- **Nominatim (OpenStreetMap)** : Géocodage inverse
-- **QuaggaJS** : Scanner de code-barres
-- **Chart.js** : Graphiques et visualisations
-
-### Géolocalisation
-- **HTML5 Geolocation API** : Position GPS
-- **Clustering** : Regroupement des lieux proches
-- **Analyse spatiale** : Statistiques par lieu
-
-## 📁 Structure du Projet
+## Architecture
 
 ```
 AlcoNote/
-├── index.html              # Page principale
-├── manifest.json           # Manifest PWA
-├── sw.js                   # Service Worker
-├── generate-icons.html     # Générateur d'icônes
-├── css/
-│   ├── main.css            # Styles principaux
-│   ├── components.css      # Composants UI
-│   └── responsive.css      # Design responsive
-├── js/
-│   ├── app.js              # Contrôleur principal
-│   ├── database.js         # Gestion IndexedDB
-│   ├── utils.js            # Fonctions utilitaires
-│   ├── scanner.js          # Scanner code-barres
-│   ├── statistics.js       # Calculs statistiques
-│   └── geolocation.js      # Géolocalisation
-└── assets/
-    └── icons/              # Icônes PWA
+├── index.html              # Point d'entrée — charge build/proto/*.js
+├── manifest.json           # Manifest PWA (couleurs, icônes, raccourcis)
+├── sw.js                   # Service Worker — cache statique + stratégies
+├── package.json            # Build script (devDeps uniquement)
+├── babel.config.json       # Preset @babel/preset-react
+│
+├── proto/                  # ▼ Source de vérité (JSX)
+│   ├── shared.jsx          #   Tokens de thème + icônes SVG
+│   ├── db.jsx              #   Adaptateur IndexedDB (legacy AlcoNoteDB)
+│   ├── data.jsx            #   Catégories par défaut + données de seed
+│   ├── app.jsx             #   App, PhoneFrame, AppHeader, BottomNav
+│   ├── categories.jsx      #   Onglet Catégories (grille + drill-down)
+│   ├── history.jsx         #   Onglet Historique (groupé par jour)
+│   ├── stats.jsx           #   Onglet Statistiques (7 sections)
+│   ├── stats-charts.jsx    #   Primitives SVG (bar, donut, radar, ...)
+│   └── modals.jsx          #   Add Drink, Drink detail, Settings, Scanner
+│
+├── build/proto/            # ▼ JS compilé (commité, sert directement)
+│   └── *.js                #   Émis par `npm run build`
+│
+├── assets/icons/           # Icônes PWA
+└── .github/workflows/      # CI : build-check
 ```
 
-## 🚀 Installation et Utilisation
+### Flux de données
 
-### Installation Locale
-1. Cloner ou télécharger le projet
-2. Ouvrir `generate-icons.html` dans un navigateur
-3. Cliquer sur chaque icône pour les télécharger dans `assets/icons/`
-4. Servir le projet via un serveur HTTP local
-5. Ouvrir `index.html` dans un navigateur moderne
+1. Au boot, `app.jsx` appelle `hydrateFamilies()` qui lit IndexedDB
+   (`AlcoNoteDB` — la même base que la version legacy).
+2. Les lignes `drinks` sont regroupées en *familles* (boisson + degré +
+   format) par `groupIntoFamilies()`. Le résultat est exposé via
+   `window.DRINK_FAMILIES`.
+3. Les composants lisent `window.DRINK_FAMILIES` au render et se
+   ré-abonnent via `useDb()` pour se redessiner après hydratation.
+4. Quand une boisson est ajoutée (`addDrinkToDb`), elle est persistée
+   dans IndexedDB, le compteur `categories.drinkCount` est mis à jour
+   pour rester cohérent avec un éventuel rollback vers la version
+   legacy, puis `hydrateFamilies()` re-rafraîchit la vue.
 
-### Installation PWA
-1. Ouvrir l'application dans un navigateur compatible
-2. Cliquer sur "Installer" quand l'invite apparaît
-3. L'application sera installée comme une app native
+### Préservation des données
 
-### Utilisation
-1. **Première utilisation** : Les catégories par défaut sont créées automatiquement
-2. **Ajouter une boisson** : Utiliser le bouton + ou scanner un code-barres
-3. **Consulter les statistiques** : Onglet Statistiques avec différentes périodes
-4. **Paramètres** : Menu hamburger pour configurer profil et données
+L'adaptateur IDB (`proto/db.jsx`) est conçu pour ne **jamais perdre les
+données utilisateur** lors de la migration depuis la version legacy :
 
-## 📱 Compatibilité
+- **Ouverture sans version forcée** : la base est ouverte à sa version
+  actuelle ; un schéma futur (DB > v3) est lu tel quel sans tentative
+  de downgrade.
+- **Stores manquants** tolérés : un schéma legacy v1/v2 sans
+  `bacRecords` ou `drinkRatings` ne produit pas d'erreur.
+- **`onversionchange`** ferme la connexion proprement quand un onglet
+  pair demande un upgrade.
+- **Backup / restore** dans Paramètres → Données :
+  - *Exporter* dump tous les stores en JSON.
+  - *Importer* fait un merge-by-id (un row qui a la même clé écrase la
+    version actuelle, les rows absents du backup sont conservés). Les
+    erreurs par-ligne sont isolées via `preventDefault()` pour ne pas
+    annuler la transaction entière.
+  - *Tout effacer* demande confirmation puis supprime la base.
 
-### Navigateurs Supportés
-- **Chrome/Chromium** 80+ (recommandé)
-- **Firefox** 75+
-- **Safari** 13+
-- **Edge** 80+
+## Développement
 
-### Fonctionnalités par Plateforme
-- **Scanner** : Nécessite accès caméra (HTTPS requis)
-- **Géolocalisation** : Nécessite permission de localisation
-- **PWA** : Installation disponible sur tous les navigateurs modernes
-- **Hors ligne** : Fonctionnement complet sans internet
+Si tu modifies un fichier `proto/*.jsx`, **tu dois recompiler** avant de
+commiter :
 
-## 🔒 Confidentialité et Sécurité
-
-- **Données locales** : Toutes les données restent sur l'appareil
-- **Pas de tracking** : Aucune donnée envoyée à des serveurs tiers
-- **APIs externes** : Utilisées uniquement pour enrichir les données
-- **Géolocalisation** : Stockée localement, jamais partagée
-
-## 🎨 Personnalisation
-
-### Couleurs
-Les couleurs peuvent être modifiées dans `css/main.css` via les variables CSS :
-```css
-:root {
-    --primary-color: #007AFF;
-    --success-color: #34C759;
-    --warning-color: #FF9500;
-    --error-color: #FF3B30;
-}
+```bash
+npm install        # une fois, installe @babel/cli + preset-react
+npm run build      # compile proto/ → build/proto/
+# ou en mode watch pendant le dev :
+npm run watch
 ```
 
-### Catégories
-Les catégories par défaut peuvent être modifiées dans `js/database.js`.
+Une GitHub Action (`.github/workflows/build-check.yml`) vérifie sur
+chaque PR que `build/` correspond bien aux sources, pour empêcher tout
+drift accidentel.
 
-## 🤝 Contribution
+### Pourquoi pré-compiler ?
 
-Ce projet est conçu pour être facilement extensible :
-- Architecture modulaire
-- Code documenté
-- Séparation des responsabilités
-- APIs bien définies
+La version initiale du prototype embarquait `@babel/standalone` (~3 MB)
+pour compiler le JSX dans le navigateur. Ce choix forçait
+`unsafe-eval` dans la CSP. La version actuelle pré-compile, ce qui
+permet une CSP stricte (`script-src 'self' https://unpkg.com`, sans
+`unsafe-eval` ni `unsafe-inline`).
 
-## 📄 Licence
+## Statistiques
 
-Ce projet est fourni à des fins éducatives et de démonstration.
+Toutes les sections de l'onglet *Statistiques* dérivent leurs données
+de `window.DRINK_FAMILIES` à chaque render :
 
-## 🆘 Support
+| Section | Source |
+|---|---|
+| Statistiques générales | `_filterByPeriod(_flatEntries)` selon période |
+| Analyse temporelle | `deriveHourly`, `deriveDaily`, sessions Widmark |
+| Analyse par catégorie | agrégation par `family.category` |
+| Top 10 boissons | tri par `entries.length` |
+| Alcoolémie | `computeCurrentBacMgPerL` + IDB `bacRecords` |
+| Évolution mensuelle | `deriveTrends` (6 derniers mois) |
+| Analyses avancées | `deriveRolling` (30 j), polar clock, sessions |
 
-Pour toute question ou problème :
-1. Vérifier la console du navigateur pour les erreurs
-2. S'assurer que le serveur HTTPS est utilisé pour le scanner
-3. Vérifier les permissions caméra et géolocalisation
-4. Tester sur un navigateur compatible
+Le calcul Widmark utilise `userWeight` et `userGender` lus depuis le
+store legacy `settings` ; à défaut, valeurs par défaut 70 kg / r=0.7.
 
----
+## Sécurité & confidentialité
 
-**AlcoNote** - Une PWA moderne pour un suivi responsable de la consommation d'alcool.
+- **Données 100 % locales** : aucune requête sortante (autre que les
+  polices Google Fonts).
+- **CSP stricte** : `script-src 'self' https://unpkg.com`,
+  `connect-src 'self'`, pas d'`unsafe-eval`.
+- **Headers** : `X-Content-Type-Options: nosniff`, `X-Frame-Options:
+  DENY`, SRI sur tous les scripts CDN.
+
+## Compatibilité
+
+- Chrome / Edge 80+, Firefox 75+, Safari 13+.
+- Installation PWA via le navigateur ; thème clair / sombre via les
+  Paramètres.
+
+## Licence
+
+Projet personnel à fins de démonstration et d'usage privé.

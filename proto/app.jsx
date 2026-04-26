@@ -51,7 +51,7 @@ function App() {
       <PhoneFrame>
         <StatusBar />
         <AppHeader tab={tab} onMenu={() => setSettings(true)} />
-        <div data-screen-label={tabLabel(tab)} style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div data-screen-label={tab === 'categories' ? '01 Catégories' : tab === 'history' ? '02 Historique' : '03 Statistiques'} style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {tab === 'categories' && (
             <CategoriesTab onOpenFamily={setOpenFamily} onAdd={() => setAdding(true)} onDirectAdd={directAdd} />
           )}
@@ -92,10 +92,6 @@ function App() {
       )}
     </div>
   );
-}
-
-function tabLabel(t) {
-  return t === 'categories' ? '01 Catégories' : t === 'history' ? '02 Historique' : '03 Statistiques';
 }
 
 function PhoneFrame({ children }) {
@@ -265,4 +261,4 @@ function Hint() {
   );
 }
 
-Object.assign(window, { App, tabLabel, PhoneFrame, AppHeader, BottomNav, Fab, Hint });
+Object.assign(window, { App, PhoneFrame, AppHeader, BottomNav, Fab, Hint });

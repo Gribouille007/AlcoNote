@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "build": "babel proto --out-dir build/proto --extensions .jsx --presets=@babel/preset-react",
-    "watch": "babel proto --out-dir build/proto --extensions .jsx --presets=@babel/preset-react --watch"
+    "watch": "babel proto --out-dir build/proto --extensions .jsx --presets=@babel/preset-react --watch",
+    "test": "node --test 'test/**/*.test.mjs'"
   },
   "devDependencies": {
     "@babel/cli": "^7.25.0",

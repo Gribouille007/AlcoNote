@@ -53,7 +53,7 @@ function App() {
     tab: tab,
     onMenu: () => setSettings(true)
   }), /*#__PURE__*/React.createElement("div", {
-    "data-screen-label": tabLabel(tab),
+    "data-screen-label": tab === 'categories' ? '01 Catégories' : tab === 'history' ? '02 Historique' : '03 Statistiques',
     style: {
       flex: 1,
       overflow: 'hidden',
@@ -121,9 +121,6 @@ function App() {
     icon: Ic.check,
     size: 14
   })), toast));
-}
-function tabLabel(t) {
-  return t === 'categories' ? '01 Catégories' : t === 'history' ? '02 Historique' : '03 Statistiques';
 }
 function PhoneFrame({
   children
@@ -464,7 +461,6 @@ function Hint() {
 }
 Object.assign(window, {
   App,
-  tabLabel,
   PhoneFrame,
   AppHeader,
   BottomNav,

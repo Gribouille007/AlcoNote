@@ -94,6 +94,16 @@ async function writeOne(storeName, record) {
     req.onerror = () => reject(req.error);
   });
 }
+async function deleteOne(storeName, key) {
+  const idb = await openIDB();
+  if (!idb.objectStoreNames.contains(storeName)) return;
+  return await new Promise((resolve, reject) => {
+    const store = idb.transaction(storeName, 'readwrite').objectStore(storeName);
+    const req = store.delete(key);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
 async function bumpCategoryDrinkCount(categoryName) {
   // Note: this is intentionally non-atomic with the preceding `writeOne`
   // (each runs in its own IDB transaction). If the page is killed between
@@ -281,6 +291,14 @@ async function importBackup(file) {
   // the backup are kept untouched, so this is "additive" toward missing
   // entries but "replacing" toward existing ones. Use Tout effacer first if
   // you want a clean restore.
+  //
+  // Per-row errors are isolated: we call preventDefault() on each request's
+  // onerror so a single malformed row doesn't abort the whole transaction
+  // (and lose the rest of the import).
+  const skipped = {
+    total: 0,
+    byStore: {}
+  };
   for (const store of ['drinks', 'categories', 'settings', 'bacRecords', 'drinkRatings']) {
     if (!Array.isArray(data[store])) continue;
     if (!idb.objectStoreNames.contains(store)) continue;
@@ -289,11 +307,20 @@ async function importBackup(file) {
       const s = t.objectStore(store);
       for (const row of data[store]) {
         try {
-          s.put(row);
-        } catch {}
+          const req = s.put(row);
+          req.onerror = event => {
+            skipped.total += 1;
+            skipped.byStore[store] = (skipped.byStore[store] || 0) + 1;
+            event.preventDefault(); // keep the transaction alive
+          };
+        } catch {
+          skipped.total += 1;
+          skipped.byStore[store] = (skipped.byStore[store] || 0) + 1;
+        }
       }
       t.oncomplete = () => resolve();
       t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error || new Error('import aborted'));
     });
   }
   // After a restore the categories drinkCount can be stale — recompute for
@@ -308,6 +335,12 @@ async function importBackup(file) {
     }
   }
   await hydrateFamilies();
+  if (skipped.total > 0) {
+    console.warn('[AlcoNote] import skipped', skipped.total, 'malformed row(s)', skipped.byStore);
+  }
+  return {
+    skipped
+  };
 }
 function pickBackupFile() {
   return new Promise(resolve => {
@@ -357,5 +390,10 @@ Object.assign(window, {
   exportAllData,
   downloadBackup,
   importBackup,
-  pickBackupFile
+  pickBackupFile,
+  readAll,
+  deleteOne,
+  // Pure helpers exposed so the unit-test suite can import them via
+  // Object pluck without instantiating the React tree.
+  groupIntoFamilies
 });
