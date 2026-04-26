@@ -546,9 +546,22 @@ function SettingsDrawer({ open, onClose }) {
           </SettingsGroup>
 
           <SettingsGroup label="Données">
-            <SettingRow label="Exporter" action />
-            <SettingRow label="Importer" action />
-            <SettingRow label="Tout effacer" action danger last />
+            <SettingRow label="Exporter" action onClick={() => downloadBackup()} />
+            <SettingRow label="Importer" action onClick={async () => {
+              const file = await pickBackupFile();
+              if (!file) return;
+              try {
+                await importBackup(file);
+              } catch (e) {
+                console.warn('[AlcoNote] import failed', e);
+                alert('Import échoué : ' + (e.message || 'fichier invalide'));
+              }
+            }} />
+            <SettingRow label="Tout effacer" action danger last onClick={() => {
+              if (!confirm("Supprimer toutes les données locales ? Cette action est irréversible.")) return;
+              indexedDB.deleteDatabase('AlcoNoteDB');
+              location.reload();
+            }} />
           </SettingsGroup>
 
           <div style={{
@@ -607,20 +620,28 @@ function SettingsGroup({ label, children }) {
   );
 }
 
-function SettingRow({ label, value, action, danger, last }) {
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '13px 14px', borderBottom: last ? 'none' : `1px solid ${T.rule}`,
-      cursor: action ? 'pointer' : 'default',
-    }}>
+function SettingRow({ label, value, action, danger, last, onClick }) {
+  const baseStyle = {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    width: '100%', textAlign: 'left',
+    padding: '13px 14px', borderBottom: last ? 'none' : `1px solid ${T.rule}`,
+  };
+  const inner = (
+    <>
       <span style={{
         color: danger ? T.accent2 : T.ink, fontSize: 13.5, letterSpacing: -0.1,
       }}>{label}</span>
       {value && <span style={{ color: T.muted, fontSize: 12.5 }}>{value}</span>}
       {action && !danger && <SvgIcon icon={Ic.chev} size={14} color={T.muted} />}
-    </div>
+    </>
   );
+  if (action) {
+    return (
+      <button type="button" className="bare" onClick={onClick}
+        aria-label={label} style={baseStyle}>{inner}</button>
+    );
+  }
+  return <div style={baseStyle}>{inner}</div>;
 }
 
 function SheetOverlay({ children, onClose, side = 'bottom' }) {

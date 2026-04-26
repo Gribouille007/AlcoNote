@@ -1,19 +1,31 @@
 // db.jsx — thin IndexedDB adapter that feeds the prototype's data shape from
 // the same `AlcoNoteDB` database the legacy app populates. The mock seed in
 // data.jsx remains as a design preview when no real data exists.
+//
+// Data-preservation rules:
+//   1. Open the DB at its existing version first — never force-downgrade. If
+//      a future legacy build bumped past KNOWN_VERSION we still want to read.
+//   2. Every read defends against the store not existing on older schemas.
+//   3. Writes mirror the legacy `addDrink` semantics (drinkCount upkeep so a
+//      rollback to a legacy build still shows correct counts).
 
 const IDB_NAME = 'AlcoNoteDB';
-const IDB_VERSION = 3; // matches js/database.js
+const KNOWN_VERSION = 3; // last schema we know about (legacy js/database.js v3)
 
-function openIDB() {
+let __idbConn = null;
+
+function _open(version) {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    const req = version === undefined
+      ? indexedDB.open(IDB_NAME)
+      : indexedDB.open(IDB_NAME, version);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
-    // Don't run upgrades from here — the legacy app owns the schema. If the
-    // DB doesn't exist yet we just initialize empty stores so reads return [].
+    req.onblocked = () => reject(new Error('IDB open blocked by another tab'));
     req.onupgradeneeded = () => {
       const idb = req.result;
+      // Only create stores that don't yet exist. Never drop or redefine —
+      // that would destroy data.
       for (const store of ['drinks', 'categories', 'settings', 'bacRecords', 'drinkRatings']) {
         if (!idb.objectStoreNames.contains(store)) {
           const opts = (store === 'drinkRatings' || store === 'settings')
@@ -26,6 +38,33 @@ function openIDB() {
   });
 }
 
+async function openIDB() {
+  if (__idbConn) return __idbConn;
+  // Step 1: try opening at the existing version (no upgrade). If the DB
+  // doesn't exist this creates an empty v1.
+  try {
+    __idbConn = await _open();
+  } catch (e) {
+    console.warn('[AlcoNote] IDB versionless open failed', e);
+  }
+  // Step 2: if our known schema is newer, request an upgrade — but only if
+  // strictly higher. A future schema (DB > KNOWN_VERSION) is left alone so
+  // we never downgrade.
+  if (__idbConn && __idbConn.version < KNOWN_VERSION) {
+    __idbConn.close();
+    __idbConn = await _open(KNOWN_VERSION);
+  } else if (!__idbConn) {
+    __idbConn = await _open(KNOWN_VERSION);
+  }
+  // If a peer tab requests a future upgrade, release the connection so the
+  // upgrade can proceed instead of being blocked indefinitely.
+  __idbConn.onversionchange = () => {
+    try { __idbConn.close(); } catch {}
+    __idbConn = null;
+  };
+  return __idbConn;
+}
+
 function tx(idb, storeName, mode = 'readonly') {
   return idb.transaction(storeName, mode).objectStore(storeName);
 }
@@ -33,6 +72,7 @@ function tx(idb, storeName, mode = 'readonly') {
 async function readAll(storeName) {
   try {
     const idb = await openIDB();
+    if (!idb.objectStoreNames.contains(storeName)) return [];
     return await new Promise((resolve, reject) => {
       const req = tx(idb, storeName).getAll();
       req.onsuccess = () => resolve(req.result || []);
@@ -46,12 +86,46 @@ async function readAll(storeName) {
 
 async function writeOne(storeName, record) {
   const idb = await openIDB();
+  if (!idb.objectStoreNames.contains(storeName)) {
+    throw new Error(`Store ${storeName} missing from this DB`);
+  }
   return await new Promise((resolve, reject) => {
     const store = idb.transaction(storeName, 'readwrite').objectStore(storeName);
     const req = store.add(record);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
+}
+
+async function bumpCategoryDrinkCount(categoryName) {
+  if (!categoryName) return;
+  try {
+    const idb = await openIDB();
+    if (!idb.objectStoreNames.contains('categories')) return;
+    const drinkCount = await new Promise((resolve, reject) => {
+      const req = tx(idb, 'drinks').index ? null : tx(idb, 'drinks').count();
+      // No usable index in our minimal schema — count by scanning instead.
+      const r = tx(idb, 'drinks').getAll();
+      r.onsuccess = () => resolve(r.result.filter(d => d.category === categoryName).length);
+      r.onerror = () => reject(r.error);
+    });
+    await new Promise((resolve, reject) => {
+      const store = idb.transaction('categories', 'readwrite').objectStore('categories');
+      const all = store.getAll();
+      all.onsuccess = () => {
+        const match = (all.result || []).find(c => c.name === categoryName);
+        if (!match) { resolve(); return; }
+        match.drinkCount = drinkCount;
+        match.updatedAt = new Date();
+        const put = store.put(match);
+        put.onsuccess = () => resolve();
+        put.onerror = () => reject(put.error);
+      };
+      all.onerror = () => reject(all.error);
+    });
+  } catch (e) {
+    console.warn('[AlcoNote] category drinkCount upkeep failed', e);
+  }
 }
 
 // Group flat drink rows into the prototype's "family" shape:
@@ -122,7 +196,9 @@ async function hydrateFamilies() {
   bumpDb();
 }
 
-// Persist a new drink. Returns the updated families list.
+// Persist a new drink. Returns the updated families list. Mirrors the legacy
+// `addDrink` semantics so a future rollback to the legacy build still sees
+// consistent data (same field shape, drinkCount kept in sync).
 async function addDrinkToDb({ name, category, quantity, unit, alcoholContent, location }) {
   const now = new Date();
   const date = now.toISOString().slice(0, 10);
@@ -144,7 +220,65 @@ async function addDrinkToDb({ name, category, quantity, unit, alcoholContent, lo
     updatedAt: now,
   };
   await writeOne('drinks', record);
+  await bumpCategoryDrinkCount(record.category);
   await hydrateFamilies();
+}
+
+// ── Backup / restore ────────────────────────────────────────────────
+// Dump every store this DB knows about into a single JSON object. The
+// shape matches the legacy "Exporter" behavior so files round-trip with
+// older builds.
+async function exportAllData() {
+  const idb = await openIDB();
+  const out = { exportedAt: new Date().toISOString(), schemaVersion: idb.version };
+  for (const store of idb.objectStoreNames) {
+    out[store] = await readAll(store);
+  }
+  return out;
+}
+
+async function downloadBackup() {
+  const data = await exportAllData();
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `alconote-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+async function importBackup(file) {
+  const text = await file.text();
+  const data = JSON.parse(text);
+  const idb = await openIDB();
+  for (const store of ['drinks', 'categories', 'settings', 'bacRecords', 'drinkRatings']) {
+    if (!Array.isArray(data[store])) continue;
+    if (!idb.objectStoreNames.contains(store)) continue;
+    await new Promise((resolve, reject) => {
+      const t = idb.transaction(store, 'readwrite');
+      const s = t.objectStore(store);
+      // Restore *additively* — never wipe what's already there.
+      for (const row of data[store]) {
+        try { s.put(row); } catch {}
+      }
+      t.oncomplete = () => resolve();
+      t.onerror = () => reject(t.error);
+    });
+  }
+  await hydrateFamilies();
+}
+
+function pickBackupFile() {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.onchange = () => resolve(input.files && input.files[0]);
+    input.click();
+  });
 }
 
 // Compute a rough current BAC (mg/L) using Widmark, summing residual alcohol
@@ -177,4 +311,5 @@ function computeCurrentBacMgPerL(families, opts = {}) {
 
 Object.assign(window, {
   hydrateFamilies, addDrinkToDb, computeCurrentBacMgPerL, useDb,
+  exportAllData, downloadBackup, importBackup, pickBackupFile,
 });
