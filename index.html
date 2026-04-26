@@ -14,7 +14,13 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="AlcoNote">
 
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com data:; media-src 'self' blob:; worker-src 'self' blob:;">
+<!--
+  Strict CSP: no inline scripts, no eval. JSX is precompiled by `npm run build`
+  into build/proto/*.js so we no longer ship the 3 MB Babel-standalone runtime.
+  style-src keeps 'unsafe-inline' for the in-page <style> only — far lower
+  risk than inline scripts and easy to harden later via a hash.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com data:; media-src 'self' blob:; worker-src 'self' blob:;">
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="X-Frame-Options" content="DENY">
 
@@ -47,45 +53,26 @@
   @media (display-mode: standalone) { .desktop-hint { display: none !important; } }
 </style>
 
-<!--
-  React + Babel-standalone are loaded as the runtime for this prototype-grade
-  shell. They keep the design source faithful but compile JSX in the browser.
-  Production builds should swap this for a vite/esbuild step (see the PR).
-  SRI hashes match the same CDN assets the original prototype shipped with.
--->
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"
   integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
   crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
   integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
   crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
-  integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
-  crossorigin="anonymous"></script>
 </head>
 <body>
 <div id="root"></div>
 
-<script type="text/babel" src="proto/shared.jsx"></script>
-<script type="text/babel" src="proto/db.jsx"></script>
-<script type="text/babel" src="proto/data.jsx"></script>
-<script type="text/babel" src="proto/categories.jsx"></script>
-<script type="text/babel" src="proto/history.jsx"></script>
-<script type="text/babel" src="proto/stats-charts.jsx"></script>
-<script type="text/babel" src="proto/stats.jsx"></script>
-<script type="text/babel" src="proto/modals.jsx"></script>
-<script type="text/babel" src="proto/app.jsx"></script>
-
-<script type="text/babel">
-  ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
-</script>
-
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
-    });
-  }
-</script>
+<!-- Order matters: shared globals first; then db; then components that read them. -->
+<script src="build/proto/shared.js"></script>
+<script src="build/proto/db.js"></script>
+<script src="build/proto/data.js"></script>
+<script src="build/proto/categories.js"></script>
+<script src="build/proto/history.js"></script>
+<script src="build/proto/stats-charts.js"></script>
+<script src="build/proto/stats.js"></script>
+<script src="build/proto/modals.js"></script>
+<script src="build/proto/app.js"></script>
+<script src="build/proto/bootstrap.js"></script>
 </body>
 </html>

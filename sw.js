@@ -1,31 +1,32 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v3.1.0';
-const STATIC_CACHE = 'alconote-static-v3.1.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v3.1.0';
+const CACHE_NAME = 'alconote-v3.2.0';
+const STATIC_CACHE = 'alconote-static-v3.2.0';
+const DYNAMIC_CACHE = 'alconote-dynamic-v3.2.0';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
 
-// Files to cache for offline functionality
+// Files to cache for offline functionality. Source JSX in proto/ is compiled
+// to build/proto/*.js by `npm run build`; only the compiled JS is shipped.
 const STATIC_FILES = [
     '/',
     '/index.html',
     '/manifest.json',
-    '/proto/shared.jsx',
-    '/proto/db.jsx',
-    '/proto/data.jsx',
-    '/proto/categories.jsx',
-    '/proto/history.jsx',
-    '/proto/stats-charts.jsx',
-    '/proto/stats.jsx',
-    '/proto/modals.jsx',
-    '/proto/app.jsx',
+    '/build/proto/shared.js',
+    '/build/proto/db.js',
+    '/build/proto/data.js',
+    '/build/proto/categories.js',
+    '/build/proto/history.js',
+    '/build/proto/stats-charts.js',
+    '/build/proto/stats.js',
+    '/build/proto/modals.js',
+    '/build/proto/app.js',
+    '/build/proto/bootstrap.js',
     // External CDN resources
     'https://unpkg.com/react@18.3.1/umd/react.development.js',
-    'https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js',
-    'https://unpkg.com/@babel/standalone@7.29.0/babel.min.js'
+    'https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js'
 ];
 
 // URLs that should always be fetched from network
@@ -36,7 +37,7 @@ const NETWORK_FIRST_URLS = [
 
 // URLs that should be cached first
 const CACHE_FIRST_URLS = [
-    '/proto/',
+    '/build/',
     '/assets/',
     'https://unpkg.com/',
     'https://fonts.googleapis.com/',

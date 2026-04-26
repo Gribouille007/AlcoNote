@@ -12,7 +12,6 @@ function saveCollapsedSections(set) {
   try { localStorage.setItem(STATS_COLLAPSED_KEY, JSON.stringify([...set])); } catch {}
 }
 
-// ── Mock data for stats views (derived from DRINK_FAMILIES or realistic) ──
 const PERIODS = [
   { id: 'day',   label: 'Jour'    },
   { id: 'week',  label: 'Semaine' },
@@ -21,91 +20,222 @@ const PERIODS = [
   { id: 'all',   label: 'Tout'    },
 ];
 
-// Hourly distribution (24 bins) — evenings-heavy profile
-const HOURLY = [
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   // 00-09
-  0, 0, 1, 1, 0, 1, 0, 2, 3, 4,   // 10-19
-  6, 8, 5, 2,                     // 20-23
-];
+// ── Real-data derivations ─────────────────────────────────────────
+// All helpers below take the live `window.DRINK_FAMILIES` (hydrated from
+// IDB by db.jsx) and return the same shape the UI sections used to expect
+// from hardcoded mock constants. Empty inputs return zero/empty shapes
+// rather than crashing — the design preview remains coherent.
 
-// Daily: 0=Sun..6=Sat — peak Friday/Saturday
-const DAILY = [
-  { label: 'L', day: 1, v: 2, today: false },
-  { label: 'M', day: 2, v: 1, today: false },
-  { label: 'M', day: 3, v: 3, today: false },
-  { label: 'J', day: 4, v: 0, today: false },
-  { label: 'V', day: 5, v: 6, today: false },
-  { label: 'S', day: 6, v: 4, today: true  },
-  { label: 'D', day: 0, v: 2, today: false },
-];
-
-// Monthly trend (last 6 months)
-const TRENDS = {
-  labels: ['Nov', 'Déc', 'Jan', 'Fév', 'Mar', 'Avr'],
-  drinks: [14, 22, 9, 11, 16, 12],
-  alcoholG: [98, 168, 62, 84, 120, 90],
-};
-
-// Rolling 7d/30d for recent 30 days
-const ROLLING = (() => {
+function _flatEntries(families) {
   const out = [];
-  const base = [2, 0, 0, 4, 3, 0, 5, 1, 0, 2, 0, 0, 3, 6, 2, 0, 0, 1, 3, 0, 0, 4, 5, 0, 2, 0, 1, 3, 0, 4];
-  for (let i = 0; i < base.length; i++) {
-    const slice7 = base.slice(Math.max(0, i - 6), i + 1);
-    const slice30 = base.slice(0, i + 1);
+  for (const f of families) for (const e of f.entries || []) out.push({ ...e, family: f });
+  return out;
+}
+
+function _entryGrams(e) {
+  const f = e.family;
+  const volCl = f.unit === 'EcoCup' ? f.quantity * 25
+              : f.unit === 'L' ? f.quantity * 100
+              : f.quantity;
+  return volCl * 10 * (f.alcohol / 100) * 0.789;
+}
+
+function _entryVolumeCl(e) {
+  const f = e.family;
+  return f.unit === 'EcoCup' ? f.quantity * 25
+       : f.unit === 'L' ? f.quantity * 100
+       : f.quantity;
+}
+
+function _periodRange(period, anchor = new Date()) {
+  const d = new Date(anchor);
+  d.setHours(0, 0, 0, 0);
+  if (period === 'day') {
+    return { from: d, to: new Date(d.getTime() + 86400000) };
+  }
+  if (period === 'week') {
+    const dow = (d.getDay() + 6) % 7; // Monday-based
+    const from = new Date(d.getTime() - dow * 86400000);
+    return { from, to: new Date(from.getTime() + 7 * 86400000) };
+  }
+  if (period === 'month') {
+    const from = new Date(d.getFullYear(), d.getMonth(), 1);
+    const to = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return { from, to };
+  }
+  if (period === 'year') {
+    return { from: new Date(d.getFullYear(), 0, 1), to: new Date(d.getFullYear() + 1, 0, 1) };
+  }
+  return { from: new Date(0), to: new Date(8.64e15) };
+}
+
+function _filterByPeriod(entries, period) {
+  const { from, to } = _periodRange(period);
+  return entries.filter(e => {
+    const ts = Date.parse(e.ts);
+    return !Number.isNaN(ts) && ts >= +from && ts < +to;
+  });
+}
+
+// Sessions: any run of entries within 4h of each other counts as one session.
+function _sessions(entries) {
+  if (!entries.length) return [];
+  const sorted = [...entries].sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
+  const out = [];
+  let cur = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = Date.parse(sorted[i].ts) - Date.parse(sorted[i - 1].ts);
+    if (gap > 4 * 3600 * 1000) {
+      out.push(cur);
+      cur = [];
+    }
+    cur.push(sorted[i]);
+  }
+  out.push(cur);
+  return out;
+}
+
+function deriveHourly(families) {
+  const bins = Array(24).fill(0);
+  for (const e of _flatEntries(families)) {
+    const h = +e.ts.slice(11, 13);
+    if (Number.isFinite(h)) bins[h] += 1;
+  }
+  return bins;
+}
+
+function deriveDaily(families) {
+  const labels = ['D', 'L', 'M', 'M', 'J', 'V', 'S']; // Sun..Sat
+  const counts = Array(7).fill(0);
+  for (const e of _flatEntries(families)) {
+    const ts = Date.parse(e.ts);
+    if (Number.isNaN(ts)) continue;
+    counts[new Date(ts).getDay()] += 1;
+  }
+  const todayIdx = new Date().getDay();
+  // UI expects Mon-first ordering with `today` flagged.
+  return [1, 2, 3, 4, 5, 6, 0].map(day => ({
+    label: labels[day], day, v: counts[day], today: day === todayIdx,
+  }));
+}
+
+function deriveTrends(families) {
+  const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+  const now = new Date();
+  const labels = [];
+  const drinks = [];
+  const alcoholG = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const next = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+    labels.push(months[d.getMonth()]);
+    let count = 0, grams = 0;
+    for (const e of _flatEntries(families)) {
+      const ts = Date.parse(e.ts);
+      if (ts >= +d && ts < +next) {
+        count += 1;
+        grams += _entryGrams(e);
+      }
+    }
+    drinks.push(count);
+    alcoholG.push(Math.round(grams));
+  }
+  return { labels, drinks, alcoholG };
+}
+
+function deriveRolling(families) {
+  const out = [];
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const days = 30;
+  // Daily grams of pure alcohol, last `days` days oldest-first.
+  const daily = Array(days).fill(0);
+  for (const e of _flatEntries(families)) {
+    const ts = Date.parse(e.ts);
+    if (Number.isNaN(ts)) continue;
+    const offset = Math.floor((+now - ts) / 86400000);
+    if (offset < 0 || offset >= days) continue;
+    daily[days - 1 - offset] += _entryGrams(e);
+  }
+  for (let i = 0; i < days; i++) {
+    const d = new Date(+now - (days - 1 - i) * 86400000);
+    const slice7 = daily.slice(Math.max(0, i - 6), i + 1);
+    const slice30 = daily.slice(0, i + 1);
     out.push({
-      date: `${20 + Math.floor(i / 7)}/03`,
-      daily: base[i] * 8,
-      r7: slice7.reduce((s, v) => s + v, 0) / slice7.length * 8,
-      r30: slice30.reduce((s, v) => s + v, 0) / slice30.length * 8,
+      date: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`,
+      daily: daily[i],
+      r7: slice7.reduce((s, v) => s + v, 0) / slice7.length,
+      r30: slice30.reduce((s, v) => s + v, 0) / slice30.length,
     });
   }
   return out;
-})();
+}
 
-const SESSION_DURATION = [
-  { label: '<1h', v: 1 },
-  { label: '1-2h', v: 5 },
-  { label: '2-3h', v: 3 },
-  { label: '3-4h', v: 2 },
-  { label: '4-5h', v: 1 },
-  { label: '5-6h', v: 0 },
-  { label: '6h+', v: 0 },
-];
+function deriveSessionDurationBuckets(families) {
+  const labels = ['<1h', '1-2h', '2-3h', '3-4h', '4-5h', '5-6h', '6h+'];
+  const buckets = labels.map(label => ({ label, v: 0 }));
+  for (const sess of _sessions(_flatEntries(families))) {
+    if (sess.length < 2) { buckets[0].v += 1; continue; }
+    const span = (Date.parse(sess[sess.length - 1].ts) - Date.parse(sess[0].ts)) / 3600000;
+    const idx = span < 1 ? 0 : span < 2 ? 1 : span < 3 ? 2 : span < 4 ? 3
+              : span < 5 ? 4 : span < 6 ? 5 : 6;
+    buckets[idx].v += 1;
+  }
+  return buckets;
+}
 
-const SESSION_BAC = [
-  { label: '<0.2', v: 3 },
-  { label: '0.2-0.5', v: 4 },
-  { label: '0.5-0.8', v: 3 },
-  { label: '0.8-1.2', v: 1 },
-  { label: '1.2+', v: 1 },
-];
+function deriveSessionBacBuckets(families) {
+  const labels = ['<0.2', '0.2-0.5', '0.5-0.8', '0.8-1.2', '1.2+'];
+  const buckets = labels.map(label => ({ label, v: 0 }));
+  const settings = window.__alcoUserSettings || {};
+  const weight = +settings.userWeight || 70;
+  const r = settings.userGender === 'Femme' ? 0.55 : 0.7;
+  for (const sess of _sessions(_flatEntries(families))) {
+    const grams = sess.reduce((s, e) => s + _entryGrams(e), 0);
+    const peakGperL = grams / (weight * r);
+    const idx = peakGperL < 0.2 ? 0 : peakGperL < 0.5 ? 1 : peakGperL < 0.8 ? 2
+              : peakGperL < 1.2 ? 3 : 4;
+    buckets[idx].v += 1;
+  }
+  return buckets;
+}
 
-// BAC records (persisted in component state for swipe-to-delete)
-const INITIAL_BAC_RECORDS = [
-  { id: 'b1', bac: 820, drinks: 5, ts: '2026-04-18T23:10', highest: false },
-  { id: 'b2', bac: 740, drinks: 4, ts: '2026-04-11T23:45' },
-  { id: 'b3', bac: 920, drinks: 6, ts: '2026-03-21T02:15', highest: true },
-  { id: 'b4', bac: 510, drinks: 3, ts: '2026-04-04T22:30' },
-  { id: 'b5', bac: 390, drinks: 2, ts: '2026-03-14T21:00' },
-];
-
-// BAC projection: 4h decay from current 620 mg/L
-const BAC_PROJECTION = (() => {
-  const peak = 620, start = -2;
+function deriveBacProjection(families) {
+  // Step the next 10h in 15-min increments using Widmark, summing residual
+  // alcohol across recent entries. Mirrors computeCurrentBacMgPerL but as a
+  // time series.
+  const settings = window.__alcoUserSettings || {};
+  const weight = +settings.userWeight || 70;
+  const r = settings.userGender === 'Femme' ? 0.55 : 0.7;
+  const elimGperLPerH = 0.15;
+  const horizonH = 12;
+  const now = Date.now();
+  const entries = _flatEntries(families)
+    .filter(e => {
+      const ts = Date.parse(e.ts);
+      return !Number.isNaN(ts) && (now - ts) / 3600000 < horizonH;
+    });
   const pts = [];
-  for (let t = start; t <= 8; t += 0.25) {
-    // absorption rise then Widmark decay
-    let bac;
-    if (t < 0) bac = peak * Math.max(0, 1 - Math.abs(t) / 2);
-    else bac = Math.max(0, peak - 150 * t); // ~150 mg/L/h elim
-    pts.push({ t, bac });
+  for (let t = -2; t <= 8; t += 0.25) {
+    let total = 0;
+    const at = now + t * 3600000;
+    for (const e of entries) {
+      const ts = Date.parse(e.ts);
+      const hoursAgo = (at - ts) / 3600000;
+      if (hoursAgo < 0) continue;
+      const peak = _entryGrams(e) / (weight * r);
+      const residual = Math.max(0, peak - elimGperLPerH * hoursAgo);
+      total += residual;
+    }
+    pts.push({ t, bac: Math.round(total * 1000) });
   }
   return pts;
-})();
+}
 
 // ── Main StatsTab ─────────────────────────────────────────────────
 function StatsTab() {
+  useDb(); // re-render when IDB hydrates
+  const families = window.DRINK_FAMILIES || [];
   const [period, setPeriod] = React.useState('week');
   const [collapsed, setCollapsed] = React.useState(loadCollapsedSections);
   const toggleSection = (id) => {
@@ -116,7 +246,7 @@ function StatsTab() {
       return next;
     });
   };
-  const sp = { collapsed, toggleSection, period };
+  const sp = { collapsed, toggleSection, period, families };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PeriodSwitcher period={period} onChange={setPeriod} />
@@ -239,29 +369,48 @@ function Card({ children, style, ...rest }) {
 }
 
 // ── 1. Général ────────────────────────────────────────────────────
-function GeneralSection({ period, collapsed, toggleSection }) {
+function GeneralSection({ period, collapsed, toggleSection, families = [] }) {
   const hidePct = period === 'all';
+  const entries = _filterByPeriod(_flatEntries(families), period);
+
+  const totalDrinks = entries.length;
+  const sessions = _sessions(entries);
+  const totalVolumeCl = entries.reduce((s, e) => s + _entryVolumeCl(e), 0);
+  const totalGrams = entries.reduce((s, e) => s + _entryGrams(e), 0);
+  const uniqueDrinks = new Set(entries.map(e => e.family.name)).size;
+
+  const fmtL = (cl) => cl >= 100 ? `${(cl / 100).toFixed(1)}L` : `${Math.round(cl)}cL`;
+
   const cards = [
-    { v: 17, l: 'Boissons', comp: -12, tip: 'Total consommations' },
-    { v: 3, l: 'Sessions', comp: -25, tip: 'Regroupées si < 4h' },
-    { v: '2.4L', l: 'Volume', comp: -8 },
-    { v: '90g', l: 'Alcool pur', comp: -15, tip: 'Éthanol' },
-    { v: 6, l: 'Boissons diff.' },
+    { v: totalDrinks, l: 'Boissons', tip: 'Total consommations' },
+    { v: sessions.length, l: 'Sessions', tip: 'Regroupées si < 4h' },
+    { v: fmtL(totalVolumeCl), l: 'Volume' },
+    { v: `${Math.round(totalGrams)}g`, l: 'Alcool pur', tip: 'Éthanol' },
+    { v: uniqueDrinks, l: 'Boissons diff.' },
   ];
+
+  // Period-aware extras: averages need a denominator in days.
+  const { from, to } = _periodRange(period);
+  const periodDays = Math.max(1, Math.round((+to - +from) / 86400000));
+  const days = Math.min(periodDays, 366); // cap "all" at a year-equivalent
+
   if (period === 'week' || period === 'month' || period === 'year') {
-    cards.push({ v: 2, l: 'Jours sobres', comp: +50 });
-    cards.push({ v: '2.4', l: 'Boissons/jour', comp: -12 });
+    const drinkDays = new Set(entries.map(e => e.ts.slice(0, 10))).size;
+    cards.push({ v: Math.max(0, days - drinkDays), l: 'Jours sobres' });
+    cards.push({ v: (totalDrinks / days).toFixed(1), l: 'Boissons/jour' });
   }
   if (period === 'month' || period === 'year') {
-    cards.push({ v: '17', l: 'Boissons/sem.', comp: -12 });
+    cards.push({ v: (totalDrinks / Math.max(1, days / 7)).toFixed(0), l: 'Boissons/sem.' });
   }
 
-  const catDist = [
-    { name: 'Bière', v: 8 },
-    { name: 'Vin', v: 3 },
-    { name: 'Cocktail', v: 4 },
-    { name: 'Spiritueux', v: 2 },
-  ];
+  const catDistMap = new Map();
+  for (const e of entries) {
+    const k = e.family.category || 'Autre';
+    catDistMap.set(k, (catDistMap.get(k) || 0) + 1);
+  }
+  const catDist = [...catDistMap.entries()]
+    .map(([name, v]) => ({ name, v }))
+    .sort((a, b) => b.v - a.v);
 
   return (
     <StatSection id="general" title="Statistiques générales" sub="Vue d'ensemble de votre consommation" collapsed={collapsed} toggleSection={toggleSection}>
@@ -325,20 +474,39 @@ function GeneralSection({ period, collapsed, toggleSection }) {
 }
 
 // ── 2. Analyse temporelle ─────────────────────────────────────────
-function TemporalSection({ collapsed, toggleSection }) {
-  const peakHour = HOURLY.indexOf(Math.max(...HOURLY));
-  const peakDay = DAILY.reduce((a, b) => a.v > b.v ? a : b);
+function TemporalSection({ collapsed, toggleSection, families = [] }) {
+  const hourly = deriveHourly(families);
+  const daily = deriveDaily(families);
+  const peakHour = hourly.indexOf(Math.max(...hourly));
+  const peakDay = daily.reduce((a, b) => a.v > b.v ? a : b, daily[0] || { day: 0, v: 0 });
   const dayNames = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
+
+  // Avg session duration + avg gap between sessions
+  const allEntries = _flatEntries(families);
+  const sessions = _sessions(allEntries);
+  const sessionMs = sessions
+    .filter(s => s.length > 1)
+    .map(s => Date.parse(s[s.length - 1].ts) - Date.parse(s[0].ts));
+  const avgSessionH = sessionMs.length
+    ? sessionMs.reduce((a, b) => a + b, 0) / sessionMs.length / 3600000
+    : 0;
+  const avgSessionLabel = avgSessionH > 0
+    ? `${Math.floor(avgSessionH)}h ${String(Math.round((avgSessionH % 1) * 60)).padStart(2, '0')}`
+    : '—';
+  const sessionStarts = sessions.map(s => Date.parse(s[0].ts)).sort((a, b) => a - b);
+  const gaps = sessionStarts.slice(1).map((t, i) => (t - sessionStarts[i]) / 86400000);
+  const avgGapDays = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : 0;
+  const avgGapLabel = avgGapDays > 0 ? `${avgGapDays.toFixed(1)}j` : '—';
 
   return (
     <StatSection id="temporal" title="Analyse temporelle" collapsed={collapsed} toggleSection={toggleSection} sub="Répartition par heures et jours">
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 10,
       }}>
-        <MiniStat big={`${peakHour}h`} label="Heure de pointe" />
-        <MiniStat big={dayNames[peakDay.day]} label="Jour de pointe" />
-        <MiniStat big="2h 10" label="Durée moy. session" />
-        <MiniStat big="2.3j" label="Entre sessions" />
+        <MiniStat big={hourly.some(v => v) ? `${peakHour}h` : '—'} label="Heure de pointe" />
+        <MiniStat big={peakDay.v ? dayNames[peakDay.day] : '—'} label="Jour de pointe" />
+        <MiniStat big={avgSessionLabel} label="Durée moy. session" />
+        <MiniStat big={avgGapLabel} label="Entre sessions" />
       </div>
 
       <Card style={{ marginBottom: 10 }}>
@@ -346,7 +514,7 @@ function TemporalSection({ collapsed, toggleSection }) {
           color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 10, letterSpacing: -0.1,
         }}>Par heure</div>
         <SvgBarChart
-          data={HOURLY.map((v, h) => ({ v, label: `${h}h` }))}
+          data={hourly.map((v, h) => ({ v, label: `${h}h` }))}
           width={320} height={130} color={T.accent}
           formatX={(d, i) => i % 4 === 0 ? d.label : ''}
         />
@@ -356,7 +524,7 @@ function TemporalSection({ collapsed, toggleSection }) {
         <div style={{
           color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 4, letterSpacing: -0.1,
         }}>Par jour de la semaine</div>
-        <SvgRadar data={DAILY} size={230} color={T.good} />
+        <SvgRadar data={daily} size={230} color={T.good} />
       </Card>
     </StatSection>
   );
@@ -383,13 +551,31 @@ function MiniStat({ big, label }) {
 }
 
 // ── 3. Analyse par catégorie ─────────────────────────────────────
-function CategorySection({ collapsed, toggleSection }) {
-  const cats = [
-    { name: 'Bière', count: 8, volume: 2.4, avgVol: 0.3, avgAbv: 4.7, favorite: 'Guinness Draught' },
-    { name: 'Cocktail', count: 4, volume: 0.5, avgVol: 0.12, avgAbv: 24, favorite: 'Jack & Coke' },
-    { name: 'Vin', count: 3, volume: 0.4, avgVol: 0.13, avgAbv: 12.8, favorite: 'Chardonnay Bourgogne' },
-    { name: 'Spiritueux', count: 2, volume: 0.08, avgVol: 0.04, avgAbv: 40, favorite: 'Whisky Glenlivet' },
-  ];
+function CategorySection({ collapsed, toggleSection, families = [] }) {
+  // Aggregate per category from real entries.
+  const byCat = new Map();
+  for (const e of _flatEntries(families)) {
+    const k = e.family.category || 'Autre';
+    if (!byCat.has(k)) byCat.set(k, { count: 0, volumeCl: 0, abvSum: 0, names: new Map() });
+    const agg = byCat.get(k);
+    agg.count += 1;
+    agg.volumeCl += _entryVolumeCl(e);
+    agg.abvSum += +e.family.alcohol || 0;
+    agg.names.set(e.family.name, (agg.names.get(e.family.name) || 0) + 1);
+  }
+  const cats = [...byCat.entries()]
+    .map(([name, a]) => {
+      const favorite = [...a.names.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] || '—';
+      return {
+        name,
+        count: a.count,
+        volume: a.volumeCl / 100,             // L
+        avgVol: (a.volumeCl / a.count) / 100, // L
+        avgAbv: a.count ? +(a.abvSum / a.count).toFixed(1) : 0,
+        favorite,
+      };
+    })
+    .sort((a, b) => b.count - a.count);
 
   return (
     <StatSection id="category" title="Analyse par catégorie" collapsed={collapsed} toggleSection={toggleSection} sub="Statistiques par type de boisson">
@@ -440,18 +626,20 @@ function StatRow({ label, value, truncate }) {
 }
 
 // ── 4. Top 10 des boissons ────────────────────────────────────────
-function TopDrinksSection({ collapsed, toggleSection }) {
-  const top = [
-    { name: 'Guinness Draught', count: 4, volume: 1.0, last: '2026-04-18', rating: 4 },
-    { name: 'IPA Brewdog Punk', count: 2, volume: 0.66, last: '2026-04-17', rating: 5 },
-    { name: 'Jack & Coke', count: 2, volume: 0.16, last: '2026-04-18', rating: 3 },
-    { name: 'Pilsner Urquell', count: 2, volume: 0.66, last: '2026-04-12', rating: 4 },
-    { name: 'Chardonnay Bourgogne', count: 2, volume: 0.24, last: '2026-04-18', rating: 3 },
-    { name: 'Côtes du Rhône', count: 1, volume: 0.15, last: '2026-04-09', rating: 4 },
-    { name: 'Mojito', count: 1, volume: 0.15, last: '2026-04-05', rating: 4 },
-    { name: 'Whisky Glenlivet', count: 1, volume: 0.04, last: '2026-04-16', rating: 5 },
-  ];
+function TopDrinksSection({ collapsed, toggleSection, families = [] }) {
+  const top = families
+    .map(f => {
+      const count = f.entries.length;
+      const volumeCl = (f.unit === 'EcoCup' ? f.quantity * 25
+                      : f.unit === 'L' ? f.quantity * 100
+                      : f.quantity) * count;
+      const last = f.entries[0]?.ts.slice(0, 10) || '';
+      return { name: f.name, count, volume: volumeCl / 100, last, rating: f.rating || 0 };
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
   const fmtDate = (iso) => {
+    if (!iso) return '—';
     const d = new Date(iso);
     const months = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
     return `${d.getDate()} ${months[d.getMonth()]}`;
@@ -525,9 +713,30 @@ function bacLevel(bac) {
   return BAC_LEVELS.find(l => bac <= l.max) || BAC_LEVELS[BAC_LEVELS.length - 1];
 }
 
-function BACSection({ collapsed, toggleSection }) {
-  const [records, setRecords] = React.useState(INITIAL_BAC_RECORDS);
-  const currentBAC = 620; // mg/L
+function BACSection({ collapsed, toggleSection, families = [] }) {
+  // BAC records loaded from IDB (legacy `bacRecords` store). The state is
+  // kept local so swipe-to-delete is purely visual; if you want true IDB
+  // delete that's a follow-up.
+  const [records, setRecords] = React.useState([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    readAll('bacRecords').then(rs => {
+      if (cancelled) return;
+      const sorted = (rs || [])
+        .map(r => ({
+          id: String(r.id),
+          bac: r.bacValue,
+          drinks: r.drinkCount,
+          ts: typeof r.timestamp === 'string' ? r.timestamp : new Date(r.timestamp).toISOString(),
+        }))
+        .sort((a, b) => b.bac - a.bac);
+      if (sorted.length) sorted[0].highest = true;
+      setRecords(sorted);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const currentBAC = computeCurrentBacMgPerL(families);
   const level = bacLevel(currentBAC);
   // time to sobriety @ 150mg/L/h elim
   const hoursToSober = currentBAC / 150;
@@ -538,11 +747,23 @@ function BACSection({ collapsed, toggleSection }) {
     return `${hh}h${String(mm).padStart(2, '0')}`;
   };
 
-  const relevantDrinks = [
-    { name: 'Guinness Draught', qty: '1 EcoCup', abv: 4.2, hoursAgo: 1.5 },
-    { name: 'Jack & Coke',      qty: '8cL',      abv: 35,  hoursAgo: 0.3 },
-    { name: 'Chardonnay',       qty: '12cL',     abv: 12.5, hoursAgo: 2.8 },
-  ];
+  // "Drinks taken into account" — recent entries within the 12h Widmark
+  // horizon, newest first.
+  const now = Date.now();
+  const fmtQty = (f) => `${f.quantity} ${f.unit}`;
+  const relevantDrinks = _flatEntries(families)
+    .filter(e => {
+      const ts = Date.parse(e.ts);
+      return !Number.isNaN(ts) && (now - ts) >= 0 && (now - ts) / 3600000 < 12;
+    })
+    .sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts))
+    .slice(0, 6)
+    .map(e => ({
+      name: e.family.name,
+      qty: fmtQty(e.family),
+      abv: e.family.alcohol,
+      hoursAgo: +(((now - Date.parse(e.ts)) / 3600000).toFixed(1)),
+    }));
 
   const highest = records.find(r => r.highest);
   const others = records.filter(r => !r.highest);
@@ -603,7 +824,7 @@ function BACSection({ collapsed, toggleSection }) {
         <div style={{
           color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 8, letterSpacing: -0.1,
         }}>Projection d'alcoolémie</div>
-        <SvgBACProjection points={BAC_PROJECTION} width={320} height={130} now={0} />
+        <SvgBACProjection points={deriveBacProjection(families)} width={320} height={130} now={0} />
         <div style={{
           color: T.muted, fontSize: 10, marginTop: 6, fontStyle: 'italic', fontFamily: fontSerif,
         }}>Glissez pour voir le taux à un moment précis</div>
@@ -755,15 +976,16 @@ function BACRecordRow({ record, isHighest, onDelete }) {
 }
 
 // ── 6. Évolution mensuelle ────────────────────────────────────────
-function TrendsSection({ collapsed, toggleSection }) {
+function TrendsSection({ collapsed, toggleSection, families = [] }) {
+  const trends = deriveTrends(families);
   return (
     <StatSection id="trends" title="Évolution mensuelle" collapsed={collapsed} toggleSection={toggleSection} sub="Tendances de consommation mois par mois">
       <Card>
         <SvgLineChart
-          labels={TRENDS.labels}
+          labels={trends.labels}
           series={[
-            { data: TRENDS.drinks },
-            { data: TRENDS.alcoholG },
+            { data: trends.drinks },
+            { data: trends.alcoholG },
           ]}
           width={320} height={170}
         />
@@ -787,7 +1009,7 @@ function TrendsSection({ collapsed, toggleSection }) {
 }
 
 // ── 7. Analyses avancées ─────────────────────────────────────────
-function AdvancedSection({ collapsed, toggleSection }) {
+function AdvancedSection({ collapsed, toggleSection, families = [] }) {
   return (
     <StatSection id="advanced" title="Analyses avancées" collapsed={collapsed} toggleSection={toggleSection} sub="Moyennes mobiles · Horloge · Distribution des sessions">
       {/* Rolling average */}
@@ -798,7 +1020,7 @@ function AdvancedSection({ collapsed, toggleSection }) {
         <div style={{
           color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
         }}>Alcool quotidien lissé sur 7 et 30 jours</div>
-        <RollingChart />
+        <RollingChart families={families} />
         <div style={{
           display: 'flex', gap: 14, justifyContent: 'center', marginTop: 6,
           fontSize: 10.5, color: T.ink2,
@@ -817,7 +1039,7 @@ function AdvancedSection({ collapsed, toggleSection }) {
         <div style={{
           color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
         }}>Répartition sur 24 heures</div>
-        <SvgPolarClock hours={HOURLY} size={240} />
+        <SvgPolarClock hours={deriveHourly(families)} size={240} />
       </Card>
 
       {/* Sessions distribution: duration + BAC */}
@@ -835,14 +1057,14 @@ function AdvancedSection({ collapsed, toggleSection }) {
               color: T.ink2, fontSize: 10.5, marginBottom: 4, textAlign: 'center',
               letterSpacing: 0.3, textTransform: 'uppercase',
             }}>Durée</div>
-            <SvgHistogram buckets={SESSION_DURATION} width={150} height={120} color={T.accent} />
+            <SvgHistogram buckets={deriveSessionDurationBuckets(families)} width={150} height={120} color={T.accent} />
           </div>
           <div>
             <div style={{
               color: T.ink2, fontSize: 10.5, marginBottom: 4, textAlign: 'center',
               letterSpacing: 0.3, textTransform: 'uppercase',
             }}>BAC (g/L)</div>
-            <SvgHistogram buckets={SESSION_BAC} width={150} height={120} color={T.accent2} />
+            <SvgHistogram buckets={deriveSessionBacBuckets(families)} width={150} height={120} color={T.accent2} />
           </div>
         </div>
       </Card>
@@ -850,19 +1072,20 @@ function AdvancedSection({ collapsed, toggleSection }) {
   );
 }
 
-function RollingChart() {
+function RollingChart({ families = [] }) {
+  const rolling = deriveRolling(families);
   const width = 320, height = 140;
   const pad = { t: 8, r: 6, b: 24, l: 26 };
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
-  const max = niceMax(Math.max(...ROLLING.map(r => Math.max(r.daily, r.r7, r.r30))), 3);
-  const n = ROLLING.length;
-  const xs = i => pad.l + (i / (n - 1)) * w;
+  const max = niceMax(Math.max(1, ...rolling.map(r => Math.max(r.daily, r.r7, r.r30))), 3);
+  const n = rolling.length;
+  const xs = i => pad.l + (i / Math.max(1, n - 1)) * w;
   const ys = v => pad.t + h * (1 - v / max);
-  const bw = w / n;
+  const bw = w / Math.max(1, n);
 
-  const pathR7 = ROLLING.map((r, i) => `${i === 0 ? 'M' : 'L'}${xs(i)},${ys(r.r7)}`).join(' ');
-  const pathR30 = ROLLING.map((r, i) => `${i === 0 ? 'M' : 'L'}${xs(i)},${ys(r.r30)}`).join(' ');
+  const pathR7 = rolling.map((r, i) => `${i === 0 ? 'M' : 'L'}${xs(i)},${ys(r.r7)}`).join(' ');
+  const pathR30 = rolling.map((r, i) => `${i === 0 ? 'M' : 'L'}${xs(i)},${ys(r.r30)}`).join(' ');
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} style={{ display: 'block' }}>
@@ -873,16 +1096,16 @@ function RollingChart() {
       ))}
       <text x={pad.l - 4} y={pad.t + 4} fontSize={8} fill={T.muted} textAnchor="end" fontFamily={fontNum}>{max}g</text>
       <text x={pad.l - 4} y={pad.t + h + 3} fontSize={8} fill={T.muted} textAnchor="end" fontFamily={fontNum}>0</text>
-      {ROLLING.map((r, i) => {
+      {rolling.map((r, i) => {
         const bh = (r.daily / max) * h;
         return <rect key={i} x={xs(i) - bw * 0.35} y={pad.t + h - bh}
           width={bw * 0.7} height={bh} fill={T.accent} opacity={0.25} rx={1} />;
       })}
       <path d={pathR7} fill="none" stroke={T.accent} strokeWidth={2} strokeLinejoin="round" />
       <path d={pathR30} fill="none" stroke={T.ink2} strokeWidth={1.4} strokeDasharray="3 2" strokeLinejoin="round" />
-      {[0, Math.floor(n / 2), n - 1].map((i, k) => (
+      {n > 0 && [0, Math.floor(n / 2), n - 1].map((i, k) => (
         <text key={k} x={xs(i)} y={height - 8}
-          fontSize={9} fill={T.muted} textAnchor="middle" fontFamily={fontNum}>{ROLLING[i].date}</text>
+          fontSize={9} fill={T.muted} textAnchor="middle" fontFamily={fontNum}>{rolling[i].date}</text>
       ))}
     </svg>
   );

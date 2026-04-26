@@ -13,12 +13,9 @@ const IDB_NAME = 'AlcoNoteDB';
 const KNOWN_VERSION = 3; // last schema we know about (legacy js/database.js v3)
 
 let __idbConn = null;
-
 function _open(version) {
   return new Promise((resolve, reject) => {
-    const req = version === undefined
-      ? indexedDB.open(IDB_NAME)
-      : indexedDB.open(IDB_NAME, version);
+    const req = version === undefined ? indexedDB.open(IDB_NAME) : indexedDB.open(IDB_NAME, version);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
     req.onblocked = () => reject(new Error('IDB open blocked by another tab'));
@@ -28,16 +25,18 @@ function _open(version) {
       // that would destroy data.
       for (const store of ['drinks', 'categories', 'settings', 'bacRecords', 'drinkRatings']) {
         if (!idb.objectStoreNames.contains(store)) {
-          const opts = (store === 'drinkRatings' || store === 'settings')
-            ? { keyPath: store === 'drinkRatings' ? 'drinkName' : 'key' }
-            : { keyPath: 'id', autoIncrement: true };
+          const opts = store === 'drinkRatings' || store === 'settings' ? {
+            keyPath: store === 'drinkRatings' ? 'drinkName' : 'key'
+          } : {
+            keyPath: 'id',
+            autoIncrement: true
+          };
           idb.createObjectStore(store, opts);
         }
       }
     };
   });
 }
-
 async function openIDB() {
   if (__idbConn) return __idbConn;
   // Step 1: try opening at the existing version (no upgrade). If the DB
@@ -59,16 +58,16 @@ async function openIDB() {
   // If a peer tab requests a future upgrade, release the connection so the
   // upgrade can proceed instead of being blocked indefinitely.
   __idbConn.onversionchange = () => {
-    try { __idbConn.close(); } catch {}
+    try {
+      __idbConn.close();
+    } catch {}
     __idbConn = null;
   };
   return __idbConn;
 }
-
 function tx(idb, storeName, mode = 'readonly') {
   return idb.transaction(storeName, mode).objectStore(storeName);
 }
-
 async function readAll(storeName) {
   try {
     const idb = await openIDB();
@@ -83,7 +82,6 @@ async function readAll(storeName) {
     return [];
   }
 }
-
 async function writeOne(storeName, record) {
   const idb = await openIDB();
   if (!idb.objectStoreNames.contains(storeName)) {
@@ -96,7 +94,6 @@ async function writeOne(storeName, record) {
     req.onerror = () => reject(req.error);
   });
 }
-
 async function bumpCategoryDrinkCount(categoryName) {
   // Note: this is intentionally non-atomic with the preceding `writeOne`
   // (each runs in its own IDB transaction). If the page is killed between
@@ -119,9 +116,16 @@ async function bumpCategoryDrinkCount(categoryName) {
         // Mirror the legacy app: create a categories row if none exists for
         // this name, so a rollback to the legacy build still surfaces the
         // category card.
-        const next = match
-          ? { ...match, drinkCount, updatedAt: now }
-          : { name: categoryName, drinkCount, createdAt: now, updatedAt: now };
+        const next = match ? {
+          ...match,
+          drinkCount,
+          updatedAt: now
+        } : {
+          name: categoryName,
+          drinkCount,
+          createdAt: now,
+          updatedAt: now
+        };
         const put = store.put(next);
         put.onsuccess = () => resolve();
         put.onerror = () => reject(put.error);
@@ -150,14 +154,14 @@ function groupIntoFamilies(drinks, ratingsByName) {
         unit: d.unit || 'cL',
         alcohol,
         rating: ratings[d.name] || 0,
-        entries: [],
+        entries: []
       });
     }
     const ts = `${d.date}T${(d.time || '00:00').slice(0, 5)}`;
     families.get(key).entries.push({
       id: `e-${d.id}`,
       ts,
-      place: d.location || null,
+      place: d.location || null
     });
   }
   // Newest entries first within each family.
@@ -173,26 +177,22 @@ window.__dbListeners = window.__dbListeners || new Set();
 let __dbHydrated = false;
 let __dbHasRealData = false;
 window.__alcoUserSettings = window.__alcoUserSettings || {};
-
 function bumpDb() {
   window.__dbListeners.forEach(fn => fn());
 }
-
 function useDb() {
   const [, force] = React.useReducer(n => n + 1, 0);
   React.useEffect(() => {
     window.__dbListeners.add(force);
     return () => window.__dbListeners.delete(force);
   }, []);
-  return { hydrated: __dbHydrated, hasRealData: __dbHasRealData };
+  return {
+    hydrated: __dbHydrated,
+    hasRealData: __dbHasRealData
+  };
 }
-
 async function hydrateFamilies() {
-  const [drinks, ratings, settings] = await Promise.all([
-    readAll('drinks'),
-    readAll('drinkRatings'),
-    readAll('settings'),
-  ]);
+  const [drinks, ratings, settings] = await Promise.all([readAll('drinks'), readAll('drinkRatings'), readAll('settings')]);
   // Surface user profile (weight, gender) so BAC computations can pick it
   // up. Fall back to defaults silently if absent.
   const settingsByKey = {};
@@ -212,13 +212,18 @@ async function hydrateFamilies() {
 // Persist a new drink. Returns the updated families list. Mirrors the legacy
 // `addDrink` semantics so a future rollback to the legacy build still sees
 // consistent data (same field shape, drinkCount kept in sync).
-async function addDrinkToDb({ name, category, quantity, unit, alcoholContent, location }) {
+async function addDrinkToDb({
+  name,
+  category,
+  quantity,
+  unit,
+  alcoholContent,
+  location
+}) {
   const now = new Date();
   const date = now.toISOString().slice(0, 10);
   const time = now.toTimeString().slice(0, 5);
-  const quantityInCL = unit === 'EcoCup' ? quantity * 25
-                     : unit === 'L' ? quantity * 100
-                     : +quantity;
+  const quantityInCL = unit === 'EcoCup' ? quantity * 25 : unit === 'L' ? quantity * 100 : +quantity;
   const record = {
     name: (name || '').trim(),
     category: category || 'Autre',
@@ -226,11 +231,12 @@ async function addDrinkToDb({ name, category, quantity, unit, alcoholContent, lo
     unit: unit || 'cL',
     quantityInCL,
     alcoholContent: +alcoholContent || 0,
-    date, time,
+    date,
+    time,
     location: location || null,
     barcode: null,
     createdAt: now,
-    updatedAt: now,
+    updatedAt: now
   };
   await writeOne('drinks', record);
   await bumpCategoryDrinkCount(record.category);
@@ -243,16 +249,20 @@ async function addDrinkToDb({ name, category, quantity, unit, alcoholContent, lo
 // older builds.
 async function exportAllData() {
   const idb = await openIDB();
-  const out = { exportedAt: new Date().toISOString(), schemaVersion: idb.version };
+  const out = {
+    exportedAt: new Date().toISOString(),
+    schemaVersion: idb.version
+  };
   for (const store of idb.objectStoreNames) {
     out[store] = await readAll(store);
   }
   return out;
 }
-
 async function downloadBackup() {
   const data = await exportAllData();
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: 'application/json'
+  });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -262,7 +272,6 @@ async function downloadBackup() {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
-
 async function importBackup(file) {
   const text = await file.text();
   const data = JSON.parse(text);
@@ -279,7 +288,9 @@ async function importBackup(file) {
       const t = idb.transaction(store, 'readwrite');
       const s = t.objectStore(store);
       for (const row of data[store]) {
-        try { s.put(row); } catch {}
+        try {
+          s.put(row);
+        } catch {}
       }
       t.oncomplete = () => resolve();
       t.onerror = () => reject(t.error);
@@ -298,9 +309,8 @@ async function importBackup(file) {
   }
   await hydrateFamilies();
 }
-
 function pickBackupFile() {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'application/json,.json';
@@ -325,24 +335,27 @@ function computeCurrentBacMgPerL(families, opts = {}) {
   const now = Date.now();
   let total = 0;
   for (const f of families) {
-    const volCl = f.unit === 'EcoCup' ? f.quantity * 25
-                : f.unit === 'L' ? f.quantity * 100
-                : f.quantity;
+    const volCl = f.unit === 'EcoCup' ? f.quantity * 25 : f.unit === 'L' ? f.quantity * 100 : f.quantity;
     const grams = volCl * 10 * (f.alcohol / 100) * 0.789;
     for (const e of f.entries) {
       const ts = Date.parse(e.ts);
       if (Number.isNaN(ts)) continue;
       const hoursAgo = (now - ts) / 3.6e6;
       if (hoursAgo < 0 || hoursAgo > horizonH) continue;
-      const peak = (grams / (weightKg * r)); // g/L
+      const peak = grams / (weightKg * r); // g/L
       const residual = Math.max(0, peak - elimGperLPerH * Math.max(0, hoursAgo));
       total += residual;
     }
   }
   return Math.round(total * 1000); // → mg/L
 }
-
 Object.assign(window, {
-  hydrateFamilies, addDrinkToDb, computeCurrentBacMgPerL, useDb,
-  exportAllData, downloadBackup, importBackup, pickBackupFile,
+  hydrateFamilies,
+  addDrinkToDb,
+  computeCurrentBacMgPerL,
+  useDb,
+  exportAllData,
+  downloadBackup,
+  importBackup,
+  pickBackupFile
 });
