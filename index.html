@@ -1,463 +1,288 @@
 <!DOCTYPE html>
-<!-- Page principale de l'application AlcoNote PWA -->
 <html lang="fr">
-
 <head>
-    <meta charset="UTF-8">
-    <!-- Configuration de la viewport pour le responsive design -->
-    <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>AlcoNote - Suivi de Consommation d'Alcool</title>
-    <meta name="description"
-        content="Application PWA pour suivre votre consommation d'alcool avec scanner de codes-barres, statistiques détaillées et fonctionnement hors ligne.">
-    <meta name="keywords" content="alcool, consommation, suivi, PWA, scanner, statistiques, santé">
-    <meta name="author" content="AlcoNote">
-
-    <!-- Métadonnées PWA pour l'installation et l'apparence -->
-    <meta name="theme-color" content="#007AFF">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="AlcoNote">
-
-    <!-- En-têtes de sécurité pour protéger l'application -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https: blob:; connect-src 'self' https://world.openfoodfacts.org https://nominatim.openstreetmap.org https://api.upcitemdb.com https://api.barcodelookup.com https://api.timezonedb.com; font-src 'self' https://cdn.jsdelivr.net; media-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:;">
-    <meta http-equiv="X-Content-Type-Options" content="nosniff">
-    <meta http-equiv="X-Frame-Options" content="DENY">
-    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
-
-    <!-- Manifest pour la PWA -->
-    <link rel="manifest" href="manifest.json">
-
-    <!-- Icônes de l'application -->
-    <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192x192.png">
-
-    <!-- Feuilles de style principales -->
-    <link rel="stylesheet" href="css/main.css?v=2.12.0">
-    <link rel="stylesheet" href="css/components.css?v=2.12.0">
-    <link rel="stylesheet" href="css/responsive.css?v=2.12.0">
-    <link rel="stylesheet" href="css/accessibility.css?v=2.12.0">
-
-    <!-- Bibliothèques JavaScript externes -->
-    <!-- Chart.js pour les graphiques statistiques existants -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Apache ECharts pour les visualisations interactives modernes -->
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
-    <!-- QuaggaJS pour la lecture de codes-barres -->
-    <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
-    <!-- Dexie.js pour IndexedDB -->
-    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
-    <!-- Leaflet pour les cartes interactives -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-    <script>
-        window.MathJax = {
-            tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
-            chtml: { scale: 1 }
-        };
-    </script>
-    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<meta charset="UTF-8">
+<title>AlcoNote</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="AlcoNote — suivi éditorial de la consommation d'alcool. Catégories, historique et statistiques.">
+<meta name="theme-color" content="#b8763b">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192x192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; min-height: 100vh;
+    font-family: "Geist", system-ui, sans-serif;
+    transition: background 0.35s ease;
+  }
+  html[data-theme="dark"], body.theme-dark {
+    background: radial-gradient(ellipse at top, oklch(22% 0.01 55), oklch(14% 0.008 50) 75%);
+  }
+  html[data-theme="light"], body.theme-light {
+    background: radial-gradient(ellipse at top, oklch(99% 0.006 85), oklch(93% 0.01 75) 75%);
+  }
+  body { background: radial-gradient(ellipse at top, oklch(22% 0.01 55), oklch(14% 0.008 50) 75%); }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  input, button, select { font-family: inherit; }
+  .phone-body ::-webkit-scrollbar { display: none; }
+  .phone-body * { scrollbar-width: none; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
 </head>
-
 <body>
-    <!-- Conteneur principal de l'application -->
-    <div id="app">
-        <!-- En-tête de l'application avec menu paramètres -->
-        <header class="app-header">
-            <button id="settings-btn" class="settings-btn" aria-label="Paramètres">
-                <div class="hamburger-icon">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                </div>
-            </button>
-            <h1 class="app-title">AlcoNote</h1>
-            <div class="header-spacer"></div>
-        </header>
+<div id="root"></div>
 
-        <!-- Contenu principal avec navigation par onglets -->
-        <main class="main-content">
-            <!-- Navigation par onglets -->
-            <nav class="tab-navigation">
-                <button class="tab-btn active" data-tab="categories">Catégories</button>
-                <button class="tab-btn" data-tab="history">Historique</button>
-                <button class="tab-btn" data-tab="statistics">Statistiques</button>
-            </nav>
+<script type="text/babel" src="proto/shared.jsx"></script>
+<script type="text/babel" src="proto/data.jsx"></script>
+<script type="text/babel" src="proto/categories.jsx"></script>
+<script type="text/babel" src="proto/history.jsx"></script>
+<script type="text/babel" src="proto/stats-charts.jsx"></script>
+<script type="text/babel" src="proto/stats.jsx"></script>
+<script type="text/babel" src="proto/modals.jsx"></script>
 
-            <!-- Onglet Catégories - liste des catégories de boissons -->
-            <section id="categories-tab" class="tab-content active">
-                <div class="categories-container">
-                    <div class="categories-search-bar">
-                        <div class="search-input-wrapper">
-                            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                            <input type="text" id="categories-search" placeholder="Rechercher une boisson ou catégorie..." autocomplete="off">
-                            <button id="categories-search-clear" class="search-clear-btn" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-                        </div>
-                    </div>
-                    <div id="categories-list" class="categories-list">
-                        <!-- Les catégories seront chargées dynamiquement ici -->
-                    </div>
-                </div>
-            </section>
+<script type="text/babel">
+function App() {
+  useTheme();
+  React.useEffect(() => {
+    document.documentElement.setAttribute('data-theme', T._name);
+    document.body.className = `theme-${T._name}`;
+  });
 
-            <!-- Onglet Historique - liste chronologique des consommations -->
-            <section id="history-tab" class="tab-content">
-                <div class="history-container">
-                    <div class="history-toolbar">
-                        <div class="search-input-wrapper history-search-wrapper">
-                            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                            <input type="text" id="history-search" placeholder="Rechercher une boisson..." autocomplete="off">
-                            <button id="history-search-clear" class="search-clear-btn" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-                        </div>
-                        <select id="history-category-filter" class="history-filter">
-                            <option value="">Toutes les catégories</option>
-                        </select>
-                    </div>
-                    <div id="history-list" class="history-list">
-                        <!-- L'historique sera chargé dynamiquement ici -->
-                    </div>
-                    <div id="history-pagination" class="history-pagination" style="display:none;">
-                        <button id="history-prev" class="btn-secondary" disabled>Précédent</button>
-                        <span id="history-page-info" class="page-info"></span>
-                        <button id="history-next" class="btn-secondary">Suivant</button>
-                    </div>
-                </div>
-            </section>
+  const [tab, setTab] = React.useState(() => localStorage.getItem('alconote.tab') || 'categories');
+  const [adding, setAdding] = React.useState(false);
+  const [settings, setSettings] = React.useState(false);
+  const [openFamily, setOpenFamily] = React.useState(null);
+  const [openEntry, setOpenEntry] = React.useState(null);
+  const [prefill, setPrefill] = React.useState(null);
+  const [toast, setToast] = React.useState(null);
 
-            <!-- Onglet Statistiques - graphiques et analyses -->
-            <section id="statistics-tab" class="tab-content">
-                <div class="statistics-container">
-                    <!-- Sélecteur de période temporelle -->
-                    <div class="period-selector">
-                        <button class="period-btn active" data-period="today">Aujourd'hui</button>
-                        <button class="period-btn" data-period="week">Semaine</button>
-                        <button class="period-btn" data-period="month">Mois</button>
-                        <button class="period-btn" data-period="year">Année</button>
-                        <button class="period-btn" data-period="all">Tout</button>
-                        <button class="period-btn" data-period="custom">Personnalisé</button>
-                        <button class="period-btn" data-period="school">A. scolaire</button>
-                    </div>
+  const directAdd = React.useCallback((family) => {
+    setToast(`« ${family.name} » ajoutée`);
+    clearTimeout(window.__aToast);
+    window.__aToast = setTimeout(() => setToast(null), 1800);
+  }, []);
 
-                    <!-- Navigation temporelle (précédent/suivant) -->
-                    <div id="period-navigation" class="period-navigation active">
-                        <button id="prev-period" class="nav-btn">‹</button>
-                        <span id="current-period-display" class="current-date"></span>
-                        <button id="next-period" class="nav-btn">›</button>
-                    </div>
+  React.useEffect(() => { localStorage.setItem('alconote.tab', tab); }, [tab]);
 
-                    <!-- Contenu des statistiques -->
-                    <div id="statistics-content" class="statistics-content">
-                        <!-- Les statistiques seront chargées dynamiquement ici -->
-                    </div>
-                </div>
-            </section>
-        </main>
-
-        <!-- Bouton d'action flottant (visible uniquement dans l'onglet catégories) -->
-        <div class="fab-container" id="fab-container">
-            <button id="add-category-btn" class="fab-main" aria-label="Ajouter une catégorie">
-                <span class="fab-icon">+</span>
-            </button>
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'grid', placeItems: 'center',
+      padding: '30px 10px 50px',
+    }}>
+      <PhoneFrame>
+        <StatusBar />
+        <AppHeader tab={tab} onMenu={() => setSettings(true)} />
+        <div data-screen-label={tabLabel(tab)} style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {tab === 'categories' && (
+            <CategoriesTab onOpenFamily={setOpenFamily} onAdd={() => setAdding(true)} onDirectAdd={directAdd} />
+          )}
+          {tab === 'history' && (
+            <HistoryTab onOpenEntry={setOpenEntry} onDirectAdd={directAdd} />
+          )}
+          {tab === 'stats' && <StatsTab />}
         </div>
+
+        <Fab onClick={() => setAdding(true)} />
+        <BottomNav tab={tab} onChange={setTab} />
+        <HomeBar />
+
+        <AddDrinkSheet open={adding} prefill={prefill} onClose={() => { setAdding(false); setPrefill(null); }} />
+        <SettingsDrawer open={settings} onClose={() => setSettings(false)} />
+        {openFamily && (
+          <DrinkDetailSheet family={openFamily} onClose={() => setOpenFamily(null)} />
+        )}
+        {openEntry && (
+          <DrinkDetailSheet entry={openEntry} onClose={() => setOpenEntry(null)} />
+        )}
+      </PhoneFrame>
+      <Hint />
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 40, left: '50%', transform: 'translateX(-50%)',
+          background: T.ink, color: T.bg, padding: '10px 18px', borderRadius: 99,
+          fontSize: 13, fontWeight: 500, letterSpacing: -0.1,
+          zIndex: 9999, boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+          display: 'flex', alignItems: 'center', gap: 8,
+          animation: 'fade 0.2s ease',
+        }}>
+          <span style={{ display: 'flex', color: T.accent }}><SvgIcon icon={Ic.check} size={14} /></span>
+          {toast}
+        </div>
+      )}
     </div>
+  );
+}
 
-    <!-- Fenêtres modales de l'application -->
-    <!-- Modal d'ajout de boisson -->
-    <dialog id="add-drink-modal" class="modal popup-modal">
-        <div class="modal-content popup-content">
-            <div class="modal-header">
-                <h2>Ajouter une boisson</h2>
-                <button class="modal-close" data-modal="add-drink-modal" aria-label="Fermer">&times;</button>
-            </div>
-            <form id="add-drink-form" class="modal-form">
-                <div class="form-group">
-                    <label for="drink-name">Nom de la boisson</label>
-                    <input type="text" id="drink-name" name="name" required>
-                    <button type="button" id="scan-barcode-btn" class="btn-secondary"
-                        aria-label="Scanner un code-barres" style="margin-top: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h2"/><path d="M3 10h2"/><path d="M3 15h2"/><path d="M3 20h2"/><path d="M19 5h2"/><path d="M19 10h2"/><path d="M19 15h2"/><path d="M19 20h2"/><rect x="7" y="3" width="10" height="18" rx="1"/></svg> Scanner</button>
-                    <div id="drink-suggestions" class="suggestions-list"></div>
-                </div>
+function tabLabel(t) {
+  return t === 'categories' ? '01 Catégories' : t === 'history' ? '02 Historique' : '03 Statistiques';
+}
 
-                <div class="form-group drink-rating-group" id="drink-rating-group" style="display: none;">
-                    <label>Note</label>
-                    <div class="star-rating" id="drink-star-rating">
-                        <span class="star" data-value="1">&#9733;</span>
-                        <span class="star" data-value="2">&#9733;</span>
-                        <span class="star" data-value="3">&#9733;</span>
-                        <span class="star" data-value="4">&#9733;</span>
-                        <span class="star" data-value="5">&#9733;</span>
-                    </div>
-                    <input type="hidden" id="drink-rating-value" name="rating" value="">
-                </div>
-
-                <div class="form-group" id="category-form-group">
-                    <label for="drink-category">Catégorie</label>
-                    <select id="drink-category" name="category" required>
-                        <option value="">Sélectionner une catégorie</option>
-                    </select>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="drink-quantity">Quantité</label>
-                        <input type="number" id="drink-quantity" name="quantity" step="0.1" min="0" inputmode="decimal"
-                            required>
-                    </div>
-                    <div class="form-group">
-                        <label for="drink-unit">Unité</label>
-                        <select id="drink-unit" name="unit" required>
-                            <option value="EcoCup">EcoCup (25cL)</option>
-                            <option value="cL">cL</option>
-                            <option value="L">L</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="drink-alcohol">Degré d'alcool (%)</label>
-                    <input type="number" id="drink-alcohol" name="alcoholContent" step="0.1" min="0" max="100">
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="drink-date">Date</label>
-                        <input type="date" id="drink-date" name="date" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="drink-time">Heure</label>
-                        <input type="time" id="drink-time" name="time" required>
-                    </div>
-                </div>
-
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" data-modal="add-drink-modal">Annuler</button>
-                    <button type="submit" class="btn-primary">Ajouter</button>
-                </div>
-            </form>
-        </div>
-    </dialog>
-
-    <!-- Modal d'ajout de catégorie -->
-    <dialog id="add-category-modal" class="modal popup-modal">
-        <div class="modal-content popup-content">
-            <div class="modal-header">
-                <h2>Ajouter une catégorie</h2>
-                <button class="modal-close" data-modal="add-category-modal" aria-label="Fermer">&times;</button>
-            </div>
-            <form id="add-category-form" class="modal-form">
-                <div class="form-group">
-                    <label for="category-name">Nom de la catégorie</label>
-                    <input type="text" id="category-name" name="name" required>
-                </div>
-
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" data-modal="add-category-modal">Annuler</button>
-                    <button type="submit" class="btn-primary">Ajouter</button>
-                </div>
-            </form>
-        </div>
-    </dialog>
-
-    <!-- Modal du scanner de code-barres -->
-    <dialog id="scanner-modal" class="modal">
-        <div class="modal-content scanner-content">
-            <div class="modal-header scanner-modal-header">
-                <h2><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: text-bottom; margin-right: 6px;"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="16" x2="17" y2="16"/></svg>Scanner</h2>
-                <button class="modal-close" data-modal="scanner-modal" aria-label="Fermer">&times;</button>
-            </div>
-            <div id="scanner-container" class="scanner-container">
-                <div id="scanner-viewport" class="scanner-viewport"></div>
-                <div class="scanner-overlay">
-                    <div class="scanner-frame">
-                        <span class="scanner-corner scanner-corner-tl"></span>
-                        <span class="scanner-corner scanner-corner-tr"></span>
-                        <span class="scanner-corner scanner-corner-bl"></span>
-                        <span class="scanner-corner scanner-corner-br"></span>
-                        <div class="scanner-line"></div>
-                    </div>
-                </div>
-            </div>
-            <div class="scanner-status">
-                <div class="scanner-status-indicator"></div>
-                <p id="scanner-status-text">Positionnez le code-barres dans le cadre</p>
-            </div>
-        </div>
-    </dialog>
-
-    <!-- Menu des paramètres -->
-    <div id="settings-menu" class="settings-menu">
-        <div class="settings-content">
-            <div class="settings-header">
-                <h2>Paramètres</h2>
-                <button id="settings-close" class="settings-close" aria-label="Fermer">&times;</button>
-            </div>
-            <div class="settings-body">
-                <div class="settings-section">
-                    <h3>Apparence</h3>
-                    <div class="form-group">
-                        <label for="theme-toggle">Thème</label>
-                        <select id="theme-toggle">
-                            <option value="auto">Automatique</option>
-                            <option value="light">Clair</option>
-                            <option value="dark">Sombre</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="settings-section">
-                    <h3>Profil</h3>
-                    <div class="form-group">
-                        <label for="user-weight">Poids (kg)</label>
-                        <input type="number" id="user-weight" step="0.1" min="30" max="200">
-                    </div>
-                    <div class="form-group">
-                        <label for="user-gender">Sexe</label>
-                        <select id="user-gender">
-                            <option value="">Non spécifié</option>
-                            <option value="male">Homme</option>
-                            <option value="female">Femme</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="settings-section">
-                    <h3>Données</h3>
-                    <button id="export-data" class="btn-secondary">Exporter les données</button>
-                    <button id="import-data" class="btn-secondary">Importer les données</button>
-                    <button id="clear-data" class="btn-danger">Effacer toutes les données</button>
-                </div>
-            </div>
-        </div>
+function PhoneFrame({ children }) {
+  return (
+    <div style={{
+      width: 390, height: 844, borderRadius: 52, overflow: 'hidden',
+      position: 'relative', background: T.bg,
+      boxShadow: T.isDark
+        ? `0 60px 120px rgba(0,0,0,0.5), 0 0 0 10px oklch(14% 0.008 50), 0 0 0 11px oklch(30% 0.01 55)`
+        : `0 40px 90px rgba(60,40,20,0.22), 0 0 0 10px oklch(88% 0.01 75), 0 0 0 11px oklch(70% 0.02 70)`,
+      display: 'flex', flexDirection: 'column',
+    }} className="phone-body">
+      <div style={{
+        position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
+        width: 120, height: 34, borderRadius: 22, background: '#000', zIndex: 50,
+      }} />
+      {children}
     </div>
+  );
+}
 
-    <!-- Modal de détails de boisson -->
-    <dialog id="drink-detail-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="drink-detail-title"></h2>
-                <button class="modal-close" data-modal="drink-detail-modal" aria-label="Fermer">&times;</button>
+function AppHeader({ tab, onMenu }) {
+  const titles = {
+    categories: 'Catégories',
+    history: 'Historique',
+    stats: 'Statistiques',
+  };
+  const today = new Date();
+  const months = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  const days = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+  const dateStr = `${days[today.getDay()]} ${today.getDate()} ${months[today.getMonth()]}`;
+
+  return (
+    <div style={{
+      padding: '8px 18px 14px', display: 'flex', alignItems: 'center',
+      justifyContent: 'space-between', gap: 12,
+    }}>
+      <div onClick={onMenu} style={{
+        width: 38, height: 38, borderRadius: 12, background: T.surface2,
+        display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
+        border: `1px solid ${T.rule}`,
+      }}>
+        <SvgIcon icon={Ic.menu} size={18} />
+      </div>
+      <div style={{ flex: 1, textAlign: 'center' }}>
+        <div style={{
+          fontFamily: fontSerif, fontSize: 20, color: T.ink,
+          letterSpacing: -0.3, lineHeight: 1, fontStyle: 'italic',
+        }}>{titles[tab]}</div>
+        <div style={{
+          fontSize: 10, color: T.muted, letterSpacing: 1, marginTop: 3,
+          textTransform: 'uppercase', fontWeight: 500,
+        }}>{dateStr}</div>
+      </div>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        padding: '6px 10px 6px 8px', borderRadius: 12,
+        background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
+      }}>
+        <div style={{
+          width: 6, height: 6, borderRadius: 99, background: T.accent,
+          boxShadow: `0 0 8px ${T.accent}`,
+        }}/>
+        <span style={{
+          color: T.accent, fontSize: 11, fontWeight: 600,
+          fontFamily: fontNum, letterSpacing: 0.2,
+        }}>420</span>
+      </div>
+    </div>
+  );
+}
+
+function BottomNav({ tab, onChange }) {
+  const items = [
+    { id: 'categories', label: 'Catégories', icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
+        <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
+      </svg>
+    )},
+    { id: 'history', label: 'Historique', icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/>
+        <polyline points="12 7 12 12 15 14"/>
+      </svg>
+    )},
+    { id: 'stats', label: 'Stats', icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+      </svg>
+    )},
+  ];
+  return (
+    <div style={{
+      position: 'relative', padding: '8px 16px 4px',
+      background: T.bg, borderTop: `1px solid ${T.rule}`,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-around', paddingBottom: 2 }}>
+        {items.map(it => {
+          const on = tab === it.id;
+          return (
+            <div key={it.id} onClick={() => onChange(it.id)} style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+              gap: 4, padding: '10px 8px', cursor: 'pointer', position: 'relative',
+              color: on ? T.accent : T.muted,
+            }}>
+              <div style={{ width: 22, height: 22, display: 'flex' }}>
+                {React.cloneElement(it.icon, { width: 22, height: 22 })}
+              </div>
+              <div style={{
+                fontSize: 10, letterSpacing: 0.2, fontWeight: on ? 600 : 400,
+              }}>{it.label}</div>
+              {on && (
+                <div style={{
+                  position: 'absolute', top: 2, width: 20, height: 3,
+                  borderRadius: 99, background: T.accent,
+                  boxShadow: `0 0 8px ${T.accent}`,
+                }}/>
+              )}
             </div>
-            <div id="drink-detail-content" class="drink-detail-content">
-                <!-- Les détails de la boisson seront chargés dynamiquement ici -->
-            </div>
-            <div class="modal-actions">
-                <button id="add-same-drink" class="btn-primary">Ajouter cette boisson</button>
-            </div>
-        </div>
-    </dialog>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
-    <!-- Modal d'édition de boisson (famille/variante) -->
-    <dialog id="edit-drink-family-modal" class="modal popup-modal">
-        <div class="modal-content popup-content">
-            <div class="modal-header">
-                <h2>Modifier la boisson</h2>
-                <button class="modal-close" data-modal="edit-drink-family-modal">&times;</button>
-            </div>
-            <form id="edit-drink-family-form" class="modal-form">
-                <div class="form-group">
-                    <label for="edit-family-name">Nom de la boisson</label>
-                    <input type="text" id="edit-family-name" required>
-                </div>
+function Fab({ onClick }) {
+  return (
+    <div onClick={onClick} style={{
+      position: 'absolute', bottom: 100, right: 20, zIndex: 30,
+      width: 58, height: 58, borderRadius: 20, background: T.accent,
+      display: 'grid', placeItems: 'center', color: T.isDark ? T.bg : '#fff', cursor: 'pointer',
+      boxShadow: T.isDark
+        ? `0 10px 26px oklch(72% 0.15 65 / 0.5), 0 0 0 1px oklch(80% 0.12 65 / 0.3)`
+        : `0 10px 26px oklch(60% 0.15 50 / 0.45), 0 0 0 1px oklch(60% 0.15 50 / 0.6)`,
+    }}>
+      <SvgIcon icon={Ic.plus} size={26} />
+    </div>
+  );
+}
 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="edit-family-quantity">Quantité</label>
-                        <input type="number" id="edit-family-quantity" step="0.1" min="0" inputmode="decimal" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="edit-family-unit">Unité</label>
-                        <select id="edit-family-unit" required>
-                            <option value="EcoCup">EcoCup (25cL)</option>
-                            <option value="cL">cL</option>
-                            <option value="L">L</option>
-                        </select>
-                    </div>
-                </div>
+function Hint() {
+  return (
+    <div style={{
+      color: T.muted, fontSize: 12, marginTop: 22,
+      letterSpacing: 0.2, textAlign: 'center', maxWidth: 360,
+      fontFamily: fontSans,
+    }}>
+      Naviguez entre <span style={{ color: T.accent }}>Catégories</span>, <span style={{ color: T.accent }}>Historique</span> et <span style={{ color: T.accent }}>Stats</span>.
+      <br/>Le bouton <span style={{ color: T.accent }}>+</span> ouvre l'ajout · menu ≡ = paramètres.
+    </div>
+  );
+}
 
-                <div class="form-group">
-                    <label for="edit-family-alcohol">Degré d'alcool (%)</label>
-                    <input type="number" id="edit-family-alcohol" step="0.1" min="0" max="100" inputmode="decimal">
-                </div>
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
 
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" data-modal="edit-drink-family-modal">Annuler</button>
-                    <button type="submit" class="btn-primary">Enregistrer</button>
-                </div>
-            </form>
-            <div class="edit-family-extra-actions">
-                <button type="button" id="edit-family-change-category" class="btn-secondary edit-family-action-btn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                    Changer de catégorie
-                </button>
-                <button type="button" id="edit-family-delete-all" class="btn-danger edit-family-action-btn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                    Supprimer toutes les variantes
-                </button>
-            </div>
-        </div>
-    </dialog>
-
-    <!-- Modal de sélection de catégorie -->
-    <dialog id="category-picker-modal" class="modal popup-modal">
-        <div class="modal-content popup-content">
-            <div class="modal-header">
-                <h2>Changer de catégorie</h2>
-                <button class="modal-close" data-modal="category-picker-modal">&times;</button>
-            </div>
-            <div id="category-picker-list" class="category-picker-list">
-                <!-- Dynamically populated -->
-            </div>
-        </div>
-    </dialog>
-
-    <!-- Scripts JavaScript de l'application -->
-    <!-- Chargés dans l'ordre des dépendances -->
-    <script src="js/error-tracking.js"></script>
-    <script src="js/performance-optimizer.js"></script>
-    <script src="js/database.js"></script>
-    <script src="js/utils.js"></script>
-    <script src="js/bac-chart.js"></script>
-    <script src="js/geolocation.js"></script>
-    <script src="js/scanner/product-lookup.js"></script>
-    <script src="js/scanner/camera-scanner.js"></script>
-    <script src="js/scanner/barcode-handler.js"></script>
-
-    <!-- Nouveau système de statistiques modulaire -->
-    <!-- Configuration des statistiques -->
-    <script src="js/stats-config.js"></script>
-    <script src="js/utils-period-normalizer.js"></script>
-
-    <!-- Calculateurs -->
-    <script src="js/stats-calculators/general.js"></script>
-    <script src="js/stats-calculators/temporal.js"></script>
-    <script src="js/stats-calculators/categories.js"></script>
-    <script src="js/stats-calculators/drinks.js"></script>
-    <script src="js/stats-calculators/health.js"></script>
-    <script src="js/stats-calculators/location.js"></script>
-    <script src="js/stats-calculators/trends.js"></script>
-    <script src="js/stats-calculators/advanced.js"></script>
-
-    <!-- Renderers -->
-    <script src="js/stats-renderers/general-renderer.js"></script>
-    <script src="js/stats-renderers/temporal-renderer.js"></script>
-    <script src="js/stats-renderers/category-renderer.js"></script>
-    <script src="js/stats-renderers/drinks-renderer.js"></script>
-    <script src="js/stats-renderers/health-renderer.js"></script>
-    <script src="js/stats-renderers/location-renderer.js"></script>
-    <script src="js/stats-renderers/trends-renderer.js"></script>
-    <script src="js/stats-renderers/advanced-renderer.js"></script>
-
-    <!-- Utilitaires statistiques -->
-    <script src="js/stats-collapsible.js"></script>
-
-    <!-- Gestionnaire de statistiques modulaire -->
-    <script src="js/statistics-new.js"></script>
-
-    <script src="js/app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
 </body>
-
 </html>
