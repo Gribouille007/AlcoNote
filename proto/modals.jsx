@@ -7,6 +7,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
   const [qty, setQty] = React.useState(33);
   const [unit, setUnit] = React.useState('cL');
   const [alc, setAlc] = React.useState(4.4);
+  const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
     if (prefill) {
@@ -22,6 +23,19 @@ function AddDrinkSheet({ open, prefill, onClose }) {
 
   const volCl = unit === 'EcoCup' ? qty * 25 : unit === 'L' ? qty * 100 : qty;
   const g = +(volCl * 10 * (alc / 100) * 0.789).toFixed(1);
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await addDrinkToDb({ name, category: cat, quantity: qty, unit, alcoholContent: alc });
+    } catch (e) {
+      console.warn('[AlcoNote] save drink failed', e);
+    } finally {
+      setSaving(false);
+      onClose();
+    }
+  };
 
   return (
     <SheetOverlay onClose={onClose}>
@@ -42,40 +56,44 @@ function AddDrinkSheet({ open, prefill, onClose }) {
             fontFamily: fontSerif, fontSize: 22, color: T.ink,
             letterSpacing: -0.3, fontStyle: 'italic',
           }}>Nouvelle boisson</div>
-          <div onClick={onClose} style={{
-            width: 30, height: 30, borderRadius: 99, background: T.surface2,
-            display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
-          }}>
+          <button type="button" className="bare" onClick={onClose}
+            aria-label="Fermer" style={{
+              width: 30, height: 30, borderRadius: 99, background: T.surface2,
+              display: 'grid', placeItems: 'center', color: T.ink2,
+            }}>
             <SvgIcon icon={Ic.close} size={14} />
-          </div>
+          </button>
         </div>
 
         <div style={{ overflow: 'auto', padding: '0 18px 20px' }}>
           {/* Scanner CTA */}
-          <div onClick={() => setScan(true)} style={{
-            background: T.isDark
-              ? `linear-gradient(135deg, oklch(30% 0.03 65), ${T.surface})`
-              : `linear-gradient(135deg, ${T.accentSoft}, ${T.surface})`,
-            border: `1px solid ${T.rule}`, borderRadius: 16, padding: 16,
-            display: 'flex', alignItems: 'center', gap: 14,
-            cursor: 'pointer', marginBottom: 18, position: 'relative', overflow: 'hidden',
-          }}>
-            <div style={{
+          <button type="button" className="bare" onClick={() => setScan(true)}
+            aria-label="Scanner un code-barres"
+            style={{
+              background: T.isDark
+                ? `linear-gradient(135deg, oklch(30% 0.03 65), ${T.surface})`
+                : `linear-gradient(135deg, ${T.accentSoft}, ${T.surface})`,
+              border: `1px solid ${T.rule}`, borderRadius: 16, padding: 16,
+              display: 'flex', alignItems: 'center', gap: 14,
+              width: '100%', textAlign: 'left',
+              marginBottom: 18, position: 'relative', overflow: 'hidden',
+            }}>
+            <span aria-hidden="true" style={{
               width: 48, height: 48, borderRadius: 14, background: T.accent,
               display: 'grid', placeItems: 'center', color: T.isDark ? T.bg : '#fff', flexShrink: 0,
             }}>
               <SvgIcon icon={Ic.scan} size={22} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ color: T.ink, fontSize: 14, fontWeight: 500, letterSpacing: -0.1 }}>
+            </span>
+            <span style={{ flex: 1 }}>
+              <span style={{ display: 'block', color: T.ink, fontSize: 14, fontWeight: 500, letterSpacing: -0.1 }}>
                 Scanner un code-barres
-              </div>
-              <div style={{ color: T.muted, fontSize: 11.5, marginTop: 3, letterSpacing: 0.1 }}>
+              </span>
+              <span style={{ display: 'block', color: T.muted, fontSize: 11.5, marginTop: 3, letterSpacing: 0.1 }}>
                 Remplissage auto depuis OpenFoodFacts
-              </div>
-            </div>
+              </span>
+            </span>
             <SvgIcon icon={Ic.chev} size={14} color={T.muted} />
-          </div>
+          </button>
 
           {/* Name */}
           <FieldGroup label="Boisson">
@@ -165,17 +183,20 @@ function AddDrinkSheet({ open, prefill, onClose }) {
           padding: '12px 18px 22px', borderTop: `1px solid ${T.rule}`,
           display: 'flex', gap: 10,
         }}>
-          <div onClick={onClose} style={{
+          <button type="button" className="bare" onClick={onClose} style={{
             flex: 1, padding: '14px', textAlign: 'center', borderRadius: 12,
-            background: T.surface2, color: T.ink2, fontSize: 13, cursor: 'pointer',
+            background: T.surface2, color: T.ink2, fontSize: 13,
             border: `1px solid ${T.rule}`,
-          }}>Annuler</div>
-          <div onClick={onClose} style={{
-            flex: 2, padding: '14px', textAlign: 'center', borderRadius: 12,
-            background: T.accent, color: T.isDark ? T.bg : '#fff', fontSize: 13, fontWeight: 600,
-            cursor: 'pointer', letterSpacing: 0.1,
-            boxShadow: `0 4px 18px ${T.accent}60`,
-          }}>Enregistrer</div>
+          }}>Annuler</button>
+          <button type="button" className="bare" onClick={save} disabled={saving}
+            aria-label={saving ? 'Enregistrement en cours' : 'Enregistrer la boisson'}
+            style={{
+              flex: 2, padding: '14px', textAlign: 'center', borderRadius: 12,
+              background: T.accent, color: T.isDark ? T.bg : '#fff', fontSize: 13, fontWeight: 600,
+              letterSpacing: 0.1,
+              boxShadow: `0 4px 18px ${T.accent}60`,
+              opacity: saving ? 0.7 : 1,
+            }}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
         </div>
       </div>
 
@@ -246,11 +267,12 @@ function ScannerSheet({ onClose, onScanned }) {
           color: T.ink, fontFamily: fontSerif, fontSize: 20, fontStyle: 'italic',
           letterSpacing: -0.2,
         }}>Scanner</div>
-        <div onClick={onClose} style={{
-          width: 36, height: 36, borderRadius: 99,
-          background: 'rgba(255,255,255,0.12)', display: 'grid', placeItems: 'center',
-          color: T.ink, cursor: 'pointer',
-        }}><SvgIcon icon={Ic.close} size={16} /></div>
+        <button type="button" className="bare" onClick={onClose}
+          aria-label="Fermer le scanner" style={{
+            width: 36, height: 36, borderRadius: 99,
+            background: 'rgba(255,255,255,0.12)', display: 'grid', placeItems: 'center',
+            color: T.ink,
+          }}><SvgIcon icon={Ic.close} size={16} /></button>
       </div>
 
       {/* viewfinder */}
@@ -311,10 +333,11 @@ function ScannerSheet({ onClose, onScanned }) {
 
       {status === 'found' && (
         <div style={{ padding: '0 22px 40px', position: 'relative', zIndex: 2 }}>
-          <div onClick={onScanned} style={{
+          <button type="button" className="bare" onClick={onScanned} style={{
             background: T.accent, color: T.bg, padding: '15px', borderRadius: 14,
-            textAlign: 'center', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-          }}>Utiliser ce produit</div>
+            textAlign: 'center', fontSize: 14, fontWeight: 600,
+            width: '100%',
+          }}>Utiliser ce produit</button>
         </div>
       )}
     </div>
@@ -322,7 +345,7 @@ function ScannerSheet({ onClose, onScanned }) {
 }
 
 // ── Drink detail sheet (family) ───────────────────────────────────
-function DrinkDetailSheet({ family, entry, onClose }) {
+function DrinkDetailSheet({ family, entry, onClose, onDirectAdd }) {
   if (!family && !entry) return null;
   const f = family || entry.family;
   const color = catColor(f.category, 70);
@@ -362,11 +385,12 @@ function DrinkDetailSheet({ family, entry, onClose }) {
                 letterSpacing: -0.4, lineHeight: 1.1,
               }}>{f.name}</div>
             </div>
-            <div onClick={onClose} style={{
-              width: 32, height: 32, borderRadius: 99, background: 'rgba(0,0,0,0.3)',
-              display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
-              alignSelf: 'flex-start',
-            }}><SvgIcon icon={Ic.close} size={14} /></div>
+            <button type="button" className="bare" onClick={onClose}
+              aria-label="Fermer" style={{
+                width: 32, height: 32, borderRadius: 99, background: 'rgba(0,0,0,0.3)',
+                display: 'grid', placeItems: 'center', color: T.ink,
+                alignSelf: 'flex-start',
+              }}><SvgIcon icon={Ic.close} size={14} /></button>
           </div>
 
           <div style={{ display: 'flex', gap: 0, marginTop: 18 }}>
@@ -419,23 +443,25 @@ function DrinkDetailSheet({ family, entry, onClose }) {
           padding: '12px 22px 22px', borderTop: `1px solid ${T.rule}`,
           display: 'flex', gap: 10,
         }}>
-          <div style={{
+          <button type="button" className="bare" aria-label="Modifier la boisson" style={{
             flex: 1, padding: '13px', textAlign: 'center', borderRadius: 12,
-            background: T.surface2, color: T.ink2, fontSize: 13, cursor: 'pointer',
+            background: T.surface2, color: T.ink2, fontSize: 13,
             border: `1px solid ${T.rule}`, display: 'flex', alignItems: 'center',
             justifyContent: 'center', gap: 6,
           }}>
             <SvgIcon icon={Ic.edit} size={14} /> Modifier
-          </div>
-          <div style={{
-            flex: 2, padding: '13px', textAlign: 'center', borderRadius: 12,
-            background: T.accent, color: T.isDark ? T.bg : '#fff', fontSize: 13, fontWeight: 600,
-            cursor: 'pointer', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', gap: 6,
-            boxShadow: `0 4px 18px ${T.accent}60`,
-          }}>
+          </button>
+          <button type="button" className="bare"
+            onClick={() => { if (onDirectAdd) { onDirectAdd(f); onClose(); } }}
+            aria-label="Ajouter cette boisson à nouveau" style={{
+              flex: 2, padding: '13px', textAlign: 'center', borderRadius: 12,
+              background: T.accent, color: T.isDark ? T.bg : '#fff', fontSize: 13, fontWeight: 600,
+              display: 'flex', alignItems: 'center',
+              justifyContent: 'center', gap: 6,
+              boxShadow: `0 4px 18px ${T.accent}60`,
+            }}>
             <SvgIcon icon={Ic.plus} size={14} /> Ajouter à nouveau
-          </div>
+          </button>
         </div>
       </div>
     </SheetOverlay>
@@ -502,10 +528,11 @@ function SettingsDrawer({ open, onClose }) {
             fontFamily: fontSerif, fontSize: 24, color: T.ink,
             letterSpacing: -0.4, fontStyle: 'italic',
           }}>Paramètres</div>
-          <div onClick={onClose} style={{
-            width: 32, height: 32, borderRadius: 99, background: T.surface2,
-            display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
-          }}><SvgIcon icon={Ic.close} size={14} /></div>
+          <button type="button" className="bare" onClick={onClose}
+            aria-label="Fermer les paramètres" style={{
+              width: 32, height: 32, borderRadius: 99, background: T.surface2,
+              display: 'grid', placeItems: 'center', color: T.ink2,
+            }}><SvgIcon icon={Ic.close} size={14} /></button>
         </div>
 
         <div style={{ flex: 1, overflow: 'auto', padding: '14px 20px' }}>
@@ -538,25 +565,28 @@ function ThemePicker() {
   useTheme();
   const current = T._name;
   return (
-    <div style={{ display: 'flex', gap: 0 }}>
+    <div role="radiogroup" aria-label="Apparence" style={{ display: 'flex', gap: 0 }}>
       {[['light', 'Clair'], ['dark', 'Sombre']].map(([id, label], i) => (
-        <div key={id} onClick={() => applyTheme(id)} style={{
-          flex: 1, padding: '14px 0', textAlign: 'center',
-          fontSize: 13, cursor: 'pointer',
-          background: current === id ? T.accentSoft : 'transparent',
-          color: current === id ? T.accent : T.ink2,
-          fontWeight: current === id ? 600 : 400,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          borderRight: i === 0 ? `1px solid ${T.rule}` : 'none',
-          letterSpacing: -0.1,
-        }}>
+        <button key={id} type="button" className="bare" role="radio"
+          aria-checked={current === id}
+          aria-label={`Thème ${label.toLowerCase()}`}
+          onClick={() => applyTheme(id)} style={{
+            flex: 1, padding: '14px 0', textAlign: 'center',
+            fontSize: 13,
+            background: current === id ? T.accentSoft : 'transparent',
+            color: current === id ? T.accent : T.ink2,
+            fontWeight: current === id ? 600 : 400,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            borderRight: i === 0 ? `1px solid ${T.rule}` : 'none',
+            letterSpacing: -0.1,
+          }}>
           <SvgIcon
             icon={id === 'light'
               ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
               : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
             size={15} />
           {label}
-        </div>
+        </button>
       ))}
     </div>
   );

@@ -143,14 +143,26 @@ function catBg(name) {
 
 // ── Status bar ────────────────────────────────────────────────────
 function StatusBar() {
+  const [time, setTime] = React.useState(() => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  });
+  React.useEffect(() => {
+    const tick = () => {
+      const d = new Date();
+      setTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+    };
+    const id = setInterval(tick, 30 * 1000);
+    return () => clearInterval(id);
+  }, []);
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '16px 30px 8px', fontFamily: fontSans, color: T.ink,
       fontSize: 14, fontWeight: 600, letterSpacing: 0.1,
     }}>
-      <div>22:04</div>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <div aria-label={`Heure ${time}`}>{time}</div>
+      <div aria-hidden="true" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <svg width="16" height="11" viewBox="0 0 16 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx="0.5"/><rect x="4" y="5" width="3" height="6" rx="0.5"/><rect x="8" y="3" width="3" height="8" rx="0.5"/><rect x="12" y="0" width="3" height="11" rx="0.5"/></svg>
         <svg width="24" height="11" viewBox="0 0 24 11" fill="none"><rect x="0.5" y="0.5" width="20" height="10" rx="2.5" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="17" height="7" rx="1" fill="currentColor"/><rect x="21" y="4" width="2" height="3" rx="0.5" fill="currentColor" opacity="0.5"/></svg>
       </div>

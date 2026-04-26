@@ -1,9 +1,9 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v3.0.0';
-const STATIC_CACHE = 'alconote-static-v3.0.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v3.0.0';
+const CACHE_NAME = 'alconote-v3.1.0';
+const STATIC_CACHE = 'alconote-static-v3.1.0';
+const DYNAMIC_CACHE = 'alconote-dynamic-v3.1.0';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -14,12 +14,14 @@ const STATIC_FILES = [
     '/index.html',
     '/manifest.json',
     '/proto/shared.jsx',
+    '/proto/db.jsx',
     '/proto/data.jsx',
     '/proto/categories.jsx',
     '/proto/history.jsx',
     '/proto/stats-charts.jsx',
     '/proto/stats.jsx',
     '/proto/modals.jsx',
+    '/proto/app.jsx',
     // External CDN resources
     'https://unpkg.com/react@18.3.1/umd/react.development.js',
     'https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js',

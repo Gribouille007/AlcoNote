@@ -5,13 +5,27 @@
 <title>AlcoNote</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="AlcoNote — suivi éditorial de la consommation d'alcool. Catégories, historique et statistiques.">
-<meta name="theme-color" content="#b8763b">
+
+<meta name="theme-color" content="#b8763b" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1410" media="(prefers-color-scheme: dark)">
+
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AlcoNote">
+
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com data:; media-src 'self' blob:; worker-src 'self' blob:;">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="X-Frame-Options" content="DENY">
+
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192x192.png">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+
 <style>
   html, body { margin: 0; padding: 0; min-height: 100vh;
     font-family: "Geist", system-ui, sans-serif;
@@ -26,255 +40,44 @@
   body { background: radial-gradient(ellipse at top, oklch(22% 0.01 55), oklch(14% 0.008 50) 75%); }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   input, button, select { font-family: inherit; }
+  button.bare { background: none; border: none; padding: 0; margin: 0; color: inherit; font: inherit; cursor: pointer; }
   .phone-body ::-webkit-scrollbar { display: none; }
   .phone-body * { scrollbar-width: none; }
+  /* Hide the desktop-canvas hint when running as installed PWA */
+  @media (display-mode: standalone) { .desktop-hint { display: none !important; } }
 </style>
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+<!--
+  React + Babel-standalone are loaded as the runtime for this prototype-grade
+  shell. They keep the design source faithful but compile JSX in the browser.
+  Production builds should swap this for a vite/esbuild step (see the PR).
+  SRI hashes match the same CDN assets the original prototype shipped with.
+-->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"
+  integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
+  crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
+  integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
+  crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+  integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+  crossorigin="anonymous"></script>
 </head>
 <body>
 <div id="root"></div>
 
 <script type="text/babel" src="proto/shared.jsx"></script>
+<script type="text/babel" src="proto/db.jsx"></script>
 <script type="text/babel" src="proto/data.jsx"></script>
 <script type="text/babel" src="proto/categories.jsx"></script>
 <script type="text/babel" src="proto/history.jsx"></script>
 <script type="text/babel" src="proto/stats-charts.jsx"></script>
 <script type="text/babel" src="proto/stats.jsx"></script>
 <script type="text/babel" src="proto/modals.jsx"></script>
+<script type="text/babel" src="proto/app.jsx"></script>
 
 <script type="text/babel">
-function App() {
-  useTheme();
-  React.useEffect(() => {
-    document.documentElement.setAttribute('data-theme', T._name);
-    document.body.className = `theme-${T._name}`;
-  });
-
-  const [tab, setTab] = React.useState(() => localStorage.getItem('alconote.tab') || 'categories');
-  const [adding, setAdding] = React.useState(false);
-  const [settings, setSettings] = React.useState(false);
-  const [openFamily, setOpenFamily] = React.useState(null);
-  const [openEntry, setOpenEntry] = React.useState(null);
-  const [prefill, setPrefill] = React.useState(null);
-  const [toast, setToast] = React.useState(null);
-
-  const directAdd = React.useCallback((family) => {
-    setToast(`« ${family.name} » ajoutée`);
-    clearTimeout(window.__aToast);
-    window.__aToast = setTimeout(() => setToast(null), 1800);
-  }, []);
-
-  React.useEffect(() => { localStorage.setItem('alconote.tab', tab); }, [tab]);
-
-  return (
-    <div style={{
-      minHeight: '100vh', display: 'grid', placeItems: 'center',
-      padding: '30px 10px 50px',
-    }}>
-      <PhoneFrame>
-        <StatusBar />
-        <AppHeader tab={tab} onMenu={() => setSettings(true)} />
-        <div data-screen-label={tabLabel(tab)} style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {tab === 'categories' && (
-            <CategoriesTab onOpenFamily={setOpenFamily} onAdd={() => setAdding(true)} onDirectAdd={directAdd} />
-          )}
-          {tab === 'history' && (
-            <HistoryTab onOpenEntry={setOpenEntry} onDirectAdd={directAdd} />
-          )}
-          {tab === 'stats' && <StatsTab />}
-        </div>
-
-        <Fab onClick={() => setAdding(true)} />
-        <BottomNav tab={tab} onChange={setTab} />
-        <HomeBar />
-
-        <AddDrinkSheet open={adding} prefill={prefill} onClose={() => { setAdding(false); setPrefill(null); }} />
-        <SettingsDrawer open={settings} onClose={() => setSettings(false)} />
-        {openFamily && (
-          <DrinkDetailSheet family={openFamily} onClose={() => setOpenFamily(null)} />
-        )}
-        {openEntry && (
-          <DrinkDetailSheet entry={openEntry} onClose={() => setOpenEntry(null)} />
-        )}
-      </PhoneFrame>
-      <Hint />
-      {toast && (
-        <div style={{
-          position: 'fixed', bottom: 40, left: '50%', transform: 'translateX(-50%)',
-          background: T.ink, color: T.bg, padding: '10px 18px', borderRadius: 99,
-          fontSize: 13, fontWeight: 500, letterSpacing: -0.1,
-          zIndex: 9999, boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-          display: 'flex', alignItems: 'center', gap: 8,
-          animation: 'fade 0.2s ease',
-        }}>
-          <span style={{ display: 'flex', color: T.accent }}><SvgIcon icon={Ic.check} size={14} /></span>
-          {toast}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function tabLabel(t) {
-  return t === 'categories' ? '01 Catégories' : t === 'history' ? '02 Historique' : '03 Statistiques';
-}
-
-function PhoneFrame({ children }) {
-  return (
-    <div style={{
-      width: 390, height: 844, borderRadius: 52, overflow: 'hidden',
-      position: 'relative', background: T.bg,
-      boxShadow: T.isDark
-        ? `0 60px 120px rgba(0,0,0,0.5), 0 0 0 10px oklch(14% 0.008 50), 0 0 0 11px oklch(30% 0.01 55)`
-        : `0 40px 90px rgba(60,40,20,0.22), 0 0 0 10px oklch(88% 0.01 75), 0 0 0 11px oklch(70% 0.02 70)`,
-      display: 'flex', flexDirection: 'column',
-    }} className="phone-body">
-      <div style={{
-        position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
-        width: 120, height: 34, borderRadius: 22, background: '#000', zIndex: 50,
-      }} />
-      {children}
-    </div>
-  );
-}
-
-function AppHeader({ tab, onMenu }) {
-  const titles = {
-    categories: 'Catégories',
-    history: 'Historique',
-    stats: 'Statistiques',
-  };
-  const today = new Date();
-  const months = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
-  const days = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
-  const dateStr = `${days[today.getDay()]} ${today.getDate()} ${months[today.getMonth()]}`;
-
-  return (
-    <div style={{
-      padding: '8px 18px 14px', display: 'flex', alignItems: 'center',
-      justifyContent: 'space-between', gap: 12,
-    }}>
-      <div onClick={onMenu} style={{
-        width: 38, height: 38, borderRadius: 12, background: T.surface2,
-        display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
-        border: `1px solid ${T.rule}`,
-      }}>
-        <SvgIcon icon={Ic.menu} size={18} />
-      </div>
-      <div style={{ flex: 1, textAlign: 'center' }}>
-        <div style={{
-          fontFamily: fontSerif, fontSize: 20, color: T.ink,
-          letterSpacing: -0.3, lineHeight: 1, fontStyle: 'italic',
-        }}>{titles[tab]}</div>
-        <div style={{
-          fontSize: 10, color: T.muted, letterSpacing: 1, marginTop: 3,
-          textTransform: 'uppercase', fontWeight: 500,
-        }}>{dateStr}</div>
-      </div>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 5,
-        padding: '6px 10px 6px 8px', borderRadius: 12,
-        background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
-      }}>
-        <div style={{
-          width: 6, height: 6, borderRadius: 99, background: T.accent,
-          boxShadow: `0 0 8px ${T.accent}`,
-        }}/>
-        <span style={{
-          color: T.accent, fontSize: 11, fontWeight: 600,
-          fontFamily: fontNum, letterSpacing: 0.2,
-        }}>420</span>
-      </div>
-    </div>
-  );
-}
-
-function BottomNav({ tab, onChange }) {
-  const items = [
-    { id: 'categories', label: 'Catégories', icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
-        <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
-      </svg>
-    )},
-    { id: 'history', label: 'Historique', icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/>
-        <polyline points="12 7 12 12 15 14"/>
-      </svg>
-    )},
-    { id: 'stats', label: 'Stats', icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
-      </svg>
-    )},
-  ];
-  return (
-    <div style={{
-      position: 'relative', padding: '8px 16px 4px',
-      background: T.bg, borderTop: `1px solid ${T.rule}`,
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-around', paddingBottom: 2 }}>
-        {items.map(it => {
-          const on = tab === it.id;
-          return (
-            <div key={it.id} onClick={() => onChange(it.id)} style={{
-              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-              gap: 4, padding: '10px 8px', cursor: 'pointer', position: 'relative',
-              color: on ? T.accent : T.muted,
-            }}>
-              <div style={{ width: 22, height: 22, display: 'flex' }}>
-                {React.cloneElement(it.icon, { width: 22, height: 22 })}
-              </div>
-              <div style={{
-                fontSize: 10, letterSpacing: 0.2, fontWeight: on ? 600 : 400,
-              }}>{it.label}</div>
-              {on && (
-                <div style={{
-                  position: 'absolute', top: 2, width: 20, height: 3,
-                  borderRadius: 99, background: T.accent,
-                  boxShadow: `0 0 8px ${T.accent}`,
-                }}/>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function Fab({ onClick }) {
-  return (
-    <div onClick={onClick} style={{
-      position: 'absolute', bottom: 100, right: 20, zIndex: 30,
-      width: 58, height: 58, borderRadius: 20, background: T.accent,
-      display: 'grid', placeItems: 'center', color: T.isDark ? T.bg : '#fff', cursor: 'pointer',
-      boxShadow: T.isDark
-        ? `0 10px 26px oklch(72% 0.15 65 / 0.5), 0 0 0 1px oklch(80% 0.12 65 / 0.3)`
-        : `0 10px 26px oklch(60% 0.15 50 / 0.45), 0 0 0 1px oklch(60% 0.15 50 / 0.6)`,
-    }}>
-      <SvgIcon icon={Ic.plus} size={26} />
-    </div>
-  );
-}
-
-function Hint() {
-  return (
-    <div style={{
-      color: T.muted, fontSize: 12, marginTop: 22,
-      letterSpacing: 0.2, textAlign: 'center', maxWidth: 360,
-      fontFamily: fontSans,
-    }}>
-      Naviguez entre <span style={{ color: T.accent }}>Catégories</span>, <span style={{ color: T.accent }}>Historique</span> et <span style={{ color: T.accent }}>Stats</span>.
-      <br/>Le bouton <span style={{ color: T.accent }}>+</span> ouvre l'ajout · menu ≡ = paramètres.
-    </div>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 
 <script>
