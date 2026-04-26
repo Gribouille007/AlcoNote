@@ -115,8 +115,12 @@ function _sessions(entries) {
 function deriveHourly(families) {
   const bins = Array(24).fill(0);
   for (const e of _flatEntries(families)) {
+    // Validate the timestamp parses as a date before grabbing chars 11–12;
+    // a string like "garbage" also slices to an empty value (`+''` is 0)
+    // which would silently bump the 0:00 bin.
+    if (Number.isNaN(Date.parse(e.ts))) continue;
     const h = +e.ts.slice(11, 13);
-    if (Number.isFinite(h)) bins[h] += 1;
+    if (Number.isFinite(h) && h >= 0 && h < 24) bins[h] += 1;
   }
   return bins;
 }
@@ -162,20 +166,25 @@ function deriveTrends(families) {
 
 function deriveRolling(families) {
   const out = [];
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
+  // Use end-of-today (midnight tomorrow) as the upper bound so entries
+  // logged earlier today still land in the most recent bucket. The previous
+  // implementation used midnight-today, which made today's entries look
+  // "in the future" by up to 24h and silently dropped them.
+  const endOfToday = new Date();
+  endOfToday.setHours(0, 0, 0, 0);
+  endOfToday.setDate(endOfToday.getDate() + 1);
   const days = 30;
-  // Daily grams of pure alcohol, last `days` days oldest-first.
+  // Daily grams of pure alcohol; index 0 = oldest day, index 29 = today.
   const daily = Array(days).fill(0);
   for (const e of _flatEntries(families)) {
     const ts = Date.parse(e.ts);
     if (Number.isNaN(ts)) continue;
-    const offset = Math.floor((+now - ts) / 86400000);
+    const offset = Math.floor((+endOfToday - ts) / 86400000);
     if (offset < 0 || offset >= days) continue;
     daily[days - 1 - offset] += _entryGrams(e);
   }
   for (let i = 0; i < days; i++) {
-    const d = new Date(+now - (days - 1 - i) * 86400000);
+    const d = new Date(+endOfToday - (days - i) * 86400000);
     const slice7 = daily.slice(Math.max(0, i - 6), i + 1);
     const slice30 = daily.slice(0, i + 1);
     out.push({
@@ -1177,4 +1186,10 @@ Object.assign(window, {
   GeneralSection, TemporalSection, CategorySection,
   TopDrinksSection, BACSection, TrendsSection, AdvancedSection,
   BACRecordRow, BACGauge, bacLevel, BAC_LEVELS,
+  // Pure helpers — exposed for the smoke-test suite. Not part of any
+  // runtime contract; refactor freely as long as the tests still pass.
+  _flatEntries, _entryGrams, _entryVolumeCl,
+  _periodRange, _filterByPeriod, _familiesInPeriod, _sessions,
+  deriveHourly, deriveDaily, deriveTrends, deriveRolling,
+  deriveSessionDurationBuckets, deriveSessionBacBuckets, deriveBacProjection,
 });
