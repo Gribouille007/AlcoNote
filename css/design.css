@@ -1,0 +1,1662 @@
+/* =============================================================================
+   AlcoNote — Editorial / Notebook redesign (overrides previous look & feel)
+   Design language: warm paper / espresso ink, single amber accent.
+   Typography pair: Instrument Serif (display, italic) + Geist (UI / numerics).
+   This file is loaded LAST and intentionally overrides earlier rules.
+   =============================================================================
+   CHUNK 1 — design tokens, fonts, base, theme variables
+   ============================================================================= */
+
+:root {
+    /* Warm light theme (default) ---------------------------------------- */
+    --d-bg:        oklch(98% 0.006 85);
+    --d-surface:   oklch(100% 0 0);
+    --d-surface-2: oklch(96% 0.006 85);
+    --d-surface-3: oklch(93% 0.008 80);
+    --d-ink:       oklch(22% 0.012 55);
+    --d-ink-2:     oklch(38% 0.01 60);
+    --d-muted:     oklch(55% 0.008 65);
+    --d-rule:      oklch(90% 0.008 80);
+    --d-accent:        oklch(60% 0.15 50);
+    --d-accent-2:      oklch(55% 0.18 30);
+    --d-accent-soft:   oklch(95% 0.04 65);
+    --d-accent-soft-bd:oklch(85% 0.08 65);
+    --d-good:      oklch(55% 0.12 155);
+    --d-warn:      oklch(65% 0.16 60);
+    --d-bad:       oklch(55% 0.22 25);
+    --d-shadow:    0 20px 60px rgba(60, 40, 20, 0.12);
+    --d-scrim:     rgba(40, 30, 20, 0.35);
+    --d-bg-gradient: radial-gradient(ellipse at top,
+                                      oklch(99% 0.006 85),
+                                      oklch(93% 0.01 75) 75%);
+
+    /* Category palette (matches design proto: hue stops ≥ 45° apart) ----- */
+    --cat-biere:     oklch(55% 0.16 80);
+    --cat-biere-bg:  oklch(94% 0.04 80);
+    --cat-vin:       oklch(52% 0.18 15);
+    --cat-vin-bg:    oklch(94% 0.045 15);
+    --cat-spirit:    oklch(55% 0.14 300);
+    --cat-spirit-bg: oklch(94% 0.035 300);
+    --cat-cocktail:  oklch(48% 0.13 180);
+    --cat-cocktail-bg:oklch(94% 0.032 180);
+    --cat-autre:     oklch(52% 0.10 240);
+    --cat-autre-bg:  oklch(94% 0.025 240);
+
+    /* Fonts ------------------------------------------------------------- */
+    --d-font-sans:  "Geist", ui-sans-serif, system-ui, sans-serif;
+    --d-font-serif: "Instrument Serif", "Times New Roman", serif;
+    --d-font-num:   "Geist Mono", ui-monospace, monospace;
+}
+
+/* Warm dark theme — applies when [data-theme="dark"] (matches existing JS) */
+[data-theme="dark"] {
+    --d-bg:        oklch(16% 0.008 50);
+    --d-surface:   oklch(20% 0.01 55);
+    --d-surface-2: oklch(24% 0.012 55);
+    --d-surface-3: oklch(28% 0.014 55);
+    --d-ink:       oklch(96% 0.008 85);
+    --d-ink-2:     oklch(78% 0.008 80);
+    --d-muted:     oklch(55% 0.008 70);
+    --d-rule:      oklch(30% 0.01 55);
+    --d-accent:        oklch(72% 0.15 65);
+    --d-accent-2:      oklch(68% 0.14 30);
+    --d-accent-soft:   oklch(30% 0.04 65);
+    --d-accent-soft-bd:oklch(38% 0.05 65);
+    --d-good:      oklch(72% 0.10 155);
+    --d-warn:      oklch(75% 0.16 65);
+    --d-bad:       oklch(70% 0.20 25);
+    --d-shadow:    0 60px 120px rgba(0, 0, 0, 0.5);
+    --d-scrim:     rgba(0, 0, 0, 0.65);
+    --d-bg-gradient: radial-gradient(ellipse at top,
+                                      oklch(22% 0.01 55),
+                                      oklch(14% 0.008 50) 75%);
+
+    --cat-biere:     oklch(72% 0.16 80);
+    --cat-biere-bg:  oklch(32% 0.08 80);
+    --cat-vin:       oklch(70% 0.18 15);
+    --cat-vin-bg:    oklch(30% 0.09 15);
+    --cat-spirit:    oklch(72% 0.14 300);
+    --cat-spirit-bg: oklch(32% 0.07 300);
+    --cat-cocktail:  oklch(72% 0.13 180);
+    --cat-cocktail-bg:oklch(32% 0.065 180);
+    --cat-autre:     oklch(70% 0.10 240);
+    --cat-autre-bg:  oklch(30% 0.05 240);
+}
+
+/* Bridge: feed the new tokens into the legacy tokens used by the rest of the
+   stylesheet so existing rules stay coherent without a full rewrite. */
+:root,
+[data-theme="dark"],
+[data-theme="light"] {
+    --bg-primary:   var(--d-bg);
+    --bg-secondary: var(--d-bg);
+    --bg-tertiary:  var(--d-surface);
+    --bg-grouped:   var(--d-bg);
+    --bg-popup:     var(--d-bg);
+    --text-primary:    var(--d-ink);
+    --text-secondary:  var(--d-ink-2);
+    --text-tertiary:   var(--d-muted);
+    --text-quaternary: var(--d-muted);
+    --separator:    var(--d-rule);
+    --primary-color: var(--d-accent);
+    --primary-dark:  var(--d-accent);
+    --secondary-color: var(--d-accent-2);
+    --warning-color: var(--d-warn);
+    --error-color:   var(--d-bad);
+    --success-color: var(--d-good);
+    --gray-1: var(--d-muted);
+    --gray-2: var(--d-rule);
+    --gray-3: var(--d-rule);
+    --gray-4: var(--d-rule);
+    --gray-5: var(--d-surface-2);
+    --gray-6: var(--d-surface-2);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 14px rgba(40, 30, 20, 0.06);
+    --shadow-lg: 0 14px 36px rgba(40, 30, 20, 0.08);
+    --shadow-xl: var(--d-shadow);
+}
+
+/* Base ------------------------------------------------------------------- */
+html, body {
+    background: var(--d-bg-gradient) !important;
+    color: var(--d-ink) !important;
+    font-family: var(--d-font-sans);
+    transition: background 0.35s ease, color 0.2s ease;
+    -webkit-font-smoothing: antialiased;
+}
+body { background-attachment: fixed; }
+
+* { -webkit-tap-highlight-color: transparent; }
+
+::selection { background: var(--d-accent-soft); color: var(--d-ink); }
+
+/* Always allow editorial type to feel at home */
+h1, h2, h3, h4 { letter-spacing: -0.3px; }
+
+/* Tiny utility — DESIGN-FLAGGED nodes (no logic hook) preserved from proto */
+.design-flag-orphan { /* Disconnected UI nodes flagged inline, kept in design */
+    /* No-op marker class — useful for QA scans */
+}
+/* =============================================================================
+   CHUNK 2 — global app shell: header, tab navigation, FAB, search inputs
+   ============================================================================= */
+
+#app {
+    background: transparent !important;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    max-width: 480px;
+    margin: 0 auto;
+    position: relative;
+}
+
+/* App header — replaced visual: ink monogram, BAC pill on the right ------ */
+.app-header {
+    background: transparent !important;
+    border-bottom: 1px solid var(--d-rule) !important;
+    padding: 14px 18px 14px !important;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+}
+
+.app-header .app-title {
+    flex: 1;
+    text-align: center;
+    font-family: var(--d-font-serif);
+    font-style: italic;
+    font-size: 22px;
+    letter-spacing: -0.4px;
+    color: var(--d-ink) !important;
+    font-weight: 400;
+    line-height: 1;
+}
+
+.app-header .settings-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    color: var(--d-ink) !important;
+    display: grid;
+    place-items: center;
+    box-shadow: none !important;
+}
+.app-header .settings-btn .hamburger-icon span {
+    background: var(--d-ink) !important;
+    height: 1.6px !important;
+    border-radius: 2px;
+}
+
+/* The legacy header has a `.header-spacer`. We re-purpose it as the BAC pill
+   slot (logic: filled by app.js if present; otherwise stays empty). */
+.app-header .header-spacer {
+    width: auto !important;
+    min-width: 38px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.bac-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px 6px 9px;
+    border-radius: 12px;
+    background: var(--d-accent-soft);
+    border: 1px solid var(--d-accent-soft-bd);
+    color: var(--d-accent);
+    font-family: var(--d-font-num);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    line-height: 1;
+}
+.bac-pill::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 99px;
+    background: var(--d-accent);
+    box-shadow: 0 0 8px var(--d-accent);
+}
+
+/* Tab navigation — pill bar near the top, amber accent ------------------- */
+.tab-navigation {
+    background: transparent !important;
+    border: none !important;
+    padding: 12px 18px 6px !important;
+    display: flex;
+    gap: 2px;
+    justify-content: stretch;
+    box-shadow: none !important;
+}
+.tab-navigation .tab-btn {
+    flex: 1;
+    background: transparent !important;
+    color: var(--d-muted) !important;
+    border: none !important;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: -0.1px;
+    padding: 10px 8px !important;
+    position: relative;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+.tab-navigation .tab-btn.active {
+    color: var(--d-accent) !important;
+    background: var(--d-accent-soft) !important;
+}
+.tab-navigation .tab-btn.active::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 2px;
+    width: 18px;
+    height: 2.5px;
+    border-radius: 99px;
+    background: var(--d-accent);
+    transform: translateX(-50%);
+    box-shadow: 0 0 8px var(--d-accent);
+}
+
+/* Tab content area — kill old paddings and white card backgrounds -------- */
+.main-content {
+    background: transparent !important;
+    padding: 0 !important;
+}
+.tab-content {
+    background: transparent !important;
+    padding: 6px 0 110px !important;
+}
+.tab-content.active {
+    display: block;
+}
+
+/* Floating action button — match equal margin bottom/right --------------- */
+.fab-container {
+    bottom: 88px !important;
+    right: 18px !important;
+    z-index: 30;
+}
+.fab-main {
+    width: 58px !important;
+    height: 58px !important;
+    border-radius: 20px !important;
+    background: var(--d-accent) !important;
+    color: #fff !important;
+    box-shadow:
+        0 10px 26px color-mix(in oklch, var(--d-accent) 45%, transparent),
+        0 0 0 1px color-mix(in oklch, var(--d-accent) 60%, transparent) !important;
+    border: none !important;
+    display: grid;
+    place-items: center;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.fab-main:hover { transform: translateY(-2px) scale(1.02); }
+.fab-main .fab-icon {
+    font-size: 26px;
+    line-height: 1;
+    font-weight: 300;
+    color: #fff;
+}
+
+/* Search inputs (Catégories, Historique) -------------------------------- */
+.search-input-wrapper {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 14px !important;
+    padding: 11px 14px !important;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: none !important;
+}
+.search-input-wrapper .search-icon { color: var(--d-muted); }
+.search-input-wrapper input {
+    background: transparent !important;
+    border: none !important;
+    color: var(--d-ink) !important;
+    font-family: var(--d-font-sans);
+    font-size: 14px !important;
+    letter-spacing: -0.1px !important;
+    flex: 1;
+    outline: none !important;
+    padding: 0 !important;
+}
+.search-input-wrapper input::placeholder { color: var(--d-muted); }
+.search-clear-btn {
+    background: transparent !important;
+    border: none !important;
+    color: var(--d-muted) !important;
+    cursor: pointer;
+    padding: 0;
+    display: grid;
+    place-items: center;
+}
+
+/* Historique toolbar wrapper */
+.history-toolbar,
+.categories-search-bar {
+    padding: 4px 18px 12px !important;
+    background: transparent !important;
+}
+.history-search-wrapper { flex: 1; }
+.history-filter {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 12px !important;
+    color: var(--d-ink) !important;
+    padding: 9px 12px !important;
+    font-size: 12.5px !important;
+    font-family: var(--d-font-sans);
+}
+
+/* Reusable section heading (used inside tabs & modals) ------------------ */
+.section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--d-muted);
+    font-size: 11px;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    font-weight: 500;
+    padding: 8px 18px 6px;
+}
+
+/* =============================================================================
+   CHUNK 3 — Categories tab (cards / list), Category detail, History list
+   ============================================================================= */
+
+.categories-container,
+.history-container {
+    padding: 0 !important;
+    background: transparent !important;
+}
+
+#categories-list.categories-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding: 8px 18px 24px !important;
+    background: transparent !important;
+}
+
+/* Category cards — square-ish, glyph blob, name & count */
+.category-item {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 18px !important;
+    padding: 14px !important;
+    aspect-ratio: 1 / 1.05;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    box-shadow: none !important;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.18s ease, border-color 0.18s ease;
+}
+.category-item:hover {
+    border-color: var(--d-accent-soft-bd) !important;
+    transform: translateY(-1px);
+}
+
+.category-item .category-main {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    gap: 8px;
+    padding: 0 !important;
+    flex: 1;
+    min-height: 0;
+}
+
+/* Glyph chip rendered before .category-name; we keep it as a CSS pseudo
+   so we don't touch the JS. The colour comes from --cat-* tokens
+   selected via [data-category] attribute which the renderer sets. */
+.category-item .category-main::before {
+    content: "";
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    background: var(--cat-autre-bg);
+    box-shadow: inset 0 0 20px var(--cat-autre-bg);
+    flex-shrink: 0;
+    display: block;
+    background-image: var(--cat-glyph, none);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 22px 22px;
+}
+/* Per-category hue & glyph (resolved on .category-main[data-category]) */
+.category-main[data-category="Bière" i]::before,
+.category-main[data-category^="Bière" i]::before { background: var(--cat-biere-bg); }
+.category-main[data-category="Vin" i]::before,
+.category-main[data-category^="Vin" i]::before { background: var(--cat-vin-bg); }
+.category-main[data-category^="Spirit" i]::before { background: var(--cat-spirit-bg); }
+.category-main[data-category^="Cocktail" i]::before { background: var(--cat-cocktail-bg); }
+
+.category-item .category-name {
+    font-family: var(--d-font-sans) !important;
+    font-size: 15.5px !important;
+    font-weight: 500 !important;
+    color: var(--d-ink) !important;
+    letter-spacing: -0.2px;
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: 1.2;
+    word-break: break-word;
+}
+
+.category-item .category-actions {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 4px;
+    padding: 0 !important;
+}
+.category-item .category-count {
+    font-family: var(--d-font-num);
+    font-size: 11px !important;
+    color: var(--d-muted) !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    letter-spacing: 0.1px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.category-item .category-count::before {
+    content: "●";
+    font-size: 9px;
+    color: var(--cat-autre);
+}
+.category-main[data-category="Bière" i] ~ .category-actions .category-count::before,
+.category-main[data-category^="Bière" i] + .category-actions .category-count::before { color: var(--cat-biere); }
+/* The legacy markup nests count inside main, so the simpler selector below works: */
+.category-main[data-category^="Bière" i] .category-count::before { color: var(--cat-biere); }
+.category-main[data-category^="Vin" i] .category-count::before { color: var(--cat-vin); }
+.category-main[data-category^="Spirit" i] .category-count::before { color: var(--cat-spirit); }
+.category-main[data-category^="Cocktail" i] .category-count::before { color: var(--cat-cocktail); }
+
+.category-item .category-edit-btn {
+    width: 26px !important;
+    height: 26px !important;
+    border-radius: 8px !important;
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    color: var(--d-muted) !important;
+    display: grid;
+    place-items: center;
+    padding: 0 !important;
+    box-shadow: none !important;
+}
+.category-item .category-edit-btn:hover {
+    color: var(--d-ink) !important;
+    border-color: var(--d-accent-soft-bd) !important;
+}
+
+/* Inline editor surfaces inside a card */
+.category-editor {
+    background: var(--d-surface-2) !important;
+    border-top: 1px solid var(--d-rule) !important;
+    padding: 10px !important;
+    display: none;
+    grid-template-columns: 1fr;
+    gap: 6px;
+    border-radius: 0 0 18px 18px;
+}
+.category-editor.active { display: grid; }
+.category-editor input {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 10px !important;
+    padding: 9px 12px !important;
+    color: var(--d-ink) !important;
+    font-size: 13px !important;
+    outline: none;
+}
+.category-editor button {
+    border-radius: 10px !important;
+    padding: 9px 12px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    border: 1px solid var(--d-rule) !important;
+    cursor: pointer;
+}
+.category-editor .save-rename-btn {
+    background: var(--d-accent) !important;
+    color: #fff !important;
+    border-color: var(--d-accent) !important;
+}
+.category-editor .delete-category-btn {
+    background: transparent !important;
+    color: var(--d-bad) !important;
+    border-color: var(--d-rule) !important;
+}
+.category-editor .cancel-edit-btn {
+    background: var(--d-surface-2) !important;
+    color: var(--d-ink-2) !important;
+}
+
+/* Category detail page (drinks within a category) */
+.category-drinks-list {
+    padding: 0 18px 100px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.category-drink-item {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 14px !important;
+    padding: 12px 14px !important;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: none !important;
+    position: relative;
+    transition: border-color 0.15s ease;
+}
+.category-drink-item:hover {
+    border-color: var(--d-accent-soft-bd) !important;
+}
+.category-drink-item.is-variant {
+    border-style: solid;
+    /* "Stacked" duplicate look — subtle offset shadow in design proto */
+    box-shadow:
+        0 -3px 0 -1px var(--d-surface),
+        0 -3px 0 0 var(--d-rule),
+        0 -6px 0 -2px var(--d-surface),
+        0 -6px 0 -1px var(--d-rule) !important;
+}
+.category-drink-item .drink-quantity {
+    font-family: var(--d-font-sans);
+    color: var(--d-muted);
+    font-size: 11.5px;
+    letter-spacing: 0.1px;
+}
+
+/* History list grouping ------------------------------------------------- */
+#history-list.history-list {
+    padding: 0 18px 110px !important;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    background: transparent !important;
+}
+
+.history-day {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    position: relative;
+}
+
+.history-day-header {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 12px 12px 0 0 !important;
+    padding: 10px 12px !important;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    border-bottom: none !important;
+}
+.history-day.collapsed .history-day-header {
+    border-radius: 12px !important;
+    border-bottom: 1px solid var(--d-rule) !important;
+}
+.history-day-info {
+    flex: 1;
+    min-width: 0;
+}
+.history-day-date {
+    font-family: var(--d-font-serif) !important;
+    font-size: 18px !important;
+    color: var(--d-ink) !important;
+    letter-spacing: -0.2px;
+    line-height: 1.05;
+    margin: 0 !important;
+    text-transform: lowercase;
+    font-weight: 400;
+    font-style: normal;
+}
+.history-day-summary {
+    font-family: var(--d-font-num);
+    font-size: 10px !important;
+    color: var(--d-muted) !important;
+    letter-spacing: 0.6px;
+    margin-top: 3px;
+}
+.history-day-toggle {
+    background: transparent !important;
+    border: none !important;
+    color: var(--d-muted) !important;
+    padding: 0 !important;
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    box-shadow: none !important;
+}
+.history-day-toggle .toggle-icon {
+    font-size: 11px;
+    transition: transform 0.2s ease;
+}
+.history-day.collapsed .history-day-toggle .toggle-icon { /* arrow points right */ }
+
+.history-day-content {
+    background: var(--d-surface);
+    border: 1px solid var(--d-rule);
+    border-top: none;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    margin-left: 0;
+    padding: 0 0 0 24px;
+    position: relative;
+    overflow: hidden;
+}
+.history-day.collapsed .history-day-content {
+    display: none;
+}
+/* Connector rail */
+.history-day-content::before {
+    content: "";
+    position: absolute;
+    left: 22px;
+    top: 0;
+    bottom: 14px;
+    width: 2px;
+    background: var(--d-rule);
+}
+
+.history-drink-item {
+    display: flex !important;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 10px 12px 18px !important;
+    border-bottom: 1px solid var(--d-rule);
+    background: transparent !important;
+    box-shadow: none !important;
+    position: relative;
+}
+.history-drink-item:last-child { border-bottom: none; }
+/* Elbow connector + dot */
+.history-drink-item::before {
+    content: "";
+    position: absolute;
+    left: -2px;
+    top: 50%;
+    width: 14px;
+    height: 2px;
+    background: var(--d-rule);
+}
+.history-drink-item::after {
+    content: "";
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 8px;
+    height: 8px;
+    border-radius: 99px;
+    background: var(--d-accent);
+    box-shadow: 0 0 0 3px var(--d-surface);
+    z-index: 1;
+}
+
+.history-drink-info { flex: 1; min-width: 0; cursor: pointer; }
+.history-drink-main {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    justify-content: space-between;
+}
+.history-drink-name {
+    font-size: 14px !important;
+    color: var(--d-ink) !important;
+    font-weight: 500 !important;
+    letter-spacing: -0.1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 70%;
+}
+.history-drink-time {
+    font-family: var(--d-font-num);
+    font-size: 11px !important;
+    color: var(--d-ink-2) !important;
+    letter-spacing: 0;
+}
+.history-drink-details {
+    margin-top: 2px;
+    color: var(--d-muted) !important;
+    font-size: 11.5px !important;
+    letter-spacing: 0.1px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+.history-drink-quantity,
+.history-drink-alcohol {
+    color: inherit !important;
+    background: transparent !important;
+    padding: 0 !important;
+    font-size: inherit !important;
+    border: none !important;
+}
+.history-drink-alcohol::before {
+    content: "·";
+    margin-right: 6px;
+    opacity: 0.4;
+}
+.history-drink-location {
+    color: var(--d-muted) !important;
+    font-size: 11px !important;
+    margin-top: 4px;
+}
+
+.history-drink-add {
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 10px !important;
+    background: var(--d-accent-soft) !important;
+    border: 1px solid var(--d-accent-soft-bd) !important;
+    color: var(--d-accent) !important;
+    display: grid !important;
+    place-items: center;
+    box-shadow: none !important;
+    flex-shrink: 0;
+    padding: 0 !important;
+}
+.history-drink-add span { font-size: 16px; line-height: 1; font-weight: 400; }
+
+/* Empty state */
+.empty-state {
+    background: transparent !important;
+    border: 1px dashed var(--d-rule) !important;
+    border-radius: 16px !important;
+    margin: 30px 18px !important;
+    padding: 40px 22px !important;
+    text-align: center;
+    box-shadow: none !important;
+}
+.empty-state-icon { color: var(--d-muted) !important; opacity: 0.7; margin-bottom: 14px; }
+.empty-state-title {
+    font-family: var(--d-font-serif) !important;
+    font-style: italic;
+    font-size: 22px !important;
+    color: var(--d-ink) !important;
+    letter-spacing: -0.3px !important;
+    font-weight: 400 !important;
+    margin: 0 0 6px !important;
+}
+.empty-state-description {
+    color: var(--d-muted) !important;
+    font-size: 13px !important;
+    line-height: 1.5;
+}
+
+/* Pagination on history */
+.history-pagination {
+    margin: 12px 18px !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+.history-pagination .btn-secondary {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 10px !important;
+    color: var(--d-ink) !important;
+    padding: 10px 14px !important;
+    font-size: 13px !important;
+}
+.history-pagination .page-info {
+    color: var(--d-muted);
+    font-size: 12px;
+    font-family: var(--d-font-num);
+    letter-spacing: 0.1px;
+}
+
+/* =============================================================================
+   CHUNK 4 — Statistics tab: period selector, sections, stat cards, charts
+   ============================================================================= */
+
+.statistics-container {
+    background: transparent !important;
+    padding: 0 !important;
+}
+
+.period-selector {
+    display: flex !important;
+    gap: 2px !important;
+    padding: 6px 18px 12px !important;
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: transparent !important;
+    border: none !important;
+}
+.period-selector::-webkit-scrollbar { display: none; }
+.period-selector .period-btn {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    color: var(--d-ink-2) !important;
+    padding: 7px 13px !important;
+    border-radius: 10px !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    letter-spacing: -0.1px;
+    box-shadow: none !important;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.period-selector .period-btn.active {
+    background: var(--d-accent) !important;
+    border-color: var(--d-accent) !important;
+    color: #fff !important;
+}
+
+.period-navigation {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 18px 16px !important;
+    background: transparent !important;
+}
+.period-navigation .nav-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    color: var(--d-ink-2) !important;
+    display: grid;
+    place-items: center;
+    box-shadow: none !important;
+    font-size: 16px;
+    line-height: 1;
+}
+.period-navigation .nav-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.period-navigation .current-date {
+    font-family: var(--d-font-serif);
+    font-size: 18px;
+    color: var(--d-ink) !important;
+    font-style: italic;
+    letter-spacing: -0.3px;
+}
+
+#statistics-content.statistics-content {
+    padding: 0 16px 110px !important;
+    background: transparent !important;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* Collapsible stats section wrapper */
+.stats-section {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 16px !important;
+    padding: 16px !important;
+    box-shadow: none !important;
+}
+.stats-section .section-header,
+.stats-section h2,
+.stats-section h3 {
+    font-family: var(--d-font-serif) !important;
+    font-style: italic !important;
+    font-size: 19px !important;
+    letter-spacing: -0.3px !important;
+    color: var(--d-ink) !important;
+    font-weight: 400 !important;
+    margin: 0 0 12px !important;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+
+/* Stat cards grid */
+.stats-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) !important;
+    gap: 10px !important;
+}
+.stat-card {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 14px !important;
+    padding: 14px !important;
+    box-shadow: none !important;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+.stat-card .stat-label {
+    color: var(--d-muted) !important;
+    font-size: 10px !important;
+    letter-spacing: 1.1px !important;
+    text-transform: uppercase !important;
+    font-weight: 500 !important;
+    margin: 0 !important;
+}
+.stat-card .stat-value {
+    font-family: var(--d-font-serif) !important;
+    font-size: 26px !important;
+    font-weight: 400 !important;
+    letter-spacing: -0.4px !important;
+    color: var(--d-ink) !important;
+    line-height: 1.1;
+    margin: 4px 0 0 !important;
+}
+.stat-card .stat-change {
+    font-family: var(--d-font-num);
+    font-size: 11px;
+    color: var(--d-muted);
+    margin-top: 4px;
+}
+.stat-card .stat-change.positive { color: var(--d-good); }
+.stat-card .stat-change.negative { color: var(--d-bad); }
+
+/* Chart wrappers */
+.chart-container,
+.chart-wrapper,
+.echarts-wrapper {
+    background: transparent !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 14px !important;
+    padding: 12px !important;
+    margin-top: 10px !important;
+}
+.chart-title {
+    font-family: var(--d-font-sans) !important;
+    color: var(--d-ink-2) !important;
+    font-size: 12.5px !important;
+    letter-spacing: -0.1px;
+    margin-bottom: 10px;
+}
+
+/* Category breakdown card inside stats */
+.category-stat-card {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 14px !important;
+    padding: 14px !important;
+    box-shadow: none !important;
+    margin-bottom: 8px;
+}
+.category-stat-card .category-name {
+    font-family: var(--d-font-sans);
+    font-size: 14px;
+    color: var(--d-ink);
+    font-weight: 500;
+}
+.category-stats,
+.category-details {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-top: 10px;
+    color: var(--d-muted);
+    font-size: 12px;
+}
+
+/* Top drinks rows */
+.relevant-drinks-list { display: flex; flex-direction: column; gap: 8px; }
+.relevant-drink-item {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 12px !important;
+    padding: 10px 12px !important;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: none !important;
+}
+.drink-rank {
+    font-family: var(--d-font-serif);
+    font-style: italic;
+    font-size: 18px;
+    color: var(--d-accent);
+    min-width: 24px;
+    text-align: center;
+}
+.drink-info { flex: 1; min-width: 0; }
+.drink-info .drink-name {
+    font-size: 13.5px;
+    color: var(--d-ink);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.drink-meta,
+.drink-stats {
+    color: var(--d-muted);
+    font-size: 11.5px;
+    margin-top: 3px;
+}
+.star-rating-readonly { color: var(--d-accent); font-size: 12px; }
+
+/* BAC section */
+.bac-records-section,
+.bac-records-list {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+}
+.bac-records-header {
+    color: var(--d-muted);
+    font-size: 11px;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    font-weight: 500;
+    margin: 12px 0 8px;
+}
+.bac-records-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.bac-records-list > *,
+.bac-record-top {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 12px !important;
+    padding: 12px 14px !important;
+    box-shadow: none !important;
+}
+.bac-record-main {
+    font-family: var(--d-font-serif);
+    font-size: 22px;
+    color: var(--d-ink);
+    letter-spacing: -0.3px;
+}
+.bac-record-unit {
+    font-family: var(--d-font-num);
+    font-size: 11px;
+    color: var(--d-muted);
+    margin-left: 4px;
+}
+.bac-record-meta,
+.bac-record-label {
+    color: var(--d-muted);
+    font-size: 11.5px;
+    margin-top: 2px;
+}
+.bac-record-dot-sep { opacity: 0.4; padding: 0 6px; }
+
+.bac-main-display {
+    background: var(--d-surface-2);
+    border: 1px solid var(--d-rule);
+    border-radius: 14px;
+    padding: 16px;
+    text-align: center;
+}
+.bac-value {
+    font-family: var(--d-font-serif);
+    font-size: 44px;
+    color: var(--d-ink);
+    letter-spacing: -0.8px;
+    line-height: 1;
+}
+.bac-unit {
+    font-family: var(--d-font-num);
+    font-size: 12px;
+    color: var(--d-muted);
+    margin-left: 6px;
+}
+.bac-times-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 12px;
+}
+.bac-time-card {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 12px !important;
+    padding: 12px !important;
+    text-align: center;
+    box-shadow: none !important;
+}
+.bac-time-card .time-label {
+    color: var(--d-muted);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+.bac-time-card .time-value {
+    font-family: var(--d-font-serif);
+    font-size: 18px;
+    color: var(--d-ink);
+    letter-spacing: -0.2px;
+    margin-top: 4px;
+}
+.bac-time-card .time-icon { color: var(--d-accent); margin-bottom: 4px; }
+
+.bac-projection-container,
+.bac-chart-wrapper { margin-top: 12px; }
+.bac-chart-hint,
+.bac-chart-tooltip {
+    color: var(--d-muted);
+    font-size: 11px;
+}
+
+.bac-drinks-summary,
+.bac-setup-message,
+.bac-error {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 12px !important;
+    padding: 12px 14px !important;
+    color: var(--d-ink-2) !important;
+    font-size: 12.5px !important;
+    margin-top: 8px;
+}
+
+/* Advanced stats blocks */
+.advanced-block {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 14px !important;
+    padding: 14px !important;
+    box-shadow: none !important;
+    margin-bottom: 10px;
+}
+.advanced-block-title {
+    font-family: var(--d-font-sans) !important;
+    color: var(--d-ink) !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    letter-spacing: -0.1px;
+    margin: 0 0 4px !important;
+}
+.advanced-block-subtitle {
+    color: var(--d-muted) !important;
+    font-size: 11px !important;
+    letter-spacing: 0.1px;
+    margin-bottom: 10px;
+}
+.advanced-dual { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* Info / formula card (used in BAC explainers) */
+.info-card,
+.info-section {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 14px !important;
+    padding: 14px !important;
+    margin-top: 10px;
+    box-shadow: none !important;
+}
+.info-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--d-ink);
+    font-weight: 500;
+    font-size: 13px;
+}
+.info-badge {
+    background: var(--d-accent-soft);
+    color: var(--d-accent);
+    padding: 3px 8px;
+    border-radius: 99px;
+    font-size: 10px;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+}
+.info-btn {
+    background: transparent !important;
+    border: 1px solid var(--d-rule) !important;
+    color: var(--d-ink-2) !important;
+    border-radius: 10px !important;
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+}
+.info-body { color: var(--d-ink-2); font-size: 12.5px; line-height: 1.5; margin-top: 8px; }
+.formula-box {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 10px !important;
+    padding: 10px 12px !important;
+    font-family: var(--d-font-num) !important;
+    color: var(--d-ink-2) !important;
+    font-size: 12px !important;
+    margin-top: 8px;
+}
+
+/* =============================================================================
+   CHUNK 5 — Modals, settings drawer, scanner, forms, toasts
+   ============================================================================= */
+
+/* Native dialog ---------------------------------------------------------- */
+dialog.modal {
+    border: none !important;
+    background: transparent !important;
+    color: var(--d-ink) !important;
+    padding: 0 !important;
+    max-width: 480px !important;
+    width: 92% !important;
+    border-radius: 22px !important;
+    overflow: visible !important;
+    box-shadow: var(--d-shadow) !important;
+}
+dialog.modal::backdrop { background: var(--d-scrim); backdrop-filter: blur(2px); }
+
+dialog.modal .modal-content,
+dialog.modal .popup-content {
+    background: var(--d-bg) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 22px !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    overflow: hidden;
+    max-height: min(86vh, 720px);
+    display: flex;
+    flex-direction: column;
+}
+
+dialog.modal .modal-header {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 20px 12px !important;
+    background: transparent !important;
+    border-bottom: 1px solid var(--d-rule) !important;
+}
+dialog.modal .modal-header h2 {
+    font-family: var(--d-font-serif) !important;
+    font-style: italic !important;
+    font-weight: 400 !important;
+    font-size: 22px !important;
+    letter-spacing: -0.3px !important;
+    color: var(--d-ink) !important;
+    margin: 0 !important;
+}
+dialog.modal .modal-close {
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 99px !important;
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    color: var(--d-ink-2) !important;
+    font-size: 18px !important;
+    line-height: 1 !important;
+    box-shadow: none !important;
+    display: grid !important;
+    place-items: center;
+    padding: 0 !important;
+}
+
+dialog.modal .modal-form,
+dialog.modal .modal-body,
+dialog.modal .drink-detail-content,
+dialog.modal .category-detail-content,
+dialog.modal .category-picker-list {
+    padding: 16px 20px 14px !important;
+    overflow: auto;
+    background: transparent !important;
+    flex: 1;
+    min-height: 0;
+}
+
+/* Form fields */
+.form-group {
+    margin-bottom: 14px !important;
+}
+.form-group label {
+    color: var(--d-muted) !important;
+    font-size: 10px !important;
+    letter-spacing: 1.4px !important;
+    text-transform: uppercase !important;
+    font-weight: 500 !important;
+    margin-bottom: 7px !important;
+    display: block;
+}
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group input[type="date"],
+.form-group input[type="time"],
+.form-group select,
+.form-group textarea {
+    width: 100% !important;
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 12px !important;
+    padding: 11px 14px !important;
+    color: var(--d-ink) !important;
+    font-family: var(--d-font-sans) !important;
+    font-size: 14px !important;
+    letter-spacing: -0.1px !important;
+    outline: none !important;
+    box-shadow: none !important;
+    transition: border-color 0.15s ease;
+}
+.form-group input:focus,
+.form-group select:focus {
+    border-color: var(--d-accent) !important;
+}
+.form-row {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+    margin-bottom: 0 !important;
+}
+.form-row .form-group { margin-bottom: 14px !important; }
+
+/* Scanner button (inside add-drink form) */
+#scan-barcode-btn {
+    background: linear-gradient(135deg, var(--d-accent-soft), var(--d-surface)) !important;
+    border: 1px solid var(--d-rule) !important;
+    color: var(--d-accent) !important;
+    border-radius: 12px !important;
+    padding: 10px 14px !important;
+    font-weight: 500 !important;
+    font-size: 12.5px !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: none !important;
+}
+
+/* Star rating */
+.star-rating {
+    display: flex;
+    gap: 4px;
+    padding: 6px 0;
+}
+.star-rating .star {
+    color: var(--d-rule);
+    font-size: 26px;
+    cursor: pointer;
+    transition: color 0.12s ease, transform 0.12s ease;
+}
+.star-rating .star.active,
+.star-rating .star:hover { color: var(--d-accent); }
+
+/* Form actions */
+.form-actions,
+.modal-actions {
+    display: flex !important;
+    gap: 10px !important;
+    padding: 12px 20px 18px !important;
+    border-top: 1px solid var(--d-rule) !important;
+    background: transparent !important;
+}
+.btn-primary,
+.btn-secondary,
+.btn-danger {
+    border-radius: 12px !important;
+    font-size: 13.5px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.1px !important;
+    padding: 13px 16px !important;
+    border: 1px solid transparent !important;
+    box-shadow: none !important;
+    cursor: pointer;
+    transition: transform 0.12s ease, opacity 0.12s ease;
+    flex: 1;
+}
+.btn-primary {
+    background: var(--d-accent) !important;
+    color: #fff !important;
+    border-color: var(--d-accent) !important;
+    box-shadow: 0 4px 18px color-mix(in oklch, var(--d-accent) 38%, transparent) !important;
+}
+.btn-primary:hover { transform: translateY(-1px); }
+.btn-secondary {
+    background: var(--d-surface-2) !important;
+    color: var(--d-ink) !important;
+    border-color: var(--d-rule) !important;
+}
+.btn-danger {
+    background: transparent !important;
+    color: var(--d-bad) !important;
+    border-color: var(--d-rule) !important;
+}
+
+/* Suggestions list (inside add-drink dialog) */
+.suggestions-list {
+    background: var(--d-surface-2);
+    border: 1px solid var(--d-rule);
+    border-radius: 12px;
+    margin-top: 6px;
+    overflow: hidden;
+}
+.suggestions-list:empty { display: none; }
+.suggestions-list > * {
+    padding: 10px 12px !important;
+    border-bottom: 1px solid var(--d-rule);
+    color: var(--d-ink) !important;
+    font-size: 13px !important;
+    background: transparent !important;
+    cursor: pointer;
+}
+.suggestions-list > *:last-child { border-bottom: none; }
+.suggestions-list > *:hover { background: var(--d-surface-3) !important; }
+
+/* Settings menu (right-side drawer) ------------------------------------- */
+.settings-menu {
+    background: var(--d-scrim) !important;
+}
+.settings-content {
+    background: var(--d-bg) !important;
+    border-left: 1px solid var(--d-rule) !important;
+    box-shadow: var(--d-shadow) !important;
+    width: min(360px, 92vw) !important;
+}
+.settings-header {
+    padding: 22px 20px 16px !important;
+    border-bottom: 1px solid var(--d-rule) !important;
+    background: transparent !important;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.settings-header h2 {
+    font-family: var(--d-font-serif) !important;
+    font-style: italic !important;
+    font-weight: 400 !important;
+    font-size: 24px !important;
+    letter-spacing: -0.4px !important;
+    color: var(--d-ink) !important;
+}
+.settings-close {
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 99px !important;
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    color: var(--d-ink-2) !important;
+    font-size: 18px !important;
+    line-height: 1 !important;
+    display: grid !important;
+    place-items: center;
+}
+.settings-body {
+    background: transparent !important;
+    padding: 16px 20px !important;
+}
+.settings-section {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 14px !important;
+    padding: 14px !important;
+    margin-bottom: 14px !important;
+    box-shadow: none !important;
+}
+.settings-section h3 {
+    font-family: var(--d-font-sans) !important;
+    color: var(--d-muted) !important;
+    font-size: 10px !important;
+    letter-spacing: 1.4px !important;
+    text-transform: uppercase !important;
+    font-weight: 500 !important;
+    margin: 0 0 10px !important;
+}
+.settings-section .form-group { margin-bottom: 10px !important; }
+
+/* Scanner ---------------------------------------------------------------- */
+#scanner-modal { background: transparent !important; }
+.scanner-content {
+    background: #000 !important;
+    border-radius: 22px !important;
+    overflow: hidden !important;
+    border: 1px solid #111 !important;
+}
+.scanner-modal-header {
+    background: rgba(0, 0, 0, 0.7) !important;
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+.scanner-modal-header h2 {
+    color: #fff !important;
+    font-family: var(--d-font-serif) !important;
+    font-style: italic !important;
+    font-size: 20px !important;
+}
+.scanner-container { background: #000 !important; min-height: 320px; }
+.scanner-frame {
+    border: 1.5px solid var(--d-accent) !important;
+    border-radius: 14px !important;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+}
+.scanner-corner {
+    border-color: var(--d-accent) !important;
+    border-width: 0 !important;
+}
+.scanner-corner-tl { border-top-width: 3px !important; border-left-width: 3px !important; }
+.scanner-corner-tr { border-top-width: 3px !important; border-right-width: 3px !important; }
+.scanner-corner-bl { border-bottom-width: 3px !important; border-left-width: 3px !important; }
+.scanner-corner-br { border-bottom-width: 3px !important; border-right-width: 3px !important; }
+.scanner-line {
+    background: linear-gradient(90deg, transparent, var(--d-accent), transparent) !important;
+    box-shadow: 0 0 14px var(--d-accent) !important;
+    height: 2px !important;
+}
+.scanner-status {
+    background: rgba(0, 0, 0, 0.7) !important;
+    backdrop-filter: blur(8px);
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+    color: #fff !important;
+}
+.scanner-status-indicator {
+    background: var(--d-accent) !important;
+    box-shadow: 0 0 8px var(--d-accent) !important;
+}
+
+/* Drink detail dialog body */
+.drink-detail-content {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.drink-detail-content .stat-card,
+.drink-detail-content .info-card { margin: 0; }
+.drink-detail-content h3 {
+    font-family: var(--d-font-serif);
+    font-style: italic;
+    color: var(--d-ink);
+    font-size: 17px;
+    letter-spacing: -0.3px;
+    margin: 0 0 6px;
+}
+
+/* Edit-family extra actions */
+.edit-family-extra-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 20px 18px !important;
+    background: transparent !important;
+    border-top: 1px solid var(--d-rule);
+    padding-top: 14px !important;
+}
+.edit-family-action-btn {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+/* Category picker (change category) */
+.category-picker-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.category-picker-list > * {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 12px !important;
+    padding: 12px 14px !important;
+    color: var(--d-ink) !important;
+    font-size: 14px !important;
+    cursor: pointer;
+    box-shadow: none !important;
+    transition: border-color 0.15s ease;
+}
+.category-picker-list > *:hover { border-color: var(--d-accent) !important; }
+
+/* Toasts */
+.toast,
+[class*="toast"] {
+    background: var(--d-ink) !important;
+    color: var(--d-bg) !important;
+    border-radius: 99px !important;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3) !important;
+    padding: 10px 18px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    border: none !important;
+}
+
+/* Swipe-to-delete delete indicator */
+.delete-indicator {
+    background: var(--d-bad) !important;
+    color: #fff !important;
+    border-radius: 0 12px 12px 0 !important;
+    padding: 0 18px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    font-size: 11px;
+    display: grid;
+    place-items: center;
+}
+
+/* Scrollbar polish (desktop) */
+@media (hover: hover) {
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-thumb {
+        background: color-mix(in oklch, var(--d-rule) 70%, transparent);
+        border-radius: 99px;
+    }
+}
+
+/* CHUNK 5 END — file complete */
+
