@@ -1658,5 +1658,234 @@ dialog.modal .category-picker-list {
     }
 }
 
+/* =============================================================================
+   CHUNK 6 — gap-fill: category-detail drink families, swipeable rows
+   (additions found via runtime audit; preserves all hooks and class names)
+   ============================================================================= */
+
+.drink-family {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 16px !important;
+    padding: 0 !important;
+    margin-bottom: 10px !important;
+    box-shadow: none !important;
+    overflow: hidden;
+}
+.drink-family.has-variants {
+    background: var(--d-surface-2) !important;
+}
+.drink-family-header {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px !important;
+    border-bottom: 1px solid var(--d-rule);
+    background: transparent !important;
+}
+.drink-family.has-variants .drink-family-header {
+    background: transparent !important;
+}
+.drink-family-name {
+    font-family: var(--d-font-sans) !important;
+    color: var(--d-ink) !important;
+    font-size: 14.5px !important;
+    font-weight: 500 !important;
+    letter-spacing: -0.2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+.drink-family-count {
+    color: var(--d-muted) !important;
+    background: transparent !important;
+    border: none !important;
+    font-size: 11px !important;
+    font-family: var(--d-font-num);
+    letter-spacing: 0.1px;
+    padding: 0 0 0 10px !important;
+}
+.drink-variants {
+    background: transparent !important;
+    padding: 0 !important;
+}
+
+.drink-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.drink-details {
+    color: var(--d-muted) !important;
+    font-size: 11.5px !important;
+    letter-spacing: 0.1px;
+}
+
+.drink-counter {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 8px;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+}
+.counter-value {
+    font-family: var(--d-font-num) !important;
+    font-size: 12px !important;
+    color: var(--d-ink-2) !important;
+    background: transparent !important;
+    padding: 0 !important;
+    min-width: 14px;
+    text-align: right;
+}
+.counter-value.increment-animation {
+    color: var(--d-accent) !important;
+    transform: scale(1.15);
+    transition: transform 0.18s ease;
+}
+.counter-add-btn {
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 10px !important;
+    background: var(--d-accent-soft) !important;
+    border: 1px solid var(--d-accent-soft-bd) !important;
+    color: var(--d-accent) !important;
+    display: grid !important;
+    place-items: center;
+    padding: 0 !important;
+    box-shadow: none !important;
+    cursor: pointer;
+}
+.counter-add-btn:hover {
+    background: color-mix(in oklch, var(--d-accent-soft) 60%, var(--d-accent) 6%) !important;
+}
+.counter-add-btn span { font-size: 16px; line-height: 1; font-weight: 400; }
+
+/* Drink detail modal — entry list inside .drink-detail-content */
+.drink-entries {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 14px !important;
+    overflow: hidden;
+    margin-top: 10px;
+}
+.drink-entry {
+    display: flex !important;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px !important;
+    border-bottom: 1px solid var(--d-rule) !important;
+    background: transparent !important;
+}
+.drink-entry:last-child { border-bottom: none !important; }
+.drink-entry-info { flex: 1; min-width: 0; }
+.drink-entry-time {
+    font-family: var(--d-font-num);
+    font-size: 12px;
+    color: var(--d-ink) !important;
+    font-weight: 500;
+}
+.drink-entry-details {
+    color: var(--d-muted) !important;
+    font-size: 11.5px !important;
+    margin-top: 2px;
+}
+.drink-entry-location {
+    color: var(--d-muted) !important;
+    font-size: 11px !important;
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Drink group header (used in drinks list view) */
+.drink-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--d-surface-2);
+    border: 1px solid var(--d-rule);
+    border-bottom: none;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+}
+.drink-group-info { display: flex; flex-direction: column; gap: 2px; }
+.drink-name { color: var(--d-ink); font-weight: 500; font-size: 14px; }
+.drink-count {
+    font-family: var(--d-font-num);
+    font-size: 11px;
+    color: var(--d-muted);
+}
+
+/* Swipeable rows — reset legacy bg so the editorial surface shines */
+.swipeable {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+.swipeable.swipe-left { transform: translateX(-92px); transition: transform 0.18s ease; }
+
+/* Modal title (drink detail) */
+.modal-title {
+    font-family: var(--d-font-serif) !important;
+    font-style: italic;
+    font-size: 22px !important;
+    color: var(--d-ink) !important;
+    letter-spacing: -0.3px;
+    font-weight: 400 !important;
+    margin: 0;
+}
+
+/* Add a drink to category — primary button placement */
+.add-category-drink-btn {
+    background: var(--d-accent) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 12px !important;
+    padding: 12px 16px !important;
+    font-weight: 600 !important;
+    font-size: 13.5px !important;
+    box-shadow: 0 4px 18px color-mix(in oklch, var(--d-accent) 38%, transparent) !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+/* Category quick-add option chips (used in some pickers) */
+.add-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--d-rule);
+    background: var(--d-surface-2);
+    color: var(--d-ink-2);
+    font-size: 12.5px;
+    cursor: pointer;
+}
+.add-option:hover { border-color: var(--d-accent-soft-bd); }
+.option-icon { color: var(--d-accent); display: inline-flex; }
+.option-label { color: var(--d-ink); }
+
+/* Undo button (toasts) */
+.undo-btn {
+    background: transparent !important;
+    border: 1px solid color-mix(in oklch, var(--d-bg) 30%, transparent) !important;
+    color: var(--d-bg) !important;
+    border-radius: 99px !important;
+    padding: 4px 10px !important;
+    font-size: 11px !important;
+    font-weight: 600;
+    margin-left: 10px;
+}
+
+/* CHUNK 6 END — runtime-audit gap-fill applied */
 /* CHUNK 5 END — file complete */
 
