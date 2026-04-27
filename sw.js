@@ -1,32 +1,57 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v3.2.0';
-const STATIC_CACHE = 'alconote-static-v3.2.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v3.2.0';
+const CACHE_NAME = 'alconote-v2.13.0';
+const STATIC_CACHE = 'alconote-static-v2.13.0';
+const DYNAMIC_CACHE = 'alconote-dynamic-v1.13.0';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
 
-// Files to cache for offline functionality. Source JSX in proto/ is compiled
-// to build/proto/*.js by `npm run build`; only the compiled JS is shipped.
+// Files to cache for offline functionality
 const STATIC_FILES = [
     '/',
     '/index.html',
     '/manifest.json',
-    '/build/proto/shared.js',
-    '/build/proto/db.js',
-    '/build/proto/data.js',
-    '/build/proto/categories.js',
-    '/build/proto/history.js',
-    '/build/proto/stats-charts.js',
-    '/build/proto/stats.js',
-    '/build/proto/modals.js',
-    '/build/proto/app.js',
-    '/build/proto/bootstrap.js',
+    '/css/main.css',
+    '/css/components.css',
+    '/css/responsive.css',
+    '/css/accessibility.css',
+    '/js/error-tracking.js',
+    '/js/performance-optimizer.js',
+    '/js/app.js',
+    '/js/database.js',
+    '/js/utils.js',
+    '/js/bac-chart.js',
+    '/js/geolocation.js',
+    '/js/scanner/product-lookup.js',
+    '/js/scanner/camera-scanner.js',
+    '/js/scanner/barcode-handler.js',
+    '/js/stats-config.js',
+    '/js/stats-collapsible.js',
+    '/js/utils-period-normalizer.js',
+    '/js/stats-calculators/general.js',
+    '/js/stats-calculators/temporal.js',
+    '/js/stats-calculators/categories.js',
+    '/js/stats-calculators/drinks.js',
+    '/js/stats-calculators/health.js',
+    '/js/stats-calculators/location.js',
+    '/js/stats-calculators/trends.js',
+    '/js/stats-calculators/advanced.js',
+    '/js/stats-renderers/general-renderer.js',
+    '/js/stats-renderers/temporal-renderer.js',
+    '/js/stats-renderers/category-renderer.js',
+    '/js/stats-renderers/drinks-renderer.js',
+    '/js/stats-renderers/health-renderer.js',
+    '/js/stats-renderers/location-renderer.js',
+    '/js/stats-renderers/trends-renderer.js',
+    '/js/stats-renderers/advanced-renderer.js',
+    '/js/statistics-new.js',
     // External CDN resources
-    'https://unpkg.com/react@18.3.1/umd/react.development.js',
-    'https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js'
+    'https://cdn.jsdelivr.net/npm/chart.js',
+    'https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js',
+    'https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js',
+    'https://unpkg.com/dexie@3.2.4/dist/dexie.js'
 ];
 
 // URLs that should always be fetched from network
@@ -37,11 +62,11 @@ const NETWORK_FIRST_URLS = [
 
 // URLs that should be cached first
 const CACHE_FIRST_URLS = [
-    '/build/',
+    '/css/',
+    '/js/',
     '/assets/',
-    'https://unpkg.com/',
-    'https://fonts.googleapis.com/',
-    'https://fonts.gstatic.com/'
+    'https://cdn.jsdelivr.net/',
+    'https://unpkg.com/'
 ];
 
 // Install event - cache static files
