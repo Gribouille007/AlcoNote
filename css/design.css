@@ -1887,5 +1887,342 @@ dialog.modal .category-picker-list {
 }
 
 /* CHUNK 6 END — runtime-audit gap-fill applied */
+
+/* =============================================================================
+   CHUNK 7 — interface refactor (proto layout): bottom nav, header date,
+   filter pills, sheet-style modals, FAB above the bottom bar
+   ============================================================================= */
+
+.proto-shell { padding-bottom: 78px; /* room for bottom nav */ }
+
+/* Header date sub-line under the title — matches proto */
+.proto-header { padding: 14px 18px 12px !important; }
+.proto-header-title {
+    flex: 1;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    line-height: 1;
+}
+.proto-header-title .app-title {
+    font-family: var(--d-font-serif);
+    font-style: italic;
+    font-size: 22px;
+    line-height: 1;
+    color: var(--d-ink);
+    letter-spacing: -0.4px;
+    font-weight: 400;
+    margin: 0;
+}
+.proto-header-date {
+    font-size: 10px;
+    color: var(--d-muted);
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    font-weight: 500;
+    margin-top: 2px;
+}
+
+/* Hide top tab nav — proto puts navigation at the bottom */
+.tab-navigation:not(.proto-bottom-nav) { display: none !important; }
+
+/* Bottom navigation bar (replaces the in-page tabs) */
+.proto-bottom-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex !important;
+    justify-content: space-around;
+    padding: 6px 8px max(env(safe-area-inset-bottom), 8px) !important;
+    background: color-mix(in oklch, var(--d-bg) 90%, transparent) !important;
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--d-rule) !important;
+    z-index: 25;
+    max-width: 480px;
+    margin: 0 auto;
+}
+.proto-bottom-nav .tab-btn {
+    flex: 1 !important;
+    background: transparent !important;
+    border: none !important;
+    color: var(--d-muted) !important;
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px 4px !important;
+    border-radius: 12px;
+    position: relative;
+    box-shadow: none !important;
+    font-size: 10px !important;
+    letter-spacing: 0.2px !important;
+    font-weight: 400 !important;
+}
+.proto-bottom-nav .tab-btn .bn-icon {
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+}
+.proto-bottom-nav .tab-btn .bn-icon svg { width: 22px; height: 22px; }
+.proto-bottom-nav .tab-btn .bn-label { line-height: 1; }
+.proto-bottom-nav .tab-btn::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    width: 20px;
+    height: 3px;
+    border-radius: 99px;
+    background: transparent;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.proto-bottom-nav .tab-btn.active {
+    color: var(--d-accent) !important;
+    background: transparent !important;
+    font-weight: 600 !important;
+}
+.proto-bottom-nav .tab-btn.active::after {
+    background: var(--d-accent);
+    box-shadow: 0 0 8px var(--d-accent);
+}
+
+/* FAB sits above the bottom nav with equal margin bottom/right */
+.fab-container { bottom: 92px !important; right: 18px !important; }
+
+/* Hidden but functional <select> kept for legacy logic compatibility */
+.visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+    padding: 0;
+    margin: -1px;
+}
+
+/* History toolbar: search + pill rail (no native dropdown anymore) */
+.history-toolbar {
+    display: flex !important;
+    flex-direction: column;
+    gap: 10px;
+}
+.history-filter-pills {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 2px 0 4px;
+}
+.history-filter-pills::-webkit-scrollbar { display: none; }
+.history-filter-pills .pill {
+    padding: 7px 13px;
+    border-radius: 99px;
+    background: transparent;
+    color: var(--d-ink-2);
+    border: 1px solid var(--d-rule);
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: -0.1px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.history-filter-pills .pill .pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 99px;
+    background: currentColor;
+    opacity: 0.8;
+}
+.history-filter-pills .pill.active {
+    background: var(--d-ink);
+    color: var(--d-bg);
+    border-color: var(--d-ink);
+    font-weight: 500;
+}
+
+/* Section head visible above the categories grid */
+.section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 18px 0;
+    color: var(--d-muted);
+    font-size: 11px;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    font-weight: 500;
+}
+
+/* Category card layout — proto: glyph chip top, name+count bottom */
+.category-item .category-main { /* override chunk 3 row layout */
+    flex: 1;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    gap: 10px;
+}
+
+/* Native dialog → bottom-sheet feel (proto modals) */
+@media (max-width: 540px) {
+    dialog.modal {
+        margin: 0 auto auto !important;
+        position: fixed !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        top: auto !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        border-radius: 22px 22px 0 0 !important;
+    }
+    dialog.modal .modal-content,
+    dialog.modal .popup-content {
+        border-radius: 22px 22px 0 0 !important;
+        border-bottom: none !important;
+        max-height: 88vh;
+    }
+    dialog.modal .modal-content::before,
+    dialog.modal .popup-content::before {
+        content: "";
+        display: block;
+        width: 42px;
+        height: 4px;
+        border-radius: 99px;
+        background: var(--d-rule);
+        margin: 10px auto 4px;
+    }
+}
+
+/* Settings drawer becomes a bottom sheet on phones too */
+@media (max-width: 540px) {
+    .settings-content {
+        width: 100% !important;
+        height: auto !important;
+        max-height: 88vh;
+        border-radius: 22px 22px 0 0 !important;
+        border-left: none !important;
+        border-top: 1px solid var(--d-rule) !important;
+    }
+    .settings-menu.active .settings-content,
+    .settings-menu.show .settings-content {
+        margin-top: auto;
+    }
+}
+
+/* Period nav — give the row a card-like surface */
+.period-navigation {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 12px;
+    margin: 0 18px 16px;
+    padding: 6px 8px !important;
+}
+.period-navigation .nav-btn {
+    border-radius: 8px;
+}
+.period-navigation .nav-btn svg { width: 14px; height: 14px; }
+.period-navigation .current-date {
+    flex: 1;
+    text-align: center;
+}
+
+/* Make the chunky `.tab-content` fade-in feel intentional now that we
+   stack three sections under the same flexbox, only one of them visible. */
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.tab-content { animation: protoFadeIn 0.18s ease both; }
+@keyframes protoFadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0);   }
+}
+
+/* Category card — proto layout glue ------------------------------------ */
+.category-item .category-glyph {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    color: var(--cat-autre);
+    background: var(--cat-autre-bg);
+    box-shadow: inset 0 0 20px var(--cat-autre-bg);
+}
+.category-main[data-category^="Bière" i] .category-glyph,
+.category-main[data-category="Bière" i] .category-glyph     { color: var(--cat-biere);    background: var(--cat-biere-bg);    box-shadow: inset 0 0 20px var(--cat-biere-bg); }
+.category-main[data-category^="Vin" i] .category-glyph,
+.category-main[data-category="Vin" i] .category-glyph       { color: var(--cat-vin);      background: var(--cat-vin-bg);      box-shadow: inset 0 0 20px var(--cat-vin-bg); }
+.category-main[data-category^="Spirit" i] .category-glyph    { color: var(--cat-spirit);   background: var(--cat-spirit-bg);   box-shadow: inset 0 0 20px var(--cat-spirit-bg); }
+.category-main[data-category^="Cocktail" i] .category-glyph  { color: var(--cat-cocktail); background: var(--cat-cocktail-bg); box-shadow: inset 0 0 20px var(--cat-cocktail-bg); }
+
+/* Now that the proto chip is real, retire the pseudo-chip from chunk 3 */
+.category-item .category-main::before { content: none !important; }
+
+.category-item .category-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+/* Edit button is now a sibling of .category-main; place it absolutely */
+.category-item { position: relative; }
+.category-item > .category-edit-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 26px !important;
+    height: 26px !important;
+    border-radius: 8px !important;
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    color: var(--d-muted) !important;
+    display: grid !important;
+    place-items: center;
+    padding: 0 !important;
+    z-index: 2;
+    box-shadow: none !important;
+}
+
+/* The legacy markup wrapped count + edit in .category-actions and the
+   chunk-3 selectors targeted that. Clean up so the proto layout reads. */
+.category-item .category-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+}
+.category-item .category-count {
+    font-family: var(--d-font-sans);
+    font-size: 11px !important;
+    color: var(--d-muted) !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    letter-spacing: 0.1px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.category-item .category-count::before {
+    content: "●";
+    font-size: 9px;
+    color: var(--cat-autre);
+}
+.category-main[data-category^="Bière" i] + .category-edit-btn ~ * .category-count::before,
+.category-main[data-category^="Bière" i] ~ * .category-count::before { color: var(--cat-biere); }
+.category-main[data-category^="Bière" i] .category-count::before    { color: var(--cat-biere); }
+.category-main[data-category^="Vin" i] .category-count::before       { color: var(--cat-vin); }
+.category-main[data-category^="Spirit" i] .category-count::before    { color: var(--cat-spirit); }
+.category-main[data-category^="Cocktail" i] .category-count::before  { color: var(--cat-cocktail); }
+
+/* CHUNK 7 END */
 /* CHUNK 5 END — file complete */
 

@@ -72,9 +72,9 @@
 
 <body>
     <!-- Conteneur principal de l'application -->
-    <div id="app">
+    <div id="app" class="proto-shell">
         <!-- En-tête de l'application avec menu paramètres -->
-        <header class="app-header">
+        <header class="app-header proto-header">
             <button id="settings-btn" class="settings-btn" aria-label="Paramètres">
                 <div class="hamburger-icon">
                     <span></span>
@@ -82,7 +82,10 @@
                     <span></span>
                 </div>
             </button>
-            <h1 class="app-title">AlcoNote</h1>
+            <div class="proto-header-title">
+                <h1 class="app-title">AlcoNote</h1>
+                <div class="proto-header-date" id="proto-header-date" aria-hidden="true"></div>
+            </div>
             <!-- Slot for the live BAC pill — populated by app.js if BAC data is available.
                  Stays empty (with min-width) when no data so the title stays centered. -->
             <div class="header-spacer" id="header-bac-slot" aria-live="polite"></div>
@@ -90,13 +93,6 @@
 
         <!-- Contenu principal avec navigation par onglets -->
         <main class="main-content">
-            <!-- Navigation par onglets -->
-            <nav class="tab-navigation">
-                <button class="tab-btn active" data-tab="categories">Catégories</button>
-                <button class="tab-btn" data-tab="history">Historique</button>
-                <button class="tab-btn" data-tab="statistics">Statistiques</button>
-            </nav>
-
             <!-- Onglet Catégories - liste des catégories de boissons -->
             <section id="categories-tab" class="tab-content active">
                 <div class="categories-container">
@@ -107,6 +103,7 @@
                             <button id="categories-search-clear" class="search-clear-btn" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
                         </div>
                     </div>
+                    <div class="section-head"><span>Vos catégories</span></div>
                     <div id="categories-list" class="categories-list">
                         <!-- Les catégories seront chargées dynamiquement ici -->
                     </div>
@@ -119,12 +116,15 @@
                     <div class="history-toolbar">
                         <div class="search-input-wrapper history-search-wrapper">
                             <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                            <input type="text" id="history-search" placeholder="Rechercher une boisson..." autocomplete="off">
+                            <input type="text" id="history-search" placeholder="Rechercher dans l'historique..." autocomplete="off">
                             <button id="history-search-clear" class="search-clear-btn" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
                         </div>
-                        <select id="history-category-filter" class="history-filter">
+                        <!-- Legacy <select> kept for logic compatibility but visually replaced by pills.
+                             app.js still reads/writes its `.value`; the pill rail mirrors it. -->
+                        <select id="history-category-filter" class="history-filter visually-hidden">
                             <option value="">Toutes les catégories</option>
                         </select>
+                        <div id="history-filter-pills" class="history-filter-pills" role="tablist" aria-label="Filtre par catégorie"></div>
                     </div>
                     <div id="history-list" class="history-list">
                         <!-- L'historique sera chargé dynamiquement ici -->
@@ -140,7 +140,7 @@
             <!-- Onglet Statistiques - graphiques et analyses -->
             <section id="statistics-tab" class="tab-content">
                 <div class="statistics-container">
-                    <!-- Sélecteur de période temporelle -->
+                    <!-- Sélecteur de période temporelle (pill bar comme dans le proto) -->
                     <div class="period-selector">
                         <button class="period-btn active" data-period="today">Aujourd'hui</button>
                         <button class="period-btn" data-period="week">Semaine</button>
@@ -153,9 +153,13 @@
 
                     <!-- Navigation temporelle (précédent/suivant) -->
                     <div id="period-navigation" class="period-navigation active">
-                        <button id="prev-period" class="nav-btn">‹</button>
+                        <button id="prev-period" class="nav-btn" aria-label="Période précédente">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                        </button>
                         <span id="current-period-display" class="current-date"></span>
-                        <button id="next-period" class="nav-btn">›</button>
+                        <button id="next-period" class="nav-btn" aria-label="Période suivante">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </button>
                     </div>
 
                     <!-- Contenu des statistiques -->
@@ -172,6 +176,28 @@
                 <span class="fab-icon">+</span>
             </button>
         </div>
+
+        <!-- Bottom navigation bar (proto layout) -->
+        <nav class="tab-navigation proto-bottom-nav" aria-label="Navigation principale">
+            <button class="tab-btn active" data-tab="categories">
+                <span class="bn-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                </span>
+                <span class="bn-label">Catégories</span>
+            </button>
+            <button class="tab-btn" data-tab="history">
+                <span class="bn-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/><polyline points="12 7 12 12 15 14"/></svg>
+                </span>
+                <span class="bn-label">Historique</span>
+            </button>
+            <button class="tab-btn" data-tab="statistics">
+                <span class="bn-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                </span>
+                <span class="bn-label">Stats</span>
+            </button>
+        </nav>
     </div>
 
     <!-- Fenêtres modales de l'application -->
@@ -469,6 +495,8 @@
     <script src="js/app.js"></script>
     <!-- Présentation : pill BAC dans l'en-tête (lecture seule, pas de logique métier) -->
     <script src="js/header-bac.js"></script>
+    <!-- Présentation : couplage UI proto (bottom-nav, pills, header date) — pas de logique métier -->
+    <script src="js/proto-ui.js"></script>
 </body>
 
 </html>

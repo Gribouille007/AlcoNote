@@ -685,19 +685,38 @@ class AlcoNoteApp {
         }
     }
 
-    // Create category element
+    // Editorial glyph for a category — pure presentational SVG. No state.
+    renderCategoryGlyph(name) {
+        const k = (name || '').toLowerCase();
+        const s = 'width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"';
+        if (k === 'bière' || k === 'biere')
+            return `<svg ${s}><path d="M7 6h8v14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V6z"/><path d="M15 9h2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><line x1="9" y1="10" x2="9" y2="18"/><line x1="12" y1="10" x2="12" y2="18"/></svg>`;
+        if (k === 'vin')
+            return `<svg ${s}><path d="M8 3h8l-1 7a3 3 0 0 1-6 0L8 3z"/><line x1="12" y1="13" x2="12" y2="20"/><line x1="8" y1="21" x2="16" y2="21"/></svg>`;
+        if (k === 'spiritueux' || k.startsWith('spirit'))
+            return `<svg ${s}><rect x="8" y="8" width="8" height="13" rx="1"/><rect x="9.5" y="3" width="5" height="5" rx="0.5"/><line x1="8" y1="13" x2="16" y2="13"/></svg>`;
+        if (k === 'cocktail')
+            return `<svg ${s}><path d="M4 4h16l-8 9-8-9z"/><line x1="12" y1="13" x2="12" y2="20"/><line x1="8" y1="21" x2="16" y2="21"/></svg>`;
+        return `<svg ${s}><circle cx="12" cy="12" r="8"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/></svg>`;
+    }
+
+    // Create category element  (proto layout: glyph chip + name + count + edit)
     createCategoryElement(category) {
         const element = document.createElement('div');
         element.className = 'category-item animate-fade-in';
         const escapedName = category.name.replace(/"/g, '&quot;');
+        const drinkCount = typeof category.drinkCount === 'number' ? category.drinkCount : 0;
         element.innerHTML = `
             <div class="category-main" data-category="${escapedName}">
-                <div class="category-name"></div>
-                <div class="category-actions">
-                    <span class="category-count">${typeof category.drinkCount === 'number' ? category.drinkCount : 0}</span>
-                    <button class="category-edit-btn" aria-label="Modifier la catégorie" title="Modifier la catégorie"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                <div class="category-glyph" aria-hidden="true">${this.renderCategoryGlyph(category.name)}</div>
+                <div class="category-body">
+                    <div class="category-name"></div>
+                    <div class="category-actions">
+                        <span class="category-count">${drinkCount} entrée${drinkCount > 1 ? 's' : ''}</span>
+                    </div>
                 </div>
             </div>
+            <button class="category-edit-btn" aria-label="Modifier la catégorie" title="Modifier la catégorie"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button>
             <div class="category-editor">
                 <input type="text" class="category-name-input" aria-label="Nouveau nom de catégorie">
                 <button class="btn-primary save-rename-btn">Enregistrer</button>
