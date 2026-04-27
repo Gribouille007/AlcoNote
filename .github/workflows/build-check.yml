@@ -1,0 +1,39 @@
+name: build-check
+
+# Verifies that the committed build/proto/*.js bundles match what `npm run build`
+# would emit from the current proto/*.jsx sources. If a contributor edits a
+# source file and forgets to rebuild, this fails the PR before the deploy ships
+# a stale bundle.
+
+on:
+  pull_request:
+    paths:
+      - 'proto/**'
+      - 'build/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'babel.config.json'
+      - '.github/workflows/build-check.yml'
+  push:
+    branches: [main]
+
+jobs:
+  build-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dev dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build
+        run: npm run build
+      - name: Fail if build/ has drifted from sources
+        run: |
+          if ! git diff --exit-code -- build/; then
+            echo "::error::build/ is out of date. Run 'npm run build' locally and commit the result." >&2
+            exit 1
+          fi
+      - name: Run smoke tests
+        run: npm test
