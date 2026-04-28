@@ -123,6 +123,9 @@
 
     /* ─── Boot ────────────────────────────────────────────────────── */
     function init() {
+        // High-specificity hook for the proto stylesheet to win over legacy.
+        document.documentElement.setAttribute('data-skin', 'proto');
+        document.body.classList.add('proto-skin');
         updateHeaderDate();
         watchTabActivation();
         syncTabActive();
