@@ -20,6 +20,7 @@ const STATIC_FILES = [
     '/css/design.css',
     '/js/error-tracking.js',
     '/js/header-bac.js',
+    '/js/proto-ui.js',
     '/js/performance-optimizer.js',
     '/js/app.js',
     '/js/database.js',

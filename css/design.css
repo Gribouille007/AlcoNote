@@ -1887,5 +1887,1638 @@ dialog.modal .category-picker-list {
 }
 
 /* CHUNK 6 END — runtime-audit gap-fill applied */
+
+/* =============================================================================
+   CHUNK 7 — interface refactor (proto layout): bottom nav, header date,
+   filter pills, sheet-style modals, FAB above the bottom bar
+   ============================================================================= */
+
+.proto-shell { padding-bottom: 78px; /* room for bottom nav */ }
+
+/* Header date sub-line under the title — matches proto */
+.proto-header { padding: 14px 18px 12px !important; }
+.proto-header-title {
+    flex: 1;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    line-height: 1;
+}
+.proto-header-title .app-title {
+    font-family: var(--d-font-serif);
+    font-style: italic;
+    font-size: 22px;
+    line-height: 1;
+    color: var(--d-ink);
+    letter-spacing: -0.4px;
+    font-weight: 400;
+    margin: 0;
+}
+.proto-header-date {
+    font-size: 10px;
+    color: var(--d-muted);
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    font-weight: 500;
+    margin-top: 2px;
+}
+
+/* Hide top tab nav — proto puts navigation at the bottom */
+.tab-navigation:not(.proto-bottom-nav) { display: none !important; }
+
+/* Bottom navigation bar (replaces the in-page tabs) */
+.proto-bottom-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex !important;
+    justify-content: space-around;
+    padding: 6px 8px max(env(safe-area-inset-bottom), 8px) !important;
+    background: color-mix(in oklch, var(--d-bg) 90%, transparent) !important;
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--d-rule) !important;
+    z-index: 25;
+    max-width: 480px;
+    margin: 0 auto;
+}
+.proto-bottom-nav .tab-btn {
+    flex: 1 !important;
+    background: transparent !important;
+    border: none !important;
+    color: var(--d-muted) !important;
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px 4px !important;
+    border-radius: 12px;
+    position: relative;
+    box-shadow: none !important;
+    font-size: 10px !important;
+    letter-spacing: 0.2px !important;
+    font-weight: 400 !important;
+}
+.proto-bottom-nav .tab-btn .bn-icon {
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+}
+.proto-bottom-nav .tab-btn .bn-icon svg { width: 22px; height: 22px; }
+.proto-bottom-nav .tab-btn .bn-label { line-height: 1; }
+.proto-bottom-nav .tab-btn::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    width: 20px;
+    height: 3px;
+    border-radius: 99px;
+    background: transparent;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.proto-bottom-nav .tab-btn.active {
+    color: var(--d-accent) !important;
+    background: transparent !important;
+    font-weight: 600 !important;
+}
+.proto-bottom-nav .tab-btn.active::after {
+    background: var(--d-accent);
+    box-shadow: 0 0 8px var(--d-accent);
+}
+
+/* FAB sits above the bottom nav with equal margin bottom/right */
+.fab-container { bottom: 92px !important; right: 18px !important; }
+
+/* Hidden but functional <select> kept for legacy logic compatibility */
+.visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+    padding: 0;
+    margin: -1px;
+}
+
+/* History toolbar: search + pill rail (no native dropdown anymore) */
+.history-toolbar {
+    display: flex !important;
+    flex-direction: column;
+    gap: 10px;
+}
+.history-filter-pills {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 2px 0 4px;
+}
+.history-filter-pills::-webkit-scrollbar { display: none; }
+.history-filter-pills .pill {
+    padding: 7px 13px;
+    border-radius: 99px;
+    background: transparent;
+    color: var(--d-ink-2);
+    border: 1px solid var(--d-rule);
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: -0.1px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.history-filter-pills .pill .pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 99px;
+    background: currentColor;
+    opacity: 0.8;
+}
+.history-filter-pills .pill.active {
+    background: var(--d-ink);
+    color: var(--d-bg);
+    border-color: var(--d-ink);
+    font-weight: 500;
+}
+
+/* Section head visible above the categories grid */
+.section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 18px 0;
+    color: var(--d-muted);
+    font-size: 11px;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    font-weight: 500;
+}
+
+/* Category card layout — proto: glyph chip top, name+count bottom */
+.category-item .category-main { /* override chunk 3 row layout */
+    flex: 1;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    gap: 10px;
+}
+
+/* Native dialog → bottom-sheet feel (proto modals) */
+@media (max-width: 540px) {
+    dialog.modal {
+        margin: 0 auto auto !important;
+        position: fixed !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        top: auto !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        border-radius: 22px 22px 0 0 !important;
+    }
+    dialog.modal .modal-content,
+    dialog.modal .popup-content {
+        border-radius: 22px 22px 0 0 !important;
+        border-bottom: none !important;
+        max-height: 88vh;
+    }
+    dialog.modal .modal-content::before,
+    dialog.modal .popup-content::before {
+        content: "";
+        display: block;
+        width: 42px;
+        height: 4px;
+        border-radius: 99px;
+        background: var(--d-rule);
+        margin: 10px auto 4px;
+    }
+}
+
+/* Settings drawer becomes a bottom sheet on phones too */
+@media (max-width: 540px) {
+    .settings-content {
+        width: 100% !important;
+        height: auto !important;
+        max-height: 88vh;
+        border-radius: 22px 22px 0 0 !important;
+        border-left: none !important;
+        border-top: 1px solid var(--d-rule) !important;
+    }
+    .settings-menu.active .settings-content,
+    .settings-menu.show .settings-content {
+        margin-top: auto;
+    }
+}
+
+/* Period nav — give the row a card-like surface */
+.period-navigation {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 12px;
+    margin: 0 18px 16px;
+    padding: 6px 8px !important;
+}
+.period-navigation .nav-btn {
+    border-radius: 8px;
+}
+.period-navigation .nav-btn svg { width: 14px; height: 14px; }
+.period-navigation .current-date {
+    flex: 1;
+    text-align: center;
+}
+
+/* Make the chunky `.tab-content` fade-in feel intentional now that we
+   stack three sections under the same flexbox, only one of them visible. */
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.tab-content { animation: protoFadeIn 0.18s ease both; }
+@keyframes protoFadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0);   }
+}
+
+/* Category card — proto layout glue ------------------------------------ */
+.category-item .category-glyph {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    color: var(--cat-autre);
+    background: var(--cat-autre-bg);
+    box-shadow: inset 0 0 20px var(--cat-autre-bg);
+}
+.category-main[data-category^="Bière" i] .category-glyph,
+.category-main[data-category="Bière" i] .category-glyph     { color: var(--cat-biere);    background: var(--cat-biere-bg);    box-shadow: inset 0 0 20px var(--cat-biere-bg); }
+.category-main[data-category^="Vin" i] .category-glyph,
+.category-main[data-category="Vin" i] .category-glyph       { color: var(--cat-vin);      background: var(--cat-vin-bg);      box-shadow: inset 0 0 20px var(--cat-vin-bg); }
+.category-main[data-category^="Spirit" i] .category-glyph    { color: var(--cat-spirit);   background: var(--cat-spirit-bg);   box-shadow: inset 0 0 20px var(--cat-spirit-bg); }
+.category-main[data-category^="Cocktail" i] .category-glyph  { color: var(--cat-cocktail); background: var(--cat-cocktail-bg); box-shadow: inset 0 0 20px var(--cat-cocktail-bg); }
+
+/* Now that the proto chip is real, retire the pseudo-chip from chunk 3 */
+.category-item .category-main::before { content: none !important; }
+
+.category-item .category-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+/* Edit button is now a sibling of .category-main; place it absolutely */
+.category-item { position: relative; }
+.category-item > .category-edit-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 26px !important;
+    height: 26px !important;
+    border-radius: 8px !important;
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    color: var(--d-muted) !important;
+    display: grid !important;
+    place-items: center;
+    padding: 0 !important;
+    z-index: 2;
+    box-shadow: none !important;
+}
+
+/* The legacy markup wrapped count + edit in .category-actions and the
+   chunk-3 selectors targeted that. Clean up so the proto layout reads. */
+.category-item .category-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+}
+.category-item .category-count {
+    font-family: var(--d-font-sans);
+    font-size: 11px !important;
+    color: var(--d-muted) !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    letter-spacing: 0.1px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.category-item .category-count::before {
+    content: "●";
+    font-size: 9px;
+    color: var(--cat-autre);
+}
+.category-main[data-category^="Bière" i] + .category-edit-btn ~ * .category-count::before,
+.category-main[data-category^="Bière" i] ~ * .category-count::before { color: var(--cat-biere); }
+.category-main[data-category^="Bière" i] .category-count::before    { color: var(--cat-biere); }
+.category-main[data-category^="Vin" i] .category-count::before       { color: var(--cat-vin); }
+.category-main[data-category^="Spirit" i] .category-count::before    { color: var(--cat-spirit); }
+.category-main[data-category^="Cocktail" i] .category-count::before  { color: var(--cat-cocktail); }
+
+/* CHUNK 7 END */
+
+/* =============================================================================
+   CHUNK 8a — proto skin: kill legacy paddings, set up the mobile stage,
+   re-skin the app header (italic title + date sub-line + BAC pill).
+   All selectors are scoped with html[data-skin="proto"] so we win the
+   specificity war against main.css / components.css / responsive.css.
+   ============================================================================= */
+
+html[data-skin="proto"], html[data-skin="proto"] body {
+    margin: 0;
+    padding: 0;
+    background: var(--d-bg-gradient) !important;
+    color: var(--d-ink) !important;
+    font-family: var(--d-font-sans) !important;
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+/* The mobile stage — centers the app on desktop, full-bleed on phones */
+html[data-skin="proto"] body { display: block; }
+html[data-skin="proto"] #app {
+    background: transparent !important;
+    margin: 0 auto !important;
+    max-width: 480px !important;
+    min-height: 100vh;
+    padding: 0 0 96px !important;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    box-shadow: none;
+}
+@media (min-width: 540px) {
+    html[data-skin="proto"] #app {
+        margin-top: 24px !important;
+        margin-bottom: 24px !important;
+        min-height: calc(100vh - 48px);
+        border-radius: 28px !important;
+        background: var(--d-bg) !important;
+        border: 1px solid var(--d-rule);
+        box-shadow: var(--d-shadow);
+        overflow: hidden;
+    }
+}
+
+/* App header — proto: ☰  Title (italic serif)  ☉ BAC ------------------ */
+html[data-skin="proto"] .app-header,
+html[data-skin="proto"] .proto-header {
+    background: transparent !important;
+    border-bottom: 1px solid var(--d-rule) !important;
+    padding: 14px 18px 12px !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    position: static !important;
+    display: flex !important;
+    align-items: center;
+    gap: 12px;
+}
+
+html[data-skin="proto"] .settings-btn {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 12px !important;
+    color: var(--d-ink) !important;
+    padding: 0 !important;
+    display: grid !important;
+    place-items: center;
+    box-shadow: none !important;
+}
+html[data-skin="proto"] .hamburger-icon {
+    width: 16px !important;
+    gap: 3px;
+}
+html[data-skin="proto"] .hamburger-icon span {
+    background: var(--d-ink) !important;
+    height: 1.6px !important;
+    border-radius: 2px;
+}
+html[data-skin="proto"] .hamburger-icon span:last-child {
+    width: 70%;
+}
+
+html[data-skin="proto"] .proto-header-title {
+    flex: 1;
+    text-align: center;
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    line-height: 1;
+}
+html[data-skin="proto"] .app-title,
+html[data-skin="proto"] .proto-header-title .app-title {
+    font-family: var(--d-font-serif) !important;
+    font-style: italic !important;
+    font-weight: 400 !important;
+    font-size: 22px !important;
+    line-height: 1 !important;
+    color: var(--d-ink) !important;
+    letter-spacing: -0.4px !important;
+    margin: 0 !important;
+    text-align: center;
+    padding: 0 !important;
+}
+html[data-skin="proto"] .proto-header-date {
+    font-family: var(--d-font-sans);
+    font-size: 10px;
+    color: var(--d-muted);
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    font-weight: 500;
+    line-height: 1;
+}
+
+html[data-skin="proto"] .header-spacer {
+    width: auto !important;
+    min-width: 38px;
+    height: 32px;
+    display: flex !important;
+    align-items: center;
+    justify-content: flex-end;
+}
+html[data-skin="proto"] .bac-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px 6px 9px;
+    border-radius: 12px;
+    background: var(--d-accent-soft);
+    border: 1px solid var(--d-accent-soft-bd);
+    color: var(--d-accent);
+    font-family: var(--d-font-num);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    line-height: 1;
+}
+html[data-skin="proto"] .bac-pill::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 99px;
+    background: var(--d-accent);
+    box-shadow: 0 0 8px var(--d-accent);
+}
+
+/* Main content area inside the stage */
+html[data-skin="proto"] .main-content {
+    flex: 1;
+    background: transparent !important;
+    padding: 0 !important;
+    display: block;
+}
+html[data-skin="proto"] .tab-content {
+    background: transparent !important;
+    padding: 8px 0 12px !important;
+    display: none;
+}
+html[data-skin="proto"] .tab-content.active { display: block; }
+
+/* CHUNK 8a END */
+
+/* =============================================================================
+   CHUNK 8b — bottom nav, FAB, period selector, search input
+   ============================================================================= */
+
+/* Hide ALL non-proto top tab navigations */
+html[data-skin="proto"] .tab-navigation:not(.proto-bottom-nav) {
+    display: none !important;
+}
+
+/* Bottom nav anchored to the stage */
+html[data-skin="proto"] .proto-bottom-nav {
+    position: sticky !important;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    margin: 0 !important;
+    max-width: none !important;
+    background: color-mix(in oklch, var(--d-bg) 92%, transparent) !important;
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--d-rule) !important;
+    padding: 6px 8px max(env(safe-area-inset-bottom), 8px) !important;
+    display: flex !important;
+    justify-content: space-around;
+    z-index: 25;
+}
+@media (min-width: 540px) {
+    html[data-skin="proto"] .proto-bottom-nav {
+        position: sticky !important;
+        bottom: 0;
+        border-radius: 0 0 28px 28px;
+    }
+}
+
+html[data-skin="proto"] .proto-bottom-nav .tab-btn {
+    flex: 1 !important;
+    background: transparent !important;
+    border: none !important;
+    color: var(--d-muted) !important;
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 10px 4px !important;
+    border-radius: 12px;
+    position: relative;
+    box-shadow: none !important;
+    font-size: 10px !important;
+    letter-spacing: 0.2px !important;
+    font-weight: 400 !important;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+html[data-skin="proto"] .proto-bottom-nav .tab-btn .bn-icon {
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+}
+html[data-skin="proto"] .proto-bottom-nav .tab-btn .bn-icon svg {
+    width: 22px !important;
+    height: 22px !important;
+    fill: none;
+    stroke: currentColor;
+}
+html[data-skin="proto"] .proto-bottom-nav .tab-btn .bn-label { line-height: 1; }
+html[data-skin="proto"] .proto-bottom-nav .tab-btn::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    width: 20px;
+    height: 3px;
+    border-radius: 99px;
+    background: transparent;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+html[data-skin="proto"] .proto-bottom-nav .tab-btn.active {
+    color: var(--d-accent) !important;
+    font-weight: 600 !important;
+}
+html[data-skin="proto"] .proto-bottom-nav .tab-btn.active::after {
+    background: var(--d-accent);
+    box-shadow: 0 0 8px var(--d-accent);
+}
+
+/* Floating action button — proto: 58x58, 20px radius, equal margins */
+html[data-skin="proto"] .fab-container {
+    position: absolute !important;
+    bottom: 92px !important;
+    right: 18px !important;
+    z-index: 30;
+}
+html[data-skin="proto"] .fab-main {
+    width: 58px !important;
+    height: 58px !important;
+    border-radius: 20px !important;
+    background: var(--d-accent) !important;
+    color: #fff !important;
+    border: none !important;
+    box-shadow:
+        0 10px 26px color-mix(in oklch, var(--d-accent) 45%, transparent),
+        0 0 0 1px color-mix(in oklch, var(--d-accent) 60%, transparent) !important;
+    display: grid !important;
+    place-items: center;
+    padding: 0 !important;
+    cursor: pointer;
+    transition: transform 0.18s ease;
+}
+html[data-skin="proto"] .fab-main:hover { transform: translateY(-2px) scale(1.02); }
+html[data-skin="proto"] .fab-main .fab-icon {
+    font-size: 26px !important;
+    line-height: 1 !important;
+    color: #fff !important;
+    font-weight: 300 !important;
+}
+
+/* Search inputs (categories + history) */
+html[data-skin="proto"] .search-input-wrapper {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 14px !important;
+    padding: 11px 14px !important;
+    display: flex !important;
+    align-items: center;
+    gap: 10px;
+    box-shadow: none !important;
+}
+html[data-skin="proto"] .search-input-wrapper .search-icon {
+    color: var(--d-muted) !important;
+    flex-shrink: 0;
+}
+html[data-skin="proto"] .search-input-wrapper input {
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    color: var(--d-ink) !important;
+    font-family: var(--d-font-sans) !important;
+    font-size: 14px !important;
+    letter-spacing: -0.1px !important;
+    padding: 0 !important;
+    width: 100% !important;
+    flex: 1;
+}
+html[data-skin="proto"] .search-input-wrapper input::placeholder {
+    color: var(--d-muted);
+}
+html[data-skin="proto"] .search-clear-btn {
+    background: transparent !important;
+    border: none !important;
+    color: var(--d-muted) !important;
+    padding: 0 !important;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+}
+html[data-skin="proto"] .categories-search-bar {
+    padding: 8px 18px 12px !important;
+    background: transparent !important;
+}
+
+/* Period selector (Stats) */
+html[data-skin="proto"] .period-selector {
+    display: flex !important;
+    gap: 6px !important;
+    padding: 10px 18px 12px !important;
+    overflow-x: auto;
+    background: transparent !important;
+    border: none !important;
+    scrollbar-width: none;
+}
+html[data-skin="proto"] .period-selector::-webkit-scrollbar { display: none; }
+html[data-skin="proto"] .period-selector .period-btn {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    color: var(--d-ink-2) !important;
+    padding: 7px 13px !important;
+    border-radius: 99px !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    letter-spacing: -0.1px !important;
+    box-shadow: none !important;
+    white-space: nowrap;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+html[data-skin="proto"] .period-selector .period-btn.active {
+    background: var(--d-ink) !important;
+    color: var(--d-bg) !important;
+    border-color: var(--d-ink) !important;
+}
+
+/* Period nav (arrows + label) */
+html[data-skin="proto"] .period-navigation {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px !important;
+    margin: 0 18px 14px !important;
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 14px !important;
+}
+html[data-skin="proto"] .period-navigation .nav-btn {
+    width: 32px !important;
+    height: 32px !important;
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 10px !important;
+    color: var(--d-ink-2) !important;
+    display: grid !important;
+    place-items: center;
+    padding: 0 !important;
+    box-shadow: none !important;
+    font-size: 16px !important;
+    cursor: pointer;
+}
+html[data-skin="proto"] .period-navigation .current-date {
+    flex: 1;
+    text-align: center;
+    font-family: var(--d-font-serif);
+    font-style: italic;
+    font-size: 17px;
+    color: var(--d-ink) !important;
+    letter-spacing: -0.3px;
+}
+
+/* CHUNK 8b END */
+
+/* =============================================================================
+   CHUNK 8c — Categories grid (2-up cards with glyph chip + name + count)
+   ============================================================================= */
+
+html[data-skin="proto"] .categories-container {
+    background: transparent !important;
+    padding: 0 !important;
+}
+
+html[data-skin="proto"] .section-head {
+    padding: 6px 18px 6px !important;
+    color: var(--d-muted);
+    font-family: var(--d-font-sans);
+    font-size: 11px;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    font-weight: 500;
+}
+
+html[data-skin="proto"] #categories-list.categories-list,
+html[data-skin="proto"] .categories-list {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 12px !important;
+    padding: 6px 18px 24px !important;
+    background: transparent !important;
+    flex-direction: row !important;
+}
+
+/* Category card — proto */
+html[data-skin="proto"] .proto-cat,
+html[data-skin="proto"] .category-item {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 18px !important;
+    padding: 14px !important;
+    box-shadow: none !important;
+    aspect-ratio: 1 / 1.05;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease;
+}
+html[data-skin="proto"] .proto-cat:hover,
+html[data-skin="proto"] .category-item:hover {
+    border-color: var(--d-accent-soft-bd) !important;
+    transform: translateY(-1px);
+}
+
+html[data-skin="proto"] .proto-cat__main {
+    flex: 1;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    gap: 12px;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    cursor: pointer;
+}
+
+/* Glyph chip in top-left */
+html[data-skin="proto"] .proto-cat__glyph {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    color: var(--cat-autre);
+    background: var(--cat-autre-bg);
+    box-shadow: inset 0 0 20px var(--cat-autre-bg);
+    flex-shrink: 0;
+}
+html[data-skin="proto"] .proto-cat--biere .proto-cat__glyph     { color: var(--cat-biere);    background: var(--cat-biere-bg);    box-shadow: inset 0 0 20px var(--cat-biere-bg); }
+html[data-skin="proto"] .proto-cat--vin .proto-cat__glyph       { color: var(--cat-vin);      background: var(--cat-vin-bg);      box-shadow: inset 0 0 20px var(--cat-vin-bg); }
+html[data-skin="proto"] .proto-cat--spirit .proto-cat__glyph    { color: var(--cat-spirit);   background: var(--cat-spirit-bg);   box-shadow: inset 0 0 20px var(--cat-spirit-bg); }
+html[data-skin="proto"] .proto-cat--cocktail .proto-cat__glyph  { color: var(--cat-cocktail); background: var(--cat-cocktail-bg); box-shadow: inset 0 0 20px var(--cat-cocktail-bg); }
+html[data-skin="proto"] .proto-cat--autre .proto-cat__glyph     { color: var(--cat-autre);    background: var(--cat-autre-bg);    box-shadow: inset 0 0 20px var(--cat-autre-bg); }
+html[data-skin="proto"] .proto-cat__glyph svg { width: 22px !important; height: 22px !important; }
+
+html[data-skin="proto"] .proto-cat__body {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+html[data-skin="proto"] .proto-cat__name,
+html[data-skin="proto"] .category-item .category-name {
+    font-family: var(--d-font-sans) !important;
+    font-size: 15.5px !important;
+    font-weight: 500 !important;
+    color: var(--d-ink) !important;
+    letter-spacing: -0.2px !important;
+    line-height: 1.2 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    word-break: break-word;
+}
+html[data-skin="proto"] .proto-cat__meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+}
+html[data-skin="proto"] .proto-cat__count,
+html[data-skin="proto"] .category-item .category-count {
+    font-family: var(--d-font-sans) !important;
+    font-size: 11px !important;
+    color: var(--d-muted) !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    letter-spacing: 0.1px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    height: auto;
+    line-height: 1.2;
+}
+html[data-skin="proto"] .proto-cat__count::before {
+    content: "●";
+    font-size: 9px;
+    color: var(--cat-autre);
+}
+html[data-skin="proto"] .proto-cat--biere .proto-cat__count::before    { color: var(--cat-biere); }
+html[data-skin="proto"] .proto-cat--vin .proto-cat__count::before       { color: var(--cat-vin); }
+html[data-skin="proto"] .proto-cat--spirit .proto-cat__count::before    { color: var(--cat-spirit); }
+html[data-skin="proto"] .proto-cat--cocktail .proto-cat__count::before  { color: var(--cat-cocktail); }
+html[data-skin="proto"] .proto-cat--autre .proto-cat__count::before     { color: var(--cat-autre); }
+
+/* Edit button anchored top-right */
+html[data-skin="proto"] .proto-cat__edit,
+html[data-skin="proto"] .category-item .category-edit-btn {
+    position: absolute !important;
+    top: 10px !important;
+    right: 10px !important;
+    width: 26px !important;
+    height: 26px !important;
+    border-radius: 8px !important;
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    color: var(--d-muted) !important;
+    display: grid !important;
+    place-items: center;
+    padding: 0 !important;
+    z-index: 2;
+    box-shadow: none !important;
+    cursor: pointer;
+}
+html[data-skin="proto"] .proto-cat__edit:hover {
+    color: var(--d-ink) !important;
+    border-color: var(--d-accent-soft-bd) !important;
+}
+
+/* Inline editor */
+html[data-skin="proto"] .proto-cat__editor,
+html[data-skin="proto"] .category-item .category-editor {
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    margin: 12px -14px -14px;
+    padding: 12px 14px !important;
+    background: var(--d-surface-2) !important;
+    border-top: 1px solid var(--d-rule) !important;
+    border-radius: 0 0 18px 18px;
+}
+html[data-skin="proto"] .proto-cat__editor.active,
+html[data-skin="proto"] .category-item .category-editor.active {
+    display: flex !important;
+}
+html[data-skin="proto"] .proto-cat__editor input,
+html[data-skin="proto"] .category-item .category-editor input {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 10px !important;
+    padding: 9px 12px !important;
+    color: var(--d-ink) !important;
+    font-size: 13px !important;
+    outline: none !important;
+    width: 100%;
+}
+html[data-skin="proto"] .proto-cat__editor button,
+html[data-skin="proto"] .category-item .category-editor button {
+    border-radius: 10px !important;
+    padding: 9px 12px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    border: 1px solid var(--d-rule) !important;
+    cursor: pointer;
+    box-shadow: none !important;
+}
+html[data-skin="proto"] .proto-cat__editor .save-rename-btn,
+html[data-skin="proto"] .category-item .category-editor .save-rename-btn {
+    background: var(--d-accent) !important;
+    color: #fff !important;
+    border-color: var(--d-accent) !important;
+}
+html[data-skin="proto"] .proto-cat__editor .delete-category-btn,
+html[data-skin="proto"] .category-item .category-editor .delete-category-btn {
+    background: transparent !important;
+    color: var(--d-bad) !important;
+}
+html[data-skin="proto"] .proto-cat__editor .cancel-edit-btn,
+html[data-skin="proto"] .category-item .category-editor .cancel-edit-btn {
+    background: var(--d-surface) !important;
+    color: var(--d-ink-2) !important;
+}
+
+/* CHUNK 8c END */
+
+/* =============================================================================
+   CHUNK 8d — History tab: toolbar pills, day groups (rail+elbow), entries
+   ============================================================================= */
+
+html[data-skin="proto"] .history-container {
+    background: transparent !important;
+    padding: 0 !important;
+}
+
+html[data-skin="proto"] .history-toolbar {
+    display: flex !important;
+    flex-direction: column;
+    gap: 10px;
+    padding: 8px 18px 12px !important;
+    background: transparent !important;
+    border: none !important;
+}
+html[data-skin="proto"] .history-search-wrapper { flex: 1; }
+
+html[data-skin="proto"] .history-filter-pills {
+    display: flex !important;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 2px 0 4px;
+}
+html[data-skin="proto"] .history-filter-pills::-webkit-scrollbar { display: none; }
+html[data-skin="proto"] .history-filter-pills .pill {
+    padding: 7px 13px;
+    border-radius: 99px;
+    background: transparent;
+    color: var(--d-ink-2);
+    border: 1px solid var(--d-rule);
+    font-family: var(--d-font-sans);
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: -0.1px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: none;
+}
+html[data-skin="proto"] .history-filter-pills .pill .pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 99px;
+    background: currentColor;
+    opacity: 0.85;
+}
+html[data-skin="proto"] .history-filter-pills .pill.active {
+    background: var(--d-ink);
+    color: var(--d-bg);
+    border-color: var(--d-ink);
+    font-weight: 500;
+}
+html[data-skin="proto"] .history-filter.visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+}
+
+/* History list */
+html[data-skin="proto"] #history-list.history-list {
+    display: flex !important;
+    flex-direction: column;
+    gap: 14px !important;
+    padding: 4px 18px 24px !important;
+    background: transparent !important;
+}
+
+/* Day group — proto */
+html[data-skin="proto"] .proto-day,
+html[data-skin="proto"] .history-day {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    position: relative;
+}
+html[data-skin="proto"] .proto-day__header,
+html[data-skin="proto"] .history-day-header {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 12px 12px 0 0 !important;
+    padding: 12px 14px !important;
+    display: flex !important;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    border-bottom: none !important;
+}
+html[data-skin="proto"] .proto-day.collapsed .proto-day__header,
+html[data-skin="proto"] .history-day.collapsed .history-day-header {
+    border-radius: 12px !important;
+    border-bottom: 1px solid var(--d-rule) !important;
+}
+
+/* Chevron — points down when open, right when collapsed */
+html[data-skin="proto"] .proto-day__chev {
+    display: inline-flex;
+    color: var(--d-muted);
+    transition: transform 0.2s ease;
+}
+html[data-skin="proto"] .proto-day.collapsed .proto-day__chev,
+html[data-skin="proto"] .history-day.collapsed .proto-day__chev {
+    transform: rotate(-90deg);
+}
+
+html[data-skin="proto"] .proto-day__info,
+html[data-skin="proto"] .history-day-info {
+    flex: 1;
+    min-width: 0;
+}
+html[data-skin="proto"] .proto-day__date,
+html[data-skin="proto"] .history-day-date {
+    font-family: var(--d-font-serif) !important;
+    font-style: normal !important;
+    font-size: 18px !important;
+    font-weight: 400 !important;
+    color: var(--d-ink) !important;
+    letter-spacing: -0.2px !important;
+    line-height: 1.05 !important;
+    margin: 0 !important;
+    text-transform: lowercase;
+}
+html[data-skin="proto"] .proto-day__summary,
+html[data-skin="proto"] .history-day-summary {
+    font-family: var(--d-font-num) !important;
+    font-size: 10px !important;
+    color: var(--d-muted) !important;
+    letter-spacing: 0.6px !important;
+    margin-top: 3px !important;
+    font-weight: 400 !important;
+}
+html[data-skin="proto"] .proto-day__toggle,
+html[data-skin="proto"] .history-day-toggle {
+    display: none !important;
+}
+
+/* Day content — wrapped card with the connector rail */
+html[data-skin="proto"] .proto-day__content,
+html[data-skin="proto"] .history-day-content {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-top: none !important;
+    border-radius: 0 0 12px 12px;
+    padding: 0 0 0 24px !important;
+    position: relative;
+    overflow: hidden;
+}
+html[data-skin="proto"] .proto-day.collapsed .proto-day__content,
+html[data-skin="proto"] .history-day.collapsed .history-day-content {
+    display: none !important;
+}
+html[data-skin="proto"] .proto-day__content::before,
+html[data-skin="proto"] .history-day-content::before {
+    content: "";
+    position: absolute;
+    left: 22px;
+    top: 0;
+    bottom: 14px;
+    width: 2px;
+    background: var(--d-rule);
+}
+
+/* Entry rows */
+html[data-skin="proto"] .proto-entry,
+html[data-skin="proto"] .history-drink-item {
+    display: flex !important;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 12px 12px 18px !important;
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 1px solid var(--d-rule) !important;
+    box-shadow: none !important;
+    position: relative;
+    transform: none;
+    overflow: visible;
+}
+html[data-skin="proto"] .proto-entry:last-child,
+html[data-skin="proto"] .history-drink-item:last-child {
+    border-bottom: none !important;
+}
+/* Elbow connector from rail to dot */
+html[data-skin="proto"] .proto-entry::before,
+html[data-skin="proto"] .history-drink-item::before {
+    content: "";
+    position: absolute;
+    left: -2px;
+    top: 50%;
+    width: 14px;
+    height: 2px;
+    background: var(--d-rule);
+}
+/* Coloured dot per category */
+html[data-skin="proto"] .proto-entry__dot {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 8px;
+    height: 8px;
+    border-radius: 99px;
+    background: var(--cat-autre);
+    box-shadow: 0 0 0 3px var(--d-surface);
+    z-index: 1;
+    flex-shrink: 0;
+}
+html[data-skin="proto"] .proto-entry--biere .proto-entry__dot     { background: var(--cat-biere); }
+html[data-skin="proto"] .proto-entry--vin .proto-entry__dot       { background: var(--cat-vin); }
+html[data-skin="proto"] .proto-entry--spirit .proto-entry__dot    { background: var(--cat-spirit); }
+html[data-skin="proto"] .proto-entry--cocktail .proto-entry__dot  { background: var(--cat-cocktail); }
+html[data-skin="proto"] .proto-entry--autre .proto-entry__dot     { background: var(--cat-autre); }
+
+/* Reset legacy "::after" dots from earlier overrides */
+html[data-skin="proto"] .history-drink-item::after { content: none !important; }
+
+html[data-skin="proto"] .proto-entry__info,
+html[data-skin="proto"] .history-drink-info {
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+html[data-skin="proto"] .proto-entry__main,
+html[data-skin="proto"] .history-drink-main {
+    display: flex !important;
+    align-items: baseline;
+    gap: 8px;
+    justify-content: space-between;
+}
+html[data-skin="proto"] .proto-entry__name,
+html[data-skin="proto"] .history-drink-name {
+    font-family: var(--d-font-sans) !important;
+    font-size: 14px !important;
+    color: var(--d-ink) !important;
+    font-weight: 500 !important;
+    letter-spacing: -0.1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 70%;
+    background: transparent !important;
+}
+html[data-skin="proto"] .proto-entry__time,
+html[data-skin="proto"] .history-drink-time {
+    font-family: var(--d-font-num) !important;
+    font-size: 11px !important;
+    color: var(--d-ink-2) !important;
+    background: transparent !important;
+}
+html[data-skin="proto"] .proto-entry__details,
+html[data-skin="proto"] .history-drink-details {
+    color: var(--d-muted) !important;
+    font-size: 11.5px !important;
+    letter-spacing: 0.1px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+html[data-skin="proto"] .history-drink-quantity,
+html[data-skin="proto"] .history-drink-alcohol {
+    background: transparent !important;
+    color: inherit !important;
+    border: none !important;
+    padding: 0 !important;
+    font-size: inherit !important;
+}
+html[data-skin="proto"] .history-drink-alcohol::before {
+    content: "·";
+    margin-right: 6px;
+    opacity: 0.4;
+}
+html[data-skin="proto"] .proto-entry__loc,
+html[data-skin="proto"] .history-drink-location {
+    color: var(--d-muted) !important;
+    font-size: 11px !important;
+}
+
+/* Quick + button on each entry */
+html[data-skin="proto"] .proto-entry__add,
+html[data-skin="proto"] .history-drink-add {
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 10px !important;
+    background: var(--d-accent-soft) !important;
+    border: 1px solid var(--d-accent-soft-bd) !important;
+    color: var(--d-accent) !important;
+    display: grid !important;
+    place-items: center;
+    padding: 0 !important;
+    box-shadow: none !important;
+    flex-shrink: 0;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+}
+html[data-skin="proto"] .proto-entry__add span,
+html[data-skin="proto"] .history-drink-add span {
+    color: inherit !important;
+    line-height: 1;
+}
+
+/* CHUNK 8d END */
+
+/* =============================================================================
+   CHUNK 8e — Stats sections, modals (sheet style), settings drawer, empty,
+   toasts, scanner
+   ============================================================================= */
+
+html[data-skin="proto"] .statistics-container {
+    background: transparent !important;
+    padding: 0 !important;
+}
+html[data-skin="proto"] #statistics-content.statistics-content {
+    padding: 4px 18px 28px !important;
+    background: transparent !important;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+html[data-skin="proto"] .stats-section {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 16px !important;
+    padding: 16px !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+}
+html[data-skin="proto"] .stats-section .section-header,
+html[data-skin="proto"] .stats-section h2,
+html[data-skin="proto"] .stats-section h3 {
+    font-family: var(--d-font-serif) !important;
+    font-style: italic !important;
+    font-weight: 400 !important;
+    font-size: 19px !important;
+    color: var(--d-ink) !important;
+    letter-spacing: -0.3px !important;
+    margin: 0 0 12px !important;
+    padding: 0 !important;
+}
+
+html[data-skin="proto"] .stats-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) !important;
+    gap: 10px !important;
+}
+html[data-skin="proto"] .stat-card {
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 14px !important;
+    padding: 14px !important;
+    box-shadow: none !important;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+html[data-skin="proto"] .stat-card .stat-label {
+    color: var(--d-muted) !important;
+    font-size: 10px !important;
+    letter-spacing: 1.1px !important;
+    text-transform: uppercase !important;
+    font-weight: 500 !important;
+    margin: 0 !important;
+}
+html[data-skin="proto"] .stat-card .stat-value {
+    font-family: var(--d-font-serif) !important;
+    font-size: 26px !important;
+    font-weight: 400 !important;
+    letter-spacing: -0.4px !important;
+    color: var(--d-ink) !important;
+    line-height: 1.1;
+    margin: 4px 0 0 !important;
+}
+
+html[data-skin="proto"] .chart-container,
+html[data-skin="proto"] .chart-wrapper,
+html[data-skin="proto"] .echarts-wrapper {
+    background: transparent !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 14px !important;
+    padding: 12px !important;
+    margin-top: 10px !important;
+}
+
+/* Modals — bottom-sheet style on phones, centered card on desktop */
+html[data-skin="proto"] dialog.modal {
+    border: none !important;
+    background: transparent !important;
+    color: var(--d-ink) !important;
+    padding: 0 !important;
+    box-shadow: var(--d-shadow) !important;
+    width: 92% !important;
+    max-width: 480px !important;
+    border-radius: 22px !important;
+    overflow: visible !important;
+}
+html[data-skin="proto"] dialog.modal::backdrop {
+    background: var(--d-scrim) !important;
+    backdrop-filter: blur(2px);
+}
+html[data-skin="proto"] dialog.modal .modal-content,
+html[data-skin="proto"] dialog.modal .popup-content {
+    background: var(--d-bg) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 22px !important;
+    padding: 0 !important;
+    overflow: hidden;
+    max-height: min(86vh, 720px);
+    display: flex;
+    flex-direction: column;
+}
+@media (max-width: 540px) {
+    html[data-skin="proto"] dialog.modal {
+        margin: 0 auto auto !important;
+        position: fixed !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        top: auto !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        border-radius: 22px 22px 0 0 !important;
+    }
+    html[data-skin="proto"] dialog.modal .modal-content,
+    html[data-skin="proto"] dialog.modal .popup-content {
+        border-radius: 22px 22px 0 0 !important;
+        max-height: 88vh !important;
+    }
+    html[data-skin="proto"] dialog.modal .modal-content::before,
+    html[data-skin="proto"] dialog.modal .popup-content::before {
+        content: "";
+        display: block;
+        width: 42px;
+        height: 4px;
+        border-radius: 99px;
+        background: var(--d-rule);
+        margin: 10px auto 4px;
+    }
+}
+html[data-skin="proto"] dialog.modal .modal-header {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px !important;
+    border-bottom: 1px solid var(--d-rule) !important;
+    background: transparent !important;
+}
+html[data-skin="proto"] dialog.modal .modal-header h2,
+html[data-skin="proto"] dialog.modal .modal-title {
+    font-family: var(--d-font-serif) !important;
+    font-style: italic !important;
+    font-weight: 400 !important;
+    font-size: 22px !important;
+    letter-spacing: -0.3px !important;
+    color: var(--d-ink) !important;
+    margin: 0 !important;
+}
+html[data-skin="proto"] dialog.modal .modal-close {
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 99px !important;
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    color: var(--d-ink-2) !important;
+    font-size: 18px !important;
+    display: grid !important;
+    place-items: center;
+    padding: 0 !important;
+    box-shadow: none !important;
+}
+html[data-skin="proto"] dialog.modal .modal-form,
+html[data-skin="proto"] dialog.modal .modal-body,
+html[data-skin="proto"] dialog.modal .drink-detail-content,
+html[data-skin="proto"] dialog.modal .category-detail-content,
+html[data-skin="proto"] dialog.modal .category-picker-list {
+    padding: 16px 20px !important;
+    overflow: auto;
+    background: transparent !important;
+    flex: 1;
+    min-height: 0;
+}
+
+/* Form fields */
+html[data-skin="proto"] .form-group { margin-bottom: 14px !important; }
+html[data-skin="proto"] .form-group label {
+    color: var(--d-muted) !important;
+    font-size: 10px !important;
+    letter-spacing: 1.4px !important;
+    text-transform: uppercase !important;
+    font-weight: 500 !important;
+    margin-bottom: 7px !important;
+    display: block;
+}
+html[data-skin="proto"] .form-group input,
+html[data-skin="proto"] .form-group select,
+html[data-skin="proto"] .form-group textarea {
+    width: 100% !important;
+    background: var(--d-surface-2) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 12px !important;
+    padding: 11px 14px !important;
+    color: var(--d-ink) !important;
+    font-family: var(--d-font-sans) !important;
+    font-size: 14px !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+html[data-skin="proto"] .form-row {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+}
+html[data-skin="proto"] .form-actions,
+html[data-skin="proto"] .modal-actions {
+    display: flex !important;
+    gap: 10px !important;
+    padding: 12px 20px 18px !important;
+    border-top: 1px solid var(--d-rule) !important;
+}
+html[data-skin="proto"] .btn-primary,
+html[data-skin="proto"] .btn-secondary,
+html[data-skin="proto"] .btn-danger {
+    border-radius: 12px !important;
+    font-size: 13.5px !important;
+    font-weight: 600 !important;
+    padding: 13px 16px !important;
+    border: 1px solid transparent !important;
+    box-shadow: none !important;
+    cursor: pointer;
+    flex: 1;
+}
+html[data-skin="proto"] .btn-primary {
+    background: var(--d-accent) !important;
+    color: #fff !important;
+    border-color: var(--d-accent) !important;
+    box-shadow: 0 4px 18px color-mix(in oklch, var(--d-accent) 38%, transparent) !important;
+}
+html[data-skin="proto"] .btn-secondary {
+    background: var(--d-surface-2) !important;
+    color: var(--d-ink) !important;
+    border-color: var(--d-rule) !important;
+}
+html[data-skin="proto"] .btn-danger {
+    background: transparent !important;
+    color: var(--d-bad) !important;
+    border-color: var(--d-rule) !important;
+}
+
+/* Empty state — kept inside the proto cards */
+html[data-skin="proto"] .empty-state {
+    background: transparent !important;
+    border: 1px dashed var(--d-rule) !important;
+    border-radius: 16px !important;
+    margin: 30px 18px !important;
+    padding: 40px 22px !important;
+    text-align: center;
+    box-shadow: none !important;
+}
+html[data-skin="proto"] .empty-state-icon {
+    color: var(--d-muted) !important;
+    opacity: 0.7;
+    margin-bottom: 14px;
+}
+html[data-skin="proto"] .empty-state-title {
+    font-family: var(--d-font-serif) !important;
+    font-style: italic;
+    font-size: 22px !important;
+    color: var(--d-ink) !important;
+    font-weight: 400 !important;
+    letter-spacing: -0.3px !important;
+    margin: 0 0 6px !important;
+}
+html[data-skin="proto"] .empty-state-description {
+    color: var(--d-muted) !important;
+    font-size: 13px !important;
+    line-height: 1.5;
+}
+
+/* Toast */
+html[data-skin="proto"] .toast,
+html[data-skin="proto"] [class*="toast"] {
+    background: var(--d-ink) !important;
+    color: var(--d-bg) !important;
+    border-radius: 99px !important;
+    padding: 10px 18px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    border: none !important;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Settings drawer becomes a bottom sheet on phones, side panel on desktop */
+html[data-skin="proto"] .settings-menu {
+    background: var(--d-scrim) !important;
+}
+html[data-skin="proto"] .settings-content {
+    background: var(--d-bg) !important;
+    border-left: 1px solid var(--d-rule) !important;
+    box-shadow: var(--d-shadow) !important;
+    width: min(360px, 92vw) !important;
+}
+html[data-skin="proto"] .settings-header {
+    padding: 22px 20px 16px !important;
+    border-bottom: 1px solid var(--d-rule) !important;
+    background: transparent !important;
+}
+html[data-skin="proto"] .settings-header h2 {
+    font-family: var(--d-font-serif) !important;
+    font-style: italic !important;
+    font-weight: 400 !important;
+    font-size: 24px !important;
+    letter-spacing: -0.4px !important;
+    color: var(--d-ink) !important;
+}
+html[data-skin="proto"] .settings-section {
+    background: var(--d-surface) !important;
+    border: 1px solid var(--d-rule) !important;
+    border-radius: 14px !important;
+    padding: 14px !important;
+    margin-bottom: 14px !important;
+    box-shadow: none !important;
+}
+html[data-skin="proto"] .settings-section h3 {
+    color: var(--d-muted) !important;
+    font-size: 10px !important;
+    letter-spacing: 1.4px !important;
+    text-transform: uppercase !important;
+    font-weight: 500 !important;
+    margin: 0 0 10px !important;
+}
+
+/* Scanner overlay */
+html[data-skin="proto"] #scanner-modal { background: transparent !important; }
+html[data-skin="proto"] .scanner-content {
+    background: #000 !important;
+    border-radius: 22px !important;
+    overflow: hidden !important;
+    border: 1px solid #111 !important;
+}
+html[data-skin="proto"] .scanner-modal-header {
+    background: rgba(0, 0, 0, 0.7) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+html[data-skin="proto"] .scanner-modal-header h2 {
+    color: #fff !important;
+    font-family: var(--d-font-serif) !important;
+    font-style: italic !important;
+    font-size: 20px !important;
+}
+html[data-skin="proto"] .scanner-frame {
+    border: 1.5px solid var(--d-accent) !important;
+    border-radius: 14px !important;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+}
+html[data-skin="proto"] .scanner-line {
+    background: linear-gradient(90deg, transparent, var(--d-accent), transparent) !important;
+    box-shadow: 0 0 14px var(--d-accent) !important;
+    height: 2px !important;
+}
+
+/* Pagination */
+html[data-skin="proto"] .history-pagination {
+    margin: 12px 18px !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+html[data-skin="proto"] .history-pagination .btn-secondary {
+    flex: none;
+}
+
+/* CHUNK 8e END — proto skin complete */
 /* CHUNK 5 END — file complete */
 

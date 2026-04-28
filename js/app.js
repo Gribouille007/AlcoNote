@@ -685,20 +685,50 @@ class AlcoNoteApp {
         }
     }
 
-    // Create category element
+    // Editorial glyph for a category — pure presentational SVG. No state.
+    renderCategoryGlyph(name) {
+        const k = (name || '').toLowerCase();
+        const s = 'width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"';
+        if (k === 'bière' || k === 'biere')
+            return `<svg ${s}><path d="M7 6h8v14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V6z"/><path d="M15 9h2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><line x1="9" y1="10" x2="9" y2="18"/><line x1="12" y1="10" x2="12" y2="18"/></svg>`;
+        if (k === 'vin')
+            return `<svg ${s}><path d="M8 3h8l-1 7a3 3 0 0 1-6 0L8 3z"/><line x1="12" y1="13" x2="12" y2="20"/><line x1="8" y1="21" x2="16" y2="21"/></svg>`;
+        if (k === 'spiritueux' || k.startsWith('spirit'))
+            return `<svg ${s}><rect x="8" y="8" width="8" height="13" rx="1"/><rect x="9.5" y="3" width="5" height="5" rx="0.5"/><line x1="8" y1="13" x2="16" y2="13"/></svg>`;
+        if (k === 'cocktail')
+            return `<svg ${s}><path d="M4 4h16l-8 9-8-9z"/><line x1="12" y1="13" x2="12" y2="20"/><line x1="8" y1="21" x2="16" y2="21"/></svg>`;
+        return `<svg ${s}><circle cx="12" cy="12" r="8"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/></svg>`;
+    }
+
+    // Slug helper for class hooks (Bière → biere, Spiritueux → spiritueux)
+    catSlug(name) {
+        const k = (name || '').toLowerCase();
+        if (k === 'bière' || k === 'biere')   return 'biere';
+        if (k === 'vin')                      return 'vin';
+        if (k.startsWith('spirit'))           return 'spirit';
+        if (k === 'cocktail')                 return 'cocktail';
+        return 'autre';
+    }
+
+    // Create category element  (proto layout: glyph chip + name + count + edit)
     createCategoryElement(category) {
         const element = document.createElement('div');
-        element.className = 'category-item animate-fade-in';
+        const slug = this.catSlug(category.name);
+        element.className = `category-item proto-cat proto-cat--${slug} animate-fade-in`;
         const escapedName = category.name.replace(/"/g, '&quot;');
+        const drinkCount = typeof category.drinkCount === 'number' ? category.drinkCount : 0;
         element.innerHTML = `
-            <div class="category-main" data-category="${escapedName}">
-                <div class="category-name"></div>
-                <div class="category-actions">
-                    <span class="category-count">${typeof category.drinkCount === 'number' ? category.drinkCount : 0}</span>
-                    <button class="category-edit-btn" aria-label="Modifier la catégorie" title="Modifier la catégorie"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+            <div class="category-main proto-cat__main" data-category="${escapedName}">
+                <div class="category-glyph proto-cat__glyph" aria-hidden="true">${this.renderCategoryGlyph(category.name)}</div>
+                <div class="category-body proto-cat__body">
+                    <div class="category-name proto-cat__name"></div>
+                    <div class="category-actions proto-cat__meta">
+                        <span class="category-count proto-cat__count">${drinkCount} entrée${drinkCount > 1 ? 's' : ''}</span>
+                    </div>
                 </div>
             </div>
-            <div class="category-editor">
+            <button class="category-edit-btn proto-cat__edit" aria-label="Modifier la catégorie" title="Modifier la catégorie"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button>
+            <div class="category-editor proto-cat__editor">
                 <input type="text" class="category-name-input" aria-label="Nouveau nom de catégorie">
                 <button class="btn-primary save-rename-btn">Enregistrer</button>
                 <button class="btn-danger delete-category-btn">Supprimer</button>
@@ -1130,30 +1160,33 @@ class AlcoNoteApp {
         }
     }
 
-    // Create history day element with collapsible functionality
+    // Create history day element with collapsible functionality (proto layout)
     createHistoryDayElement(date, drinks) {
         const element = document.createElement('div');
-        element.className = 'history-day animate-fade-in';
+        element.className = 'history-day proto-day animate-fade-in';
 
         const totalVolume = drinks.reduce((sum, drink) => {
             const volumeInCL = Utils.convertToStandardUnit(drink.quantity, drink.unit).quantity;
             return sum + volumeInCL;
         }, 0);
 
-        // Build header with safe values only
+        // Build header with safe values only — proto adds chevron+date+summary inline
         element.innerHTML = `
-            <div class="history-day-header">
-                <div class="history-day-info">
-                    <h3 class="history-day-date">${Utils.formatDate(date)}</h3>
-                    <div class="history-day-summary">
-                        ${drinks.length} boisson${drinks.length > 1 ? 's' : ''} • ${totalVolume >= 100 ? (totalVolume / 100).toFixed(1) + 'L' : Math.round(totalVolume) + 'cL'}
+            <div class="history-day-header proto-day__header">
+                <span class="proto-day__chev" aria-hidden="true">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </span>
+                <div class="history-day-info proto-day__info">
+                    <h3 class="history-day-date proto-day__date">${Utils.formatDate(date)}</h3>
+                    <div class="history-day-summary proto-day__summary">
+                        ${drinks.length} boisson${drinks.length > 1 ? 's' : ''} · ${totalVolume >= 100 ? (totalVolume / 100).toFixed(1) + 'L' : Math.round(totalVolume) + 'cL'}
                     </div>
                 </div>
-                <button class="history-day-toggle">
+                <button class="history-day-toggle proto-day__toggle" aria-label="Replier / déplier">
                     <span class="toggle-icon">▼</span>
                 </button>
             </div>
-            <div class="history-day-content"></div>
+            <div class="history-day-content proto-day__content"></div>
         `;
 
         const contentEl = element.querySelector('.history-day-content');
@@ -1161,25 +1194,31 @@ class AlcoNoteApp {
         // Build each drink item using DOM API for user-provided data (XSS-safe)
         drinks.forEach(drink => {
             const item = document.createElement('div');
-            item.className = 'history-drink-item swipeable';
+            const slug = this.catSlug(drink.category || 'autre');
+            item.className = `history-drink-item swipeable proto-entry proto-entry--${slug}`;
             item.dataset.drinkId = drink.id;
 
+            const dot = document.createElement('span');
+            dot.className = 'proto-entry__dot';
+            dot.setAttribute('aria-hidden', 'true');
+            item.appendChild(dot);
+
             const info = document.createElement('div');
-            info.className = 'history-drink-info';
+            info.className = 'history-drink-info proto-entry__info';
 
             const main = document.createElement('div');
-            main.className = 'history-drink-main';
+            main.className = 'history-drink-main proto-entry__main';
             const nameSpan = document.createElement('span');
-            nameSpan.className = 'history-drink-name';
+            nameSpan.className = 'history-drink-name proto-entry__name';
             nameSpan.textContent = drink.name;
             const timeSpan = document.createElement('span');
-            timeSpan.className = 'history-drink-time';
+            timeSpan.className = 'history-drink-time proto-entry__time';
             timeSpan.textContent = drink.time;
             main.appendChild(nameSpan);
             main.appendChild(timeSpan);
 
             const details = document.createElement('div');
-            details.className = 'history-drink-details';
+            details.className = 'history-drink-details proto-entry__details';
             const qtySpan = document.createElement('span');
             qtySpan.className = 'history-drink-quantity';
             qtySpan.textContent = Utils.formatQuantity(drink.quantity, drink.unit);
@@ -1187,7 +1226,7 @@ class AlcoNoteApp {
             if (drink.alcoholContent) {
                 const alcSpan = document.createElement('span');
                 alcSpan.className = 'history-drink-alcohol';
-                alcSpan.textContent = `${drink.alcoholContent}%`;
+                alcSpan.textContent = `${drink.alcoholContent}°`;
                 details.appendChild(alcSpan);
             }
 
@@ -1196,13 +1235,14 @@ class AlcoNoteApp {
 
             if (drink.location) {
                 const locDiv = document.createElement('div');
-                locDiv.className = 'history-drink-location';
+                locDiv.className = 'history-drink-location proto-entry__loc';
                 locDiv.textContent = drink.location.address || 'Géolocalisé';
                 info.appendChild(locDiv);
             }
 
             const addBtn = document.createElement('button');
-            addBtn.className = 'history-drink-add';
+            addBtn.className = 'history-drink-add proto-entry__add';
+            addBtn.setAttribute('aria-label', 'Ajouter à nouveau');
             addBtn.innerHTML = '<span>+</span>';
             addBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
