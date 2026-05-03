@@ -266,18 +266,19 @@ function SectionHead({ children, right }) {
 // ── Pill ──────────────────────────────────────────────────────────
 function Pill({ active, onClick, children, color }) {
   return (
-    <div onClick={onClick} style={{
-      padding: '7px 13px', borderRadius: 99, cursor: 'pointer',
-      background: active ? T.ink : 'transparent',
-      color: active ? T.bg : T.ink2,
-      border: active ? `1px solid ${T.ink}` : `1px solid ${T.rule}`,
-      fontSize: 12, fontWeight: active ? 500 : 400, letterSpacing: -0.1,
-      whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6,
-      flexShrink: 0,
-    }}>
+    <button type="button" onClick={onClick} aria-pressed={active ? 'true' : 'false'}
+      style={{
+        padding: '7px 13px', borderRadius: 99, cursor: 'pointer',
+        background: active ? T.ink : 'transparent',
+        color: active ? T.bg : T.ink2,
+        border: active ? `1px solid ${T.ink}` : `1px solid ${T.rule}`,
+        fontSize: 12, fontWeight: active ? 500 : 400, letterSpacing: -0.1,
+        whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6,
+        flexShrink: 0, fontFamily: 'inherit',
+      }}>
       {color && !active && <span style={{ color, fontSize: 10 }}>●</span>}
       {children}
-    </div>
+    </button>
   );
 }
 
@@ -334,6 +335,79 @@ function SheetOverlay({ children, onClose, side = 'bottom' }) {
   );
 }
 
+// ── Styled confirmation dialog (replaces native confirm()) ────────
+// Usage: open with `Confirm.ask({ title, message, confirmText, danger })`
+// → returns a Promise<boolean>. The host component must mount <ConfirmHost/>
+// once near the top of the tree.
+const Confirm = (() => {
+  let setter = null;
+  return {
+    _bind(fn) { setter = fn; },
+    ask(opts) {
+      return new Promise(resolve => {
+        if (!setter) { resolve(window.confirm(opts.message || '')); return; }
+        setter({ ...opts, _resolve: resolve });
+      });
+    },
+  };
+})();
+
+function ConfirmHost() {
+  const [state, setState] = React.useState(null);
+  React.useEffect(() => { Confirm._bind(setState); return () => Confirm._bind(null); }, []);
+  if (!state) return null;
+  const close = (ok) => { state._resolve(ok); setState(null); };
+  const onKey = React.useCallback((e) => {
+    if (e.key === 'Escape') close(false);
+    if (e.key === 'Enter')  close(true);
+  }, [state]);
+  React.useEffect(() => {
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onKey]);
+  return (
+    <div role="dialog" aria-modal="true" aria-labelledby="alco-confirm-title"
+      onClick={() => close(false)} style={{
+      position: 'fixed', inset: 0, background: T.scrim,
+      display: 'grid', placeItems: 'center', zIndex: 200,
+      animation: 'fade 0.18s ease', padding: 16,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: T.bg, color: T.ink, borderRadius: 18,
+        border: `1px solid ${T.rule}`,
+        padding: '22px 22px 18px', maxWidth: 360, width: '100%',
+        boxShadow: '0 30px 60px rgba(0,0,0,0.5)',
+        animation: 'scaleIn 0.18s ease',
+      }}>
+        <div id="alco-confirm-title" style={{
+          fontFamily: fontSerif, fontSize: 22, fontStyle: 'italic',
+          letterSpacing: -0.3, marginBottom: 10,
+        }}>{state.title || 'Confirmer'}</div>
+        <div style={{
+          color: T.ink2, fontSize: 13.5, lineHeight: 1.45,
+          letterSpacing: -0.05, marginBottom: 22,
+        }}>{state.message}</div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={() => close(false)} style={{
+            flex: 1, padding: '12px', borderRadius: 12,
+            background: T.surface2, color: T.ink2,
+            border: `1px solid ${T.rule}`, fontSize: 13,
+            fontFamily: fontSans, cursor: 'pointer',
+          }}>{state.cancelText || 'Annuler'}</button>
+          <button onClick={() => close(true)} autoFocus style={{
+            flex: 1.4, padding: '12px', borderRadius: 12,
+            background: state.danger ? 'oklch(55% 0.20 25)' : T.accent,
+            color: state.danger ? '#fff' : (T.isDark ? T.bg : '#fff'),
+            border: 'none', fontSize: 13, fontWeight: 600,
+            fontFamily: fontSans, cursor: 'pointer', letterSpacing: 0.1,
+            boxShadow: `0 4px 18px ${state.danger ? 'oklch(55% 0.20 25 / 0.5)' : `${T.accent}60`}`,
+          }}>{state.confirmText || 'Confirmer'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Status bar (visible only on devices that don't show one natively) ──
 function StatusBar() {
   // The actual device's status bar handles this on mobile. Skip rendering.
@@ -377,4 +451,5 @@ Object.assign(window, {
   toCl, gramsAlcohol, unitsAlcohol,
   SearchInput, SectionHead, Pill, Stars, CategoryGlyph,
   SheetOverlay, StatusBar, niceMax,
+  Confirm, ConfirmHost,
 });

@@ -58,6 +58,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
 
+  // Reset on open / prefill changes.
   React.useEffect(() => {
     if (!open) return;
     const n = _now();
@@ -70,10 +71,20 @@ function AddDrinkSheet({ open, prefill, onClose }) {
       setAlc(prefill.alcohol || prefill.alcoholContent || 4.5);
       setRating(prefill.rating || 0);
     } else {
-      setName(''); setCat(categories[0]?.name || 'Bière');
-      setQty(33); setUnit('cL'); setAlc(4.5); setRating(0);
+      setName(''); setQty(33); setUnit('cL'); setAlc(4.5); setRating(0);
     }
   }, [open, prefill]);
+
+  // Backfill the category from the loaded categories list as soon as it
+  // becomes available (handles the case where the sheet opens before the
+  // first useCategories() resolution).
+  React.useEffect(() => {
+    if (!open || prefill) return;
+    if (!cat || !categories.find(c => c.name === cat)) {
+      const fallback = categories[0]?.name;
+      if (fallback) setCat(fallback);
+    }
+  }, [open, prefill, categories, cat]);
 
   if (!open) return null;
 
@@ -556,17 +567,23 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
                       </div>
                     )}
                   </div>
-                  <div onClick={async () => {
-                    if (confirm('Supprimer cette entrée ?')) {
+                  <button type="button" aria-label="Supprimer cette entrée"
+                    onClick={async () => {
+                      const ok = await Confirm.ask({
+                        title: 'Supprimer cette entrée ?',
+                        message: `Cette consommation du ${d.getDate()} ${FR_MONTHS_SHORT[d.getMonth()]} sera retirée de votre historique.`,
+                        confirmText: 'Supprimer',
+                        danger: true,
+                      });
+                      if (!ok) return;
                       try { await deleteDrink(e.id); Toast.show('Entrée supprimée'); }
                       catch (err) { Toast.show('Erreur'); }
-                    }
-                  }} style={{
-                    color: T.muted, display: 'flex', cursor: 'pointer',
-                    padding: 4,
-                  }}>
+                    }} style={{
+                      color: T.muted, display: 'flex', cursor: 'pointer',
+                      padding: 4, background: 'transparent', border: 'none',
+                    }}>
                     <SvgIcon icon={Ic.trash} size={14} />
-                  </div>
+                  </button>
                 </div>
               );
             })}
@@ -632,7 +649,13 @@ function EditFamilySheet({ family, onClose }) {
   };
 
   const delAll = async () => {
-    if (!confirm(`Supprimer TOUTES les entrées de « ${family.name} » ?`)) return;
+    const ok = await Confirm.ask({
+      title: 'Supprimer toutes les entrées ?',
+      message: `Toutes les consommations de « ${family.name} » seront effacées de votre historique. Cette action est irréversible.`,
+      confirmText: 'Tout supprimer',
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await deleteFamily(family);
@@ -782,7 +805,13 @@ function SettingsDrawer({ open, onClose }) {
   };
 
   const onClear = async () => {
-    if (!confirm('Effacer TOUTES les données ? Cette action est irréversible.')) return;
+    const ok = await Confirm.ask({
+      title: 'Effacer toutes les données ?',
+      message: 'Boissons, catégories, paramètres et records seront définitivement supprimés. Cette action est irréversible.',
+      confirmText: 'Tout effacer',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await window.dbManager.clearAllData();
       window.dataBus && window.dataBus.bump();

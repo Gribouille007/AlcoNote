@@ -107,6 +107,8 @@ function App() {
         <EditFamilySheet family={editFamily} onClose={() => setEditFamily(null)} />
       )}
 
+      <ConfirmHost />
+
       {toast && (
         <div style={{
           position: 'fixed',
@@ -153,13 +155,13 @@ function AppHeader({ tab, onMenu }) {
       justifyContent: 'space-between', gap: 12,
       flexShrink: 0,
     }}>
-      <div onClick={onMenu} style={{
+      <button type="button" onClick={onMenu} aria-label="Ouvrir les paramètres" style={{
         width: 38, height: 38, borderRadius: 12, background: T.surface2,
         display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
-        border: `1px solid ${T.rule}`,
+        border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit',
       }}>
         <SvgIcon icon={Ic.menu} size={18} />
-      </div>
+      </button>
       <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
         <div style={{
           fontFamily: fontSerif, fontSize: 20, color: T.ink,
@@ -220,29 +222,33 @@ function BottomNav({ tab, onChange }) {
       background: T.bg, borderTop: `1px solid ${T.rule}`,
       flexShrink: 0,
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-around', paddingBottom: 2 }}>
+      <div role="tablist" aria-label="Navigation principale"
+        style={{ display: 'flex', justifyContent: 'space-around', paddingBottom: 2 }}>
         {items.map(it => {
           const on = tab === it.id;
           return (
-            <div key={it.id} onClick={() => onChange(it.id)} style={{
-              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-              gap: 4, padding: '10px 8px', cursor: 'pointer', position: 'relative',
-              color: on ? T.accent : T.muted,
-            }}>
-              <div style={{ width: 22, height: 22, display: 'flex' }}>
+            <button key={it.id} type="button" role="tab" aria-selected={on}
+              aria-label={it.label}
+              onClick={() => onChange(it.id)} style={{
+                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                gap: 4, padding: '10px 8px', cursor: 'pointer', position: 'relative',
+                color: on ? T.accent : T.muted,
+                background: 'transparent', border: 'none', fontFamily: 'inherit',
+              }}>
+              <span style={{ width: 22, height: 22, display: 'flex' }} aria-hidden="true">
                 {React.cloneElement(it.icon, { width: 22, height: 22 })}
-              </div>
-              <div style={{
+              </span>
+              <span style={{
                 fontSize: 10, letterSpacing: 0.2, fontWeight: on ? 600 : 400,
-              }}>{it.label}</div>
+              }}>{it.label}</span>
               {on && (
-                <div style={{
+                <span aria-hidden="true" style={{
                   position: 'absolute', top: 2, width: 20, height: 3,
                   borderRadius: 99, background: T.accent,
                   boxShadow: `0 0 8px ${T.accent}`,
                 }}/>
               )}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -251,19 +257,20 @@ function BottomNav({ tab, onChange }) {
 }
 function Fab({ onClick }) {
   return (
-    <div onClick={onClick} style={{
+    <button type="button" onClick={onClick} aria-label="Ajouter une boisson" style={{
       position: 'absolute',
       bottom: 'calc(78px + env(safe-area-inset-bottom))',
       right: 20, zIndex: 30,
       width: 58, height: 58, borderRadius: 20, background: T.accent,
       display: 'grid', placeItems: 'center',
       color: T.isDark ? T.bg : '#fff', cursor: 'pointer',
+      border: 'none', padding: 0, fontFamily: 'inherit',
       boxShadow: T.isDark
         ? `0 10px 26px oklch(72% 0.15 65 / 0.5), 0 0 0 1px oklch(80% 0.12 65 / 0.3)`
         : `0 10px 26px oklch(60% 0.15 50 / 0.45), 0 0 0 1px oklch(60% 0.15 50 / 0.6)`,
     }}>
       <SvgIcon icon={Ic.plus} size={26} />
-    </div>
+    </button>
   );
 }
 

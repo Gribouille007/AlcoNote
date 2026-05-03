@@ -1,9 +1,9 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v3.1.0';
-const STATIC_CACHE = 'alconote-static-v3.1.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v3.1.0';
+const CACHE_NAME = 'alconote-v3.1.1';
+const STATIC_CACHE = 'alconote-static-v3.1.1';
+const DYNAMIC_CACHE = 'alconote-dynamic-v3.1.1';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -18,21 +18,20 @@ const STATIC_FILES = [
     '/js/utils.js',
     '/js/scanner/product-lookup.js',
     '/js/scanner/camera-scanner.js',
-    // React UI (proto)
-    '/proto/shared.jsx',
-    '/proto/data.jsx',
-    '/proto/stats-charts.jsx',
-    '/proto/categories.jsx',
-    '/proto/history.jsx',
-    '/proto/stats.jsx',
-    '/proto/modals.jsx',
-    '/proto/app.jsx',
+    // React UI (precompiled JSX)
+    '/proto/dist/shared.js',
+    '/proto/dist/data.js',
+    '/proto/dist/stats-charts.js',
+    '/proto/dist/categories.js',
+    '/proto/dist/history.js',
+    '/proto/dist/stats.js',
+    '/proto/dist/modals.js',
+    '/proto/dist/app.js',
     // External CDN resources
     'https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js',
     'https://unpkg.com/dexie@3.2.4/dist/dexie.js',
-    'https://unpkg.com/react@18.3.1/umd/react.development.js',
-    'https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js',
-    'https://unpkg.com/@babel/standalone@7.29.0/babel.min.js'
+    'https://unpkg.com/react@18.3.1/umd/react.production.min.js',
+    'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js'
 ];
 
 // URLs that should always be fetched from network

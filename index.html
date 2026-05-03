@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AlcoNote">
 
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; img-src 'self' data: https: blob:; connect-src 'self' https://world.openfoodfacts.org https://nominatim.openstreetmap.org https://api.upcitemdb.com https://api.barcodelookup.com https://api.timezonedb.com; font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; media-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; img-src 'self' data: https: blob:; connect-src 'self' https://world.openfoodfacts.org https://nominatim.openstreetmap.org https://api.upcitemdb.com https://api.barcodelookup.com https://api.timezonedb.com; font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; media-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:;">
   <meta http-equiv="X-Content-Type-Options" content="nosniff">
   <meta http-equiv="X-Frame-Options" content="DENY">
 
@@ -66,15 +66,10 @@
     #root:not(:empty) ~ #alco-splash { display: none; }
   </style>
 
-  <!-- React + Babel (development build, like the prototype) -->
-  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"
-    integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
+  <!-- React (production build — JSX is precompiled, see proto/dist/) -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"
     crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
-    integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
-    crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
-    integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"
     crossorigin="anonymous"></script>
 
   <!-- Scanner / DB libraries -->
@@ -91,15 +86,15 @@
   <script src="js/scanner/product-lookup.js"></script>
   <script src="js/scanner/camera-scanner.js"></script>
 
-  <!-- Proto UI (React/JSX, compiled in-browser via Babel) -->
-  <script type="text/babel" src="proto/shared.jsx"></script>
-  <script type="text/babel" src="proto/data.jsx"></script>
-  <script type="text/babel" src="proto/stats-charts.jsx"></script>
-  <script type="text/babel" src="proto/categories.jsx"></script>
-  <script type="text/babel" src="proto/history.jsx"></script>
-  <script type="text/babel" src="proto/stats.jsx"></script>
-  <script type="text/babel" src="proto/modals.jsx"></script>
-  <script type="text/babel" src="proto/app.jsx"></script>
+  <!-- Proto UI (precompiled from proto/*.jsx → proto/dist/*.js) -->
+  <script src="proto/dist/shared.js"></script>
+  <script src="proto/dist/data.js"></script>
+  <script src="proto/dist/stats-charts.js"></script>
+  <script src="proto/dist/categories.js"></script>
+  <script src="proto/dist/history.js"></script>
+  <script src="proto/dist/stats.js"></script>
+  <script src="proto/dist/modals.js"></script>
+  <script src="proto/dist/app.js"></script>
 
   <!-- Service worker registration -->
   <script>
