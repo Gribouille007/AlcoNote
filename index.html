@@ -1,502 +1,113 @@
 <!DOCTYPE html>
-<!-- Page principale de l'application AlcoNote PWA -->
-<html lang="fr" data-skin="proto">
-
+<html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <!-- Configuration de la viewport pour le responsive design -->
-    <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>AlcoNote - Suivi de Consommation d'Alcool</title>
-    <meta name="description"
-        content="Application PWA pour suivre votre consommation d'alcool avec scanner de codes-barres, statistiques détaillées et fonctionnement hors ligne.">
-    <meta name="keywords" content="alcool, consommation, suivi, PWA, scanner, statistiques, santé">
-    <meta name="author" content="AlcoNote">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>AlcoNote — Suivi de Consommation d'Alcool</title>
+  <meta name="description" content="Application PWA pour suivre votre consommation d'alcool avec scanner de codes-barres, statistiques détaillées et fonctionnement hors ligne.">
+  <meta name="keywords" content="alcool, consommation, suivi, PWA, scanner, statistiques, santé">
+  <meta name="author" content="AlcoNote">
 
-    <!-- Métadonnées PWA pour l'installation et l'apparence -->
-    <meta name="theme-color" content="#007AFF">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="AlcoNote">
+  <meta name="theme-color" content="#b67a3a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AlcoNote">
 
-    <!-- En-têtes de sécurité pour protéger l'application -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; img-src 'self' data: https: blob:; connect-src 'self' https://world.openfoodfacts.org https://nominatim.openstreetmap.org https://api.upcitemdb.com https://api.barcodelookup.com https://api.timezonedb.com; font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; media-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:;">
-    <meta http-equiv="X-Content-Type-Options" content="nosniff">
-    <meta http-equiv="X-Frame-Options" content="DENY">
-    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; img-src 'self' data: https: blob:; connect-src 'self' https://world.openfoodfacts.org https://nominatim.openstreetmap.org https://api.upcitemdb.com https://api.barcodelookup.com https://api.timezonedb.com; font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; media-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:;">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+  <meta http-equiv="X-Frame-Options" content="DENY">
 
-    <!-- Manifest pour la PWA -->
-    <link rel="manifest" href="manifest.json">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192x192.png">
 
-    <!-- Icônes de l'application -->
-    <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192x192.png">
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-    <!-- Polices Google : Instrument Serif (display) + Geist (UI/numérique) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      min-height: 100vh; min-height: 100dvh;
+      font-family: "Geist", system-ui, sans-serif;
+      transition: background 0.35s ease;
+      overflow: hidden;
+      overscroll-behavior: none;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    html[data-theme="dark"], body.theme-dark {
+      background: radial-gradient(ellipse at top, oklch(22% 0.01 55), oklch(14% 0.008 50) 75%);
+      color: oklch(96% 0.008 85);
+    }
+    html[data-theme="light"], body.theme-light {
+      background: radial-gradient(ellipse at top, oklch(99% 0.006 85), oklch(93% 0.01 75) 75%);
+      color: oklch(22% 0.012 55);
+    }
+    body {
+      background: radial-gradient(ellipse at top, oklch(22% 0.01 55), oklch(14% 0.008 50) 75%);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    input, button, select, textarea { font-family: inherit; }
+    /* hide scrollbars but keep scroll */
+    *::-webkit-scrollbar { display: none; }
+    * { scrollbar-width: none; }
+    /* iOS-friendly date/time inputs */
+    input[type="date"], input[type="time"] { min-height: 1.4em; }
+    /* loading splash */
+    #alco-splash {
+      position: fixed; inset: 0; display: grid; place-items: center;
+      pointer-events: none; z-index: 0;
+      font-family: "Instrument Serif", serif; font-style: italic;
+      color: oklch(55% 0.008 70); font-size: 22px; letter-spacing: -0.3px;
+    }
+    #root:not(:empty) ~ #alco-splash { display: none; }
+  </style>
 
-    <!-- Feuilles de style principales -->
-    <link rel="stylesheet" href="css/main.css?v=2.12.0">
-    <link rel="stylesheet" href="css/components.css?v=2.12.0">
-    <link rel="stylesheet" href="css/responsive.css?v=2.12.0">
-    <link rel="stylesheet" href="css/accessibility.css?v=2.12.0">
-    <!-- Refonte UI éditoriale (loaded last so it overrides) -->
-    <link rel="stylesheet" href="css/design.css?v=3.0.0">
+  <!-- React + Babel (development build, like the prototype) -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"
+    integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
+    crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
+    integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
+    crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+    integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+    crossorigin="anonymous"></script>
 
-    <!-- Bibliothèques JavaScript externes -->
-    <!-- Chart.js pour les graphiques statistiques existants -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Apache ECharts pour les visualisations interactives modernes -->
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
-    <!-- QuaggaJS pour la lecture de codes-barres -->
-    <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
-    <!-- Dexie.js pour IndexedDB -->
-    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
-    <!-- Leaflet pour les cartes interactives -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-    <script>
-        window.MathJax = {
-            tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
-            chtml: { scale: 1 }
-        };
-    </script>
-    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+  <!-- Scanner / DB libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
+  <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
 </head>
+<body>
+  <div id="root"></div>
+  <div id="alco-splash">AlcoNote</div>
 
-<body class="proto-skin">
-    <!-- Conteneur principal de l'application -->
-    <div id="app" class="proto-shell">
-        <!-- En-tête de l'application avec menu paramètres -->
-        <header class="app-header proto-header">
-            <button id="settings-btn" class="settings-btn" aria-label="Paramètres">
-                <div class="hamburger-icon">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                </div>
-            </button>
-            <div class="proto-header-title">
-                <h1 class="app-title">AlcoNote</h1>
-                <div class="proto-header-date" id="proto-header-date" aria-hidden="true"></div>
-            </div>
-            <!-- Slot for the live BAC pill — populated by app.js if BAC data is available.
-                 Stays empty (with min-width) when no data so the title stays centered. -->
-            <div class="header-spacer" id="header-bac-slot" aria-live="polite"></div>
-        </header>
+  <!-- Legacy backend modules (logic only — UI removed) -->
+  <script src="js/database.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/scanner/product-lookup.js"></script>
+  <script src="js/scanner/camera-scanner.js"></script>
 
-        <!-- Contenu principal avec navigation par onglets -->
-        <main class="main-content">
-            <!-- Onglet Catégories - liste des catégories de boissons -->
-            <section id="categories-tab" class="tab-content active">
-                <div class="categories-container">
-                    <div class="categories-search-bar">
-                        <div class="search-input-wrapper">
-                            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                            <input type="text" id="categories-search" placeholder="Rechercher une boisson ou catégorie..." autocomplete="off">
-                            <button id="categories-search-clear" class="search-clear-btn" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-                        </div>
-                    </div>
-                    <div class="section-head"><span>Vos catégories</span></div>
-                    <div id="categories-list" class="categories-list">
-                        <!-- Les catégories seront chargées dynamiquement ici -->
-                    </div>
-                </div>
-            </section>
+  <!-- Proto UI (React/JSX, compiled in-browser via Babel) -->
+  <script type="text/babel" src="proto/shared.jsx"></script>
+  <script type="text/babel" src="proto/data.jsx"></script>
+  <script type="text/babel" src="proto/stats-charts.jsx"></script>
+  <script type="text/babel" src="proto/categories.jsx"></script>
+  <script type="text/babel" src="proto/history.jsx"></script>
+  <script type="text/babel" src="proto/stats.jsx"></script>
+  <script type="text/babel" src="proto/modals.jsx"></script>
+  <script type="text/babel" src="proto/app.jsx"></script>
 
-            <!-- Onglet Historique - liste chronologique des consommations -->
-            <section id="history-tab" class="tab-content">
-                <div class="history-container">
-                    <div class="history-toolbar">
-                        <div class="search-input-wrapper history-search-wrapper">
-                            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                            <input type="text" id="history-search" placeholder="Rechercher dans l'historique..." autocomplete="off">
-                            <button id="history-search-clear" class="search-clear-btn" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-                        </div>
-                        <!-- Legacy <select> kept for logic compatibility but visually replaced by pills.
-                             app.js still reads/writes its `.value`; the pill rail mirrors it. -->
-                        <select id="history-category-filter" class="history-filter visually-hidden">
-                            <option value="">Toutes les catégories</option>
-                        </select>
-                        <div id="history-filter-pills" class="history-filter-pills" role="tablist" aria-label="Filtre par catégorie"></div>
-                    </div>
-                    <div id="history-list" class="history-list">
-                        <!-- L'historique sera chargé dynamiquement ici -->
-                    </div>
-                    <div id="history-pagination" class="history-pagination" style="display:none;">
-                        <button id="history-prev" class="btn-secondary" disabled>Précédent</button>
-                        <span id="history-page-info" class="page-info"></span>
-                        <button id="history-next" class="btn-secondary">Suivant</button>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Onglet Statistiques - graphiques et analyses -->
-            <section id="statistics-tab" class="tab-content">
-                <div class="statistics-container">
-                    <!-- Sélecteur de période temporelle (pill bar comme dans le proto) -->
-                    <div class="period-selector">
-                        <button class="period-btn active" data-period="today">Aujourd'hui</button>
-                        <button class="period-btn" data-period="week">Semaine</button>
-                        <button class="period-btn" data-period="month">Mois</button>
-                        <button class="period-btn" data-period="year">Année</button>
-                        <button class="period-btn" data-period="all">Tout</button>
-                        <button class="period-btn" data-period="custom">Personnalisé</button>
-                        <button class="period-btn" data-period="school">A. scolaire</button>
-                    </div>
-
-                    <!-- Navigation temporelle (précédent/suivant) -->
-                    <div id="period-navigation" class="period-navigation active">
-                        <button id="prev-period" class="nav-btn" aria-label="Période précédente">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-                        </button>
-                        <span id="current-period-display" class="current-date"></span>
-                        <button id="next-period" class="nav-btn" aria-label="Période suivante">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-                        </button>
-                    </div>
-
-                    <!-- Contenu des statistiques -->
-                    <div id="statistics-content" class="statistics-content">
-                        <!-- Les statistiques seront chargées dynamiquement ici -->
-                    </div>
-                </div>
-            </section>
-        </main>
-
-        <!-- Bouton d'action flottant (visible uniquement dans l'onglet catégories) -->
-        <div class="fab-container" id="fab-container">
-            <button id="add-category-btn" class="fab-main" aria-label="Ajouter une catégorie">
-                <span class="fab-icon">+</span>
-            </button>
-        </div>
-
-        <!-- Bottom navigation bar (proto layout) -->
-        <nav class="tab-navigation proto-bottom-nav" aria-label="Navigation principale">
-            <button class="tab-btn active" data-tab="categories">
-                <span class="bn-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-                </span>
-                <span class="bn-label">Catégories</span>
-            </button>
-            <button class="tab-btn" data-tab="history">
-                <span class="bn-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/><polyline points="12 7 12 12 15 14"/></svg>
-                </span>
-                <span class="bn-label">Historique</span>
-            </button>
-            <button class="tab-btn" data-tab="statistics">
-                <span class="bn-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                </span>
-                <span class="bn-label">Stats</span>
-            </button>
-        </nav>
-    </div>
-
-    <!-- Fenêtres modales de l'application -->
-    <!-- Modal d'ajout de boisson -->
-    <dialog id="add-drink-modal" class="modal popup-modal">
-        <div class="modal-content popup-content">
-            <div class="modal-header">
-                <h2>Ajouter une boisson</h2>
-                <button class="modal-close" data-modal="add-drink-modal" aria-label="Fermer">&times;</button>
-            </div>
-            <form id="add-drink-form" class="modal-form">
-                <div class="form-group">
-                    <label for="drink-name">Nom de la boisson</label>
-                    <input type="text" id="drink-name" name="name" required>
-                    <button type="button" id="scan-barcode-btn" class="btn-secondary"
-                        aria-label="Scanner un code-barres" style="margin-top: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h2"/><path d="M3 10h2"/><path d="M3 15h2"/><path d="M3 20h2"/><path d="M19 5h2"/><path d="M19 10h2"/><path d="M19 15h2"/><path d="M19 20h2"/><rect x="7" y="3" width="10" height="18" rx="1"/></svg> Scanner</button>
-                    <div id="drink-suggestions" class="suggestions-list"></div>
-                </div>
-
-                <div class="form-group drink-rating-group" id="drink-rating-group" style="display: none;">
-                    <label>Note</label>
-                    <div class="star-rating" id="drink-star-rating">
-                        <span class="star" data-value="1">&#9733;</span>
-                        <span class="star" data-value="2">&#9733;</span>
-                        <span class="star" data-value="3">&#9733;</span>
-                        <span class="star" data-value="4">&#9733;</span>
-                        <span class="star" data-value="5">&#9733;</span>
-                    </div>
-                    <input type="hidden" id="drink-rating-value" name="rating" value="">
-                </div>
-
-                <div class="form-group" id="category-form-group">
-                    <label for="drink-category">Catégorie</label>
-                    <select id="drink-category" name="category" required>
-                        <option value="">Sélectionner une catégorie</option>
-                    </select>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="drink-quantity">Quantité</label>
-                        <input type="number" id="drink-quantity" name="quantity" step="0.1" min="0" inputmode="decimal"
-                            required>
-                    </div>
-                    <div class="form-group">
-                        <label for="drink-unit">Unité</label>
-                        <select id="drink-unit" name="unit" required>
-                            <option value="EcoCup">EcoCup (25cL)</option>
-                            <option value="cL">cL</option>
-                            <option value="L">L</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="drink-alcohol">Degré d'alcool (%)</label>
-                    <input type="number" id="drink-alcohol" name="alcoholContent" step="0.1" min="0" max="100">
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="drink-date">Date</label>
-                        <input type="date" id="drink-date" name="date" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="drink-time">Heure</label>
-                        <input type="time" id="drink-time" name="time" required>
-                    </div>
-                </div>
-
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" data-modal="add-drink-modal">Annuler</button>
-                    <button type="submit" class="btn-primary">Ajouter</button>
-                </div>
-            </form>
-        </div>
-    </dialog>
-
-    <!-- Modal d'ajout de catégorie -->
-    <dialog id="add-category-modal" class="modal popup-modal">
-        <div class="modal-content popup-content">
-            <div class="modal-header">
-                <h2>Ajouter une catégorie</h2>
-                <button class="modal-close" data-modal="add-category-modal" aria-label="Fermer">&times;</button>
-            </div>
-            <form id="add-category-form" class="modal-form">
-                <div class="form-group">
-                    <label for="category-name">Nom de la catégorie</label>
-                    <input type="text" id="category-name" name="name" required>
-                </div>
-
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" data-modal="add-category-modal">Annuler</button>
-                    <button type="submit" class="btn-primary">Ajouter</button>
-                </div>
-            </form>
-        </div>
-    </dialog>
-
-    <!-- Modal du scanner de code-barres -->
-    <dialog id="scanner-modal" class="modal">
-        <div class="modal-content scanner-content">
-            <div class="modal-header scanner-modal-header">
-                <h2><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: text-bottom; margin-right: 6px;"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="16" x2="17" y2="16"/></svg>Scanner</h2>
-                <button class="modal-close" data-modal="scanner-modal" aria-label="Fermer">&times;</button>
-            </div>
-            <div id="scanner-container" class="scanner-container">
-                <div id="scanner-viewport" class="scanner-viewport"></div>
-                <div class="scanner-overlay">
-                    <div class="scanner-frame">
-                        <span class="scanner-corner scanner-corner-tl"></span>
-                        <span class="scanner-corner scanner-corner-tr"></span>
-                        <span class="scanner-corner scanner-corner-bl"></span>
-                        <span class="scanner-corner scanner-corner-br"></span>
-                        <div class="scanner-line"></div>
-                    </div>
-                </div>
-            </div>
-            <div class="scanner-status">
-                <div class="scanner-status-indicator"></div>
-                <p id="scanner-status-text">Positionnez le code-barres dans le cadre</p>
-            </div>
-        </div>
-    </dialog>
-
-    <!-- Menu des paramètres -->
-    <div id="settings-menu" class="settings-menu">
-        <div class="settings-content">
-            <div class="settings-header">
-                <h2>Paramètres</h2>
-                <button id="settings-close" class="settings-close" aria-label="Fermer">&times;</button>
-            </div>
-            <div class="settings-body">
-                <div class="settings-section">
-                    <h3>Apparence</h3>
-                    <div class="form-group">
-                        <label for="theme-toggle">Thème</label>
-                        <select id="theme-toggle">
-                            <option value="auto">Automatique</option>
-                            <option value="light">Clair</option>
-                            <option value="dark">Sombre</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="settings-section">
-                    <h3>Profil</h3>
-                    <div class="form-group">
-                        <label for="user-weight">Poids (kg)</label>
-                        <input type="number" id="user-weight" step="0.1" min="30" max="200">
-                    </div>
-                    <div class="form-group">
-                        <label for="user-gender">Sexe</label>
-                        <select id="user-gender">
-                            <option value="">Non spécifié</option>
-                            <option value="male">Homme</option>
-                            <option value="female">Femme</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="settings-section">
-                    <h3>Données</h3>
-                    <button id="export-data" class="btn-secondary">Exporter les données</button>
-                    <button id="import-data" class="btn-secondary">Importer les données</button>
-                    <button id="clear-data" class="btn-danger">Effacer toutes les données</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal de détails de boisson -->
-    <dialog id="drink-detail-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="drink-detail-title"></h2>
-                <button class="modal-close" data-modal="drink-detail-modal" aria-label="Fermer">&times;</button>
-            </div>
-            <div id="drink-detail-content" class="drink-detail-content">
-                <!-- Les détails de la boisson seront chargés dynamiquement ici -->
-            </div>
-            <div class="modal-actions">
-                <button id="add-same-drink" class="btn-primary">Ajouter cette boisson</button>
-            </div>
-        </div>
-    </dialog>
-
-    <!-- Modal d'édition de boisson (famille/variante) -->
-    <dialog id="edit-drink-family-modal" class="modal popup-modal">
-        <div class="modal-content popup-content">
-            <div class="modal-header">
-                <h2>Modifier la boisson</h2>
-                <button class="modal-close" data-modal="edit-drink-family-modal">&times;</button>
-            </div>
-            <form id="edit-drink-family-form" class="modal-form">
-                <div class="form-group">
-                    <label for="edit-family-name">Nom de la boisson</label>
-                    <input type="text" id="edit-family-name" required>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="edit-family-quantity">Quantité</label>
-                        <input type="number" id="edit-family-quantity" step="0.1" min="0" inputmode="decimal" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="edit-family-unit">Unité</label>
-                        <select id="edit-family-unit" required>
-                            <option value="EcoCup">EcoCup (25cL)</option>
-                            <option value="cL">cL</option>
-                            <option value="L">L</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="edit-family-alcohol">Degré d'alcool (%)</label>
-                    <input type="number" id="edit-family-alcohol" step="0.1" min="0" max="100" inputmode="decimal">
-                </div>
-
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" data-modal="edit-drink-family-modal">Annuler</button>
-                    <button type="submit" class="btn-primary">Enregistrer</button>
-                </div>
-            </form>
-            <div class="edit-family-extra-actions">
-                <button type="button" id="edit-family-change-category" class="btn-secondary edit-family-action-btn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                    Changer de catégorie
-                </button>
-                <button type="button" id="edit-family-delete-all" class="btn-danger edit-family-action-btn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                    Supprimer toutes les variantes
-                </button>
-            </div>
-        </div>
-    </dialog>
-
-    <!-- Modal de sélection de catégorie -->
-    <dialog id="category-picker-modal" class="modal popup-modal">
-        <div class="modal-content popup-content">
-            <div class="modal-header">
-                <h2>Changer de catégorie</h2>
-                <button class="modal-close" data-modal="category-picker-modal">&times;</button>
-            </div>
-            <div id="category-picker-list" class="category-picker-list">
-                <!-- Dynamically populated -->
-            </div>
-        </div>
-    </dialog>
-
-    <!-- Scripts JavaScript de l'application -->
-    <!-- Chargés dans l'ordre des dépendances -->
-    <script src="js/error-tracking.js"></script>
-    <script src="js/performance-optimizer.js"></script>
-    <script src="js/database.js"></script>
-    <script src="js/utils.js"></script>
-    <script src="js/bac-chart.js"></script>
-    <script src="js/geolocation.js"></script>
-    <script src="js/scanner/product-lookup.js"></script>
-    <script src="js/scanner/camera-scanner.js"></script>
-    <script src="js/scanner/barcode-handler.js"></script>
-
-    <!-- Nouveau système de statistiques modulaire -->
-    <!-- Configuration des statistiques -->
-    <script src="js/stats-config.js"></script>
-    <script src="js/utils-period-normalizer.js"></script>
-
-    <!-- Calculateurs -->
-    <script src="js/stats-calculators/general.js"></script>
-    <script src="js/stats-calculators/temporal.js"></script>
-    <script src="js/stats-calculators/categories.js"></script>
-    <script src="js/stats-calculators/drinks.js"></script>
-    <script src="js/stats-calculators/health.js"></script>
-    <script src="js/stats-calculators/location.js"></script>
-    <script src="js/stats-calculators/trends.js"></script>
-    <script src="js/stats-calculators/advanced.js"></script>
-
-    <!-- Renderers -->
-    <script src="js/stats-renderers/general-renderer.js"></script>
-    <script src="js/stats-renderers/temporal-renderer.js"></script>
-    <script src="js/stats-renderers/category-renderer.js"></script>
-    <script src="js/stats-renderers/drinks-renderer.js"></script>
-    <script src="js/stats-renderers/health-renderer.js"></script>
-    <script src="js/stats-renderers/location-renderer.js"></script>
-    <script src="js/stats-renderers/trends-renderer.js"></script>
-    <script src="js/stats-renderers/advanced-renderer.js"></script>
-
-    <!-- Utilitaires statistiques -->
-    <script src="js/stats-collapsible.js"></script>
-
-    <!-- Gestionnaire de statistiques modulaire -->
-    <script src="js/statistics-new.js"></script>
-
-    <script src="js/app.js"></script>
-    <!-- Présentation : pill BAC dans l'en-tête (lecture seule, pas de logique métier) -->
-    <script src="js/header-bac.js"></script>
-    <!-- Présentation : couplage UI proto (bottom-nav, pills, header date) — pas de logique métier -->
-    <script src="js/proto-ui.js"></script>
+  <!-- Service worker registration -->
+  <script>
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
 </body>
-
 </html>
