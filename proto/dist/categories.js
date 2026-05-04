@@ -1,4 +1,5 @@
 /* AUTO-GENERATED from proto/categories.jsx — do not edit by hand. */
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 // categories.jsx — Tab 1: Catégories (grid + drill-down to family detail)
 
 function CategoriesTab({
@@ -117,8 +118,7 @@ function CategoryCard({
 }) {
   const color = catColor(cat.name, 70);
   const bg = catBg(cat.name);
-  return /*#__PURE__*/React.createElement("div", {
-    onClick: onClick,
+  return /*#__PURE__*/React.createElement("div", _extends({}, clickable(onClick, `Ouvrir la catégorie ${cat.name}`), {
     style: {
       background: T.surface,
       borderRadius: 18,
@@ -132,11 +132,13 @@ function CategoryCard({
       flexDirection: 'column',
       justifyContent: 'space-between'
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: e => {
       e.stopPropagation();
       onEdit && onEdit();
     },
+    "aria-label": `Modifier ${cat.name}`,
     style: {
       position: 'absolute',
       top: 10,
@@ -150,7 +152,9 @@ function CategoryCard({
       placeItems: 'center',
       color: T.muted,
       cursor: 'pointer',
-      zIndex: 2
+      zIndex: 2,
+      padding: 0,
+      fontFamily: 'inherit'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.edit,
@@ -239,9 +243,12 @@ function FamilyList({
       marginBottom: 14,
       justifyContent: 'space-between'
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: onBack,
+    "aria-label": "Retour aux cat\xE9gories",
     style: {
+      ...ghostButton,
       color: T.ink2,
       display: 'flex',
       alignItems: 'center',
@@ -252,9 +259,12 @@ function FamilyList({
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.chevL,
     size: 16
-  }), /*#__PURE__*/React.createElement("span", null, "Cat\xE9gories")), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("span", null, "Cat\xE9gories")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: onEditCat,
+    "aria-label": `Modifier la catégorie ${category}`,
     style: {
+      ...ghostButton,
       display: 'flex',
       alignItems: 'center',
       gap: 6,
@@ -309,8 +319,7 @@ function FamilyRow({
   const dupeCount = (f.dupes ? f.dupes.length : 0) + 1;
   const lastTs = f.entries[0]?.ts;
   const lastStr = lastTs ? fmtDateShort(lastTs) : '—';
-  return /*#__PURE__*/React.createElement("div", {
-    onClick: onClick,
+  return /*#__PURE__*/React.createElement("div", _extends({}, clickable(onClick, `Voir les détails de ${f.name}`), {
     style: {
       display: 'flex',
       alignItems: 'center',
@@ -323,15 +332,16 @@ function FamilyRow({
       cursor: 'pointer',
       position: 'relative'
     }
-  }, dupeCount > 1 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }), dupeCount > 1 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'absolute',
       inset: '-3px 8px auto 8px',
       height: 6,
       background: T.surface,
       borderRadius: '14px 14px 0 0',
-      border: `1px solid ${T.rule}`,
-      borderBottom: 'none',
+      borderTop: `1px solid ${T.rule}`,
+      borderLeft: `1px solid ${T.rule}`,
+      borderRight: `1px solid ${T.rule}`,
       zIndex: -1,
       opacity: 0.6
     }
@@ -342,8 +352,9 @@ function FamilyRow({
       height: 6,
       background: T.surface,
       borderRadius: '14px 14px 0 0',
-      border: `1px solid ${T.rule}`,
-      borderBottom: 'none',
+      borderTop: `1px solid ${T.rule}`,
+      borderLeft: `1px solid ${T.rule}`,
+      borderRight: `1px solid ${T.rule}`,
       zIndex: -2,
       opacity: 0.3
     }
@@ -431,7 +442,8 @@ function FamilyRow({
       letterSpacing: 0.3,
       marginTop: 2
     }
-  }, "derni\xE8re")), /*#__PURE__*/React.createElement("div", {
+  }, "derni\xE8re")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: ev => {
       ev.stopPropagation();
       onDirectAdd && onDirectAdd(f);
@@ -446,9 +458,12 @@ function FamilyRow({
       placeItems: 'center',
       color: T.accent,
       cursor: 'pointer',
-      flexShrink: 0
+      flexShrink: 0,
+      padding: 0,
+      fontFamily: 'inherit'
     },
-    title: "Ajouter \xE0 nouveau"
+    title: "Ajouter \xE0 nouveau",
+    "aria-label": `Ajouter ${f.name} à nouveau`
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.plus,
     size: 14
@@ -490,8 +505,9 @@ function EditCategorySheet({
       background: T.bg,
       borderRadius: '22px 22px 0 0',
       padding: '18px 20px 28px',
-      border: `1px solid ${T.rule}`,
-      borderBottom: 'none',
+      borderTop: `1px solid ${T.rule}`,
+      borderLeft: `1px solid ${T.rule}`,
+      borderRight: `1px solid ${T.rule}`,
       animation: 'slideUp 0.25s ease'
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -582,9 +598,12 @@ function EditCategorySheet({
       fontSize: 12,
       marginBottom: 14
     }
-  }, err), /*#__PURE__*/React.createElement("div", {
+  }, err), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: busy ? undefined : save,
+    disabled: busy,
     style: {
+      width: '100%',
       padding: '14px',
       textAlign: 'center',
       borderRadius: 12,
@@ -594,6 +613,8 @@ function EditCategorySheet({
       fontWeight: 600,
       cursor: busy ? 'wait' : 'pointer',
       opacity: busy ? 0.5 : 1,
+      border: 'none',
+      fontFamily: 'inherit',
       boxShadow: `0 4px 18px ${T.accent}60`
     }
   }, busy ? 'Enregistrement…' : 'Enregistrer')));

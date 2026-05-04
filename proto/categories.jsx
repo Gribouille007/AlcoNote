@@ -88,22 +88,24 @@ function CategoryCard({ cat, onClick, onEdit }) {
   const color = catColor(cat.name, 70);
   const bg = catBg(cat.name);
   return (
-    <div onClick={onClick} style={{
+    <div {...clickable(onClick, `Ouvrir la catégorie ${cat.name}`)} style={{
       background: T.surface, borderRadius: 18, padding: 14,
       border: `1px solid ${T.rule}`, cursor: 'pointer',
       position: 'relative', overflow: 'hidden',
       aspectRatio: '1 / 1.05',
       display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
     }}>
-      <div onClick={(e) => { e.stopPropagation(); onEdit && onEdit(); }}
+      <button type="button"
+        onClick={(e) => { e.stopPropagation(); onEdit && onEdit(); }}
+        aria-label={`Modifier ${cat.name}`}
         style={{
           position: 'absolute', top: 10, right: 10, width: 26, height: 26,
           borderRadius: 8, background: T.surface2, border: `1px solid ${T.rule}`,
           display: 'grid', placeItems: 'center', color: T.muted, cursor: 'pointer',
-          zIndex: 2,
+          zIndex: 2, padding: 0, fontFamily: 'inherit',
         }}>
         <SvgIcon icon={Ic.edit} size={11} />
-      </div>
+      </button>
       <div style={{
         width: 44, height: 44, borderRadius: 14, background: bg,
         display: 'grid', placeItems: 'center', color,
@@ -152,21 +154,23 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
         display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
         justifyContent: 'space-between',
       }}>
-        <div onClick={onBack} style={{
+        <button type="button" onClick={onBack} aria-label="Retour aux catégories" style={{
+          ...ghostButton,
           color: T.ink2, display: 'flex', alignItems: 'center', gap: 6,
           fontSize: 13, cursor: 'pointer',
         }}>
           <SvgIcon icon={Ic.chevL} size={16} />
           <span>Catégories</span>
-        </div>
-        <div onClick={onEditCat} style={{
+        </button>
+        <button type="button" onClick={onEditCat} aria-label={`Modifier la catégorie ${category}`} style={{
+          ...ghostButton,
           display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
           padding: '6px 10px', borderRadius: 10, background: T.surface2,
           border: `1px solid ${T.rule}`, color: T.ink2, fontSize: 11,
         }}>
           <SvgIcon icon={Ic.edit} size={11} />
           <span>Modifier</span>
-        </div>
+        </button>
       </div>
       <div style={{
         fontFamily: fontSerif, fontSize: 36, color: T.ink,
@@ -196,7 +200,7 @@ function FamilyRow({ family: f, onClick, onDirectAdd }) {
   const lastTs = f.entries[0]?.ts;
   const lastStr = lastTs ? fmtDateShort(lastTs) : '—';
   return (
-    <div onClick={onClick} style={{
+    <div {...clickable(onClick, `Voir les détails de ${f.name}`)} style={{
       display: 'flex', alignItems: 'center', gap: 14,
       padding: '14px 14px', background: T.surface, borderRadius: 14,
       border: `1px solid ${T.rule}`, marginBottom: 8, cursor: 'pointer',
@@ -207,13 +211,19 @@ function FamilyRow({ family: f, onClick, onDirectAdd }) {
           <div style={{
             position: 'absolute', inset: '-3px 8px auto 8px', height: 6,
             background: T.surface, borderRadius: '14px 14px 0 0',
-            border: `1px solid ${T.rule}`, borderBottom: 'none', zIndex: -1,
+            borderTop: `1px solid ${T.rule}`,
+            borderLeft: `1px solid ${T.rule}`,
+            borderRight: `1px solid ${T.rule}`,
+            zIndex: -1,
             opacity: 0.6,
           }}/>
           <div style={{
             position: 'absolute', inset: '-6px 16px auto 16px', height: 6,
             background: T.surface, borderRadius: '14px 14px 0 0',
-            border: `1px solid ${T.rule}`, borderBottom: 'none', zIndex: -2,
+            borderTop: `1px solid ${T.rule}`,
+            borderLeft: `1px solid ${T.rule}`,
+            borderRight: `1px solid ${T.rule}`,
+            zIndex: -2,
             opacity: 0.3,
           }}/>
         </>
@@ -261,18 +271,20 @@ function FamilyRow({ family: f, onClick, onDirectAdd }) {
           dernière
         </div>
       </div>
-      <div
+      <button type="button"
         onClick={(ev) => { ev.stopPropagation(); onDirectAdd && onDirectAdd(f); }}
         style={{
           width: 32, height: 32, borderRadius: 10,
           background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
           display: 'grid', placeItems: 'center', color: T.accent,
           cursor: 'pointer', flexShrink: 0,
+          padding: 0, fontFamily: 'inherit',
         }}
         title="Ajouter à nouveau"
+        aria-label={`Ajouter ${f.name} à nouveau`}
       >
         <SvgIcon icon={Ic.plus} size={14} />
-      </div>
+      </button>
     </div>
   );
 }
@@ -305,8 +317,11 @@ function EditCategorySheet({ category, onClose }) {
     <SheetOverlay onClose={onClose}>
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0',
-        padding: '18px 20px 28px', border: `1px solid ${T.rule}`,
-        borderBottom: 'none', animation: 'slideUp 0.25s ease',
+        padding: '18px 20px 28px',
+        borderTop: `1px solid ${T.rule}`,
+        borderLeft: `1px solid ${T.rule}`,
+        borderRight: `1px solid ${T.rule}`,
+        animation: 'slideUp 0.25s ease',
       }}>
         <div style={{ display: 'grid', placeItems: 'center', paddingBottom: 10 }}>
           <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }}/>
@@ -356,13 +371,13 @@ function EditCategorySheet({ category, onClose }) {
           }}>{err}</div>
         )}
 
-        <div onClick={busy ? undefined : save} style={{
-          padding: '14px', textAlign: 'center', borderRadius: 12,
+        <button type="button" onClick={busy ? undefined : save} disabled={busy} style={{
+          width: '100%', padding: '14px', textAlign: 'center', borderRadius: 12,
           background: T.accent, color: T.isDark ? T.bg : '#fff',
           fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer',
-          opacity: busy ? 0.5 : 1,
+          opacity: busy ? 0.5 : 1, border: 'none', fontFamily: 'inherit',
           boxShadow: `0 4px 18px ${T.accent}60`,
-        }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</div>
+        }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
       </div>
     </SheetOverlay>
   );

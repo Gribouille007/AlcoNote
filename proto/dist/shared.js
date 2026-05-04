@@ -852,13 +852,51 @@ function CategoryGlyph({
   }));
 }
 
+// ── Clickable card props (for divs that contain inner buttons) ────
+// Rendering a real <button> around a card with sub-buttons is invalid
+// HTML, so cards stay as <div> but get role/tabIndex/keyboard handling.
+function clickable(onClick, label) {
+  return {
+    onClick,
+    role: 'button',
+    tabIndex: 0,
+    'aria-label': label,
+    onKeyDown: e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onClick && onClick(e);
+      }
+    }
+  };
+}
+
+// Reusable "ghost" button reset for clickable surfaces that want a
+// transparent background and inherit fonts.
+const ghostButton = {
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  fontFamily: 'inherit',
+  color: 'inherit',
+  cursor: 'pointer',
+  textAlign: 'inherit'
+};
+
 // ── Sheet overlay (bottom sheet / right drawer) ───────────────────
 function SheetOverlay({
   children,
   onClose,
   side = 'bottom'
 }) {
+  React.useEffect(() => {
+    const onKey = e => {
+      if (e.key === 'Escape') onClose && onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
   return /*#__PURE__*/React.createElement("div", {
+    role: "presentation",
     onClick: onClose,
     style: {
       position: 'fixed',
@@ -871,6 +909,8 @@ function SheetOverlay({
       animation: 'fade 0.2s ease'
     }
   }, /*#__PURE__*/React.createElement("div", {
+    role: "dialog",
+    "aria-modal": "true",
     onClick: e => e.stopPropagation(),
     style: {
       width: side === 'right' ? 'auto' : '100%',
@@ -1073,5 +1113,7 @@ Object.assign(window, {
   StatusBar,
   niceMax,
   Confirm,
-  ConfirmHost
+  ConfirmHost,
+  clickable,
+  ghostButton
 });

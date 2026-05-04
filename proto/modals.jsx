@@ -117,7 +117,9 @@ function AddDrinkSheet({ open, prefill, onClose }) {
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0', padding: '10px 0 0',
         maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
-        border: `1px solid ${T.rule}`, borderBottom: 'none',
+        borderTop: `1px solid ${T.rule}`,
+        borderLeft: `1px solid ${T.rule}`,
+        borderRight: `1px solid ${T.rule}`,
         animation: 'slideUp 0.25s ease',
       }}>
         <div style={{ display: 'grid', placeItems: 'center', padding: '6px 0 4px' }}>
@@ -132,16 +134,18 @@ function AddDrinkSheet({ open, prefill, onClose }) {
             fontFamily: fontSerif, fontSize: 22, color: T.ink,
             letterSpacing: -0.3, fontStyle: 'italic',
           }}>Nouvelle boisson</div>
-          <div onClick={onClose} style={{
+          <button type="button" onClick={onClose} aria-label="Fermer" style={{
             width: 30, height: 30, borderRadius: 99, background: T.surface2,
             display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
+            border: 'none', padding: 0, fontFamily: 'inherit',
           }}>
             <SvgIcon icon={Ic.close} size={14} />
-          </div>
+          </button>
         </div>
 
         <div style={{ overflow: 'auto', padding: '0 18px 20px', flex: 1 }}>
-          <div onClick={() => setScan(true)} style={{
+          <button type="button" onClick={() => setScan(true)} aria-label="Scanner un code-barres" style={{
+            ...ghostButton, width: '100%', textAlign: 'left',
             background: T.isDark
               ? `linear-gradient(135deg, oklch(30% 0.03 65), ${T.surface})`
               : `linear-gradient(135deg, ${T.accentSoft}, ${T.surface})`,
@@ -164,7 +168,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
               </div>
             </div>
             <SvgIcon icon={Ic.chev} size={14} color={T.muted} />
-          </div>
+          </button>
 
           <FieldGroup label="Boisson">
             <input value={name} onChange={e => setName(e.target.value)} placeholder="Ex. Pilsner Urquell" style={inputS()} />
@@ -240,9 +244,10 @@ function AddDrinkSheet({ open, prefill, onClose }) {
             }}>
               <Stars n={rating} interactive size={18} onChange={setRating}/>
               {rating > 0 && (
-                <div onClick={() => setRating(0)} style={{
+                <button type="button" onClick={() => setRating(0)} style={{
+                  ...ghostButton,
                   color: T.muted, fontSize: 11, cursor: 'pointer',
-                }}>Effacer</div>
+                }}>Effacer</button>
               )}
             </div>
           </FieldGroup>
@@ -269,17 +274,18 @@ function AddDrinkSheet({ open, prefill, onClose }) {
           padding: '12px 18px calc(22px + env(safe-area-inset-bottom))',
           borderTop: `1px solid ${T.rule}`, display: 'flex', gap: 10,
         }}>
-          <div onClick={onClose} style={{
+          <button type="button" onClick={onClose} style={{
             flex: 1, padding: '14px', textAlign: 'center', borderRadius: 12,
             background: T.surface2, color: T.ink2, fontSize: 13, cursor: 'pointer',
-            border: `1px solid ${T.rule}`,
-          }}>Annuler</div>
-          <div onClick={busy ? undefined : submit} style={{
+            border: `1px solid ${T.rule}`, fontFamily: 'inherit',
+          }}>Annuler</button>
+          <button type="button" onClick={busy ? undefined : submit} disabled={busy} style={{
             flex: 2, padding: '14px', textAlign: 'center', borderRadius: 12,
             background: T.accent, color: T.isDark ? T.bg : '#fff', fontSize: 13, fontWeight: 600,
             cursor: busy ? 'wait' : 'pointer', letterSpacing: 0.1, opacity: busy ? 0.5 : 1,
+            border: 'none', fontFamily: 'inherit',
             boxShadow: `0 4px 18px ${T.accent}60`,
-          }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</div>
+          }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
         </div>
       </div>
 
@@ -375,11 +381,12 @@ function ScannerSheet({ onClose, onScanned }) {
           color: '#fff', fontFamily: fontSerif, fontSize: 20, fontStyle: 'italic',
           letterSpacing: -0.2,
         }}>Scanner</div>
-        <div onClick={onClose} style={{
+        <button type="button" onClick={onClose} aria-label="Fermer le scanner" style={{
           width: 36, height: 36, borderRadius: 99,
           background: 'rgba(255,255,255,0.18)', display: 'grid', placeItems: 'center',
           color: '#fff', cursor: 'pointer',
-        }}><SvgIcon icon={Ic.close} size={16} /></div>
+          border: 'none', padding: 0, fontFamily: 'inherit',
+        }}><SvgIcon icon={Ic.close} size={16} /></button>
       </div>
 
       <div style={{ flex: 1, position: 'relative', display: 'grid', placeItems: 'center', zIndex: 2 }}>
@@ -440,12 +447,14 @@ function ScannerSheet({ onClose, onScanned }) {
           padding: '0 22px calc(40px + env(safe-area-inset-bottom))',
           position: 'relative', zIndex: 2,
         }}>
-          <div onClick={() => onScanned(foundProduct)} style={{
+          <button type="button" onClick={() => onScanned(foundProduct)} style={{
+            width: '100%',
             background: T.accent, color: T.isDark ? T.bg : '#fff',
             padding: '15px', borderRadius: 14,
             textAlign: 'center', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            border: 'none', fontFamily: 'inherit',
             boxShadow: `0 8px 30px ${T.accent}50`,
-          }}>Utiliser ce produit</div>
+          }}>Utiliser ce produit</button>
         </div>
       )}
     </div>
@@ -487,7 +496,10 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0',
         maxHeight: '90dvh', display: 'flex', flexDirection: 'column',
-        border: `1px solid ${T.rule}`, borderBottom: 'none', overflow: 'hidden',
+        borderTop: `1px solid ${T.rule}`,
+        borderLeft: `1px solid ${T.rule}`,
+        borderRight: `1px solid ${T.rule}`,
+        overflow: 'hidden',
         animation: 'slideUp 0.25s ease',
       }}>
         <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
@@ -518,11 +530,12 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
                 wordBreak: 'break-word',
               }}>{f.name}</div>
             </div>
-            <div onClick={onClose} style={{
+            <button type="button" onClick={onClose} aria-label="Fermer" style={{
               width: 32, height: 32, borderRadius: 99, background: 'rgba(0,0,0,0.25)',
               display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
               alignSelf: 'flex-start',
-            }}><SvgIcon icon={Ic.close} size={14} /></div>
+              border: 'none', padding: 0, fontFamily: 'inherit',
+            }}><SvgIcon icon={Ic.close} size={14} /></button>
           </div>
 
           <div style={{ display: 'flex', gap: 0, marginTop: 18 }}>
@@ -595,23 +608,24 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
           borderTop: `1px solid ${T.rule}`,
           display: 'flex', gap: 10,
         }}>
-          <div onClick={() => onEdit && onEdit(f)} style={{
+          <button type="button" onClick={() => onEdit && onEdit(f)} style={{
             flex: 1, padding: '13px', textAlign: 'center', borderRadius: 12,
             background: T.surface2, color: T.ink2, fontSize: 13, cursor: 'pointer',
             border: `1px solid ${T.rule}`, display: 'flex', alignItems: 'center',
-            justifyContent: 'center', gap: 6,
+            justifyContent: 'center', gap: 6, fontFamily: 'inherit',
           }}>
             <SvgIcon icon={Ic.edit} size={14} /> Modifier
-          </div>
-          <div onClick={() => onAddAgain && onAddAgain(f)} style={{
+          </button>
+          <button type="button" onClick={() => onAddAgain && onAddAgain(f)} style={{
             flex: 2, padding: '13px', textAlign: 'center', borderRadius: 12,
             background: T.accent, color: T.isDark ? T.bg : '#fff', fontSize: 13, fontWeight: 600,
             cursor: 'pointer', display: 'flex', alignItems: 'center',
             justifyContent: 'center', gap: 6,
+            border: 'none', fontFamily: 'inherit',
             boxShadow: `0 4px 18px ${T.accent}60`,
           }}>
             <SvgIcon icon={Ic.plus} size={14} /> Ajouter à nouveau
-          </div>
+          </button>
         </div>
       </div>
     </SheetOverlay>
@@ -670,7 +684,9 @@ function EditFamilySheet({ family, onClose }) {
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0',
         maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
-        border: `1px solid ${T.rule}`, borderBottom: 'none',
+        borderTop: `1px solid ${T.rule}`,
+        borderLeft: `1px solid ${T.rule}`,
+        borderRight: `1px solid ${T.rule}`,
         animation: 'slideUp 0.25s ease',
       }}>
         <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
@@ -685,10 +701,11 @@ function EditFamilySheet({ family, onClose }) {
             fontFamily: fontSerif, fontSize: 22, color: T.ink,
             letterSpacing: -0.3, fontStyle: 'italic',
           }}>Modifier la boisson</div>
-          <div onClick={onClose} style={{
+          <button type="button" onClick={onClose} aria-label="Fermer" style={{
             width: 30, height: 30, borderRadius: 99, background: T.surface2,
             display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
-          }}><SvgIcon icon={Ic.close} size={14} /></div>
+            border: 'none', padding: 0, fontFamily: 'inherit',
+          }}><SvgIcon icon={Ic.close} size={14} /></button>
         </div>
         <div style={{ overflow: 'auto', padding: '0 18px 20px', flex: 1 }}>
           <FieldGroup label="Nom"><input value={name} onChange={e => setName(e.target.value)} style={inputS()} /></FieldGroup>
@@ -738,33 +755,36 @@ function EditFamilySheet({ family, onClose }) {
             }}>{err}</div>
           )}
 
-          <div onClick={delAll} style={{
+          <button type="button" onClick={delAll} style={{
+            width: '100%',
             marginTop: 18, padding: '12px', textAlign: 'center', borderRadius: 12,
             background: 'oklch(35% 0.10 25 / 0.15)',
             color: T.accent2,
             border: '1px solid oklch(45% 0.15 25 / 0.4)',
             fontSize: 12.5, fontWeight: 500, cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            fontFamily: 'inherit',
           }}>
             <SvgIcon icon={Ic.trash} size={13} />
             Supprimer toutes les entrées
-          </div>
+          </button>
         </div>
         <div style={{
           padding: '12px 18px calc(22px + env(safe-area-inset-bottom))',
           borderTop: `1px solid ${T.rule}`, display: 'flex', gap: 10,
         }}>
-          <div onClick={onClose} style={{
+          <button type="button" onClick={onClose} style={{
             flex: 1, padding: '14px', textAlign: 'center', borderRadius: 12,
             background: T.surface2, color: T.ink2, fontSize: 13, cursor: 'pointer',
-            border: `1px solid ${T.rule}`,
-          }}>Annuler</div>
-          <div onClick={busy ? undefined : save} style={{
+            border: `1px solid ${T.rule}`, fontFamily: 'inherit',
+          }}>Annuler</button>
+          <button type="button" onClick={busy ? undefined : save} disabled={busy} style={{
             flex: 2, padding: '14px', textAlign: 'center', borderRadius: 12,
             background: T.accent, color: T.isDark ? T.bg : '#fff', fontSize: 13, fontWeight: 600,
             cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.5 : 1,
+            border: 'none', fontFamily: 'inherit',
             boxShadow: `0 4px 18px ${T.accent}60`,
-          }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</div>
+          }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
         </div>
       </div>
     </SheetOverlay>
@@ -837,10 +857,11 @@ function SettingsDrawer({ open, onClose }) {
             fontFamily: fontSerif, fontSize: 24, color: T.ink,
             letterSpacing: -0.4, fontStyle: 'italic',
           }}>Paramètres</div>
-          <div onClick={onClose} style={{
+          <button type="button" onClick={onClose} aria-label="Fermer les paramètres" style={{
             width: 32, height: 32, borderRadius: 99, background: T.surface2,
             display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
-          }}><SvgIcon icon={Ic.close} size={14} /></div>
+            border: 'none', padding: 0, fontFamily: 'inherit',
+          }}><SvgIcon icon={Ic.close} size={14} /></button>
         </div>
 
         <div style={{ flex: 1, overflow: 'auto', padding: '14px 20px' }}>
@@ -877,21 +898,23 @@ function ThemePicker() {
   useTheme();
   const current = T._name;
   return (
-    <div style={{ display: 'flex', gap: 0 }}>
+    <div style={{ display: 'flex', gap: 0 }} role="radiogroup" aria-label="Thème">
       {[['light', 'Clair', Ic.sun], ['dark', 'Sombre', Ic.moon]].map(([id, label, icon], i) => (
-        <div key={id} onClick={() => applyTheme(id)} style={{
-          flex: 1, padding: '14px 0', textAlign: 'center',
-          fontSize: 13, cursor: 'pointer',
-          background: current === id ? T.accentSoft : 'transparent',
-          color: current === id ? T.accent : T.ink2,
-          fontWeight: current === id ? 600 : 400,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          borderRight: i === 0 ? `1px solid ${T.rule}` : 'none',
-          letterSpacing: -0.1,
-        }}>
+        <button key={id} type="button" role="radio" aria-checked={current === id}
+          onClick={() => applyTheme(id)} style={{
+            flex: 1, padding: '14px 0', textAlign: 'center',
+            fontSize: 13, cursor: 'pointer',
+            background: current === id ? T.accentSoft : 'transparent',
+            color: current === id ? T.accent : T.ink2,
+            fontWeight: current === id ? 600 : 400,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            borderTop: 'none', borderLeft: 'none', borderBottom: 'none',
+            borderRight: i === 0 ? `1px solid ${T.rule}` : 'none',
+            letterSpacing: -0.1, fontFamily: 'inherit',
+          }}>
           <SvgIcon icon={icon} size={15} />
           {label}
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -926,18 +949,20 @@ function GenderPicker({ value, onChange, last }) {
       gap: 10,
     }}>
       <span style={{ color: T.ink, fontSize: 13.5, letterSpacing: -0.1 }}>Sexe</span>
-      <div style={{
+      <div role="radiogroup" aria-label="Sexe" style={{
         display: 'flex', gap: 4, padding: 3,
         background: T.surface2, borderRadius: 10, border: `1px solid ${T.rule}`,
       }}>
         {[['', '—'], ['male', 'Homme'], ['female', 'Femme']].map(([k, label]) => (
-          <div key={k || 'none'} onClick={() => onChange(k)} style={{
-            padding: '6px 10px', borderRadius: 7, textAlign: 'center',
-            fontSize: 11, cursor: 'pointer', letterSpacing: -0.1,
-            background: value === k ? T.ink : 'transparent',
-            color: value === k ? T.bg : T.ink2,
-            fontWeight: value === k ? 600 : 400, minWidth: 38,
-          }}>{label}</div>
+          <button key={k || 'none'} type="button" role="radio" aria-checked={value === k}
+            onClick={() => onChange(k)} style={{
+              padding: '6px 10px', borderRadius: 7, textAlign: 'center',
+              fontSize: 11, cursor: 'pointer', letterSpacing: -0.1,
+              background: value === k ? T.ink : 'transparent',
+              color: value === k ? T.bg : T.ink2,
+              fontWeight: value === k ? 600 : 400, minWidth: 38,
+              border: 'none', fontFamily: 'inherit',
+            }}>{label}</button>
         ))}
       </div>
     </div>
@@ -960,11 +985,18 @@ function SettingsGroup({ label, children }) {
 }
 
 function SettingRow({ label, value, icon, danger, last, onClick }) {
+  const Tag = onClick ? 'button' : 'div';
+  const extra = onClick ? { type: 'button' } : {};
   return (
-    <div onClick={onClick} style={{
+    <Tag {...extra} onClick={onClick} style={{
+      width: '100%',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '13px 14px', borderBottom: last ? 'none' : `1px solid ${T.rule}`,
+      padding: '13px 14px',
+      borderTop: 'none', borderLeft: 'none', borderRight: 'none',
+      borderBottom: last ? 'none' : `1px solid ${T.rule}`,
       cursor: onClick ? 'pointer' : 'default', gap: 10,
+      background: 'transparent', fontFamily: 'inherit',
+      color: 'inherit', textAlign: 'left',
     }}>
       <span style={{
         color: danger ? T.accent2 : T.ink, fontSize: 13.5, letterSpacing: -0.1,
@@ -975,7 +1007,7 @@ function SettingRow({ label, value, icon, danger, last, onClick }) {
       </span>
       {value !== undefined ? <span style={{ color: T.muted, fontSize: 12.5 }}>{value}</span>
         : (!danger && onClick) && <SvgIcon icon={Ic.chev} size={14} color={T.muted} />}
-    </div>
+    </Tag>
   );
 }
 Object.assign(window, {

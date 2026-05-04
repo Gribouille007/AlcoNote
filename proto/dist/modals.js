@@ -171,8 +171,9 @@ function AddDrinkSheet({
       maxHeight: '92dvh',
       display: 'flex',
       flexDirection: 'column',
-      border: `1px solid ${T.rule}`,
-      borderBottom: 'none',
+      borderTop: `1px solid ${T.rule}`,
+      borderLeft: `1px solid ${T.rule}`,
+      borderRight: `1px solid ${T.rule}`,
       animation: 'slideUp 0.25s ease'
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -207,8 +208,10 @@ function AddDrinkSheet({
       letterSpacing: -0.3,
       fontStyle: 'italic'
     }
-  }, "Nouvelle boisson"), /*#__PURE__*/React.createElement("div", {
+  }, "Nouvelle boisson"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: onClose,
+    "aria-label": "Fermer",
     style: {
       width: 30,
       height: 30,
@@ -217,7 +220,10 @@ function AddDrinkSheet({
       display: 'grid',
       placeItems: 'center',
       color: T.ink2,
-      cursor: 'pointer'
+      cursor: 'pointer',
+      border: 'none',
+      padding: 0,
+      fontFamily: 'inherit'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.close,
@@ -228,9 +234,14 @@ function AddDrinkSheet({
       padding: '0 18px 20px',
       flex: 1
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: () => setScan(true),
+    "aria-label": "Scanner un code-barres",
     style: {
+      ...ghostButton,
+      width: '100%',
+      textAlign: 'left',
       background: T.isDark ? `linear-gradient(135deg, oklch(30% 0.03 65), ${T.surface})` : `linear-gradient(135deg, ${T.accentSoft}, ${T.surface})`,
       border: `1px solid ${T.rule}`,
       borderRadius: 16,
@@ -423,9 +434,11 @@ function AddDrinkSheet({
     interactive: true,
     size: 18,
     onChange: setRating
-  }), rating > 0 && /*#__PURE__*/React.createElement("div", {
+  }), rating > 0 && /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: () => setRating(0),
     style: {
+      ...ghostButton,
       color: T.muted,
       fontSize: 11,
       cursor: 'pointer'
@@ -464,7 +477,8 @@ function AddDrinkSheet({
       display: 'flex',
       gap: 10
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: onClose,
     style: {
       flex: 1,
@@ -475,10 +489,13 @@ function AddDrinkSheet({
       color: T.ink2,
       fontSize: 13,
       cursor: 'pointer',
-      border: `1px solid ${T.rule}`
+      border: `1px solid ${T.rule}`,
+      fontFamily: 'inherit'
     }
-  }, "Annuler"), /*#__PURE__*/React.createElement("div", {
+  }, "Annuler"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: busy ? undefined : submit,
+    disabled: busy,
     style: {
       flex: 2,
       padding: '14px',
@@ -491,6 +508,8 @@ function AddDrinkSheet({
       cursor: busy ? 'wait' : 'pointer',
       letterSpacing: 0.1,
       opacity: busy ? 0.5 : 1,
+      border: 'none',
+      fontFamily: 'inherit',
       boxShadow: `0 4px 18px ${T.accent}60`
     }
   }, busy ? 'Enregistrement…' : 'Enregistrer'))), scan && /*#__PURE__*/React.createElement(ScannerSheet, {
@@ -606,8 +625,10 @@ function ScannerSheet({
       fontStyle: 'italic',
       letterSpacing: -0.2
     }
-  }, "Scanner"), /*#__PURE__*/React.createElement("div", {
+  }, "Scanner"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: onClose,
+    "aria-label": "Fermer le scanner",
     style: {
       width: 36,
       height: 36,
@@ -616,7 +637,10 @@ function ScannerSheet({
       display: 'grid',
       placeItems: 'center',
       color: '#fff',
-      cursor: 'pointer'
+      cursor: 'pointer',
+      border: 'none',
+      padding: 0,
+      fontFamily: 'inherit'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.close,
@@ -702,9 +726,11 @@ function ScannerSheet({
       position: 'relative',
       zIndex: 2
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: () => onScanned(foundProduct),
     style: {
+      width: '100%',
       background: T.accent,
       color: T.isDark ? T.bg : '#fff',
       padding: '15px',
@@ -713,6 +739,8 @@ function ScannerSheet({
       fontSize: 14,
       fontWeight: 600,
       cursor: 'pointer',
+      border: 'none',
+      fontFamily: 'inherit',
       boxShadow: `0 8px 30px ${T.accent}50`
     }
   }, "Utiliser ce produit")));
@@ -781,8 +809,9 @@ function DrinkDetailSheet({
       maxHeight: '90dvh',
       display: 'flex',
       flexDirection: 'column',
-      border: `1px solid ${T.rule}`,
-      borderBottom: 'none',
+      borderTop: `1px solid ${T.rule}`,
+      borderLeft: `1px solid ${T.rule}`,
+      borderRight: `1px solid ${T.rule}`,
       overflow: 'hidden',
       animation: 'slideUp 0.25s ease'
     }
@@ -849,8 +878,10 @@ function DrinkDetailSheet({
       lineHeight: 1.1,
       wordBreak: 'break-word'
     }
-  }, f.name)), /*#__PURE__*/React.createElement("div", {
+  }, f.name)), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: onClose,
+    "aria-label": "Fermer",
     style: {
       width: 32,
       height: 32,
@@ -860,7 +891,10 @@ function DrinkDetailSheet({
       placeItems: 'center',
       color: T.ink,
       cursor: 'pointer',
-      alignSelf: 'flex-start'
+      alignSelf: 'flex-start',
+      border: 'none',
+      padding: 0,
+      fontFamily: 'inherit'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.close,
@@ -995,7 +1029,8 @@ function DrinkDetailSheet({
       display: 'flex',
       gap: 10
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: () => onEdit && onEdit(f),
     style: {
       flex: 1,
@@ -1010,12 +1045,14 @@ function DrinkDetailSheet({
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 6
+      gap: 6,
+      fontFamily: 'inherit'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.edit,
     size: 14
-  }), " Modifier"), /*#__PURE__*/React.createElement("div", {
+  }), " Modifier"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: () => onAddAgain && onAddAgain(f),
     style: {
       flex: 2,
@@ -1031,6 +1068,8 @@ function DrinkDetailSheet({
       alignItems: 'center',
       justifyContent: 'center',
       gap: 6,
+      border: 'none',
+      fontFamily: 'inherit',
       boxShadow: `0 4px 18px ${T.accent}60`
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
@@ -1105,8 +1144,9 @@ function EditFamilySheet({
       maxHeight: '92dvh',
       display: 'flex',
       flexDirection: 'column',
-      border: `1px solid ${T.rule}`,
-      borderBottom: 'none',
+      borderTop: `1px solid ${T.rule}`,
+      borderLeft: `1px solid ${T.rule}`,
+      borderRight: `1px solid ${T.rule}`,
       animation: 'slideUp 0.25s ease'
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -1141,8 +1181,10 @@ function EditFamilySheet({
       letterSpacing: -0.3,
       fontStyle: 'italic'
     }
-  }, "Modifier la boisson"), /*#__PURE__*/React.createElement("div", {
+  }, "Modifier la boisson"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: onClose,
+    "aria-label": "Fermer",
     style: {
       width: 30,
       height: 30,
@@ -1151,7 +1193,10 @@ function EditFamilySheet({
       display: 'grid',
       placeItems: 'center',
       color: T.ink2,
-      cursor: 'pointer'
+      cursor: 'pointer',
+      border: 'none',
+      padding: 0,
+      fontFamily: 'inherit'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.close,
@@ -1246,9 +1291,11 @@ function EditFamilySheet({
       fontSize: 12,
       marginBottom: 10
     }
-  }, err), /*#__PURE__*/React.createElement("div", {
+  }, err), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: delAll,
     style: {
+      width: '100%',
       marginTop: 18,
       padding: '12px',
       textAlign: 'center',
@@ -1262,7 +1309,8 @@ function EditFamilySheet({
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 6
+      gap: 6,
+      fontFamily: 'inherit'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.trash,
@@ -1274,7 +1322,8 @@ function EditFamilySheet({
       display: 'flex',
       gap: 10
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: onClose,
     style: {
       flex: 1,
@@ -1285,10 +1334,13 @@ function EditFamilySheet({
       color: T.ink2,
       fontSize: 13,
       cursor: 'pointer',
-      border: `1px solid ${T.rule}`
+      border: `1px solid ${T.rule}`,
+      fontFamily: 'inherit'
     }
-  }, "Annuler"), /*#__PURE__*/React.createElement("div", {
+  }, "Annuler"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: busy ? undefined : save,
+    disabled: busy,
     style: {
       flex: 2,
       padding: '14px',
@@ -1300,6 +1352,8 @@ function EditFamilySheet({
       fontWeight: 600,
       cursor: busy ? 'wait' : 'pointer',
       opacity: busy ? 0.5 : 1,
+      border: 'none',
+      fontFamily: 'inherit',
       boxShadow: `0 4px 18px ${T.accent}60`
     }
   }, busy ? 'Enregistrement…' : 'Enregistrer'))));
@@ -1391,8 +1445,10 @@ function SettingsDrawer({
       letterSpacing: -0.4,
       fontStyle: 'italic'
     }
-  }, "Param\xE8tres"), /*#__PURE__*/React.createElement("div", {
+  }, "Param\xE8tres"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: onClose,
+    "aria-label": "Fermer les param\xE8tres",
     style: {
       width: 32,
       height: 32,
@@ -1401,7 +1457,10 @@ function SettingsDrawer({
       display: 'grid',
       placeItems: 'center',
       color: T.ink2,
-      cursor: 'pointer'
+      cursor: 'pointer',
+      border: 'none',
+      padding: 0,
+      fontFamily: 'inherit'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.close,
@@ -1468,9 +1527,14 @@ function ThemePicker() {
     style: {
       display: 'flex',
       gap: 0
-    }
-  }, [['light', 'Clair', Ic.sun], ['dark', 'Sombre', Ic.moon]].map(([id, label, icon], i) => /*#__PURE__*/React.createElement("div", {
+    },
+    role: "radiogroup",
+    "aria-label": "Th\xE8me"
+  }, [['light', 'Clair', Ic.sun], ['dark', 'Sombre', Ic.moon]].map(([id, label, icon], i) => /*#__PURE__*/React.createElement("button", {
     key: id,
+    type: "button",
+    role: "radio",
+    "aria-checked": current === id,
     onClick: () => applyTheme(id),
     style: {
       flex: 1,
@@ -1485,8 +1549,12 @@ function ThemePicker() {
       alignItems: 'center',
       justifyContent: 'center',
       gap: 8,
+      borderTop: 'none',
+      borderLeft: 'none',
+      borderBottom: 'none',
       borderRight: i === 0 ? `1px solid ${T.rule}` : 'none',
-      letterSpacing: -0.1
+      letterSpacing: -0.1,
+      fontFamily: 'inherit'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: icon,
@@ -1557,6 +1625,8 @@ function GenderPicker({
       letterSpacing: -0.1
     }
   }, "Sexe"), /*#__PURE__*/React.createElement("div", {
+    role: "radiogroup",
+    "aria-label": "Sexe",
     style: {
       display: 'flex',
       gap: 4,
@@ -1565,8 +1635,11 @@ function GenderPicker({
       borderRadius: 10,
       border: `1px solid ${T.rule}`
     }
-  }, [['', '—'], ['male', 'Homme'], ['female', 'Femme']].map(([k, label]) => /*#__PURE__*/React.createElement("div", {
+  }, [['', '—'], ['male', 'Homme'], ['female', 'Femme']].map(([k, label]) => /*#__PURE__*/React.createElement("button", {
     key: k || 'none',
+    type: "button",
+    role: "radio",
+    "aria-checked": value === k,
     onClick: () => onChange(k),
     style: {
       padding: '6px 10px',
@@ -1578,7 +1651,9 @@ function GenderPicker({
       background: value === k ? T.ink : 'transparent',
       color: value === k ? T.bg : T.ink2,
       fontWeight: value === k ? 600 : 400,
-      minWidth: 38
+      minWidth: 38,
+      border: 'none',
+      fontFamily: 'inherit'
     }
   }, label))));
 }
@@ -1617,18 +1692,30 @@ function SettingRow({
   last,
   onClick
 }) {
-  return /*#__PURE__*/React.createElement("div", {
+  const Tag = onClick ? 'button' : 'div';
+  const extra = onClick ? {
+    type: 'button'
+  } : {};
+  return /*#__PURE__*/React.createElement(Tag, _extends({}, extra, {
     onClick: onClick,
     style: {
+      width: '100%',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '13px 14px',
+      borderTop: 'none',
+      borderLeft: 'none',
+      borderRight: 'none',
       borderBottom: last ? 'none' : `1px solid ${T.rule}`,
       cursor: onClick ? 'pointer' : 'default',
-      gap: 10
+      gap: 10,
+      background: 'transparent',
+      fontFamily: 'inherit',
+      color: 'inherit',
+      textAlign: 'left'
     }
-  }, /*#__PURE__*/React.createElement("span", {
+  }), /*#__PURE__*/React.createElement("span", {
     style: {
       color: danger ? T.accent2 : T.ink,
       fontSize: 13.5,

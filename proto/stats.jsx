@@ -237,18 +237,20 @@ function PeriodSwitcher({ period, onChange }) {
       display: 'flex', padding: '4px 16px 14px',
       overflowX: 'auto', scrollbarWidth: 'none',
     }}>
-      <div style={{
+      <div role="tablist" aria-label="Période" style={{
         display: 'flex', gap: 2, padding: 3, background: T.surface2,
         borderRadius: 12, border: `1px solid ${T.rule}`, flexShrink: 0,
       }}>
         {PERIODS.map(p => (
-          <div key={p.id} onClick={() => onChange(p.id)} style={{
-            padding: '6px 12px', borderRadius: 9, cursor: 'pointer',
-            background: period === p.id ? T.accent : 'transparent',
-            color: period === p.id ? (T.isDark ? T.bg : '#fff') : T.ink2,
-            fontSize: 12, fontWeight: period === p.id ? 600 : 400,
-            letterSpacing: -0.1, whiteSpace: 'nowrap',
-          }}>{p.label}</div>
+          <button key={p.id} type="button" role="tab" aria-selected={period === p.id}
+            onClick={() => onChange(p.id)} style={{
+              padding: '6px 12px', borderRadius: 9, cursor: 'pointer',
+              background: period === p.id ? T.accent : 'transparent',
+              color: period === p.id ? (T.isDark ? T.bg : '#fff') : T.ink2,
+              fontSize: 12, fontWeight: period === p.id ? 600 : 400,
+              letterSpacing: -0.1, whiteSpace: 'nowrap',
+              border: 'none', fontFamily: 'inherit',
+            }}>{p.label}</button>
         ))}
       </div>
     </div>
@@ -257,28 +259,30 @@ function PeriodSwitcher({ period, onChange }) {
 
 function PeriodNav({ period, anchor, onShift }) {
   const label = periodLabel(period, anchor);
-  const arrowBtn = (icon, dir) => (
-    <div onClick={() => onShift(dir)} style={{
-      width: 32, height: 32, borderRadius: 10, background: T.surface2,
-      display: 'grid', placeItems: 'center', color: T.ink2,
-      border: `1px solid ${T.rule}`, cursor: period === 'all' ? 'not-allowed' : 'pointer',
-      opacity: period === 'all' ? 0.4 : 1,
-    }}>
+  const arrowBtn = (icon, dir, label) => (
+    <button type="button" onClick={() => onShift(dir)}
+      disabled={period === 'all'} aria-label={label}
+      style={{
+        width: 32, height: 32, borderRadius: 10, background: T.surface2,
+        display: 'grid', placeItems: 'center', color: T.ink2,
+        border: `1px solid ${T.rule}`, cursor: period === 'all' ? 'not-allowed' : 'pointer',
+        opacity: period === 'all' ? 0.4 : 1, padding: 0, fontFamily: 'inherit',
+      }}>
       <SvgIcon icon={icon} size={14} />
-    </div>
+    </button>
   );
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '0 4px 18px', gap: 8,
     }}>
-      {arrowBtn(Ic.chevL, -1)}
+      {arrowBtn(Ic.chevL, -1, 'Période précédente')}
       <div style={{
         fontFamily: fontSerif, fontSize: 18, color: T.ink,
         fontStyle: 'italic', letterSpacing: -0.3, textAlign: 'center', flex: 1,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>{label}</div>
-      {arrowBtn(Ic.chev, 1)}
+      {arrowBtn(Ic.chev, 1, 'Période suivante')}
     </div>
   );
 }
@@ -287,13 +291,17 @@ function StatSection({ id, title, action, children, sub, collapsed, toggleSectio
   const isOpen = !collapsed.has(id);
   return (
     <div style={{ marginBottom: 14 }}>
-      <div
+      <button type="button"
         onClick={() => toggleSection(id)}
+        aria-expanded={isOpen}
+        aria-controls={`alco-section-${id}`}
         style={{
+          width: '100%', textAlign: 'left',
           display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
           padding: '11px 14px', background: T.surface, borderRadius: 14,
           border: `1px solid ${T.rule}`,
           marginBottom: isOpen ? 10 : 0,
+          fontFamily: 'inherit', color: 'inherit',
         }}>
         <span style={{
           color: T.muted, transition: 'transform 0.2s ease',
@@ -314,8 +322,8 @@ function StatSection({ id, title, action, children, sub, collapsed, toggleSectio
           )}
         </div>
         {action}
-      </div>
-      {isOpen && children}
+      </button>
+      {isOpen && <div id={`alco-section-${id}`}>{children}</div>}
     </div>
   );
 }

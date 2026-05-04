@@ -95,15 +95,22 @@ function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAd
 
   return (
     <div style={{ marginTop: first ? 4 : 14, marginBottom: 4, position: 'relative' }}>
-      <div onClick={onToggle} style={{
+      <button type="button" onClick={onToggle}
+        aria-expanded={!isCollapsed}
+        aria-label={`${isCollapsed ? 'Déplier' : 'Replier'} ${fmtDayHeader(d)}`}
+        style={{
+        width: '100%', textAlign: 'left',
         display: 'flex', alignItems: 'center', gap: 10,
         padding: '10px 12px',
         background: T.surface, borderTopLeftRadius: 12, borderTopRightRadius: 12,
         borderBottomLeftRadius: isCollapsed ? 12 : 0,
         borderBottomRightRadius: isCollapsed ? 12 : 0,
-        border: `1px solid ${T.rule}`,
+        borderTop: `1px solid ${T.rule}`,
+        borderLeft: `1px solid ${T.rule}`,
+        borderRight: `1px solid ${T.rule}`,
         borderBottom: isCollapsed ? `1px solid ${T.rule}` : 'none',
         cursor: 'pointer', position: 'relative', zIndex: 2,
+        fontFamily: 'inherit', color: 'inherit',
       }}>
         <span style={{
           color: T.muted, transition: 'transform 0.2s ease',
@@ -125,7 +132,7 @@ function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAd
             {rel && <span style={{ opacity: 0.6 }}> · {rel}</span>}
           </div>
         </div>
-      </div>
+      </button>
 
       {!isCollapsed && (
         <div style={{ position: 'relative', paddingLeft: 24 }}>
@@ -135,7 +142,9 @@ function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAd
           }}/>
           <div style={{
             background: T.surface, borderBottomLeftRadius: 12, borderBottomRightRadius: 12,
-            border: `1px solid ${T.rule}`, borderTop: 'none',
+            borderLeft: `1px solid ${T.rule}`,
+            borderRight: `1px solid ${T.rule}`,
+            borderBottom: `1px solid ${T.rule}`,
             marginLeft: -24,
           }}>
             {entries.map((e, i) => (
@@ -174,7 +183,12 @@ function EntryRow({ entry: e, onClick, onDirectAdd, first, last }) {
         flexShrink: 0, boxShadow: `0 0 0 3px ${T.surface}`,
         zIndex: 1,
       }}/>
-      <div onClick={onClick} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
+      <button type="button" onClick={onClick} aria-label={`Voir ${e.family.name}`}
+        style={{
+          ...ghostButton,
+          flex: 1, minWidth: 0, cursor: 'pointer',
+          display: 'block', textAlign: 'left',
+        }}>
         <div style={{
           fontSize: 14, color: T.ink, fontWeight: 500, letterSpacing: -0.1,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -185,22 +199,24 @@ function EntryRow({ entry: e, onClick, onDirectAdd, first, last }) {
           {e.family.quantity} {e.family.unit} · {e.family.alcohol}°
           {e.place && <span> · {e.place}</span>}
         </div>
-      </div>
+      </button>
       <div style={{
         fontFamily: fontNum, fontSize: 11, color: T.ink2,
       }}>{t}</div>
-      <div
+      <button type="button"
         onClick={(ev) => { ev.stopPropagation(); onDirectAdd && onDirectAdd(e.family); }}
         style={{
           width: 30, height: 30, borderRadius: 10,
           background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
           display: 'grid', placeItems: 'center', color: T.accent,
           cursor: 'pointer', flexShrink: 0,
+          padding: 0, fontFamily: 'inherit',
         }}
         title="Ajouter à nouveau"
+        aria-label={`Ajouter ${e.family.name} à nouveau`}
       >
         <SvgIcon icon={Ic.plus} size={14} />
-      </div>
+      </button>
     </div>
   );
 }

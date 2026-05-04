@@ -312,17 +312,48 @@ function CategoryGlyph({ name, size = 22 }) {
   return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="8"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/></svg>;
 }
 
+// ── Clickable card props (for divs that contain inner buttons) ────
+// Rendering a real <button> around a card with sub-buttons is invalid
+// HTML, so cards stay as <div> but get role/tabIndex/keyboard handling.
+function clickable(onClick, label) {
+  return {
+    onClick,
+    role: 'button',
+    tabIndex: 0,
+    'aria-label': label,
+    onKeyDown: (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onClick && onClick(e);
+      }
+    },
+  };
+}
+
+// Reusable "ghost" button reset for clickable surfaces that want a
+// transparent background and inherit fonts.
+const ghostButton = {
+  background: 'transparent', border: 'none', padding: 0,
+  fontFamily: 'inherit', color: 'inherit', cursor: 'pointer',
+  textAlign: 'inherit',
+};
+
 // ── Sheet overlay (bottom sheet / right drawer) ───────────────────
 function SheetOverlay({ children, onClose, side = 'bottom' }) {
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose && onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
   return (
-    <div onClick={onClose} style={{
+    <div role="presentation" onClick={onClose} style={{
       position: 'fixed', inset: 0, background: T.scrim,
       zIndex: 100, display: 'flex',
       alignItems: side === 'bottom' ? 'flex-end' : 'stretch',
       justifyContent: side === 'right' ? 'flex-end' : 'stretch',
       animation: 'fade 0.2s ease',
     }}>
-      <div onClick={e => e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} style={{
         width: side === 'right' ? 'auto' : '100%',
         maxWidth: side === 'right' ? '100%' : 'min(560px, 100%)',
         margin: side === 'bottom' ? '0 auto' : 0,
@@ -452,4 +483,5 @@ Object.assign(window, {
   SearchInput, SectionHead, Pill, Stars, CategoryGlyph,
   SheetOverlay, StatusBar, niceMax,
   Confirm, ConfirmHost,
+  clickable, ghostButton,
 });

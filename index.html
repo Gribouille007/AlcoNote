@@ -30,6 +30,7 @@
   <style>
     html, body {
       margin: 0; padding: 0;
+      width: 100%;
       min-height: 100vh; min-height: 100dvh;
       font-family: "Geist", system-ui, sans-serif;
       transition: background 0.35s ease;
@@ -37,6 +38,29 @@
       overscroll-behavior: none;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
+    }
+    #root, .alco-shell {
+      max-width: 100%;
+    }
+    /* Desktop: keep the app phone-width and let the warm gradient fill the rest */
+    @media (min-width: 720px) {
+      body {
+        display: grid;
+        place-items: center;
+        padding: 24px 0;
+      }
+      .alco-shell {
+        width: 420px !important;
+        height: min(880px, calc(100dvh - 48px)) !important;
+        min-height: 0 !important;
+        border-radius: 28px;
+        box-shadow: 0 30px 80px rgba(0,0,0,0.35),
+                    0 0 0 1px oklch(30% 0.01 55 / 0.4);
+      }
+      html[data-theme="light"] .alco-shell {
+        box-shadow: 0 30px 80px rgba(60,40,20,0.18),
+                    0 0 0 1px oklch(70% 0.02 70 / 0.3);
+      }
     }
     html[data-theme="dark"], body.theme-dark {
       background: radial-gradient(ellipse at top, oklch(22% 0.01 55), oklch(14% 0.008 50) 75%);

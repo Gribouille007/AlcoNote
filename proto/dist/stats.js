@@ -320,6 +320,8 @@ function PeriodSwitcher({
       scrollbarWidth: 'none'
     }
   }, /*#__PURE__*/React.createElement("div", {
+    role: "tablist",
+    "aria-label": "P\xE9riode",
     style: {
       display: 'flex',
       gap: 2,
@@ -329,8 +331,11 @@ function PeriodSwitcher({
       border: `1px solid ${T.rule}`,
       flexShrink: 0
     }
-  }, PERIODS.map(p => /*#__PURE__*/React.createElement("div", {
+  }, PERIODS.map(p => /*#__PURE__*/React.createElement("button", {
     key: p.id,
+    type: "button",
+    role: "tab",
+    "aria-selected": period === p.id,
     onClick: () => onChange(p.id),
     style: {
       padding: '6px 12px',
@@ -341,7 +346,9 @@ function PeriodSwitcher({
       fontSize: 12,
       fontWeight: period === p.id ? 600 : 400,
       letterSpacing: -0.1,
-      whiteSpace: 'nowrap'
+      whiteSpace: 'nowrap',
+      border: 'none',
+      fontFamily: 'inherit'
     }
   }, p.label))));
 }
@@ -351,8 +358,11 @@ function PeriodNav({
   onShift
 }) {
   const label = periodLabel(period, anchor);
-  const arrowBtn = (icon, dir) => /*#__PURE__*/React.createElement("div", {
+  const arrowBtn = (icon, dir, label) => /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: () => onShift(dir),
+    disabled: period === 'all',
+    "aria-label": label,
     style: {
       width: 32,
       height: 32,
@@ -363,7 +373,9 @@ function PeriodNav({
       color: T.ink2,
       border: `1px solid ${T.rule}`,
       cursor: period === 'all' ? 'not-allowed' : 'pointer',
-      opacity: period === 'all' ? 0.4 : 1
+      opacity: period === 'all' ? 0.4 : 1,
+      padding: 0,
+      fontFamily: 'inherit'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: icon,
@@ -377,7 +389,7 @@ function PeriodNav({
       padding: '0 4px 18px',
       gap: 8
     }
-  }, arrowBtn(Ic.chevL, -1), /*#__PURE__*/React.createElement("div", {
+  }, arrowBtn(Ic.chevL, -1, 'Période précédente'), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
       fontSize: 18,
@@ -390,7 +402,7 @@ function PeriodNav({
       overflow: 'hidden',
       textOverflow: 'ellipsis'
     }
-  }, label), arrowBtn(Ic.chev, 1));
+  }, label), arrowBtn(Ic.chev, 1, 'Période suivante'));
 }
 function StatSection({
   id,
@@ -406,9 +418,14 @@ function StatSection({
     style: {
       marginBottom: 14
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: () => toggleSection(id),
+    "aria-expanded": isOpen,
+    "aria-controls": `alco-section-${id}`,
     style: {
+      width: '100%',
+      textAlign: 'left',
       display: 'flex',
       alignItems: 'center',
       gap: 10,
@@ -417,7 +434,9 @@ function StatSection({
       background: T.surface,
       borderRadius: 14,
       border: `1px solid ${T.rule}`,
-      marginBottom: isOpen ? 10 : 0
+      marginBottom: isOpen ? 10 : 0,
+      fontFamily: 'inherit',
+      color: 'inherit'
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
@@ -452,7 +471,9 @@ function StatSection({
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap'
     }
-  }, sub)), action), isOpen && children);
+  }, sub)), action), isOpen && /*#__PURE__*/React.createElement("div", {
+    id: `alco-section-${id}`
+  }, children));
 }
 function Card({
   children,

@@ -130,9 +130,14 @@ function DayGroup({
       marginBottom: 4,
       position: 'relative'
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: onToggle,
+    "aria-expanded": !isCollapsed,
+    "aria-label": `${isCollapsed ? 'Déplier' : 'Replier'} ${fmtDayHeader(d)}`,
     style: {
+      width: '100%',
+      textAlign: 'left',
       display: 'flex',
       alignItems: 'center',
       gap: 10,
@@ -142,11 +147,15 @@ function DayGroup({
       borderTopRightRadius: 12,
       borderBottomLeftRadius: isCollapsed ? 12 : 0,
       borderBottomRightRadius: isCollapsed ? 12 : 0,
-      border: `1px solid ${T.rule}`,
+      borderTop: `1px solid ${T.rule}`,
+      borderLeft: `1px solid ${T.rule}`,
+      borderRight: `1px solid ${T.rule}`,
       borderBottom: isCollapsed ? `1px solid ${T.rule}` : 'none',
       cursor: 'pointer',
       position: 'relative',
-      zIndex: 2
+      zIndex: 2,
+      fontFamily: 'inherit',
+      color: 'inherit'
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
@@ -205,8 +214,9 @@ function DayGroup({
       background: T.surface,
       borderBottomLeftRadius: 12,
       borderBottomRightRadius: 12,
-      border: `1px solid ${T.rule}`,
-      borderTop: 'none',
+      borderLeft: `1px solid ${T.rule}`,
+      borderRight: `1px solid ${T.rule}`,
+      borderBottom: `1px solid ${T.rule}`,
       marginLeft: -24
     }
   }, entries.map((e, i) => /*#__PURE__*/React.createElement(EntryRow, {
@@ -263,12 +273,17 @@ function EntryRow({
       boxShadow: `0 0 0 3px ${T.surface}`,
       zIndex: 1
     }
-  }), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: onClick,
+    "aria-label": `Voir ${e.family.name}`,
     style: {
+      ...ghostButton,
       flex: 1,
       minWidth: 0,
-      cursor: 'pointer'
+      cursor: 'pointer',
+      display: 'block',
+      textAlign: 'left'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -293,7 +308,8 @@ function EntryRow({
       fontSize: 11,
       color: T.ink2
     }
-  }, t), /*#__PURE__*/React.createElement("div", {
+  }, t), /*#__PURE__*/React.createElement("button", {
+    type: "button",
     onClick: ev => {
       ev.stopPropagation();
       onDirectAdd && onDirectAdd(e.family);
@@ -308,9 +324,12 @@ function EntryRow({
       placeItems: 'center',
       color: T.accent,
       cursor: 'pointer',
-      flexShrink: 0
+      flexShrink: 0,
+      padding: 0,
+      fontFamily: 'inherit'
     },
-    title: "Ajouter \xE0 nouveau"
+    title: "Ajouter \xE0 nouveau",
+    "aria-label": `Ajouter ${e.family.name} à nouveau`
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.plus,
     size: 14
