@@ -27,14 +27,13 @@ const PERIODS = [
   { id: 'school', label: 'A. scol.' },
 ];
 
-// BAC level classification — mirrors the legacy app
+// BAC level classification — mirrors the legacy app --> never change the messages under no circumstances
 const BAC_LEVELS = [
-  { max: 200,      cls: 'safe',    text: 'Sobre',                color: 'oklch(72% 0.10 155)' },
-  { max: 500,      cls: 'caution', text: 'Légèrement alcoolisé', color: 'oklch(75% 0.14 95)' },
-  { max: 800,      cls: 'warning', text: 'Dépass. limite légale', color: 'oklch(68% 0.14 50)' },
-  { max: 1999,     cls: 'warning', text: 'Ivresse',              color: 'oklch(65% 0.15 35)' },
-  { max: 2999,     cls: 'danger',  text: 'Ivresse sévère',       color: 'oklch(60% 0.18 25)' },
-  { max: Infinity, cls: 'danger',  text: 'Danger vital',         color: 'oklch(55% 0.20 20)' },
+  { max: 500,      cls: 'caution', text: 'OK GARMIN, trouve mes clés de voiture',   color: 'oklch(75% 0.14 95)' },
+  { max: 1000,     cls: 'warning', text: 'On nage dans le lac du BDC ?',            color: 'oklch(68% 0.14 50)' },
+  { max: 1999,     cls: 'warning', text: '1 millions de bières svp',                color: 'oklch(65% 0.15 35)' },
+  { max: 2999,     cls: 'danger',  text: 'Brieuc t\'abuses',                        color: 'oklch(60% 0.18 25)' },
+  { max: Infinity, cls: 'danger',  text: 'Y a qu\'une personne pour arriver ici',   color: 'oklch(55% 0.20 20)' },
 ];
 
 function bacLevel(bac) {
