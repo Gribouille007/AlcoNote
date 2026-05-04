@@ -1,0 +1,346 @@
+/* AUTO-GENERATED from proto/data.jsx — do not edit by hand. */
+// data.jsx — real data adapter (wraps the legacy IndexedDB layer in
+// `js/database.js`). The proto components were originally fed by a static
+// mock; here we expose React-friendly hooks that load from the real DB and
+// re-render on writes.
+
+const DEFAULT_CATEGORY_NAMES = ['Bière', 'Vin', 'Spiritueux', 'Cocktail', 'Autre'];
+
+// Bus -- listeners are notified when DB writes happen so any component can
+// re-fetch. Components should also call `dataBus.bump()` after mutating.
+const dataBus = (() => {
+  const subs = new Set();
+  return {
+    sub(fn) {
+      subs.add(fn);
+      return () => subs.delete(fn);
+    },
+    bump() {
+      subs.forEach(fn => {
+        try {
+          fn();
+        } catch (e) {}
+      });
+    }
+  };
+})();
+function useDataVersion() {
+  const [v, setV] = React.useState(0);
+  React.useEffect(() => dataBus.sub(() => setV(x => x + 1)), []);
+  return v;
+}
+
+// ── Wait for DB ──
+async function waitForDb() {
+  let tries = 0;
+  while (!window.dbManager && tries < 80) {
+    await new Promise(r => setTimeout(r, 50));
+    tries++;
+  }
+  return window.dbManager;
+}
+async function _ensureDefaultCategories() {
+  const db = await waitForDb();
+  if (!db) return;
+  try {
+    const existing = await db.getAllCategories();
+    if (existing.length === 0) {
+      for (const name of DEFAULT_CATEGORY_NAMES) {
+        try {
+          await db.addCategory({
+            name
+          });
+        } catch (e) {}
+      }
+    }
+  } catch (e) {}
+}
+
+// ── Hook: load categories list ────────────────────────────────────
+function useCategories() {
+  const v = useDataVersion();
+  const [cats, setCats] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const db = await waitForDb();
+      if (!db) return;
+      await _ensureDefaultCategories();
+      const list = await db.getAllCategories();
+      if (alive) {
+        setCats(list);
+        setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [v]);
+  return {
+    categories: cats,
+    loading
+  };
+}
+
+// ── Hook: load all drinks (chronological) ────────────────────────
+function useDrinks() {
+  const v = useDataVersion();
+  const [drinks, setDrinks] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const db = await waitForDb();
+      if (!db) return;
+      const list = await db.getAllDrinks();
+      if (alive) {
+        setDrinks(list);
+        setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [v]);
+  return {
+    drinks,
+    loading
+  };
+}
+
+// ── Hook: load drink ratings ──────────────────────────────────────
+function useRatings() {
+  const v = useDataVersion();
+  const [map, setMap] = React.useState({});
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const db = await waitForDb();
+      if (!db) return;
+      const all = await db.getAllRatings();
+      if (!alive) return;
+      const out = {};
+      for (const r of all) out[r.drinkName] = r.rating;
+      setMap(out);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [v]);
+  return map;
+}
+// ── Family aggregation ───────────────────────────────────────────
+// A "family" groups distinct drinks by (name + quantity + unit + alcohol).
+// Each family carries a sorted entries list (newest first) and aggregate
+// counts for the UI.
+function buildFamilies(drinks, ratings = {}) {
+  const map = new Map();
+  for (const d of drinks) {
+    const key = `${(d.name || '').trim().toLowerCase()}::${d.quantity}::${(d.unit || '').toLowerCase()}::${d.alcoholContent || 0}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        id: 'fam::' + key,
+        name: d.name,
+        category: d.category || 'Autre',
+        quantity: d.quantity,
+        unit: d.unit,
+        alcohol: d.alcoholContent || 0,
+        rating: ratings[d.name] || 0,
+        entries: []
+      });
+    }
+    const f = map.get(key);
+    f.entries.push({
+      id: d.id,
+      ts: `${d.date}T${d.time || '00:00'}`,
+      place: d.location && (d.location.name || d.location.address) ? d.location.name || d.location.address : null,
+      raw: d
+    });
+  }
+  for (const f of map.values()) {
+    f.entries.sort((a, b) => b.ts.localeCompare(a.ts));
+  }
+  return Array.from(map.values()).sort((a, b) => b.entries.length - a.entries.length);
+}
+
+// Stats per category
+function computeCategoryStats(categories, families) {
+  const byName = new Map();
+  for (const c of categories) byName.set(c.name, {
+    id: c.id,
+    name: c.name,
+    families: 0,
+    entries: 0
+  });
+  for (const f of families) {
+    if (!byName.has(f.category)) {
+      byName.set(f.category, {
+        id: 'cat-' + f.category,
+        name: f.category,
+        families: 0,
+        entries: 0
+      });
+    }
+    const e = byName.get(f.category);
+    e.families += 1;
+    e.entries += f.entries.length;
+  }
+  return Array.from(byName.values()).sort((a, b) => b.entries - a.entries);
+}
+
+// Flat entries list for History tab
+function flattenEntries(families) {
+  const out = [];
+  for (const f of families) {
+    for (const e of f.entries) {
+      out.push({
+        ...e,
+        family: f
+      });
+    }
+  }
+  return out.sort((a, b) => b.ts.localeCompare(a.ts));
+}
+// ── Settings (weight, gender, theme) ──────────────────────────────
+async function loadSettings() {
+  const db = await waitForDb();
+  if (!db) return {};
+  return await db.getAllSettings();
+}
+async function saveSetting(key, value) {
+  const db = await waitForDb();
+  if (!db) return;
+  await db.setSetting(key, value);
+  dataBus.bump();
+}
+function useSettings() {
+  const v = useDataVersion();
+  const [s, setS] = React.useState({});
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const out = await loadSettings();
+      if (alive) setS(out);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [v]);
+  return s;
+}
+
+// ── BAC records ───────────────────────────────────────────────────
+function useBacRecords(limit = 50) {
+  const v = useDataVersion();
+  const [records, setRecords] = React.useState([]);
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const db = await waitForDb();
+      if (!db) return;
+      const list = await db.getBACRecords(limit);
+      if (alive) setRecords(list);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [v, limit]);
+  return records;
+}
+
+// ── Mutations ─────────────────────────────────────────────────────
+async function addDrink(payload) {
+  const db = await waitForDb();
+  if (!db) throw new Error('DB indisponible');
+  const r = await db.addDrink(payload);
+  dataBus.bump();
+  return r;
+}
+async function updateDrink(id, updates) {
+  const db = await waitForDb();
+  if (!db) throw new Error('DB indisponible');
+  const r = await db.updateDrink(id, updates);
+  dataBus.bump();
+  return r;
+}
+async function deleteDrink(id) {
+  const db = await waitForDb();
+  if (!db) throw new Error('DB indisponible');
+  const r = await db.deleteDrink(id);
+  dataBus.bump();
+  return r;
+}
+async function saveRating(drinkName, rating) {
+  const db = await waitForDb();
+  if (!db) return;
+  await db.setRating(drinkName, rating);
+  dataBus.bump();
+}
+async function addCategory(name) {
+  const db = await waitForDb();
+  if (!db) return;
+  const r = await db.addCategory({
+    name
+  });
+  dataBus.bump();
+  return r;
+}
+async function renameCategory(oldName, newName) {
+  const db = await waitForDb();
+  if (!db) return;
+  await db.renameCategory(oldName, newName);
+  dataBus.bump();
+}
+async function deleteCategory(id) {
+  const db = await waitForDb();
+  if (!db) return;
+  await db.deleteCategory(id);
+  dataBus.bump();
+}
+
+// Apply same updates to every drink that shares (name + qty + unit + abv)
+async function updateFamily(family, updates) {
+  const db = await waitForDb();
+  if (!db) return;
+  const all = await db.getAllDrinks();
+  const matches = all.filter(d => (d.name || '').trim().toLowerCase() === (family.name || '').trim().toLowerCase() && d.quantity === family.quantity && (d.unit || '').toLowerCase() === (family.unit || '').toLowerCase() && (d.alcoholContent || 0) === (family.alcohol || 0));
+  for (const m of matches) {
+    await db.updateDrink(m.id, updates);
+  }
+  dataBus.bump();
+}
+async function deleteFamily(family) {
+  const db = await waitForDb();
+  if (!db) return;
+  const all = await db.getAllDrinks();
+  const matches = all.filter(d => (d.name || '').trim().toLowerCase() === (family.name || '').trim().toLowerCase() && d.quantity === family.quantity && (d.unit || '').toLowerCase() === (family.unit || '').toLowerCase() && (d.alcoholContent || 0) === (family.alcohol || 0));
+  for (const m of matches) {
+    await db.deleteDrink(m.id);
+  }
+  dataBus.bump();
+}
+Object.assign(window, {
+  dataBus,
+  useDataVersion,
+  waitForDb,
+  useCategories,
+  useDrinks,
+  useRatings,
+  useSettings,
+  useBacRecords,
+  buildFamilies,
+  computeCategoryStats,
+  flattenEntries,
+  loadSettings,
+  saveSetting,
+  addDrink,
+  updateDrink,
+  deleteDrink,
+  saveRating,
+  addCategory,
+  renameCategory,
+  deleteCategory,
+  updateFamily,
+  deleteFamily
+});

@@ -1,0 +1,14 @@
+{
+  "name": "alconote",
+  "version": "3.1.0",
+  "private": true,
+  "description": "AlcoNote — Suivi de consommation d'alcool (PWA)",
+  "scripts": {
+    "build": "node tools/build.js",
+    "watch": "node tools/build.js --watch"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-react": "^7.28.5"
+  }
+}

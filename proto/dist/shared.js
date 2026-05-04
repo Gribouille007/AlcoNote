@@ -1,0 +1,1119 @@
+/* AUTO-GENERATED from proto/shared.jsx — do not edit by hand. */
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+// shared.jsx — tokens, icons, shared primitives
+// Two themes: warm dark (espresso/ivory) and warm light (cream/ink).
+// T is a mutable global; call setTheme(name) then notify themeListeners to re-render.
+
+const THEMES = {
+  dark: {
+    bg: 'oklch(16% 0.008 50)',
+    surface: 'oklch(20% 0.01 55)',
+    surface2: 'oklch(24% 0.012 55)',
+    surface3: 'oklch(28% 0.014 55)',
+    ink: 'oklch(96% 0.008 85)',
+    ink2: 'oklch(78% 0.008 80)',
+    muted: 'oklch(55% 0.008 70)',
+    rule: 'oklch(30% 0.01 55)',
+    accent: 'oklch(72% 0.15 65)',
+    accent2: 'oklch(68% 0.14 30)',
+    good: 'oklch(72% 0.10 155)',
+    shadow: '0 60px 120px rgba(0,0,0,0.5)',
+    accentSoft: 'oklch(30% 0.04 65)',
+    accentSoftBorder: 'oklch(38% 0.05 65)',
+    scrim: 'rgba(0,0,0,0.65)',
+    isDark: true
+  },
+  light: {
+    bg: 'oklch(98% 0.006 85)',
+    surface: 'oklch(100% 0 0)',
+    surface2: 'oklch(96% 0.006 85)',
+    surface3: 'oklch(93% 0.008 80)',
+    ink: 'oklch(22% 0.012 55)',
+    ink2: 'oklch(38% 0.01 60)',
+    muted: 'oklch(55% 0.008 65)',
+    rule: 'oklch(90% 0.008 80)',
+    accent: 'oklch(60% 0.15 50)',
+    accent2: 'oklch(55% 0.18 30)',
+    good: 'oklch(55% 0.12 155)',
+    shadow: '0 20px 60px rgba(60,40,20,0.12)',
+    accentSoft: 'oklch(95% 0.04 65)',
+    accentSoftBorder: 'oklch(85% 0.08 65)',
+    scrim: 'rgba(40,30,20,0.35)',
+    isDark: false
+  }
+};
+const T = {
+  ...THEMES.dark
+};
+T._name = 'dark';
+function setTheme(name) {
+  const next = THEMES[name] || THEMES.dark;
+  for (const k of Object.keys(T)) delete T[k];
+  Object.assign(T, next);
+  T._name = name;
+}
+window.__themeListeners = window.__themeListeners || new Set();
+function useTheme() {
+  const [, force] = React.useReducer(n => n + 1, 0);
+  React.useEffect(() => {
+    window.__themeListeners.add(force);
+    return () => window.__themeListeners.delete(force);
+  }, []);
+  return T._name;
+}
+function applyTheme(name) {
+  setTheme(name);
+  try {
+    localStorage.setItem('alconote.theme', name);
+  } catch {}
+  // Persist to dbManager too so legacy code stays in sync
+  try {
+    window.dbManager && window.dbManager.setSetting && window.dbManager.setSetting('theme', name);
+  } catch {}
+  document.documentElement.setAttribute('data-theme', name);
+  document.body.className = `theme-${name}`;
+  window.__themeListeners.forEach(f => f());
+}
+(function initTheme() {
+  let saved = null;
+  try {
+    saved = localStorage.getItem('alconote.theme');
+  } catch {}
+  if (!saved) {
+    // auto -> follows system
+    saved = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  if (THEMES[saved]) setTheme(saved);
+  document.documentElement.setAttribute('data-theme', T._name);
+  document.body.className = `theme-${T._name}`;
+})();
+const fontSans = '"Geist", ui-sans-serif, system-ui, sans-serif';
+const fontSerif = '"Instrument Serif", "Times New Roman", serif';
+const fontNum = '"Geist Mono", ui-monospace, monospace';
+
+// ── Icons ──────────────────────────────────────────────────────────
+const Ic = {
+  menu: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round"
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: "4",
+    y1: "7",
+    x2: "20",
+    y2: "7"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "4",
+    y1: "13",
+    x2: "20",
+    y2: "13"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "4",
+    y1: "19",
+    x2: "14",
+    y2: "19"
+  })),
+  search: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "11",
+    cy: "11",
+    r: "7"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "21",
+    y1: "21",
+    x2: "16.5",
+    y2: "16.5"
+  })),
+  close: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round"
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: "6",
+    y1: "6",
+    x2: "18",
+    y2: "18"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "18",
+    y1: "6",
+    x2: "6",
+    y2: "18"
+  })),
+  plus: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round"
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "5",
+    x2: "12",
+    y2: "19"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "5",
+    y1: "12",
+    x2: "19",
+    y2: "12"
+  })),
+  scan: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M4 8V5a1 1 0 0 1 1-1h3"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M16 4h3a1 1 0 0 1 1 1v3"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M20 16v3a1 1 0 0 1-1 1h-3"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M8 20H5a1 1 0 0 1-1-1v-3"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "7",
+    y1: "8",
+    x2: "7",
+    y2: "16"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "10",
+    y1: "8",
+    x2: "10",
+    y2: "16"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "13",
+    y1: "8",
+    x2: "13",
+    y2: "16"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "17",
+    y1: "8",
+    x2: "17",
+    y2: "16"
+  })),
+  chev: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("polyline", {
+    points: "6 9 12 15 18 9"
+  })),
+  chevL: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("polyline", {
+    points: "15 18 9 12 15 6"
+  })),
+  back: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: "19",
+    y1: "12",
+    x2: "5",
+    y2: "12"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "12 19 5 12 12 5"
+  })),
+  trash: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("polyline", {
+    points: "3 6 5 6 21 6"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+  })),
+  pin: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "12",
+    cy: "10",
+    r: "3"
+  })),
+  star: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "currentColor"
+  }, /*#__PURE__*/React.createElement("polygon", {
+    points: "12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+  })),
+  filter: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("polygon", {
+    points: "22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"
+  })),
+  cal: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("rect", {
+    x: "3",
+    y: "4",
+    width: "18",
+    height: "18",
+    rx: "2"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "16",
+    y1: "2",
+    x2: "16",
+    y2: "6"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "8",
+    y1: "2",
+    x2: "8",
+    y2: "6"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "3",
+    y1: "10",
+    x2: "21",
+    y2: "10"
+  })),
+  clock: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "12",
+    cy: "12",
+    r: "9"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "12 7 12 12 15 14"
+  })),
+  edit: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M12 20h9"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"
+  })),
+  check: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("polyline", {
+    points: "20 6 9 17 4 12"
+  })),
+  download: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "7 10 12 15 17 10"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "15",
+    x2: "12",
+    y2: "3"
+  })),
+  upload: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "17 8 12 3 7 8"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "3",
+    x2: "12",
+    y2: "15"
+  })),
+  car: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M14 16H9m10 0h3v-3.15a1 1 0 00-.84-.99L16 11l-2.7-3.6a1 1 0 00-.8-.4H5.24a2 2 0 00-1.8 1.1l-.8 1.63A6 6 0 002 12.42V16h2"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "6.5",
+    cy: "16.5",
+    r: "2.5"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "16.5",
+    cy: "16.5",
+    r: "2.5"
+  })),
+  sun: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "12",
+    cy: "12",
+    r: "4"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
+  })),
+  moon: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"
+  })),
+  auto: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "12",
+    cy: "12",
+    r: "9"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M12 3v18"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M12 12a9 9 0 0 0 0-9"
+  })),
+  home: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "9 22 9 12 15 12 15 22"
+  })),
+  map: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("polygon", {
+    points: "3 6 9 4 15 6 21 4 21 18 15 20 9 18 3 20 3 6"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "9",
+    y1: "4",
+    x2: "9",
+    y2: "18"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "15",
+    y1: "6",
+    x2: "15",
+    y2: "20"
+  }))
+};
+function SvgIcon({
+  icon,
+  size = 18,
+  color
+}) {
+  return /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'inline-flex',
+      width: size,
+      height: size,
+      color: color || 'currentColor'
+    }
+  }, React.cloneElement(icon, {
+    width: size,
+    height: size
+  }));
+}
+// ── Category palette — change here to reskin the whole app ────────
+const CAT_DEFAULT = {
+  'Bière': {
+    hue: 80,
+    c: 0.16,
+    light_l: 55,
+    dark_l: 72,
+    bg_l: 32
+  },
+  'Vin': {
+    hue: 15,
+    c: 0.18,
+    light_l: 52,
+    dark_l: 70,
+    bg_l: 30
+  },
+  'Spiritueux': {
+    hue: 300,
+    c: 0.14,
+    light_l: 55,
+    dark_l: 72,
+    bg_l: 32
+  },
+  'Cocktail': {
+    hue: 180,
+    c: 0.13,
+    light_l: 48,
+    dark_l: 72,
+    bg_l: 32
+  },
+  'Autre': {
+    hue: 240,
+    c: 0.10,
+    light_l: 52,
+    dark_l: 70,
+    bg_l: 30
+  }
+};
+
+// CAT is mutable and may be augmented at runtime when users create custom
+// categories. We assign deterministic hues to unknown names by hashing.
+const CAT = {
+  ...CAT_DEFAULT
+};
+function _hashHue(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = h * 31 + name.charCodeAt(i) >>> 0;
+  return h % 360;
+}
+function _ensureCat(name) {
+  if (!CAT[name]) {
+    CAT[name] = {
+      hue: _hashHue(name),
+      c: 0.12,
+      light_l: 52,
+      dark_l: 70,
+      bg_l: 30
+    };
+  }
+  return CAT[name];
+}
+function catColor(name, l) {
+  const c = _ensureCat(name);
+  const L = l !== undefined ? l : T.isDark ? c.dark_l : c.light_l;
+  return `oklch(${L}% ${c.c} ${c.hue})`;
+}
+function catBg(name) {
+  const c = _ensureCat(name);
+  return T.isDark ? `oklch(${c.bg_l}% ${c.c * 0.5} ${c.hue})` : `oklch(94% ${c.c * 0.25} ${c.hue})`;
+}
+
+// ── Toast helper (global so any component can fire one) ───────────
+const Toast = {
+  show(msg) {
+    if (typeof window !== 'undefined' && window.__alcoToastSetter) {
+      window.__alcoToastSetter(msg);
+    }
+  }
+};
+
+// ── Date formatting helpers (French) ──────────────────────────────
+const FR_DAYS_LONG = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+const FR_DAYS_SHORT = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'];
+const FR_MONTHS_SHORT = ['jan', 'fév', 'mars', 'avr', 'mai', 'juin', 'jul', 'aoû', 'sep', 'oct', 'nov', 'déc'];
+const FR_MONTHS_LONG = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const FR_MONTHS_DOTTED = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+function fmtDateShort(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return `${d.getDate()} ${FR_MONTHS_SHORT[d.getMonth()]}`;
+}
+function fmtDateMedium(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return `${d.getDate()} ${FR_MONTHS_DOTTED[d.getMonth()]}`;
+}
+function fmtDayHeader(d) {
+  return `${FR_DAYS_SHORT[d.getDay()]}. ${d.getDate()} ${FR_MONTHS_SHORT[d.getMonth()]}.`;
+}
+
+// ── Quantity helpers (cL conversion mirrors the legacy DB layer) ──
+function toCl(qty, unit) {
+  const u = (unit || '').toLowerCase();
+  if (u === 'ecocup') return qty * 25;
+  if (u === 'l') return qty * 100;
+  if (u === 'ml') return qty / 10;
+  return qty;
+}
+function gramsAlcohol(qty, unit, abv) {
+  return toCl(qty, unit) * 10 * ((abv || 0) / 100) * 0.789;
+}
+function unitsAlcohol(qty, unit, abv) {
+  return gramsAlcohol(qty, unit, abv) / 10;
+}
+// ── Search input ──────────────────────────────────────────────────
+function SearchInput({
+  value,
+  onChange,
+  placeholder
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      background: T.surface2,
+      borderRadius: 14,
+      padding: '11px 14px',
+      border: `1px solid ${T.rule}`
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: T.muted,
+      display: 'flex'
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.search,
+    size: 16
+  })), /*#__PURE__*/React.createElement("input", {
+    value: value || '',
+    onChange: e => onChange(e.target.value),
+    placeholder: placeholder,
+    style: {
+      flex: 1,
+      background: 'transparent',
+      border: 'none',
+      outline: 'none',
+      color: T.ink,
+      fontFamily: fontSans,
+      fontSize: 14,
+      letterSpacing: -0.1,
+      minWidth: 0
+    }
+  }), value && /*#__PURE__*/React.createElement("span", {
+    onClick: () => onChange(''),
+    style: {
+      color: T.muted,
+      display: 'flex',
+      cursor: 'pointer'
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.close,
+    size: 14
+  })));
+}
+
+// ── Section head ──────────────────────────────────────────────────
+function SectionHead({
+  children,
+  right
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      color: T.muted,
+      fontSize: 11,
+      letterSpacing: 1.4,
+      textTransform: 'uppercase',
+      fontWeight: 500,
+      padding: '6px 2px'
+    }
+  }, /*#__PURE__*/React.createElement("span", null, children), right);
+}
+
+// ── Pill ──────────────────────────────────────────────────────────
+function Pill({
+  active,
+  onClick,
+  children,
+  color
+}) {
+  return /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: onClick,
+    "aria-pressed": active ? 'true' : 'false',
+    style: {
+      padding: '7px 13px',
+      borderRadius: 99,
+      cursor: 'pointer',
+      background: active ? T.ink : 'transparent',
+      color: active ? T.bg : T.ink2,
+      border: active ? `1px solid ${T.ink}` : `1px solid ${T.rule}`,
+      fontSize: 12,
+      fontWeight: active ? 500 : 400,
+      letterSpacing: -0.1,
+      whiteSpace: 'nowrap',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+      flexShrink: 0,
+      fontFamily: 'inherit'
+    }
+  }, color && !active && /*#__PURE__*/React.createElement("span", {
+    style: {
+      color,
+      fontSize: 10
+    }
+  }, "\u25CF"), children);
+}
+
+// ── Stars (rating) ────────────────────────────────────────────────
+function Stars({
+  rating = 0,
+  n,
+  size = 13,
+  interactive,
+  onChange
+}) {
+  const value = (typeof n === 'number' ? n : rating) || 0;
+  const cells = [1, 2, 3, 4, 5];
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 1
+    }
+  }, cells.map(i => /*#__PURE__*/React.createElement("span", {
+    key: i,
+    onClick: interactive ? e => {
+      e.stopPropagation();
+      onChange && onChange(i === value ? 0 : i);
+    } : undefined,
+    style: {
+      color: i <= value ? T.accent : T.rule,
+      display: 'flex',
+      cursor: interactive ? 'pointer' : 'default'
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.star,
+    size: size
+  }))));
+}
+
+// ── Category glyphs ───────────────────────────────────────────────
+function CategoryGlyph({
+  name,
+  size = 22
+}) {
+  const s = {
+    width: size,
+    height: size
+  };
+  if (name === 'Bière') return /*#__PURE__*/React.createElement("svg", _extends({}, s, {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M7 6h8v14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V6z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M15 9h2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "9",
+    y1: "10",
+    x2: "9",
+    y2: "18"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "10",
+    x2: "12",
+    y2: "18"
+  }));
+  if (name === 'Vin') return /*#__PURE__*/React.createElement("svg", _extends({}, s, {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M8 3h8l-1 7a3 3 0 0 1-6 0L8 3z"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "13",
+    x2: "12",
+    y2: "20"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "8",
+    y1: "21",
+    x2: "16",
+    y2: "21"
+  }));
+  if (name === 'Spiritueux') return /*#__PURE__*/React.createElement("svg", _extends({}, s, {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5"
+  }), /*#__PURE__*/React.createElement("rect", {
+    x: "8",
+    y: "8",
+    width: "8",
+    height: "13",
+    rx: "1"
+  }), /*#__PURE__*/React.createElement("rect", {
+    x: "9.5",
+    y: "3",
+    width: "5",
+    height: "5",
+    rx: "0.5"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "8",
+    y1: "13",
+    x2: "16",
+    y2: "13"
+  }));
+  if (name === 'Cocktail') return /*#__PURE__*/React.createElement("svg", _extends({}, s, {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M4 4h16l-8 9-8-9z"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "13",
+    x2: "12",
+    y2: "20"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "8",
+    y1: "21",
+    x2: "16",
+    y2: "21"
+  }));
+  return /*#__PURE__*/React.createElement("svg", _extends({}, s, {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "12",
+    cy: "12",
+    r: "8"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "8",
+    x2: "12",
+    y2: "12"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "12",
+    cy: "16",
+    r: "0.5",
+    fill: "currentColor"
+  }));
+}
+
+// ── Clickable card props (for divs that contain inner buttons) ────
+// Rendering a real <button> around a card with sub-buttons is invalid
+// HTML, so cards stay as <div> but get role/tabIndex/keyboard handling.
+function clickable(onClick, label) {
+  return {
+    onClick,
+    role: 'button',
+    tabIndex: 0,
+    'aria-label': label,
+    onKeyDown: e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onClick && onClick(e);
+      }
+    }
+  };
+}
+
+// Reusable "ghost" button reset for clickable surfaces that want a
+// transparent background and inherit fonts.
+const ghostButton = {
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  fontFamily: 'inherit',
+  color: 'inherit',
+  cursor: 'pointer',
+  textAlign: 'inherit'
+};
+
+// ── Sheet overlay (bottom sheet / right drawer) ───────────────────
+function SheetOverlay({
+  children,
+  onClose,
+  side = 'bottom'
+}) {
+  React.useEffect(() => {
+    const onKey = e => {
+      if (e.key === 'Escape') onClose && onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return /*#__PURE__*/React.createElement("div", {
+    role: "presentation",
+    onClick: onClose,
+    style: {
+      position: 'fixed',
+      inset: 0,
+      background: T.scrim,
+      zIndex: 100,
+      display: 'flex',
+      alignItems: side === 'bottom' ? 'flex-end' : 'stretch',
+      justifyContent: side === 'right' ? 'flex-end' : 'stretch',
+      animation: 'fade 0.2s ease'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    role: "dialog",
+    "aria-modal": "true",
+    onClick: e => e.stopPropagation(),
+    style: {
+      width: side === 'right' ? 'auto' : '100%',
+      maxWidth: side === 'right' ? '100%' : 'min(560px, 100%)',
+      margin: side === 'bottom' ? '0 auto' : 0,
+      height: side === 'right' ? '100%' : 'auto',
+      display: 'flex',
+      flexDirection: 'column'
+    }
+  }, children));
+}
+
+// ── Styled confirmation dialog (replaces native confirm()) ────────
+// Usage: open with `Confirm.ask({ title, message, confirmText, danger })`
+// → returns a Promise<boolean>. The host component must mount <ConfirmHost/>
+// once near the top of the tree.
+const Confirm = (() => {
+  let setter = null;
+  return {
+    _bind(fn) {
+      setter = fn;
+    },
+    ask(opts) {
+      return new Promise(resolve => {
+        if (!setter) {
+          resolve(window.confirm(opts.message || ''));
+          return;
+        }
+        setter({
+          ...opts,
+          _resolve: resolve
+        });
+      });
+    }
+  };
+})();
+function ConfirmHost() {
+  const [state, setState] = React.useState(null);
+  React.useEffect(() => {
+    Confirm._bind(setState);
+    return () => Confirm._bind(null);
+  }, []);
+  if (!state) return null;
+  const close = ok => {
+    state._resolve(ok);
+    setState(null);
+  };
+  const onKey = React.useCallback(e => {
+    if (e.key === 'Escape') close(false);
+    if (e.key === 'Enter') close(true);
+  }, [state]);
+  React.useEffect(() => {
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onKey]);
+  return /*#__PURE__*/React.createElement("div", {
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-labelledby": "alco-confirm-title",
+    onClick: () => close(false),
+    style: {
+      position: 'fixed',
+      inset: 0,
+      background: T.scrim,
+      display: 'grid',
+      placeItems: 'center',
+      zIndex: 200,
+      animation: 'fade 0.18s ease',
+      padding: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    style: {
+      background: T.bg,
+      color: T.ink,
+      borderRadius: 18,
+      border: `1px solid ${T.rule}`,
+      padding: '22px 22px 18px',
+      maxWidth: 360,
+      width: '100%',
+      boxShadow: '0 30px 60px rgba(0,0,0,0.5)',
+      animation: 'scaleIn 0.18s ease'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    id: "alco-confirm-title",
+    style: {
+      fontFamily: fontSerif,
+      fontSize: 22,
+      fontStyle: 'italic',
+      letterSpacing: -0.3,
+      marginBottom: 10
+    }
+  }, state.title || 'Confirmer'), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.ink2,
+      fontSize: 13.5,
+      lineHeight: 1.45,
+      letterSpacing: -0.05,
+      marginBottom: 22
+    }
+  }, state.message), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => close(false),
+    style: {
+      flex: 1,
+      padding: '12px',
+      borderRadius: 12,
+      background: T.surface2,
+      color: T.ink2,
+      border: `1px solid ${T.rule}`,
+      fontSize: 13,
+      fontFamily: fontSans,
+      cursor: 'pointer'
+    }
+  }, state.cancelText || 'Annuler'), /*#__PURE__*/React.createElement("button", {
+    onClick: () => close(true),
+    autoFocus: true,
+    style: {
+      flex: 1.4,
+      padding: '12px',
+      borderRadius: 12,
+      background: state.danger ? 'oklch(55% 0.20 25)' : T.accent,
+      color: state.danger ? '#fff' : T.isDark ? T.bg : '#fff',
+      border: 'none',
+      fontSize: 13,
+      fontWeight: 600,
+      fontFamily: fontSans,
+      cursor: 'pointer',
+      letterSpacing: 0.1,
+      boxShadow: `0 4px 18px ${state.danger ? 'oklch(55% 0.20 25 / 0.5)' : `${T.accent}60`}`
+    }
+  }, state.confirmText || 'Confirmer'))));
+}
+
+// ── Status bar (visible only on devices that don't show one natively) ──
+function StatusBar() {
+  // The actual device's status bar handles this on mobile. Skip rendering.
+  return null;
+}
+
+// ── niceMax ──────────────────────────────────────────────────────
+function niceMax(v, fallback = 1) {
+  if (!isFinite(v) || v <= 0) return fallback;
+  const exp = Math.floor(Math.log10(v));
+  const base = Math.pow(10, exp);
+  const m = v / base;
+  let nice;
+  if (m <= 1) nice = 1;else if (m <= 2) nice = 2;else if (m <= 5) nice = 5;else nice = 10;
+  return nice * base;
+}
+// ── Inject base animations once ────────────────────────────────────
+(function injectBaseStyles() {
+  if (document.getElementById('alco-base-anim')) return;
+  const s = document.createElement('style');
+  s.id = 'alco-base-anim';
+  s.textContent = `
+    @keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+    @keyframes slideUp { from { transform: translateY(16px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+    @keyframes scaleIn { from { transform: scale(.96); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  `;
+  document.head.appendChild(s);
+})();
+Object.assign(window, {
+  T,
+  THEMES,
+  setTheme,
+  applyTheme,
+  useTheme,
+  fontSans,
+  fontSerif,
+  fontNum,
+  Ic,
+  SvgIcon,
+  CAT,
+  catColor,
+  catBg,
+  Toast,
+  FR_DAYS_LONG,
+  FR_DAYS_SHORT,
+  FR_MONTHS_SHORT,
+  FR_MONTHS_LONG,
+  FR_MONTHS_DOTTED,
+  fmtDateShort,
+  fmtDateMedium,
+  fmtDayHeader,
+  toCl,
+  gramsAlcohol,
+  unitsAlcohol,
+  SearchInput,
+  SectionHead,
+  Pill,
+  Stars,
+  CategoryGlyph,
+  SheetOverlay,
+  StatusBar,
+  niceMax,
+  Confirm,
+  ConfirmHost,
+  clickable,
+  ghostButton
+});

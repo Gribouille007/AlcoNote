@@ -1,0 +1,15 @@
+# Netlify build config.
+#
+# AlcoNote is a static PWA. The proto/dist/*.js files are precompiled from
+# proto/*.jsx and committed to the repository, so the deploy works without
+# any build step at all. We still run `npm run build` here so any
+# .jsx-source-only push (e.g. a Netlify dashboard re-deploy without
+# committed dist/) regenerates the bundles.
+
+[build]
+  publish = "."
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NPM_FLAGS = "--no-audit --no-fund"
