@@ -139,13 +139,20 @@ function AppHeader({ tab, onMenu }) {
   const today = new Date();
   const dateStr = `${FR_DAYS_LONG[today.getDay()]} ${today.getDate()} ${FR_MONTHS_LONG[today.getMonth()]}`;
 
-  // Live BAC pill: small estimate from recent drinks
+  // Live BAC pill: re-tick every 60s so the value decays even when the
+  // user stays on the same tab without adding a drink.
   const { drinks } = useDrinks();
+  const [tick, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
   const bacInfo = React.useMemo(() => {
     const w = settings.userWeight ? Number(settings.userWeight) : 70;
     const g = settings.userGender || 'male';
     return computeBacOverTime ? computeBacOverTime(drinks, w, g) : { current: 0 };
-  }, [drinks, settings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drinks, settings, tick]);
   const bac = bacInfo.current || 0;
 
   return (
@@ -173,24 +180,26 @@ function AppHeader({ tab, onMenu }) {
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{dateStr}</div>
       </div>
-      {bac > 0 ? (
+      <div aria-label="Taux d'alcoolémie" title={`${bac} mg/L`} style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        padding: '6px 10px 6px 8px', borderRadius: 12,
+        background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
+        minWidth: 48, maxWidth: 86, justifyContent: 'center',
+        opacity: bac > 0 ? 1 : 0.7,
+      }}>
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 5,
-          padding: '6px 10px 6px 8px', borderRadius: 12,
-          background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
-        }}>
-          <div style={{
-            width: 6, height: 6, borderRadius: 99, background: T.accent,
-            boxShadow: `0 0 8px ${T.accent}`,
-          }}/>
-          <span style={{
-            color: T.accent, fontSize: 11, fontWeight: 600,
-            fontFamily: fontNum, letterSpacing: 0.2,
-          }}>{bac}</span>
-        </div>
-      ) : (
-        <div style={{ width: 38, height: 38 }} />
-      )}
+          width: 6, height: 6, borderRadius: 99, background: T.accent,
+          boxShadow: bac > 0 ? `0 0 8px ${T.accent}` : 'none',
+          flexShrink: 0,
+        }}/>
+        <span style={{
+          color: T.accent, fontSize: 11, fontWeight: 600,
+          fontFamily: fontNum, letterSpacing: 0,
+          fontVariantNumeric: 'tabular-nums',
+          overflow: 'hidden', textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap', minWidth: 0, flex: '0 1 auto',
+        }}>{bac}</span>
+      </div>
     </div>
   );
 }
@@ -260,7 +269,7 @@ function Fab({ onClick }) {
     <button type="button" onClick={onClick} aria-label="Ajouter une boisson" style={{
       position: 'absolute',
       bottom: 'calc(78px + env(safe-area-inset-bottom))',
-      right: 20, zIndex: 30,
+      right: 14, zIndex: 30,
       width: 58, height: 58, borderRadius: 20, background: T.accent,
       display: 'grid', placeItems: 'center',
       color: T.isDark ? T.bg : '#fff', cursor: 'pointer',
@@ -286,6 +295,9 @@ async function mountAlcoNote() {
       applyTheme(stored);
     }
   } catch {}
+
+  // Preload custom category icon overrides so the first render uses them
+  try { await loadCategoryIcons(); } catch {}
 
   const root = document.getElementById('root');
   if (!root) {

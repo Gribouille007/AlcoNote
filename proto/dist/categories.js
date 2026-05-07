@@ -20,6 +20,8 @@ function CategoriesTab({
     drinks
   } = useDrinks();
   const ratings = useRatings();
+  useCategoryIcons(); // keep window.__alcoCatIcons up to date
+
   const families = React.useMemo(() => buildFamilies(drinks, ratings), [drinks, ratings]);
   const cats = React.useMemo(() => computeCategoryStats(categories, families), [categories, families]);
   const filtered = openCat ? families.filter(f => f.category === openCat && (query === '' || f.name.toLowerCase().includes((query || '').toLowerCase()))) : [];
@@ -211,23 +213,42 @@ function FamilyList({
   onDirectAdd,
   onEditCat
 }) {
-  // Group families by (name + alcohol) so identical drinks collapse into one row
-  const grouped = [];
-  const seen = new Map();
+  // Sort families: identical-name groups stay contiguous, ordered by
+  // total entries inside the group, then by quantity asc inside each
+  // group. We keep one line per (name, qty, unit, abv) variant so the
+  // user can add each individually. Variants share a `groupKey` so
+  // FamilyRow can render the stacked-card visual cue.
+  const groupCounts = new Map();
   for (const f of families) {
-    const key = `${f.name.trim().toLowerCase()}::${f.alcohol}`;
-    if (seen.has(key)) {
-      const idx = seen.get(key);
-      grouped[idx].dupes.push(f);
-      grouped[idx].totalEntries += f.entries.length;
-    } else {
-      seen.set(key, grouped.length);
-      grouped.push({
-        ...f,
-        dupes: [],
-        totalEntries: f.entries.length
-      });
-    }
+    const k = (f.name || '').trim().toLowerCase();
+    groupCounts.set(k, (groupCounts.get(k) || 0) + f.entries.length);
+  }
+  const sorted = [...families].sort((a, b) => {
+    const ka = (a.name || '').trim().toLowerCase();
+    const kb = (b.name || '').trim().toLowerCase();
+    const ga = groupCounts.get(ka) || 0;
+    const gb = groupCounts.get(kb) || 0;
+    if (gb !== ga) return gb - ga;
+    if (ka !== kb) return ka.localeCompare(kb);
+    if ((a.alcohol || 0) !== (b.alcohol || 0)) return (a.alcohol || 0) - (b.alcohol || 0);
+    return (a.quantity || 0) - (b.quantity || 0);
+  });
+
+  // Build per-row metadata: position within the same-name group.
+  const rows = [];
+  let prevKey = null,
+    idx = 0;
+  for (const f of sorted) {
+    const key = (f.name || '').trim().toLowerCase();
+    if (key !== prevKey) idx = 0;
+    const sameNameCount = families.filter(x => (x.name || '').trim().toLowerCase() === key).length;
+    rows.push({
+      f,
+      key,
+      idx: idx++,
+      total: sameNameCount
+    });
+    prevKey = key;
   }
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -295,12 +316,18 @@ function FamilyList({
       marginBottom: 18,
       letterSpacing: 0.1
     }
-  }, grouped.length, " type", grouped.length !== 1 ? 's' : '', " \xB7", ' ', families.reduce((s, f) => s + f.entries.length, 0), " entr\xE9es au total"), grouped.map(f => /*#__PURE__*/React.createElement(FamilyRow, {
+  }, sorted.length, " variante", sorted.length !== 1 ? 's' : '', " \xB7", ' ', families.reduce((s, f) => s + f.entries.length, 0), " entr\xE9es au total"), rows.map(({
+    f,
+    idx,
+    total
+  }) => /*#__PURE__*/React.createElement(FamilyRow, {
     key: f.id,
     family: f,
+    variantIndex: idx,
+    variantCount: total,
     onClick: () => onOpen(f),
     onDirectAdd: onDirectAdd
-  })), grouped.length === 0 && /*#__PURE__*/React.createElement("div", {
+  })), rows.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
       fontSize: 13,
@@ -311,14 +338,23 @@ function FamilyList({
 }
 function FamilyRow({
   family: f,
+  variantIndex = 0,
+  variantCount = 1,
   onClick,
   onDirectAdd
 }) {
   const color = catColor(f.category, 70);
-  const totalEntries = f.totalEntries !== undefined ? f.totalEntries : f.entries.length;
-  const dupeCount = (f.dupes ? f.dupes.length : 0) + 1;
-  const lastTs = f.entries[0]?.ts;
-  const lastStr = lastTs ? fmtDateShort(lastTs) : '—';
+  const totalEntries = f.entries.length;
+  // The number of units (verres standard) per drink — surfaced left of
+  // the plus button in saturated orange so it pops out of the row.
+  const units = unitsAlcohol(f.quantity, f.unit, f.alcohol);
+  const unitsStr = units >= 10 ? units.toFixed(0) : units >= 1 ? units.toFixed(1) : units.toFixed(2);
+  const orange = T.isDark ? 'oklch(70% 0.18 55)' : 'oklch(50% 0.18 50)';
+  const isFirstOfGroup = variantIndex === 0;
+  const isLastOfGroup = variantIndex === variantCount - 1;
+  // Top margin: keep the visible vertical rhythm between groups, but
+  // attach variants of the same drink as a stacked card.
+  const topMargin = isFirstOfGroup ? 8 : 0;
   return /*#__PURE__*/React.createElement("div", _extends({}, clickable(onClick, `Voir les détails de ${f.name}`), {
     style: {
       display: 'flex',
@@ -326,39 +362,16 @@ function FamilyRow({
       gap: 14,
       padding: '14px 14px',
       background: T.surface,
-      borderRadius: 14,
+      borderRadius: variantCount > 1 ? `${isFirstOfGroup ? 14 : 0}px ${isFirstOfGroup ? 14 : 0}px ${isLastOfGroup ? 14 : 0}px ${isLastOfGroup ? 14 : 0}px` : 14,
       border: `1px solid ${T.rule}`,
-      marginBottom: 8,
+      borderTop: !isFirstOfGroup ? `1px dashed ${T.rule}` : `1px solid ${T.rule}`,
+      borderBottom: !isLastOfGroup ? 'none' : `1px solid ${T.rule}`,
+      marginTop: topMargin,
+      marginBottom: isLastOfGroup ? 8 : 0,
       cursor: 'pointer',
       position: 'relative'
     }
-  }), dupeCount > 1 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: 'absolute',
-      inset: '-3px 8px auto 8px',
-      height: 6,
-      background: T.surface,
-      borderRadius: '14px 14px 0 0',
-      borderTop: `1px solid ${T.rule}`,
-      borderLeft: `1px solid ${T.rule}`,
-      borderRight: `1px solid ${T.rule}`,
-      zIndex: -1,
-      opacity: 0.6
-    }
   }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: 'absolute',
-      inset: '-6px 16px auto 16px',
-      height: 6,
-      background: T.surface,
-      borderRadius: '14px 14px 0 0',
-      borderTop: `1px solid ${T.rule}`,
-      borderLeft: `1px solid ${T.rule}`,
-      borderRight: `1px solid ${T.rule}`,
-      zIndex: -2,
-      opacity: 0.3
-    }
-  })), /*#__PURE__*/React.createElement("div", {
     style: {
       width: 40,
       height: 40,
@@ -372,25 +385,7 @@ function FamilyRow({
     }
   }, /*#__PURE__*/React.createElement(CategoryGlyph, {
     name: f.category
-  }), dupeCount > 1 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: 'absolute',
-      top: -6,
-      right: -6,
-      minWidth: 18,
-      height: 18,
-      padding: '0 5px',
-      borderRadius: 9,
-      background: T.accent,
-      color: T.isDark ? T.bg : '#fff',
-      fontSize: 10,
-      fontWeight: 600,
-      fontFamily: fontNum,
-      display: 'grid',
-      placeItems: 'center',
-      border: `2px solid ${T.surface}`
-    }
-  }, "\xD7", dupeCount)), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       minWidth: 0
@@ -405,7 +400,16 @@ function FamilyRow({
       overflow: 'hidden',
       textOverflow: 'ellipsis'
     }
-  }, f.name), /*#__PURE__*/React.createElement("div", {
+  }, f.name, variantCount > 1 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: 8,
+      fontSize: 10,
+      color: T.muted,
+      fontFamily: fontNum,
+      letterSpacing: 0.4,
+      fontWeight: 400
+    }
+  }, variantIndex + 1, "/", variantCount)), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
       fontSize: 11.5,
@@ -424,25 +428,32 @@ function FamilyRow({
       opacity: 0.4
     }
   }, "\xB7"), /*#__PURE__*/React.createElement("span", null, totalEntries, "\xD7"))), /*#__PURE__*/React.createElement("div", {
+    title: `${unitsStr} unité${units > 1 ? 's' : ''} d'alcool par boisson`,
     style: {
-      textAlign: 'right',
-      marginRight: 4
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'flex-end',
+      marginRight: 6
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontFamily: fontSerif,
-      fontStyle: 'italic',
-      fontSize: 13,
-      color: T.ink2
+      fontFamily: fontNum,
+      fontSize: 16,
+      fontWeight: 700,
+      color: orange,
+      letterSpacing: -0.2,
+      lineHeight: 1,
+      fontVariantNumeric: 'tabular-nums'
     }
-  }, lastStr), /*#__PURE__*/React.createElement("div", {
+  }, unitsStr), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 9.5,
-      letterSpacing: 0.3,
-      marginTop: 2
+      fontSize: 9,
+      letterSpacing: 0.4,
+      marginTop: 3,
+      textTransform: 'uppercase'
     }
-  }, "derni\xE8re")), /*#__PURE__*/React.createElement("button", {
+  }, "U.")), /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: ev => {
       ev.stopPropagation();
@@ -463,7 +474,7 @@ function FamilyRow({
       fontFamily: 'inherit'
     },
     title: "Ajouter \xE0 nouveau",
-    "aria-label": `Ajouter ${f.name} à nouveau`
+    "aria-label": `Ajouter ${f.name} (${f.quantity} ${f.unit}, ${f.alcohol}°) à nouveau`
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.plus,
     size: 14
@@ -473,11 +484,26 @@ function EditCategorySheet({
   category,
   onClose
 }) {
+  const {
+    categories
+  } = useCategories();
+  const {
+    drinks
+  } = useDrinks();
+  const icons = useCategoryIcons();
   const [name, setName] = React.useState(category);
-  const [glyph, setGlyph] = React.useState(category);
+  const initialGlyph = icons[category] || category;
+  const [glyph, setGlyph] = React.useState(initialGlyph);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
-  const glyphOptions = ['Bière', 'Vin', 'Spiritueux', 'Cocktail', 'Autre'];
+
+  // If the persisted icon loads after this sheet mounts, sync once.
+  React.useEffect(() => {
+    if (icons[category] && glyph === category) setGlyph(icons[category]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [icons, category]);
+  const drinksInCat = drinks.filter(d => (d.category || '') === category).length;
+  const catObj = categories.find(c => c.name === category);
   const save = async () => {
     setErr('');
     const trimmed = (name || '').trim();
@@ -487,13 +513,60 @@ function EditCategorySheet({
     }
     setBusy(true);
     try {
+      let finalName = category;
       if (trimmed !== category) {
         await renameCategory(category, trimmed);
-        Toast.show(`Catégorie « ${trimmed} » mise à jour`);
+        finalName = trimmed;
       }
+      // Persist the icon override, even if it equals the category name
+      // (`null` clears the override so future renames just track the name).
+      const iconValue = glyph && glyph !== finalName ? glyph : null;
+      await setCategoryIcon(finalName, iconValue);
+      Toast.show(`Catégorie « ${finalName} » mise à jour`);
       onClose && onClose();
     } catch (e) {
       setErr(e && e.message ? e.message : 'Erreur lors de l\'enregistrement');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async () => {
+    if (!catObj) return;
+    let reassignTo = null;
+    if (drinksInCat > 0) {
+      const others = categories.filter(c => c.name !== category);
+      const fallback = others.find(c => c.name === 'Autre') || others[0];
+      if (!fallback) {
+        setErr('Impossible : créez d\'abord une autre catégorie pour y déplacer les boissons.');
+        return;
+      }
+      const ok = await Confirm.ask({
+        title: `Supprimer « ${category} » ?`,
+        message: `${drinksInCat} boisson${drinksInCat > 1 ? 's' : ''} sera${drinksInCat > 1 ? 'ont' : ''} déplacée${drinksInCat > 1 ? 's' : ''} dans « ${fallback.name} ». Cette action est irréversible.`,
+        confirmText: 'Supprimer',
+        danger: true
+      });
+      if (!ok) return;
+      reassignTo = fallback.name;
+    } else {
+      const ok = await Confirm.ask({
+        title: `Supprimer « ${category} » ?`,
+        message: 'Cette action est irréversible.',
+        confirmText: 'Supprimer',
+        danger: true
+      });
+      if (!ok) return;
+    }
+    setBusy(true);
+    try {
+      await deleteCategory(catObj.id, {
+        reassignTo,
+        name: category
+      });
+      Toast.show(`Catégorie supprimée`);
+      onClose && onClose();
+    } catch (e) {
+      setErr(e && e.message ? e.message : 'Erreur lors de la suppression');
     } finally {
       setBusy(false);
     }
@@ -508,7 +581,8 @@ function EditCategorySheet({
       borderTop: `1px solid ${T.rule}`,
       borderLeft: `1px solid ${T.rule}`,
       borderRight: `1px solid ${T.rule}`,
-      animation: 'slideUp 0.25s ease'
+      animation: 'slideUp 0.25s ease',
+      overflowX: 'hidden'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -566,29 +640,40 @@ function EditCategorySheet({
       marginBottom: 8
     }
   }, "Ic\xF4ne"), /*#__PURE__*/React.createElement("div", {
+    role: "radiogroup",
+    "aria-label": "Ic\xF4ne de cat\xE9gorie",
     style: {
       display: 'flex',
       gap: 10,
       marginBottom: 22,
       flexWrap: 'wrap'
     }
-  }, glyphOptions.map(g => /*#__PURE__*/React.createElement("div", {
-    key: g,
-    onClick: () => setGlyph(g),
-    style: {
-      width: 48,
-      height: 48,
-      borderRadius: 12,
-      background: glyph === g ? catBg(g) : T.surface2,
-      border: `1px solid ${glyph === g ? catColor(g, 60) : T.rule}`,
-      display: 'grid',
-      placeItems: 'center',
-      color: glyph === g ? catColor(g, 75) : T.ink2,
-      cursor: 'pointer'
-    }
-  }, /*#__PURE__*/React.createElement(CategoryGlyph, {
-    name: g
-  })))), err && /*#__PURE__*/React.createElement("div", {
+  }, GLYPH_OPTIONS.map(g => {
+    const selected = glyph === g;
+    return /*#__PURE__*/React.createElement("button", {
+      key: g,
+      type: "button",
+      role: "radio",
+      "aria-checked": selected,
+      "aria-label": `Icône ${g}`,
+      onClick: () => setGlyph(g),
+      style: {
+        width: 52,
+        height: 52,
+        borderRadius: 12,
+        background: selected ? catBg(g) : T.surface2,
+        border: `1px solid ${selected ? catColor(g, 60) : T.rule}`,
+        display: 'grid',
+        placeItems: 'center',
+        color: selected ? catColor(g, 75) : T.ink2,
+        cursor: 'pointer',
+        padding: 0,
+        fontFamily: 'inherit'
+      }
+    }, /*#__PURE__*/React.createElement(CategoryGlyph, {
+      glyph: g
+    }));
+  })), err && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.accent2,
       background: 'oklch(35% 0.10 25 / 0.15)',
@@ -617,7 +702,33 @@ function EditCategorySheet({
       fontFamily: 'inherit',
       boxShadow: `0 4px 18px ${T.accent}60`
     }
-  }, busy ? 'Enregistrement…' : 'Enregistrer')));
+  }, busy ? 'Enregistrement…' : 'Enregistrer'), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: busy ? undefined : remove,
+    disabled: busy,
+    style: {
+      width: '100%',
+      marginTop: 12,
+      padding: '12px',
+      textAlign: 'center',
+      borderRadius: 12,
+      background: 'oklch(35% 0.10 25 / 0.15)',
+      color: T.accent2,
+      border: '1px solid oklch(45% 0.15 25 / 0.4)',
+      fontSize: 12.5,
+      fontWeight: 500,
+      cursor: busy ? 'wait' : 'pointer',
+      opacity: busy ? 0.5 : 1,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      fontFamily: 'inherit'
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.trash,
+    size: 13
+  }), "Supprimer la cat\xE9gorie")));
 }
 Object.assign(window, {
   CategoriesTab,

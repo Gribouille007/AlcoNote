@@ -251,11 +251,68 @@ async function renameCategory(oldName, newName) {
   dataBus.bump();
 }
 
-async function deleteCategory(id) {
+async function deleteCategory(id, options = {}) {
   const db = await waitForDb();
   if (!db) return;
+  // Native deleteCategory refuses to drop categories that still own
+  // drinks. Caller can pass `reassignTo` to move every drink to a
+  // different category before the deletion.
+  if (options.reassignTo) {
+    const cat = await db.getCategoryById(id);
+    if (cat) {
+      const all = await db.getAllDrinks();
+      const moved = all.filter(d => d.category === cat.name);
+      for (const d of moved) {
+        await db.updateDrink(d.id, { category: options.reassignTo });
+      }
+    }
+  }
   await db.deleteCategory(id);
+  // Also drop any persisted custom icon mapping
+  try { await db.setSetting(`cat.icon.${options.name || ''}`, null); } catch {}
   dataBus.bump();
+}
+
+// ── Category icon overrides ───────────────────────────────────────
+// Custom glyphs are persisted as `cat.icon.<name>` settings. We keep
+// a runtime mirror at `window.__alcoCatIcons` so CategoryGlyph can do
+// a synchronous lookup during render.
+async function loadCategoryIcons() {
+  const db = await waitForDb();
+  if (!db) return {};
+  const settings = await db.getAllSettings();
+  const out = {};
+  for (const [k, v] of Object.entries(settings)) {
+    if (k.startsWith('cat.icon.') && v) out[k.slice('cat.icon.'.length)] = v;
+  }
+  if (typeof window !== 'undefined') window.__alcoCatIcons = out;
+  return out;
+}
+
+async function setCategoryIcon(name, glyph) {
+  const db = await waitForDb();
+  if (!db) return;
+  await db.setSetting(`cat.icon.${name}`, glyph || null);
+  if (typeof window !== 'undefined') {
+    window.__alcoCatIcons = { ...(window.__alcoCatIcons || {}) };
+    if (glyph) window.__alcoCatIcons[name] = glyph;
+    else delete window.__alcoCatIcons[name];
+  }
+  dataBus.bump();
+}
+
+function useCategoryIcons() {
+  const v = useDataVersion();
+  const [icons, setIcons] = React.useState(() => (typeof window !== 'undefined' && window.__alcoCatIcons) || {});
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const m = await loadCategoryIcons();
+      if (alive) setIcons(m);
+    })();
+    return () => { alive = false; };
+  }, [v]);
+  return icons;
 }
 
 // Apply same updates to every drink that shares (name + qty + unit + abv)
@@ -294,9 +351,11 @@ Object.assign(window, {
   dataBus, useDataVersion,
   waitForDb,
   useCategories, useDrinks, useRatings, useSettings, useBacRecords,
+  useCategoryIcons,
   buildFamilies, computeCategoryStats, flattenEntries,
   loadSettings, saveSetting,
   addDrink, updateDrink, deleteDrink, saveRating,
   addCategory, renameCategory, deleteCategory,
   updateFamily, deleteFamily,
+  loadCategoryIcons, setCategoryIcon,
 });

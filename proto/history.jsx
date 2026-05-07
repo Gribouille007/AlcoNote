@@ -15,12 +15,25 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
   const [query, setQuery] = React.useState('');
   const [filter, setFilter] = React.useState('all');
   const [collapsed, setCollapsed] = React.useState(loadCollapsedDays);
+  const [editEntry, setEditEntry] = React.useState(null);
 
   const { categories } = useCategories();
   const { drinks } = useDrinks();
   const ratings = useRatings();
   const families = React.useMemo(() => buildFamilies(drinks, ratings), [drinks, ratings]);
   const allEntries = React.useMemo(() => flattenEntries(families), [families]);
+
+  const onDeleteEntry = React.useCallback(async (entry) => {
+    const ok = await Confirm.ask({
+      title: 'Supprimer cette entrée ?',
+      message: 'Cette consommation sera retirée de votre historique.',
+      confirmText: 'Supprimer',
+      danger: true,
+    });
+    if (!ok) return;
+    try { await deleteDrink(entry.id); Toast.show('Entrée supprimée'); }
+    catch { Toast.show('Erreur'); }
+  }, []);
 
   const toggleDay = (day) => {
     setCollapsed(prev => {
@@ -74,14 +87,21 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
         {days.map((day, i) => (
           <DayGroup key={day} day={day} entries={groups[day]}
             isCollapsed={collapsed.has(day)} onToggle={() => toggleDay(day)}
-            onOpenEntry={onOpenEntry} onDirectAdd={onDirectAdd} first={i === 0} />
+            onOpenEntry={(e) => setEditEntry(e)}
+            onDirectAdd={onDirectAdd}
+            onDelete={onDeleteEntry}
+            first={i === 0} />
         ))}
       </div>
+
+      {editEntry && (
+        <EditEntrySheet entry={editEntry} onClose={() => setEditEntry(null)} />
+      )}
     </div>
   );
 }
 
-function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAdd, first }) {
+function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAdd, onDelete, first }) {
   const d = new Date(day + 'T00:00');
   const today = new Date(); today.setHours(0,0,0,0);
   const diff = Math.round((today - d) / 86400000);
@@ -150,6 +170,7 @@ function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAd
             {entries.map((e, i) => (
               <EntryRow key={e.id || i} entry={e} onClick={() => onOpenEntry(e)}
                 onDirectAdd={onDirectAdd}
+                onDelete={onDelete}
                 first={i === 0}
                 last={i === entries.length - 1} />
             ))}
@@ -159,65 +180,128 @@ function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAd
     </div>
   );
 }
-function EntryRow({ entry: e, onClick, onDirectAdd, first, last }) {
+function EntryRow({ entry: e, onClick, onDirectAdd, onDelete, first, last }) {
   const color = catColor(e.family.category, 70);
   const t = e.ts.slice(11, 16);
+  const swipe = useSwipeToDelete(() => onDelete && onDelete(e), 96);
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      padding: '12px 10px 12px 18px',
+      position: 'relative', overflow: 'hidden',
       borderBottom: last ? 'none' : `1px solid ${T.rule}`,
-      position: 'relative',
     }}>
       <div style={{
-        position: 'absolute', left: -2, top: 0, bottom: 0,
-        width: 20,
+        position: 'absolute', inset: 0, background: 'oklch(45% 0.18 25)',
+        display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+        paddingRight: 18, color: '#fff', fontSize: 12, fontWeight: 500, gap: 8,
+        cursor: 'pointer',
+      }}
+        onClick={() => onDelete && onDelete(e)}>
+        <SvgIcon icon={Ic.trash} size={15} />
+        <span>Supprimer</span>
+      </div>
+      <div {...swipe.handlers} style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: '12px 10px 12px 18px',
+        position: 'relative', background: T.surface,
+        transform: `translateX(${swipe.offset}px)`,
+        transition: swipe.dragging ? 'none' : 'transform 0.22s ease',
+        touchAction: 'pan-y',
       }}>
         <div style={{
-          position: 'absolute', left: 0, top: '50%',
-          width: 14, height: 2, background: T.rule,
-        }}/>
-      </div>
-      <div style={{
-        width: 8, height: 8, borderRadius: 99, background: color,
-        flexShrink: 0, boxShadow: `0 0 0 3px ${T.surface}`,
-        zIndex: 1,
-      }}/>
-      <button type="button" onClick={onClick} aria-label={`Voir ${e.family.name}`}
-        style={{
-          ...ghostButton,
-          flex: 1, minWidth: 0, cursor: 'pointer',
-          display: 'block', textAlign: 'left',
+          position: 'absolute', left: -2, top: 0, bottom: 0,
+          width: 20,
         }}>
-        <div style={{
-          fontSize: 14, color: T.ink, fontWeight: 500, letterSpacing: -0.1,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>{e.family.name}</div>
-        <div style={{
-          color: T.muted, fontSize: 11.5, marginTop: 2, letterSpacing: 0.1,
-        }}>
-          {e.family.quantity} {e.family.unit} · {e.family.alcohol}°
-          {e.place && <span> · {e.place}</span>}
+          <div style={{
+            position: 'absolute', left: 0, top: '50%',
+            width: 14, height: 2, background: T.rule,
+          }}/>
         </div>
-      </button>
-      <div style={{
-        fontFamily: fontNum, fontSize: 11, color: T.ink2,
-      }}>{t}</div>
-      <button type="button"
-        onClick={(ev) => { ev.stopPropagation(); onDirectAdd && onDirectAdd(e.family); }}
-        style={{
-          width: 30, height: 30, borderRadius: 10,
-          background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
-          display: 'grid', placeItems: 'center', color: T.accent,
-          cursor: 'pointer', flexShrink: 0,
-          padding: 0, fontFamily: 'inherit',
-        }}
-        title="Ajouter à nouveau"
-        aria-label={`Ajouter ${e.family.name} à nouveau`}
-      >
-        <SvgIcon icon={Ic.plus} size={14} />
-      </button>
+        <div style={{
+          width: 8, height: 8, borderRadius: 99, background: color,
+          flexShrink: 0, boxShadow: `0 0 0 3px ${T.surface}`,
+          zIndex: 1,
+        }}/>
+        <button type="button" onClick={onClick} aria-label={`Modifier ${e.family.name}`}
+          style={{
+            ...ghostButton,
+            flex: 1, minWidth: 0, cursor: 'pointer',
+            display: 'block', textAlign: 'left',
+          }}>
+          <div style={{
+            fontSize: 14, color: T.ink, fontWeight: 500, letterSpacing: -0.1,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>{e.family.name}</div>
+          <div style={{
+            color: T.muted, fontSize: 11.5, marginTop: 2, letterSpacing: 0.1,
+          }}>
+            {e.family.quantity} {e.family.unit} · {e.family.alcohol}°
+            {e.place && <span> · {e.place}</span>}
+          </div>
+        </button>
+        <div style={{
+          fontFamily: fontNum, fontSize: 11, color: T.ink2,
+        }}>{t}</div>
+        <button type="button"
+          onClick={(ev) => { ev.stopPropagation(); onDirectAdd && onDirectAdd(e.family); }}
+          style={{
+            width: 30, height: 30, borderRadius: 10,
+            background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
+            display: 'grid', placeItems: 'center', color: T.accent,
+            cursor: 'pointer', flexShrink: 0,
+            padding: 0, fontFamily: 'inherit',
+          }}
+          title="Ajouter à nouveau"
+          aria-label={`Ajouter ${e.family.name} à nouveau`}
+        >
+          <SvgIcon icon={Ic.plus} size={14} />
+        </button>
+      </div>
     </div>
   );
 }
-Object.assign(window, { HistoryTab, DayGroup, EntryRow });
+
+// Tiny pointer-driven swipe controller. Returns translate offset, a
+// drag flag (so the consumer can disable transitions during dragging),
+// and the handlers to spread on the swipeable element. Calls `onAction`
+// when the user releases past `actionThreshold` pixels of drag.
+function useSwipeToDelete(onAction, actionThreshold = 96) {
+  const [offset, setOffset] = React.useState(0);
+  const [dragging, setDragging] = React.useState(false);
+  const startRef = React.useRef(null);
+  const lockRef = React.useRef(null); // 'h' | 'v' once direction decided
+
+  const onPointerDown = (e) => {
+    startRef.current = { x: e.clientX, y: e.clientY };
+    lockRef.current = null;
+    setDragging(true);
+  };
+  const onPointerMove = (e) => {
+    if (!startRef.current) return;
+    const dx = e.clientX - startRef.current.x;
+    const dy = e.clientY - startRef.current.y;
+    if (!lockRef.current) {
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+      lockRef.current = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+    }
+    if (lockRef.current !== 'h') return;
+    const next = Math.max(-actionThreshold * 1.6, Math.min(0, dx));
+    setOffset(next);
+  };
+  const onPointerUp = () => {
+    if (lockRef.current === 'h' && offset <= -actionThreshold) {
+      onAction && onAction();
+    }
+    setOffset(0);
+    setDragging(false);
+    startRef.current = null;
+    lockRef.current = null;
+  };
+  return {
+    offset, dragging,
+    handlers: {
+      onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp,
+    },
+  };
+}
+
+Object.assign(window, { HistoryTab, DayGroup, EntryRow, useSwipeToDelete });

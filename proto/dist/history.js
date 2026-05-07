@@ -1,4 +1,5 @@
 /* AUTO-GENERATED from proto/history.jsx — do not edit by hand. */
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 // history.jsx — Tab 2: Historique (chronological list grouped by day)
 
 const HIST_COLLAPSED_KEY = 'alconote.hist.collapsed';
@@ -21,6 +22,7 @@ function HistoryTab({
   const [query, setQuery] = React.useState('');
   const [filter, setFilter] = React.useState('all');
   const [collapsed, setCollapsed] = React.useState(loadCollapsedDays);
+  const [editEntry, setEditEntry] = React.useState(null);
   const {
     categories
   } = useCategories();
@@ -30,6 +32,21 @@ function HistoryTab({
   const ratings = useRatings();
   const families = React.useMemo(() => buildFamilies(drinks, ratings), [drinks, ratings]);
   const allEntries = React.useMemo(() => flattenEntries(families), [families]);
+  const onDeleteEntry = React.useCallback(async entry => {
+    const ok = await Confirm.ask({
+      title: 'Supprimer cette entrée ?',
+      message: 'Cette consommation sera retirée de votre historique.',
+      confirmText: 'Supprimer',
+      danger: true
+    });
+    if (!ok) return;
+    try {
+      await deleteDrink(entry.id);
+      Toast.show('Entrée supprimée');
+    } catch {
+      Toast.show('Erreur');
+    }
+  }, []);
   const toggleDay = day => {
     setCollapsed(prev => {
       const next = new Set(prev);
@@ -101,10 +118,14 @@ function HistoryTab({
     entries: groups[day],
     isCollapsed: collapsed.has(day),
     onToggle: () => toggleDay(day),
-    onOpenEntry: onOpenEntry,
+    onOpenEntry: e => setEditEntry(e),
     onDirectAdd: onDirectAdd,
+    onDelete: onDeleteEntry,
     first: i === 0
-  }))));
+  }))), editEntry && /*#__PURE__*/React.createElement(EditEntrySheet, {
+    entry: editEntry,
+    onClose: () => setEditEntry(null)
+  }));
 }
 function DayGroup({
   day,
@@ -113,6 +134,7 @@ function DayGroup({
   onToggle,
   onOpenEntry,
   onDirectAdd,
+  onDelete,
   first
 }) {
   const d = new Date(day + 'T00:00');
@@ -224,6 +246,7 @@ function DayGroup({
     entry: e,
     onClick: () => onOpenEntry(e),
     onDirectAdd: onDirectAdd,
+    onDelete: onDelete,
     first: i === 0,
     last: i === entries.length - 1
   })))));
@@ -232,21 +255,51 @@ function EntryRow({
   entry: e,
   onClick,
   onDirectAdd,
+  onDelete,
   first,
   last
 }) {
   const color = catColor(e.family.category, 70);
   const t = e.ts.slice(11, 16);
+  const swipe = useSwipeToDelete(() => onDelete && onDelete(e), 96);
   return /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: 'relative',
+      overflow: 'hidden',
+      borderBottom: last ? 'none' : `1px solid ${T.rule}`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: 'absolute',
+      inset: 0,
+      background: 'oklch(45% 0.18 25)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      paddingRight: 18,
+      color: '#fff',
+      fontSize: 12,
+      fontWeight: 500,
+      gap: 8,
+      cursor: 'pointer'
+    },
+    onClick: () => onDelete && onDelete(e)
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.trash,
+    size: 15
+  }), /*#__PURE__*/React.createElement("span", null, "Supprimer")), /*#__PURE__*/React.createElement("div", _extends({}, swipe.handlers, {
     style: {
       display: 'flex',
       alignItems: 'center',
       gap: 12,
       padding: '12px 10px 12px 18px',
-      borderBottom: last ? 'none' : `1px solid ${T.rule}`,
-      position: 'relative'
+      position: 'relative',
+      background: T.surface,
+      transform: `translateX(${swipe.offset}px)`,
+      transition: swipe.dragging ? 'none' : 'transform 0.22s ease',
+      touchAction: 'pan-y'
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'absolute',
       left: -2,
@@ -276,7 +329,7 @@ function EntryRow({
   }), /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: onClick,
-    "aria-label": `Voir ${e.family.name}`,
+    "aria-label": `Modifier ${e.family.name}`,
     style: {
       ...ghostButton,
       flex: 1,
@@ -333,10 +386,62 @@ function EntryRow({
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.plus,
     size: 14
-  })));
+  }))));
+}
+
+// Tiny pointer-driven swipe controller. Returns translate offset, a
+// drag flag (so the consumer can disable transitions during dragging),
+// and the handlers to spread on the swipeable element. Calls `onAction`
+// when the user releases past `actionThreshold` pixels of drag.
+function useSwipeToDelete(onAction, actionThreshold = 96) {
+  const [offset, setOffset] = React.useState(0);
+  const [dragging, setDragging] = React.useState(false);
+  const startRef = React.useRef(null);
+  const lockRef = React.useRef(null); // 'h' | 'v' once direction decided
+
+  const onPointerDown = e => {
+    startRef.current = {
+      x: e.clientX,
+      y: e.clientY
+    };
+    lockRef.current = null;
+    setDragging(true);
+  };
+  const onPointerMove = e => {
+    if (!startRef.current) return;
+    const dx = e.clientX - startRef.current.x;
+    const dy = e.clientY - startRef.current.y;
+    if (!lockRef.current) {
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+      lockRef.current = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+    }
+    if (lockRef.current !== 'h') return;
+    const next = Math.max(-actionThreshold * 1.6, Math.min(0, dx));
+    setOffset(next);
+  };
+  const onPointerUp = () => {
+    if (lockRef.current === 'h' && offset <= -actionThreshold) {
+      onAction && onAction();
+    }
+    setOffset(0);
+    setDragging(false);
+    startRef.current = null;
+    lockRef.current = null;
+  };
+  return {
+    offset,
+    dragging,
+    handlers: {
+      onPointerDown,
+      onPointerMove,
+      onPointerUp,
+      onPointerCancel: onPointerUp
+    }
+  };
 }
 Object.assign(window, {
   HistoryTab,
   DayGroup,
-  EntryRow
+  EntryRow,
+  useSwipeToDelete
 });

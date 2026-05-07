@@ -80,10 +80,10 @@ function AddDrinkSheet({
   } = useCategories();
   const [scan, setScan] = React.useState(false);
   const [name, setName] = React.useState('');
-  const [cat, setCat] = React.useState('Bière');
-  const [qty, setQty] = React.useState(33);
+  const [cat, setCat] = React.useState('');
+  const [qty, setQty] = React.useState('');
   const [unit, setUnit] = React.useState('cL');
-  const [alc, setAlc] = React.useState(4.5);
+  const [alc, setAlc] = React.useState('');
   const [date, setDate] = React.useState(() => _now().date);
   const [time, setTime] = React.useState(() => _now().time);
   const [rating, setRating] = React.useState(0);
@@ -100,33 +100,34 @@ function AddDrinkSheet({
     setBusy(false);
     if (prefill) {
       setName(prefill.name || '');
-      setCat(prefill.category || 'Bière');
-      setQty(prefill.quantity || 33);
+      setCat(prefill.category || '');
+      setQty(prefill.quantity != null ? prefill.quantity : '');
       setUnit(prefill.unit || 'cL');
-      setAlc(prefill.alcohol || prefill.alcoholContent || 4.5);
+      setAlc(prefill.alcohol != null ? prefill.alcohol : prefill.alcoholContent != null ? prefill.alcoholContent : '');
       setRating(prefill.rating || 0);
     } else {
       setName('');
-      setQty(33);
+      setQty('');
       setUnit('cL');
-      setAlc(4.5);
+      setAlc('');
       setRating(0);
+      setCat('');
     }
   }, [open, prefill]);
 
   // Backfill the category from the loaded categories list as soon as it
   // becomes available (handles the case where the sheet opens before the
-  // first useCategories() resolution).
+  // first useCategories() resolution). Only applied when the user has not
+  // chosen one yet.
   React.useEffect(() => {
     if (!open || prefill) return;
-    if (!cat || !categories.find(c => c.name === cat)) {
-      const fallback = categories[0]?.name;
-      if (fallback) setCat(fallback);
-    }
+    if (!cat && categories.length > 0) setCat(categories[0].name);
   }, [open, prefill, categories, cat]);
   if (!open) return null;
-  const volCl = unit === 'EcoCup' ? qty * 25 : unit === 'L' ? qty * 100 : qty;
-  const g = +(volCl * 10 * (alc / 100) * 0.789).toFixed(1);
+  const qtyNum = Number(qty) || 0;
+  const alcNum = Number(alc) || 0;
+  const volCl = unit === 'EcoCup' ? qtyNum * 25 : unit === 'L' ? qtyNum * 100 : qtyNum;
+  const g = +(volCl * 10 * (alcNum / 100) * 0.789).toFixed(1);
   const submit = async () => {
     setErr('');
     if (!name.trim()) {
@@ -137,7 +138,7 @@ function AddDrinkSheet({
       setErr('Choisissez une catégorie');
       return;
     }
-    if (!qty || qty <= 0) {
+    if (!qtyNum || qtyNum <= 0) {
       setErr('Quantité invalide');
       return;
     }
@@ -146,9 +147,9 @@ function AddDrinkSheet({
       await addDrink({
         name: name.trim(),
         category: cat,
-        quantity: Number(qty),
+        quantity: qtyNum,
         unit,
-        alcoholContent: Number(alc) || 0,
+        alcoholContent: alcNum,
         date,
         time
       });
@@ -174,7 +175,8 @@ function AddDrinkSheet({
       borderTop: `1px solid ${T.rule}`,
       borderLeft: `1px solid ${T.rule}`,
       borderRight: `1px solid ${T.rule}`,
-      animation: 'slideUp 0.25s ease'
+      animation: 'slideUp 0.25s ease',
+      overflowX: 'hidden'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -230,7 +232,8 @@ function AddDrinkSheet({
     size: 14
   }))), /*#__PURE__*/React.createElement("div", {
     style: {
-      overflow: 'auto',
+      overflowY: 'auto',
+      overflowX: 'hidden',
       padding: '0 18px 20px',
       flex: 1
     }
@@ -324,15 +327,24 @@ function AddDrinkSheet({
       gridTemplateColumns: '1.2fr 1fr',
       gap: 10
     }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
   }, /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Quantit\xE9"
   }, /*#__PURE__*/React.createElement("input", {
     type: "number",
     value: qty,
-    onChange: e => setQty(+e.target.value || 0),
+    onChange: e => setQty(e.target.value),
     inputMode: "decimal",
+    placeholder: "\u2014",
     style: inputS()
-  })), /*#__PURE__*/React.createElement(FieldGroup, {
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Unit\xE9"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -356,9 +368,10 @@ function AddDrinkSheet({
       letterSpacing: -0.1,
       background: unit === u2 ? T.ink : 'transparent',
       color: unit === u2 ? T.bg : T.ink2,
-      fontWeight: unit === u2 ? 600 : 400
+      fontWeight: unit === u2 ? 600 : 400,
+      minWidth: 0
     }
-  }, u2))))), /*#__PURE__*/React.createElement(FieldGroup, {
+  }, u2)))))), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Degr\xE9 d'alcool"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -375,7 +388,8 @@ function AddDrinkSheet({
     value: alc,
     step: "0.1",
     inputMode: "decimal",
-    onChange: e => setAlc(+e.target.value || 0),
+    placeholder: "\u2014",
+    onChange: e => setAlc(e.target.value),
     style: {
       flex: 1,
       background: 'transparent',
@@ -397,6 +411,10 @@ function AddDrinkSheet({
       gridTemplateColumns: '1fr 1fr',
       gap: 10
     }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
   }, /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Date"
   }, /*#__PURE__*/React.createElement("input", {
@@ -405,9 +423,15 @@ function AddDrinkSheet({
     onChange: e => setDate(e.target.value),
     style: {
       ...inputS(),
-      padding: '10px 14px'
+      padding: '10px 12px',
+      minWidth: 0,
+      width: '100%'
     }
-  })), /*#__PURE__*/React.createElement(FieldGroup, {
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Heure"
   }, /*#__PURE__*/React.createElement("input", {
     type: "time",
@@ -415,9 +439,11 @@ function AddDrinkSheet({
     onChange: e => setTime(e.target.value),
     style: {
       ...inputS(),
-      padding: '10px 14px'
+      padding: '10px 12px',
+      minWidth: 0,
+      width: '100%'
     }
-  }))), /*#__PURE__*/React.createElement(FieldGroup, {
+  })))), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Note (optionnelle)"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -790,10 +816,38 @@ function DrinkDetailSheet({
   onEdit
 }) {
   const ratings = useRatings();
-  if (!family && !entry) return null;
-  const f = family || entry.family;
+  const {
+    drinks
+  } = useDrinks();
+  // Pin the drink-family identity from props once: we want to keep
+  // showing the same family even after a single entry inside it gets
+  // deleted (so the timeline updates instead of the sheet closing).
+  const seedRef = React.useRef(family || entry && entry.family);
+  React.useEffect(() => {
+    seedRef.current = family || entry && entry.family || seedRef.current;
+  }, [family, entry]);
+  // Re-derive the live family from the current drinks list, so deletes
+  // and edits propagate without keeping a stale entries[] reference.
+  const liveFamily = React.useMemo(() => {
+    const seed = seedRef.current;
+    if (!seed) return null;
+    const fams = buildFamilies(drinks, ratings);
+    const match = fams.find(x => x.id === seed.id) || fams.find(x => x.name === seed.name && x.quantity === seed.quantity && (x.unit || '').toLowerCase() === (seed.unit || '').toLowerCase() && (x.alcohol || 0) === (seed.alcohol || 0));
+    return match || {
+      ...seed,
+      entries: []
+    };
+  }, [drinks, ratings]);
+  // Close automatically when the family no longer has any entries.
+  React.useEffect(() => {
+    if (liveFamily && liveFamily.entries && liveFamily.entries.length === 0) {
+      onClose && onClose();
+    }
+  }, [liveFamily, onClose]);
+  const f = liveFamily || family || entry && entry.family;
+  if (!f) return null;
   const color = catColor(f.category, 70);
-  const myRating = ratings[f.name] || f.rating || 0;
+  const myRating = ratings[f.name] ?? f.rating ?? 0;
   const rate = async n => {
     try {
       await saveRating(f.name, n);
@@ -1076,6 +1130,352 @@ function DrinkDetailSheet({
     icon: Ic.plus,
     size: 14
   }), " Ajouter \xE0 nouveau"))));
+}
+
+// Edit a single drink entry — touches `db.drinks[id]` only and does
+// NOT cascade to its sibling entries. After save, IndexedDB rebucketing
+// happens naturally because `buildFamilies` keys on (name+qty+unit+abv).
+function EditEntrySheet({
+  entry,
+  onClose
+}) {
+  const {
+    categories
+  } = useCategories();
+  const raw = entry.raw || entry;
+  const [name, setName] = React.useState(raw.name || '');
+  const [qty, setQty] = React.useState(raw.quantity != null ? raw.quantity : '');
+  const [unit, setUnit] = React.useState(raw.unit || 'cL');
+  const [alc, setAlc] = React.useState(raw.alcoholContent != null ? raw.alcoholContent : '');
+  const [cat, setCat] = React.useState(raw.category || '');
+  const [date, setDate] = React.useState(raw.date || _now().date);
+  const [time, setTime] = React.useState(raw.time || _now().time);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState('');
+  const save = async () => {
+    setErr('');
+    if (!name.trim()) {
+      setErr('Le nom est requis');
+      return;
+    }
+    const qtyNum = Number(qty) || 0;
+    if (qtyNum <= 0) {
+      setErr('Quantité invalide');
+      return;
+    }
+    setBusy(true);
+    try {
+      await updateDrink(raw.id, {
+        name: name.trim(),
+        category: cat,
+        quantity: qtyNum,
+        unit,
+        alcoholContent: Number(alc) || 0,
+        date,
+        time
+      });
+      Toast.show('Boisson modifiée');
+      onClose && onClose();
+    } catch (e) {
+      setErr(e && e.message ? e.message : 'Erreur');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async () => {
+    const ok = await Confirm.ask({
+      title: 'Supprimer cette entrée ?',
+      message: 'Cette consommation sera retirée de votre historique.',
+      confirmText: 'Supprimer',
+      danger: true
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await deleteDrink(raw.id);
+      Toast.show('Entrée supprimée');
+      onClose && onClose();
+    } catch (e) {
+      setErr(e && e.message ? e.message : 'Erreur');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return /*#__PURE__*/React.createElement(SheetOverlay, {
+    onClose: onClose
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: T.bg,
+      borderRadius: '22px 22px 0 0',
+      maxHeight: '92dvh',
+      display: 'flex',
+      flexDirection: 'column',
+      borderTop: `1px solid ${T.rule}`,
+      borderLeft: `1px solid ${T.rule}`,
+      borderRight: `1px solid ${T.rule}`,
+      animation: 'slideUp 0.25s ease',
+      overflowX: 'hidden'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      placeItems: 'center',
+      padding: '10px 0 4px'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 42,
+      height: 4,
+      borderRadius: 99,
+      background: T.rule
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '8px 18px 14px'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 30
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: fontSerif,
+      fontSize: 22,
+      color: T.ink,
+      letterSpacing: -0.3,
+      fontStyle: 'italic'
+    }
+  }, "Modifier l'entr\xE9e"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: onClose,
+    "aria-label": "Fermer",
+    style: {
+      width: 30,
+      height: 30,
+      borderRadius: 99,
+      background: T.surface2,
+      display: 'grid',
+      placeItems: 'center',
+      color: T.ink2,
+      cursor: 'pointer',
+      border: 'none',
+      padding: 0,
+      fontFamily: 'inherit'
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.close,
+    size: 14
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      overflowY: 'auto',
+      overflowX: 'hidden',
+      padding: '0 18px 20px',
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement(FieldGroup, {
+    label: "Nom"
+  }, /*#__PURE__*/React.createElement("input", {
+    value: name,
+    onChange: e => setName(e.target.value),
+    style: inputS()
+  })), /*#__PURE__*/React.createElement(FieldGroup, {
+    label: "Cat\xE9gorie"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 6,
+      flexWrap: 'wrap'
+    }
+  }, categories.map(c => /*#__PURE__*/React.createElement("div", {
+    key: c.id,
+    onClick: () => setCat(c.name),
+    style: {
+      padding: '7px 12px',
+      borderRadius: 10,
+      fontSize: 12,
+      border: `1px solid ${cat === c.name ? T.accent : T.rule}`,
+      background: cat === c.name ? T.accentSoft : 'transparent',
+      color: cat === c.name ? T.accent : T.ink2,
+      cursor: 'pointer',
+      letterSpacing: -0.1
+    }
+  }, c.name)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1.2fr 1fr',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement(FieldGroup, {
+    label: "Quantit\xE9"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    value: qty,
+    onChange: e => setQty(e.target.value),
+    inputMode: "decimal",
+    placeholder: "\u2014",
+    style: inputS()
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement(FieldGroup, {
+    label: "Unit\xE9"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 4,
+      padding: 3,
+      background: T.surface2,
+      borderRadius: 10,
+      border: `1px solid ${T.rule}`
+    }
+  }, ['cL', 'L', 'EcoCup'].map(u2 => /*#__PURE__*/React.createElement("div", {
+    key: u2,
+    onClick: () => setUnit(u2),
+    style: {
+      flex: 1,
+      padding: '8px 0',
+      borderRadius: 7,
+      textAlign: 'center',
+      fontSize: 11.5,
+      cursor: 'pointer',
+      letterSpacing: -0.1,
+      background: unit === u2 ? T.ink : 'transparent',
+      color: unit === u2 ? T.bg : T.ink2,
+      fontWeight: unit === u2 ? 600 : 400,
+      minWidth: 0
+    }
+  }, u2)))))), /*#__PURE__*/React.createElement(FieldGroup, {
+    label: "Degr\xE9 d'alcool (%)"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    value: alc,
+    step: "0.1",
+    inputMode: "decimal",
+    placeholder: "\u2014",
+    onChange: e => setAlc(e.target.value),
+    style: inputS()
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement(FieldGroup, {
+    label: "Date"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: date,
+    onChange: e => setDate(e.target.value),
+    style: {
+      ...inputS(),
+      padding: '10px 12px',
+      minWidth: 0,
+      width: '100%'
+    }
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement(FieldGroup, {
+    label: "Heure"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "time",
+    value: time,
+    onChange: e => setTime(e.target.value),
+    style: {
+      ...inputS(),
+      padding: '10px 12px',
+      minWidth: 0,
+      width: '100%'
+    }
+  })))), err && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.accent2,
+      background: 'oklch(35% 0.10 25 / 0.15)',
+      border: '1px solid oklch(45% 0.15 25 / 0.4)',
+      padding: '8px 12px',
+      borderRadius: 10,
+      fontSize: 12,
+      marginBottom: 10
+    }
+  }, err), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: remove,
+    style: {
+      width: '100%',
+      marginTop: 18,
+      padding: '12px',
+      textAlign: 'center',
+      borderRadius: 12,
+      background: 'oklch(35% 0.10 25 / 0.15)',
+      color: T.accent2,
+      border: '1px solid oklch(45% 0.15 25 / 0.4)',
+      fontSize: 12.5,
+      fontWeight: 500,
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      fontFamily: 'inherit'
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.trash,
+    size: 13
+  }), "Supprimer cette entr\xE9e")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '12px 18px calc(22px + env(safe-area-inset-bottom))',
+      borderTop: `1px solid ${T.rule}`,
+      display: 'flex',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: onClose,
+    style: {
+      flex: 1,
+      padding: '14px',
+      textAlign: 'center',
+      borderRadius: 12,
+      background: T.surface2,
+      color: T.ink2,
+      fontSize: 13,
+      cursor: 'pointer',
+      border: `1px solid ${T.rule}`,
+      fontFamily: 'inherit'
+    }
+  }, "Annuler"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: busy ? undefined : save,
+    disabled: busy,
+    style: {
+      flex: 2,
+      padding: '14px',
+      textAlign: 'center',
+      borderRadius: 12,
+      background: T.accent,
+      color: T.isDark ? T.bg : '#fff',
+      fontSize: 13,
+      fontWeight: 600,
+      cursor: busy ? 'wait' : 'pointer',
+      opacity: busy ? 0.5 : 1,
+      border: 'none',
+      fontFamily: 'inherit',
+      boxShadow: `0 4px 18px ${T.accent}60`
+    }
+  }, busy ? 'Enregistrement…' : 'Enregistrer'))));
 }
 
 // Edit drink family sheet (rename, change qty/unit/abv across all entries,
@@ -1418,16 +1818,16 @@ function SettingsDrawer({
   };
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: onClose,
-    side: "right"
+    side: "left"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.bg,
       width: 'min(360px, 100vw)',
       height: '100%',
-      borderLeft: `1px solid ${T.rule}`,
+      borderRight: `1px solid ${T.rule}`,
       display: 'flex',
       flexDirection: 'column',
-      animation: 'fade 0.2s ease'
+      animation: 'slideRight 0.22s ease'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1744,6 +2144,7 @@ Object.assign(window, {
   ScannerSheet,
   DrinkDetailSheet,
   EditFamilySheet,
+  EditEntrySheet,
   SettingsDrawer,
   FieldGroup,
   ImpactStat,
