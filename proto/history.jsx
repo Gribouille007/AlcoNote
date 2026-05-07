@@ -274,6 +274,10 @@ function useSwipeToDelete(onAction, actionThreshold = 96) {
     startRef.current = { x: e.clientX, y: e.clientY };
     lockRef.current = null;
     setDragging(true);
+    // Capture so we keep getting move/up even when the finger leaves
+    // the row (otherwise a fast swipe past the edge would strand the
+    // row at mid-translate forever).
+    try { e.currentTarget.setPointerCapture && e.currentTarget.setPointerCapture(e.pointerId); } catch {}
   };
   const onPointerMove = (e) => {
     if (!startRef.current) return;
@@ -287,7 +291,7 @@ function useSwipeToDelete(onAction, actionThreshold = 96) {
     const next = Math.max(-actionThreshold * 1.6, Math.min(0, dx));
     setOffset(next);
   };
-  const onPointerUp = () => {
+  const onPointerUp = (e) => {
     if (lockRef.current === 'h' && offset <= -actionThreshold) {
       onAction && onAction();
     }
@@ -295,6 +299,11 @@ function useSwipeToDelete(onAction, actionThreshold = 96) {
     setDragging(false);
     startRef.current = null;
     lockRef.current = null;
+    try {
+      if (e && e.currentTarget && e.currentTarget.releasePointerCapture) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {}
   };
   return {
     offset, dragging,

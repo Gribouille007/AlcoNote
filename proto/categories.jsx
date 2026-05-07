@@ -139,16 +139,18 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
   // group. We keep one line per (name, qty, unit, abv) variant so the
   // user can add each individually. Variants share a `groupKey` so
   // FamilyRow can render the stacked-card visual cue.
-  const groupCounts = new Map();
+  const groupEntries = new Map(); // name → total entries (for sort)
+  const variantCounts = new Map(); // name → number of variant rows
   for (const f of families) {
     const k = (f.name || '').trim().toLowerCase();
-    groupCounts.set(k, (groupCounts.get(k) || 0) + f.entries.length);
+    groupEntries.set(k, (groupEntries.get(k) || 0) + f.entries.length);
+    variantCounts.set(k, (variantCounts.get(k) || 0) + 1);
   }
   const sorted = [...families].sort((a, b) => {
     const ka = (a.name || '').trim().toLowerCase();
     const kb = (b.name || '').trim().toLowerCase();
-    const ga = groupCounts.get(ka) || 0;
-    const gb = groupCounts.get(kb) || 0;
+    const ga = groupEntries.get(ka) || 0;
+    const gb = groupEntries.get(kb) || 0;
     if (gb !== ga) return gb - ga;
     if (ka !== kb) return ka.localeCompare(kb);
     if ((a.alcohol || 0) !== (b.alcohol || 0)) return (a.alcohol || 0) - (b.alcohol || 0);
@@ -161,8 +163,7 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
   for (const f of sorted) {
     const key = (f.name || '').trim().toLowerCase();
     if (key !== prevKey) idx = 0;
-    const sameNameCount = families.filter(x => (x.name || '').trim().toLowerCase() === key).length;
-    rows.push({ f, key, idx: idx++, total: sameNameCount });
+    rows.push({ f, key, idx: idx++, total: variantCounts.get(key) || 1 });
     prevKey = key;
   }
 
@@ -308,14 +309,18 @@ function EditCategorySheet({ category, onClose }) {
   const icons = useCategoryIcons();
   const [name, setName] = React.useState(category);
   const initialGlyph = icons[category] || category;
-  const [glyph, setGlyph] = React.useState(initialGlyph);
+  const [glyph, setGlyphState] = React.useState(initialGlyph);
+  const userTouchedRef = React.useRef(false);
+  const setGlyph = (g) => { userTouchedRef.current = true; setGlyphState(g); };
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
 
-  // If the persisted icon loads after this sheet mounts, sync once.
+  // If the persisted icon loads after this sheet mounts and the user
+  // hasn't touched the picker yet, adopt the persisted value.
   React.useEffect(() => {
-    if (icons[category] && glyph === category) setGlyph(icons[category]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!userTouchedRef.current && icons[category]) {
+      setGlyphState(icons[category]);
+    }
   }, [icons, category]);
 
   const drinksInCat = drinks.filter(d => (d.category || '') === category).length;

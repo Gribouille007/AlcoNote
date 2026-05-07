@@ -278,7 +278,7 @@ function StatsTab() {
     return getPeriodRange(period, prevAnchor);
   }, [period, anchor]);
   const inRange = React.useMemo(() => filterDrinksInRange(drinks, allRange.start, allRange.end), [drinks, allRange]);
-  const inPrevRange = React.useMemo(() => prevRange ? filterDrinksInRange(drinks, prevRange.start, prevRange.end) : [], [drinks, prevRange]);
+  const inPrevRange = React.useMemo(() => prevRange ? filterDrinksInRange(drinks, prevRange.start, prevRange.end) : null, [drinks, prevRange]);
   const sp = {
     collapsed,
     toggleSection,
@@ -501,16 +501,19 @@ function Card({
 function GeneralSection({
   drinks,
   prevDrinks,
+  prevRange,
   period,
   range,
   collapsed,
   toggleSection
 }) {
   const agg = React.useMemo(() => aggregateGeneral(drinks), [drinks]);
-  const prevAgg = React.useMemo(() => aggregateGeneral(prevDrinks || []), [prevDrinks]);
+  const hasPrev = prevDrinks != null && prevRange != null;
+  const prevAgg = React.useMemo(() => aggregateGeneral(hasPrev ? prevDrinks : []), [prevDrinks, hasPrev]);
   const sessions = React.useMemo(() => computeSessions(drinks), [drinks]);
-  const prevSessions = React.useMemo(() => computeSessions(prevDrinks || []), [prevDrinks]);
+  const prevSessions = React.useMemo(() => computeSessions(hasPrev ? prevDrinks : []), [prevDrinks, hasPrev]);
   const days = Math.max(1, Math.round((range.end - range.start) / 86400000) + 1);
+  const prevDays = hasPrev ? Math.max(1, Math.round((prevRange.end - prevRange.start) / 86400000) + 1) : 0;
   // Sober-day count: only consider days from `range.start` up to `min(today, range.end)`,
   // so future days within the period don't inflate the count.
   const today = React.useMemo(() => {
@@ -528,13 +531,21 @@ function GeneralSection({
     }
     return count;
   })();
-
-  // Δ% helper — null when there is no useful previous baseline.
-  const pctChange = (cur, prev) => {
-    if (prev == null || prev === 0) {
-      if (cur === 0) return null;
-      return null; // show no badge when previous period had nothing
+  // Same calculation, but the previous period's window is fully past
+  // so we always go to its real end.
+  const prevSober = hasPrev ? (() => {
+    const drinkDays = new Set(prevDrinks.map(d => d.date));
+    let count = 0;
+    for (let d = new Date(prevRange.start); d <= prevRange.end; d = _addDays(d, 1)) {
+      if (!drinkDays.has(_fmtIso(d))) count++;
     }
+    return count;
+  })() : null;
+
+  // Δ% helper — `null` baseline means we don't show a badge (e.g. no
+  // previous period or it had zero of this metric).
+  const pctChange = (cur, prev) => {
+    if (prev == null || prev === 0) return null;
     return (cur - prev) / prev * 100;
   };
   const cards = [{
@@ -568,22 +579,23 @@ function GeneralSection({
     cards.push({
       v: sober,
       l: 'Jours sobres',
-      delta: pctChange(sober, prevDrinks ? Math.max(0, days - new Set(prevDrinks.map(d => d.date)).size) : null),
+      delta: pctChange(sober, prevSober),
       better: 'up'
     });
     cards.push({
       v: (agg.count / days).toFixed(1),
       l: 'Boissons/jour',
-      delta: pctChange(agg.count / days, prevAgg.count / days),
+      delta: pctChange(agg.count / days, prevDays ? prevAgg.count / prevDays : null),
       better: 'down'
     });
   }
   if (period === 'month' || period === 'year' || period === 'school') {
     const weeks = Math.max(1, days / 7);
+    const prevWeeks = prevDays ? Math.max(1, prevDays / 7) : 0;
     cards.push({
       v: (agg.count / weeks).toFixed(1),
       l: 'Boissons/sem.',
-      delta: pctChange(agg.count / weeks, prevAgg.count / weeks),
+      delta: pctChange(agg.count / weeks, prevWeeks ? prevAgg.count / prevWeeks : null),
       better: 'down'
     });
   }
@@ -1747,15 +1759,34 @@ function MapSection({
       position: 'bottomright',
       prefix: false
     }).addAttribution('© OSM').addTo(m);
-    for (const p of points) {
+    // Build popup content as DOM nodes so user-controlled fields
+    // (drink name, location label) cannot inject HTML.
+    const popupNode = p => {
+      const wrap = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = p.d.name || '';
+      wrap.appendChild(title);
+      wrap.appendChild(document.createElement('br'));
+      const meta = document.createElement('span');
+      meta.textContent = `${p.d.date || ''} · ${p.d.time || ''}`;
+      wrap.appendChild(meta);
       const where = p.d.location?.name || p.d.location?.address || '';
+      if (where) {
+        wrap.appendChild(document.createElement('br'));
+        const place = document.createElement('span');
+        place.textContent = where;
+        wrap.appendChild(place);
+      }
+      return wrap;
+    };
+    for (const p of points) {
       L.circleMarker([p.lat, p.lng], {
         radius: 7,
         weight: 2,
         color: 'rgba(180,90,40,0.95)',
         fillColor: 'rgba(220,140,70,0.85)',
         fillOpacity: 0.85
-      }).bindPopup(`<b>${p.d.name || ''}</b><br>${p.d.date || ''} · ${p.d.time || ''}${where ? '<br>' + where : ''}`).addTo(m);
+      }).bindPopup(popupNode(p)).addTo(m);
     }
     if (points.length === 1) {
       m.setView([points[0].lat, points[0].lng], 14);

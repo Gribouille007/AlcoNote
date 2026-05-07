@@ -39,12 +39,24 @@ function useChartScrubber(svgRef, getRect, onChange) {
     if (kind === 'down') {
       draggingRef.current = true;
       setActive(true);
-      try { e.target.setPointerCapture && e.target.setPointerCapture(e.pointerId); } catch {}
+      // Capture on the SVG itself, not whatever sub-element the user
+      // happened to press — sub-elements can be re-rendered/removed
+      // during scrubbing (e.g. the hover circle).
+      try {
+        if (e.currentTarget && e.currentTarget.setPointerCapture) {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }
+      } catch {}
     }
     if (kind === 'up' || kind === 'leave') {
       draggingRef.current = false;
       setActive(false);
       onChange && onChange(null);
+      try {
+        if (kind === 'up' && e.currentTarget && e.currentTarget.releasePointerCapture) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      } catch {}
       return;
     }
     if (kind === 'move' && !draggingRef.current && e.pointerType === 'touch') return;
@@ -66,8 +78,9 @@ function useChartScrubber(svgRef, getRect, onChange) {
   };
 }
 
-// Floating chart tooltip rendered as a foreignObject so it stays inside
-// the SVG viewport and follows the scrubber position.
+// Floating chart tooltip rendered as native SVG (rect + text) so it
+// renders identically across browsers (no foreignObject quirks). It
+// auto-flips horizontally when it would clip the right edge.
 function ChartTooltip({ x, y, lines, width = 320, pad = 8 }) {
   const w = 110;
   const h = 16 + lines.length * 14;
