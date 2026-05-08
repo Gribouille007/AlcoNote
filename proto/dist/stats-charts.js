@@ -810,13 +810,14 @@ function SvgBACProjection({
   const [scrubT, setScrubT] = React.useState(null);
   const safePoints = points && points.length > 0 ? points : null;
   // Tightened paddings give the curve more vertical room on small
-  // screens. The y-axis labels max out at 4 digits, but BAC rarely
-  // exceeds 1500 mg/L, so 30 px is enough.
+  // screens while still fitting 4-digit y-axis labels (worst case
+  // ~"1500" at fontSize 9 ≈ 22 px wide; 36 px keeps a ~12 px breathing
+  // gap from the plot area).
   const pad = {
     t: 16,
     r: 14,
     b: 22,
-    l: 32
+    l: 36
   };
   const w = width - pad.l - pad.r;
   const minT = safePoints ? safePoints[0].t : 0;

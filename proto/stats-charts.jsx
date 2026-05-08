@@ -537,9 +537,10 @@ function SvgBACProjection({ points, width = 320, height = 200, nowMs = Date.now(
 
   const safePoints = points && points.length > 0 ? points : null;
   // Tightened paddings give the curve more vertical room on small
-  // screens. The y-axis labels max out at 4 digits, but BAC rarely
-  // exceeds 1500 mg/L, so 30 px is enough.
-  const pad = { t: 16, r: 14, b: 22, l: 32 };
+  // screens while still fitting 4-digit y-axis labels (worst case
+  // ~"1500" at fontSize 9 ≈ 22 px wide; 36 px keeps a ~12 px breathing
+  // gap from the plot area).
+  const pad = { t: 16, r: 14, b: 22, l: 36 };
   const w = width - pad.l - pad.r;
   const minT = safePoints ? safePoints[0].t : 0;
   const maxT = safePoints ? safePoints[safePoints.length - 1].t : 1;

@@ -34,10 +34,16 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
           try {
             await restoreDrinks([row]);
             Toast.show('Suppression annulée');
-          } catch { Toast.show('Erreur lors de l\'annulation'); }
+          } catch (err) {
+            console.warn('AlcoNote: restoreDrinks failed', err);
+            Toast.show('Erreur lors de l\'annulation');
+          }
         },
       });
-    } catch { Toast.show('Erreur lors de la suppression'); }
+    } catch (err) {
+      console.warn('AlcoNote: deleteDrinkWithSnapshot failed', err);
+      Toast.show('Erreur lors de la suppression');
+    }
   }, []);
 
   const toggleDay = (day) => {

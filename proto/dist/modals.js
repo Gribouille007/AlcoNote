@@ -1057,12 +1057,14 @@ function DrinkDetailSheet({
               try {
                 await restoreDrinks([row]);
                 Toast.show('Suppression annulée');
-              } catch {
+              } catch (err) {
+                console.warn('AlcoNote: restoreDrinks failed', err);
                 Toast.show('Erreur lors de l\'annulation');
               }
             }
           });
-        } catch {
+        } catch (err) {
+          console.warn('AlcoNote: deleteDrinkWithSnapshot failed', err);
           Toast.show('Erreur lors de la suppression');
         }
       },
@@ -1196,13 +1198,15 @@ function EditEntrySheet({
           try {
             await restoreDrinks([row]);
             Toast.show('Suppression annulée');
-          } catch {
+          } catch (err) {
+            console.warn('AlcoNote: restoreDrinks failed', err);
             Toast.show('Erreur lors de l\'annulation');
           }
         }
       });
       onClose && onClose();
     } catch (e) {
+      console.warn('AlcoNote: deleteDrinkWithSnapshot failed', e);
       setErr(e && e.message ? e.message : 'Erreur');
     } finally {
       setBusy(false);
@@ -1540,13 +1544,15 @@ function EditFamilySheet({
           try {
             await restoreDrinks(snapshot);
             Toast.show('Suppression annulée');
-          } catch {
+          } catch (err) {
+            console.warn('AlcoNote: restoreDrinks (family) failed', err);
             Toast.show('Erreur lors de l\'annulation');
           }
         }
       });
       onClose && onClose();
     } catch (e) {
+      console.warn('AlcoNote: deleteFamily failed', e);
       setErr(e && e.message ? e.message : 'Erreur');
     } finally {
       setBusy(false);

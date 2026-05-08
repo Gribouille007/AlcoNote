@@ -628,10 +628,16 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
                             try {
                               await restoreDrinks([row]);
                               Toast.show('Suppression annulée');
-                            } catch { Toast.show('Erreur lors de l\'annulation'); }
+                            } catch (err) {
+                              console.warn('AlcoNote: restoreDrinks failed', err);
+                              Toast.show('Erreur lors de l\'annulation');
+                            }
                           },
                         });
-                      } catch { Toast.show('Erreur lors de la suppression'); }
+                      } catch (err) {
+                        console.warn('AlcoNote: deleteDrinkWithSnapshot failed', err);
+                        Toast.show('Erreur lors de la suppression');
+                      }
                     }} style={{
                       color: T.muted, display: 'flex', cursor: 'pointer',
                       padding: 4, background: 'transparent', border: 'none',
@@ -723,11 +729,15 @@ function EditEntrySheet({ entry, onClose }) {
           try {
             await restoreDrinks([row]);
             Toast.show('Suppression annulée');
-          } catch { Toast.show('Erreur lors de l\'annulation'); }
+          } catch (err) {
+            console.warn('AlcoNote: restoreDrinks failed', err);
+            Toast.show('Erreur lors de l\'annulation');
+          }
         },
       });
       onClose && onClose();
     } catch (e) {
+      console.warn('AlcoNote: deleteDrinkWithSnapshot failed', e);
       setErr(e && e.message ? e.message : 'Erreur');
     } finally { setBusy(false); }
   };
@@ -909,11 +919,17 @@ function EditFamilySheet({ family, onClose }) {
           try {
             await restoreDrinks(snapshot);
             Toast.show('Suppression annulée');
-          } catch { Toast.show('Erreur lors de l\'annulation'); }
+          } catch (err) {
+            console.warn('AlcoNote: restoreDrinks (family) failed', err);
+            Toast.show('Erreur lors de l\'annulation');
+          }
         },
       });
       onClose && onClose();
-    } catch (e) { setErr(e && e.message ? e.message : 'Erreur'); }
+    } catch (e) {
+      console.warn('AlcoNote: deleteFamily failed', e);
+      setErr(e && e.message ? e.message : 'Erreur');
+    }
     finally { setBusy(false); }
   };
 

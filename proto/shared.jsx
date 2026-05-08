@@ -184,6 +184,11 @@ function catBg(name) {
 // an `undo` callback rendered as an "Annuler" button — used by every
 // delete path so the user can revert a destructive action without a
 // modal confirmation up front.
+//
+// Only ONE toast lives at a time: a second `show()` replaces the first
+// and its undo callback is dropped on the floor. Mirrors the legacy
+// bar-app UX — quick successive deletes commit irreversibly, the user
+// keeps the most-recent undo affordance only.
 const Toast = {
   show(msg, opts) {
     if (typeof window !== 'undefined' && window.__alcoToastSetter) {

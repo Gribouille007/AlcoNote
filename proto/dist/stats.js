@@ -1365,12 +1365,14 @@ function BACSection({
           try {
             await restoreBACRecord(snapshot);
             Toast.show('Suppression annulée');
-          } catch {
+          } catch (err) {
+            console.warn('AlcoNote: restoreBACRecord failed', err);
             Toast.show('Erreur lors de l\'annulation');
           }
         }
       });
-    } catch {
+    } catch (err) {
+      console.warn('AlcoNote: deleteBACRecord failed', err);
       Toast.show('Erreur lors de la suppression');
     }
   };

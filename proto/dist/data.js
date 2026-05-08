@@ -372,6 +372,11 @@ async function updateFamily(family, updates) {
   }
   dataBus.bump();
 }
+
+// CONTRACT CHANGE (v3.5.0): now returns `{ count, snapshot }` instead of
+// `Promise<number>` so callers can wire an undo path. Update every
+// caller when modifying the shape — the legacy `js/app.js` does NOT
+// invoke this function, only the proto layer does.
 async function deleteFamily(family) {
   const db = await waitForDb();
   if (!db) throw new Error('DB indisponible');
@@ -391,8 +396,13 @@ async function deleteFamily(family) {
   };
 }
 
-// Bulk re-add — used by the undo path of deleteFamily. Each drink gets
-// a fresh auto-incremented id; the originals are gone.
+// Bulk re-add — used by the undo path of `deleteFamily` and
+// `deleteDrinkWithSnapshot`. Each restored drink gets a fresh
+// auto-incremented id (Dexie `++id`); the original ids are gone, so any
+// outside reference (e.g. a localStorage cache pinning a specific id)
+// will miss after undo. Sequential awaits are intentional — `addDrink`
+// internally calls `updateCategoryDrinkCount`, which races with itself
+// on parallel inserts to the same category.
 async function restoreDrinks(drinks) {
   const db = await waitForDb();
   if (!db) throw new Error('DB indisponible');
@@ -411,6 +421,9 @@ async function restoreDrinks(drinks) {
 
 // Single-drink delete that returns the original row, so callers can
 // pass it straight to `restoreDrinks([row])` from the undo button.
+// `getDrinkById` is read first to make the snapshot complete; if a
+// concurrent writer already removed the row we surface a clear error
+// instead of returning `undefined`.
 async function deleteDrinkWithSnapshot(id) {
   const db = await waitForDb();
   if (!db) throw new Error('DB indisponible');
@@ -430,8 +443,11 @@ async function deleteBACRecord(id) {
   return r;
 }
 
-// Re-add a previously deleted BAC record (for undo). Auto-incremented
-// id will differ from the original; everything else round-trips.
+// Re-add a previously deleted BAC record (for undo). The auto-incremented
+// id will differ from the original; `relevantDrinkIds` round-trips
+// untouched, so if the underlying drinks were ALSO deleted the array
+// will hold dangling references — harmless (no current consumer
+// dereferences them) but worth noting for future readers.
 async function restoreBACRecord(record) {
   const db = await waitForDb();
   if (!db) throw new Error('DB indisponible');

@@ -44,12 +44,14 @@ function HistoryTab({
           try {
             await restoreDrinks([row]);
             Toast.show('Suppression annulée');
-          } catch {
+          } catch (err) {
+            console.warn('AlcoNote: restoreDrinks failed', err);
             Toast.show('Erreur lors de l\'annulation');
           }
         }
       });
-    } catch {
+    } catch (err) {
+      console.warn('AlcoNote: deleteDrinkWithSnapshot failed', err);
       Toast.show('Erreur lors de la suppression');
     }
   }, []);

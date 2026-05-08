@@ -275,9 +275,14 @@ function App() {
       const fn = toast.opts.undo;
       clearTimeout(window.__aToast);
       setToast(null);
+      // Surface synchronous undo failures rather than swallow
+      // them silently — async errors are reported by the
+      // callback via a follow-up Toast.show.
       try {
         fn();
-      } catch {}
+      } catch (err) {
+        console.warn('AlcoNote: undo failed', err);
+      }
     },
     style: {
       marginLeft: 4,
