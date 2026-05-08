@@ -902,7 +902,7 @@ function DeltaBadge({
       background: bg,
       padding: '2px 6px',
       borderRadius: 99,
-      border: `1px solid ${fg}30`,
+      border: `1px solid ${withAlpha(fg, 0.18)}`,
       letterSpacing: 0,
       lineHeight: 1
     },
@@ -1661,7 +1661,7 @@ function BACRecordRow({
       transform: `translateX(${swipe.offset}px)`,
       transition: swipe.dragging ? 'none' : 'transform 0.22s ease',
       touchAction: 'pan-y',
-      boxShadow: isHighest ? `0 0 0 1px ${level.color}40, 0 4px 12px ${level.color}20` : 'none'
+      boxShadow: isHighest ? `0 0 0 1px ${withAlpha(level.color, 0.25)}, 0 4px 12px ${withAlpha(level.color, 0.12)}` : 'none'
     }
   }), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1670,7 +1670,7 @@ function BACRecordRow({
       borderRadius: 99,
       background: level.color,
       flexShrink: 0,
-      boxShadow: `0 0 8px ${level.color}80`
+      boxShadow: `0 0 8px ${withAlpha(level.color, 0.5)}`
     }
   }), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1911,17 +1911,13 @@ function MapSection({
       } catch {}
       mapRef.current = null;
     };
-  }, [isOpen, ready, geoDrinks]);
+  }, [isOpen, ready, geoDrinks, T._name]);
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "map",
     title: "Carte des consommations",
     sub: `${geoDrinks.length} consommation${geoDrinks.length !== 1 ? 's' : ''} géolocalisée${geoDrinks.length !== 1 ? 's' : ''}`,
     collapsed: collapsed,
     toggleSection: toggleSection
-  }, /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 8
-    }
   }, /*#__PURE__*/React.createElement("div", {
     ref: containerRef,
     style: {
@@ -1930,6 +1926,7 @@ function MapSection({
       borderRadius: 12,
       overflow: 'hidden',
       background: T.surface2,
+      border: `1px solid ${T.rule}`,
       position: 'relative'
     }
   }, !ready && !error && /*#__PURE__*/React.createElement("div", {
@@ -1967,7 +1964,7 @@ function MapSection({
       textAlign: 'center',
       padding: 24
     }
-  }, "Aucune consommation g\xE9olocalis\xE9e pour cette p\xE9riode"))));
+  }, "Aucune consommation g\xE9olocalis\xE9e pour cette p\xE9riode")));
 }
 
 // ── 7. Évolution mensuelle ────────────────────────────────────────
@@ -2178,7 +2175,7 @@ function AdvancedSection({
       color: T.ink2
     }
   }, /*#__PURE__*/React.createElement(LegendDot, {
-    color: `${T.accent}40`,
+    color: withAlpha(T.accent, 0.25),
     label: "Brut"
   }), /*#__PURE__*/React.createElement(LegendDot, {
     color: T.accent,

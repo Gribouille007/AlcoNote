@@ -536,7 +536,7 @@ function AddDrinkSheet({
       opacity: busy ? 0.5 : 1,
       border: 'none',
       fontFamily: 'inherit',
-      boxShadow: `0 4px 18px ${T.accent}60`
+      boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`
     }
   }, busy ? 'Enregistrement…' : 'Enregistrer'))), scan && /*#__PURE__*/React.createElement(ScannerSheet, {
     onClose: () => setScan(false),
@@ -767,7 +767,7 @@ function ScannerSheet({
       cursor: 'pointer',
       border: 'none',
       fontFamily: 'inherit',
-      boxShadow: `0 8px 30px ${T.accent}50`
+      boxShadow: `0 8px 30px ${withAlpha(T.accent, 0.32)}`
     }
   }, "Utiliser ce produit")));
 }
@@ -1124,7 +1124,7 @@ function DrinkDetailSheet({
       gap: 6,
       border: 'none',
       fontFamily: 'inherit',
-      boxShadow: `0 4px 18px ${T.accent}60`
+      boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.plus,
@@ -1473,7 +1473,7 @@ function EditEntrySheet({
       opacity: busy ? 0.5 : 1,
       border: 'none',
       fontFamily: 'inherit',
-      boxShadow: `0 4px 18px ${T.accent}60`
+      boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`
     }
   }, busy ? 'Enregistrement…' : 'Enregistrer'))));
 }
@@ -1754,7 +1754,7 @@ function EditFamilySheet({
       opacity: busy ? 0.5 : 1,
       border: 'none',
       fontFamily: 'inherit',
-      boxShadow: `0 4px 18px ${T.accent}60`
+      boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`
     }
   }, busy ? 'Enregistrement…' : 'Enregistrer'))));
 }

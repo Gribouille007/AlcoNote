@@ -599,7 +599,7 @@ function DeltaBadge({ delta, better = 'down' }) {
       display: 'inline-flex', alignItems: 'center', gap: 3,
       color: fg, fontSize: 9.5, fontFamily: fontNum, fontWeight: 600,
       background: bg, padding: '2px 6px', borderRadius: 99,
-      border: `1px solid ${fg}30`,
+      border: `1px solid ${withAlpha(fg, 0.18)}`,
       letterSpacing: 0, lineHeight: 1,
     }} aria-label={`${ariaDir} de ${value} vs période précédente`}>
       {arrow}{value}
@@ -1061,11 +1061,11 @@ function BACRecordRow({ record, isHighest, onDelete }) {
           transform: `translateX(${swipe.offset}px)`,
           transition: swipe.dragging ? 'none' : 'transform 0.22s ease',
           touchAction: 'pan-y',
-          boxShadow: isHighest ? `0 0 0 1px ${level.color}40, 0 4px 12px ${level.color}20` : 'none',
+          boxShadow: isHighest ? `0 0 0 1px ${withAlpha(level.color, 0.25)}, 0 4px 12px ${withAlpha(level.color, 0.12)}` : 'none',
         }}>
         <div style={{
           width: 10, height: 10, borderRadius: 99, background: level.color, flexShrink: 0,
-          boxShadow: `0 0 8px ${level.color}80`,
+          boxShadow: `0 0 8px ${withAlpha(level.color, 0.5)}`,
         }}/>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
@@ -1256,16 +1256,15 @@ function MapSection({ drinks, collapsed, toggleSection }) {
       try { m.remove(); } catch {}
       mapRef.current = null;
     };
-  }, [isOpen, ready, geoDrinks]);
+  }, [isOpen, ready, geoDrinks, T._name]);
 
   return (
     <StatSection id="map" title="Carte des consommations"
       sub={`${geoDrinks.length} consommation${geoDrinks.length !== 1 ? 's' : ''} géolocalisée${geoDrinks.length !== 1 ? 's' : ''}`}
       collapsed={collapsed} toggleSection={toggleSection}>
-      <Card style={{ padding: 8 }}>
-        <div ref={containerRef} style={{
+      <div ref={containerRef} style={{
           width: '100%', height: 260, borderRadius: 12, overflow: 'hidden',
-          background: T.surface2, position: 'relative',
+          background: T.surface2, border: `1px solid ${T.rule}`, position: 'relative',
         }}>
           {!ready && !error && (
             <div style={{
@@ -1287,7 +1286,6 @@ function MapSection({ drinks, collapsed, toggleSection }) {
             }}>Aucune consommation géolocalisée pour cette période</div>
           )}
         </div>
-      </Card>
     </StatSection>
   );
 }
@@ -1411,7 +1409,7 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection }) {
           display: 'flex', gap: 14, justifyContent: 'center', marginTop: 6,
           fontSize: 10.5, color: T.ink2,
         }}>
-          <LegendDot color={`${T.accent}40`} label="Brut" />
+          <LegendDot color={withAlpha(T.accent, 0.25)} label="Brut" />
           <LegendDot color={T.accent} label="7j" />
           <LegendDot color={T.ink2} label="30j" dashed />
         </div>

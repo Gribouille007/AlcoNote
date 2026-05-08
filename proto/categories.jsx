@@ -459,7 +459,7 @@ function EditCategorySheet({ category, onClose }) {
           background: T.accent, color: T.isDark ? T.bg : '#fff',
           fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer',
           opacity: busy ? 0.5 : 1, border: 'none', fontFamily: 'inherit',
-          boxShadow: `0 4px 18px ${T.accent}60`,
+          boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
         }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
 
         <button type="button" onClick={busy ? undefined : remove} disabled={busy} style={{

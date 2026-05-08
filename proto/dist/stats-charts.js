@@ -763,7 +763,38 @@ function SvgBACProjection({
   height = 170,
   nowMs = Date.now()
 }) {
-  if (!points || points.length === 0) {
+  // Hooks always run first and unconditionally so React's hook order
+  // stays stable even when the component is rendered with empty input.
+  const idSuffix = React.useId().replace(/:/g, '');
+  const svgRef = React.useRef(null);
+  const [scrubT, setScrubT] = React.useState(null);
+  const safePoints = points && points.length > 0 ? points : null;
+  const pad = {
+    t: 22,
+    r: 12,
+    b: 28,
+    l: 40
+  };
+  const w = width - pad.l - pad.r;
+  const minT = safePoints ? safePoints[0].t : 0;
+  const maxT = safePoints ? safePoints[safePoints.length - 1].t : 1;
+
+  // The scrubber is a hook (uses useState internally), so it must be
+  // called every render — even when `safePoints` is null. We close over
+  // `minT`/`maxT` which are safe defaults in the empty case.
+  const scr = useChartScrubber(svgRef, null, p => {
+    if (!p) {
+      setScrubT(null);
+      return;
+    }
+    const t = minT + (p.x - pad.l) / Math.max(1, w) * (maxT - minT);
+    setScrubT(Math.max(minT, Math.min(maxT, t)));
+  });
+
+  // Bail out cleanly when there's nothing to draw. All hooks above have
+  // already run, so subsequent renders with non-empty input keep their
+  // hook order intact.
+  if (!safePoints) {
     return /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.muted,
@@ -773,17 +804,8 @@ function SvgBACProjection({
       }
     }, "Aucune donn\xE9e d'alcool\xE9mie");
   }
-  const pad = {
-    t: 22,
-    r: 12,
-    b: 28,
-    l: 40
-  };
-  const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
-  const minT = points[0].t;
-  const maxT = points[points.length - 1].t;
-  const peakBac = Math.max(...points.map(p => p.bac));
+  const peakBac = Math.max(...safePoints.map(p => p.bac));
   const maxB = chartNiceMax(Math.max(500, peakBac * 1.05), 4);
   const xs = t => pad.l + (t - minT) / Math.max(0.001, maxT - minT) * w;
   const ys = b => pad.t + h * (1 - b / maxB);
@@ -792,9 +814,6 @@ function SvgBACProjection({
   const warn = T.isDark ? 'oklch(72% 0.16 60)' : 'oklch(58% 0.16 55)';
   const danger = T.isDark ? 'oklch(68% 0.20 25)' : 'oklch(54% 0.20 25)';
   const bacColor = b => b > 500 ? danger : b > 200 ? warn : safe;
-
-  // Stable id suffix so multiple charts on the same page don't collide.
-  const idSuffix = React.useId().replace(/:/g, '');
   const gradStrokeId = `bac-stroke-${idSuffix}`;
   const gradAreaId = `bac-area-${idSuffix}`;
 
@@ -828,11 +847,11 @@ function SvgBACProjection({
   // Split into past (t ≤ 0) and future (t > 0). Include t=0 in both so
   // the visual transition between solid and dashed has no gap.
   const nowIdx = (() => {
-    for (let i = 0; i < points.length; i++) if (points[i].t >= 0) return i;
-    return points.length - 1;
+    for (let i = 0; i < safePoints.length; i++) if (safePoints[i].t >= 0) return i;
+    return safePoints.length - 1;
   })();
-  const past = points.slice(0, Math.max(1, nowIdx + 1));
-  const future = points.slice(nowIdx);
+  const past = safePoints.slice(0, Math.max(1, nowIdx + 1));
+  const future = safePoints.slice(nowIdx);
   const pathOf = pts => pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${xs(p.t)},${ys(p.bac)}`).join(' ');
   const areaOf = pts => pathOf(pts) + ` L${xs(pts[pts.length - 1].t)},${baseY} L${xs(pts[0].t)},${baseY} Z`;
   const thresh = [{
@@ -844,35 +863,25 @@ function SvgBACProjection({
     label: '500 légal',
     color: danger
   }].filter(l => l.y <= maxB);
-  const svgRef = React.useRef(null);
-  const [scrubT, setScrubT] = React.useState(null);
-  const scr = useChartScrubber(svgRef, null, p => {
-    if (!p) {
-      setScrubT(null);
-      return;
-    }
-    const t = minT + (p.x - pad.l) / Math.max(1, w) * (maxT - minT);
-    setScrubT(Math.max(minT, Math.min(maxT, t)));
-  });
 
   // Linear interpolation between adjacent samples → smooth ball motion.
   const interpAt = t => {
-    if (t <= points[0].t) return {
+    if (t <= safePoints[0].t) return {
       t,
-      bac: points[0].bac
+      bac: safePoints[0].bac
     };
-    if (t >= points[points.length - 1].t) return {
+    if (t >= safePoints[safePoints.length - 1].t) return {
       t,
-      bac: points[points.length - 1].bac
+      bac: safePoints[safePoints.length - 1].bac
     };
     let lo = 0,
-      hi = points.length - 1;
+      hi = safePoints.length - 1;
     while (hi - lo > 1) {
       const mid = lo + hi >> 1;
-      if (points[mid].t <= t) lo = mid;else hi = mid;
+      if (safePoints[mid].t <= t) lo = mid;else hi = mid;
     }
-    const a = points[lo],
-      b = points[hi];
+    const a = safePoints[lo],
+      b = safePoints[hi];
     const frac = (t - a.t) / Math.max(1e-9, b.t - a.t);
     return {
       t,
