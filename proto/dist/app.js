@@ -121,10 +121,15 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drinks, userSettings.userWeight, userSettings.userGender, bacTick]);
   React.useEffect(() => {
-    window.__alcoToastSetter = msg => {
-      setToast(msg);
+    window.__alcoToastSetter = (msg, opts) => {
+      setToast({
+        msg,
+        opts: opts || null
+      });
       clearTimeout(window.__aToast);
-      window.__aToast = setTimeout(() => setToast(null), 1800);
+      // Undo toasts stay visible longer so the user has time to react.
+      const ttl = opts && typeof opts.undo === 'function' ? 5000 : 1800;
+      window.__aToast = setTimeout(() => setToast(null), ttl);
     };
   }, []);
   React.useEffect(() => {
@@ -139,8 +144,11 @@ function App() {
         quantity: family.quantity,
         unit: family.unit,
         alcoholContent: family.alcohol || family.alcoholContent || 0,
-        date: n.toISOString().slice(0, 10),
-        time: n.toTimeString().slice(0, 5)
+        // Local date/time pair so BAC's 24h window stays consistent
+        // (UTC date + local time used to drop drinks added late at
+        // night in positive-UTC zones).
+        date: localDate(n),
+        time: localTime(n)
       });
       Toast.show(`« ${family.name} » ajoutée`);
     } catch (e) {
@@ -233,7 +241,7 @@ function App() {
       transform: 'translateX(-50%)',
       background: T.ink,
       color: T.bg,
-      padding: '10px 18px',
+      padding: '10px 14px 10px 18px',
       borderRadius: 99,
       fontSize: 13,
       fontWeight: 500,
@@ -242,7 +250,7 @@ function App() {
       boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
       display: 'flex',
       alignItems: 'center',
-      gap: 8,
+      gap: 10,
       animation: 'fade 0.2s ease',
       maxWidth: 'calc(100vw - 24px)'
     }
@@ -254,7 +262,43 @@ function App() {
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.check,
     size: 14
-  })), toast)));
+  })), /*#__PURE__*/React.createElement("span", {
+    style: {
+      minWidth: 0,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap'
+    }
+  }, toast.msg), toast.opts && typeof toast.opts.undo === 'function' && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => {
+      const fn = toast.opts.undo;
+      clearTimeout(window.__aToast);
+      setToast(null);
+      // Surface synchronous undo failures rather than swallow
+      // them silently — async errors are reported by the
+      // callback via a follow-up Toast.show.
+      try {
+        fn();
+      } catch (err) {
+        console.warn('AlcoNote: undo failed', err);
+      }
+    },
+    style: {
+      marginLeft: 4,
+      padding: '5px 12px',
+      borderRadius: 99,
+      background: T.accent,
+      color: T.isDark ? T.bg : '#fff',
+      border: 'none',
+      fontSize: 12,
+      fontWeight: 600,
+      fontFamily: 'inherit',
+      cursor: 'pointer',
+      flexShrink: 0,
+      letterSpacing: 0.1
+    }
+  }, "Annuler"))));
 }
 function AppHeader({
   tab,

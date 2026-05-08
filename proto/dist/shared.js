@@ -578,13 +578,39 @@ function catBg(name) {
 }
 
 // ── Toast helper (global so any component can fire one) ───────────
+// `show(msg)` prints a transient confirmation. `show(msg, opts)` accepts
+// an `undo` callback rendered as an "Annuler" button — used by every
+// delete path so the user can revert a destructive action without a
+// modal confirmation up front.
+//
+// Only ONE toast lives at a time: a second `show()` replaces the first
+// and its undo callback is dropped on the floor. Mirrors the legacy
+// bar-app UX — quick successive deletes commit irreversibly, the user
+// keeps the most-recent undo affordance only.
 const Toast = {
-  show(msg) {
+  show(msg, opts) {
     if (typeof window !== 'undefined' && window.__alcoToastSetter) {
-      window.__alcoToastSetter(msg);
+      window.__alcoToastSetter(msg, opts || null);
     }
   }
 };
+
+// Build YYYY-MM-DD / HH:MM strings from the LOCAL calendar fields, not
+// UTC ones. Pairing a UTC date with a local time previously shifted
+// late-night drinks (e.g. 01h in CEST) backward by 24h once
+// `computeBacOverTime` re-parsed `${date}T${time}` as local — they fell
+// outside the 24h lookback and BAC silently stayed at 0.
+function localDate(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function localTime(d = new Date()) {
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
 
 // ── Date formatting helpers (French) ──────────────────────────────
 const FR_DAYS_LONG = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
@@ -1152,6 +1178,8 @@ Object.assign(window, {
   fmtDateShort,
   fmtDateMedium,
   fmtDayHeader,
+  localDate,
+  localTime,
   toCl,
   gramsAlcohol,
   unitsAlcohol,

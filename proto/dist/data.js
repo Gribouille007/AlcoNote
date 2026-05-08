@@ -372,16 +372,66 @@ async function updateFamily(family, updates) {
   }
   dataBus.bump();
 }
+
+// CONTRACT CHANGE (v3.5.0): now returns `{ count, snapshot }` instead of
+// `Promise<number>` so callers can wire an undo path. Update every
+// caller when modifying the shape — the legacy `js/app.js` does NOT
+// invoke this function, only the proto layer does.
 async function deleteFamily(family) {
   const db = await waitForDb();
   if (!db) throw new Error('DB indisponible');
   const all = await db.getAllDrinks();
   const matches = all.filter(d => (d.name || '').trim().toLowerCase() === (family.name || '').trim().toLowerCase() && d.quantity === family.quantity && (d.unit || '').toLowerCase() === (family.unit || '').toLowerCase() && (d.alcoholContent || 0) === (family.alcohol || 0));
+  // Capture full row state BEFORE deletion so we can re-add on undo.
+  const snapshot = matches.map(m => ({
+    ...m
+  }));
   for (const m of matches) {
     await db.deleteDrink(m.id);
   }
   dataBus.bump();
-  return matches.length;
+  return {
+    count: matches.length,
+    snapshot
+  };
+}
+
+// Bulk re-add — used by the undo path of `deleteFamily` and
+// `deleteDrinkWithSnapshot`. Each restored drink gets a fresh
+// auto-incremented id (Dexie `++id`); the original ids are gone, so any
+// outside reference (e.g. a localStorage cache pinning a specific id)
+// will miss after undo. Sequential awaits are intentional — `addDrink`
+// internally calls `updateCategoryDrinkCount`, which races with itself
+// on parallel inserts to the same category.
+async function restoreDrinks(drinks) {
+  const db = await waitForDb();
+  if (!db) throw new Error('DB indisponible');
+  for (const d of drinks) {
+    const {
+      id,
+      createdAt,
+      updatedAt,
+      quantityInCL,
+      ...payload
+    } = d;
+    await db.addDrink(payload);
+  }
+  dataBus.bump();
+}
+
+// Single-drink delete that returns the original row, so callers can
+// pass it straight to `restoreDrinks([row])` from the undo button.
+// `getDrinkById` is read first to make the snapshot complete; if a
+// concurrent writer already removed the row we surface a clear error
+// instead of returning `undefined`.
+async function deleteDrinkWithSnapshot(id) {
+  const db = await waitForDb();
+  if (!db) throw new Error('DB indisponible');
+  const row = await db.getDrinkById(id);
+  if (!row) throw new Error('Boisson introuvable');
+  await db.deleteDrink(id);
+  dataBus.bump();
+  return row;
 }
 
 // Single BAC record removal -- only the one record, never spreads.
@@ -391,6 +441,23 @@ async function deleteBACRecord(id) {
   const r = await db.deleteBACRecord(id);
   dataBus.bump();
   return r;
+}
+
+// Re-add a previously deleted BAC record (for undo). The auto-incremented
+// id will differ from the original; `relevantDrinkIds` round-trips
+// untouched, so if the underlying drinks were ALSO deleted the array
+// will hold dangling references — harmless (no current consumer
+// dereferences them) but worth noting for future readers.
+async function restoreBACRecord(record) {
+  const db = await waitForDb();
+  if (!db) throw new Error('DB indisponible');
+  const {
+    id,
+    createdAt,
+    ...payload
+  } = record;
+  await db.addBACRecord(payload);
+  dataBus.bump();
 }
 
 // Wipe entire database (drinks, categories, settings). Caller is
@@ -420,13 +487,16 @@ Object.assign(window, {
   addDrink,
   updateDrink,
   deleteDrink,
+  deleteDrinkWithSnapshot,
   saveRating,
   addCategory,
   renameCategory,
   deleteCategory,
   updateFamily,
   deleteFamily,
+  restoreDrinks,
   deleteBACRecord,
+  restoreBACRecord,
   clearAllData,
   loadCategoryIcons,
   setCategoryIcon

@@ -66,22 +66,38 @@ function useChartScrubber(svgRef, getRect, onChange) {
       setActive(true);
       // Capture on the SVG itself, not whatever sub-element the user
       // happened to press — sub-elements can be re-rendered/removed
-      // during scrubbing (e.g. the hover circle).
+      // during scrubbing (e.g. the hover circle). Project immediately
+      // so the ball jumps to the touch point on the very first frame
+      // rather than waiting for the next move event.
       try {
         if (e.currentTarget && e.currentTarget.setPointerCapture) {
           e.currentTarget.setPointerCapture(e.pointerId);
         }
       } catch {}
+      const p0 = project(e);
+      if (p0) onChange && onChange(p0);
+      return;
     }
-    if (kind === 'up' || kind === 'leave') {
+    if (kind === 'up') {
       draggingRef.current = false;
       setActive(false);
       onChange && onChange(null);
       try {
-        if (kind === 'up' && e.currentTarget && e.currentTarget.releasePointerCapture) {
+        if (e.currentTarget && e.currentTarget.releasePointerCapture) {
           e.currentTarget.releasePointerCapture(e.pointerId);
         }
       } catch {}
+      return;
+    }
+    // pointerleave: only reset if we are NOT in the middle of a drag.
+    // While dragging, pointer capture should keep the events flowing
+    // even when the finger drifts off the SVG; treating leave as a
+    // release made the ball snap back to t=0 and "disconnected" from
+    // the finger mid-scrub.
+    if (kind === 'leave') {
+      if (draggingRef.current) return;
+      setActive(false);
+      onChange && onChange(null);
       return;
     }
     if (kind === 'move' && !draggingRef.current && e.pointerType === 'touch') return;
@@ -784,7 +800,7 @@ function SvgPolarClock({
 function SvgBACProjection({
   points,
   width = 320,
-  height = 170,
+  height = 200,
   nowMs = Date.now()
 }) {
   // Hooks always run first and unconditionally so React's hook order
@@ -793,14 +809,15 @@ function SvgBACProjection({
   const svgRef = React.useRef(null);
   const [scrubT, setScrubT] = React.useState(null);
   const safePoints = points && points.length > 0 ? points : null;
-  // Right padding leaves room for the threshold labels ("500 légal",
-  // "200 mg/L") which are right-aligned. Left padding fits 4-digit
-  // BAC values on the y-axis.
+  // Tightened paddings give the curve more vertical room on small
+  // screens while still fitting 4-digit y-axis labels (worst case
+  // ~"1500" at fontSize 9 ≈ 22 px wide; 36 px keeps a ~12 px breathing
+  // gap from the plot area).
   const pad = {
-    t: 22,
-    r: 18,
-    b: 28,
-    l: 40
+    t: 16,
+    r: 14,
+    b: 22,
+    l: 36
   };
   const w = width - pad.l - pad.r;
   const minT = safePoints ? safePoints[0].t : 0;
@@ -814,7 +831,10 @@ function SvgBACProjection({
       setScrubT(null);
       return;
     }
-    const t = minT + (p.x - pad.l) / Math.max(1, w) * (maxT - minT);
+    // Clamp the projected x to the plot area so the focus ball never
+    // ends up off the curve when the finger overshoots the SVG bounds.
+    const clampedX = Math.max(pad.l, Math.min(pad.l + w, p.x));
+    const t = minT + (clampedX - pad.l) / Math.max(1, w) * (maxT - minT);
     setScrubT(Math.max(minT, Math.min(maxT, t)));
   });
 
@@ -833,7 +853,12 @@ function SvgBACProjection({
   }
   const h = height - pad.t - pad.b;
   const peakBac = Math.max(...safePoints.map(p => p.bac));
-  const maxB = chartNiceMax(Math.max(500, peakBac * 1.05), 4);
+  // Adapt the y-axis to the actual peak. Previously a hard 500 mg/L
+  // floor squashed every modest curve down to a flat line at the
+  // bottom of the chart. Now small peaks fill the height while large
+  // peaks still get a 5 % headroom; the 200/500 thresholds are drawn
+  // only when they fall inside the visible range.
+  const maxB = chartNiceMax(Math.max(80, peakBac * 1.15), 4);
   const xs = t => pad.l + (t - minT) / Math.max(0.001, maxT - minT) * w;
   const ys = b => pad.t + h * (1 - b / maxB);
   const baseY = pad.t + h;
