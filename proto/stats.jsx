@@ -851,12 +851,19 @@ function useBacInfo() {
 // Wraps SvgBACProjection in a width-measured container so the viewBox
 // matches actual pixel dimensions. Eliminates preserveAspectRatio
 // whitespace and prevents truncation of axis/threshold labels.
+//
+// `minHeight` reserves space before the first measurement so the chart
+// never collapses to 0 px during the initial frame and the surrounding
+// card doesn't reflow when the SVG mounts.
 function BACProjectionResponsive({ points }) {
   const ref = React.useRef(null);
   const width = useMeasuredWidth(ref, 320);
-  const height = Math.max(160, Math.min(220, Math.round(width * 0.55)));
+  // Slightly taller ratio + higher min height: the curve should be
+  // legible end-to-end, including thresholds and labels, on the
+  // narrowest phone screens we support.
+  const height = Math.max(180, Math.min(240, Math.round(width * 0.6)));
   return (
-    <div ref={ref} style={{ width: '100%' }}>
+    <div ref={ref} style={{ width: '100%', minHeight: 180 }}>
       {width > 0 && (
         <SvgBACProjection
           points={points} width={width} height={height}
@@ -895,17 +902,21 @@ function BACSection({ collapsed, toggleSection }) {
   const highest = sortedRecords[0];
   const others = sortedRecords.slice(1);
 
+  // Immediate delete + undo, mirroring the drink-delete pattern. Avoids
+  // a confirm modal stalling the swipe gesture and keeps the user on
+  // the Stats tab.
   const onDelete = async (record) => {
-    const ok = await Confirm.ask({
-      title: 'Supprimer ce record ?',
-      message: `Le pic à ${record.bacValue} mg/L sera retiré.`,
-      confirmText: 'Supprimer',
-      danger: true,
-    });
-    if (!ok) return;
+    const snapshot = { ...record };
     try {
       await deleteBACRecord(record.id);
-      Toast.show('Record supprimé');
+      Toast.show('Record supprimé', {
+        undo: async () => {
+          try {
+            await restoreBACRecord(snapshot);
+            Toast.show('Suppression annulée');
+          } catch { Toast.show('Erreur lors de l\'annulation'); }
+        },
+      });
     } catch {
       Toast.show('Erreur lors de la suppression');
     }
@@ -1053,7 +1064,7 @@ function BACGauge({ bac, level }) {
 }
 
 function BACRecordRow({ record, isHighest, onDelete }) {
-  const swipe = useSwipeToDelete(() => onDelete && onDelete(record), 96);
+  const swipe = useSwipeToDelete(() => onDelete && onDelete(record));
   const level = bacLevel(record.bacValue);
   const d = new Date(record.timestamp || record.date);
   const today = new Date();

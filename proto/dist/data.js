@@ -377,11 +377,48 @@ async function deleteFamily(family) {
   if (!db) throw new Error('DB indisponible');
   const all = await db.getAllDrinks();
   const matches = all.filter(d => (d.name || '').trim().toLowerCase() === (family.name || '').trim().toLowerCase() && d.quantity === family.quantity && (d.unit || '').toLowerCase() === (family.unit || '').toLowerCase() && (d.alcoholContent || 0) === (family.alcohol || 0));
+  // Capture full row state BEFORE deletion so we can re-add on undo.
+  const snapshot = matches.map(m => ({
+    ...m
+  }));
   for (const m of matches) {
     await db.deleteDrink(m.id);
   }
   dataBus.bump();
-  return matches.length;
+  return {
+    count: matches.length,
+    snapshot
+  };
+}
+
+// Bulk re-add — used by the undo path of deleteFamily. Each drink gets
+// a fresh auto-incremented id; the originals are gone.
+async function restoreDrinks(drinks) {
+  const db = await waitForDb();
+  if (!db) throw new Error('DB indisponible');
+  for (const d of drinks) {
+    const {
+      id,
+      createdAt,
+      updatedAt,
+      quantityInCL,
+      ...payload
+    } = d;
+    await db.addDrink(payload);
+  }
+  dataBus.bump();
+}
+
+// Single-drink delete that returns the original row, so callers can
+// pass it straight to `restoreDrinks([row])` from the undo button.
+async function deleteDrinkWithSnapshot(id) {
+  const db = await waitForDb();
+  if (!db) throw new Error('DB indisponible');
+  const row = await db.getDrinkById(id);
+  if (!row) throw new Error('Boisson introuvable');
+  await db.deleteDrink(id);
+  dataBus.bump();
+  return row;
 }
 
 // Single BAC record removal -- only the one record, never spreads.
@@ -391,6 +428,20 @@ async function deleteBACRecord(id) {
   const r = await db.deleteBACRecord(id);
   dataBus.bump();
   return r;
+}
+
+// Re-add a previously deleted BAC record (for undo). Auto-incremented
+// id will differ from the original; everything else round-trips.
+async function restoreBACRecord(record) {
+  const db = await waitForDb();
+  if (!db) throw new Error('DB indisponible');
+  const {
+    id,
+    createdAt,
+    ...payload
+  } = record;
+  await db.addBACRecord(payload);
+  dataBus.bump();
 }
 
 // Wipe entire database (drinks, categories, settings). Caller is
@@ -420,13 +471,16 @@ Object.assign(window, {
   addDrink,
   updateDrink,
   deleteDrink,
+  deleteDrinkWithSnapshot,
   saveRating,
   addCategory,
   renameCategory,
   deleteCategory,
   updateFamily,
   deleteFamily,
+  restoreDrinks,
   deleteBACRecord,
+  restoreBACRecord,
   clearAllData,
   loadCategoryIcons,
   setCategoryIcon

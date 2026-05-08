@@ -23,16 +23,21 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
   const families = React.useMemo(() => buildFamilies(drinks, ratings), [drinks, ratings]);
   const allEntries = React.useMemo(() => flattenEntries(families), [families]);
 
+  // Delete immediately, no modal — surface an "Annuler" toast for 5s
+  // so a mistaken swipe is reversible. Mirrors the legacy bar-app UX
+  // and avoids a confirmation dialog stalling the swipe gesture.
   const onDeleteEntry = React.useCallback(async (entry) => {
-    const ok = await Confirm.ask({
-      title: 'Supprimer cette entrée ?',
-      message: 'Cette consommation sera retirée de votre historique.',
-      confirmText: 'Supprimer',
-      danger: true,
-    });
-    if (!ok) return;
-    try { await deleteDrink(entry.id); Toast.show('Entrée supprimée'); }
-    catch { Toast.show('Erreur'); }
+    try {
+      const row = await deleteDrinkWithSnapshot(entry.id);
+      Toast.show('Boisson supprimée', {
+        undo: async () => {
+          try {
+            await restoreDrinks([row]);
+            Toast.show('Suppression annulée');
+          } catch { Toast.show('Erreur lors de l\'annulation'); }
+        },
+      });
+    } catch { Toast.show('Erreur lors de la suppression'); }
   }, []);
 
   const toggleDay = (day) => {
@@ -183,7 +188,7 @@ function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAd
 function EntryRow({ entry: e, onClick, onDirectAdd, onDelete, first, last }) {
   const color = catColor(e.family.category, 70);
   const t = e.ts.slice(11, 16);
-  const swipe = useSwipeToDelete(() => onDelete && onDelete(e), 96);
+  const swipe = useSwipeToDelete(() => onDelete && onDelete(e));
   return (
     <div style={{
       position: 'relative', overflow: 'hidden',
@@ -264,15 +269,30 @@ function EntryRow({ entry: e, onClick, onDirectAdd, onDelete, first, last }) {
 // drag flag (so the consumer can disable transitions during dragging),
 // and the handlers to spread on the swipeable element. Calls `onAction`
 // when the user releases past `actionThreshold` pixels of drag.
-function useSwipeToDelete(onAction, actionThreshold = 96) {
+//
+// `offsetRef` mirrors the React state so `onPointerUp` always sees the
+// latest drag distance, even when several `pointermove` events fire
+// faster than React can commit a re-render. Reading `offset` from
+// closure was unreliable: the captured value lagged the real position
+// and the swipe action almost never triggered.
+//
+// `onClickCapture` swallows the synthetic click that some browsers
+// generate after a meaningful pointer drag, so swiping never
+// accidentally opens the edit sheet sitting underneath the row.
+function useSwipeToDelete(onAction, actionThreshold = 64) {
   const [offset, setOffset] = React.useState(0);
   const [dragging, setDragging] = React.useState(false);
+  const offsetRef = React.useRef(0);
   const startRef = React.useRef(null);
   const lockRef = React.useRef(null); // 'h' | 'v' once direction decided
+  const swipedRef = React.useRef(false); // true if last gesture moved horizontally
+
+  const setOff = (v) => { offsetRef.current = v; setOffset(v); };
 
   const onPointerDown = (e) => {
     startRef.current = { x: e.clientX, y: e.clientY };
     lockRef.current = null;
+    swipedRef.current = false;
     setDragging(true);
     // Capture so we keep getting move/up even when the finger leaves
     // the row (otherwise a fast swipe past the edge would strand the
@@ -288,14 +308,15 @@ function useSwipeToDelete(onAction, actionThreshold = 96) {
       lockRef.current = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
     }
     if (lockRef.current !== 'h') return;
+    swipedRef.current = true;
     const next = Math.max(-actionThreshold * 1.6, Math.min(0, dx));
-    setOffset(next);
+    setOff(next);
   };
   const onPointerUp = (e) => {
-    if (lockRef.current === 'h' && offset <= -actionThreshold) {
+    if (lockRef.current === 'h' && offsetRef.current <= -actionThreshold) {
       onAction && onAction();
     }
-    setOffset(0);
+    setOff(0);
     setDragging(false);
     startRef.current = null;
     lockRef.current = null;
@@ -305,10 +326,20 @@ function useSwipeToDelete(onAction, actionThreshold = 96) {
       }
     } catch {}
   };
+  // Called in the capture phase BEFORE the click reaches any inner
+  // button. Suppresses ghost clicks that follow a real swipe.
+  const onClickCapture = (e) => {
+    if (swipedRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      swipedRef.current = false;
+    }
+  };
   return {
     offset, dragging,
     handlers: {
       onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp,
+      onClickCapture,
     },
   };
 }

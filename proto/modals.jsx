@@ -2,10 +2,7 @@
 
 function _now() {
   const d = new Date();
-  return {
-    date: d.toISOString().slice(0, 10),
-    time: d.toTimeString().slice(0, 5),
-  };
+  return { date: localDate(d), time: localTime(d) };
 }
 
 function inputS() {
@@ -624,15 +621,17 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
                   </div>
                   <button type="button" aria-label="Supprimer cette entrée"
                     onClick={async () => {
-                      const ok = await Confirm.ask({
-                        title: 'Supprimer cette entrée ?',
-                        message: `Cette consommation du ${d.getDate()} ${FR_MONTHS_SHORT[d.getMonth()]} sera retirée de votre historique.`,
-                        confirmText: 'Supprimer',
-                        danger: true,
-                      });
-                      if (!ok) return;
-                      try { await deleteDrink(e.id); Toast.show('Entrée supprimée'); }
-                      catch (err) { Toast.show('Erreur'); }
+                      try {
+                        const row = await deleteDrinkWithSnapshot(e.id);
+                        Toast.show('Boisson supprimée', {
+                          undo: async () => {
+                            try {
+                              await restoreDrinks([row]);
+                              Toast.show('Suppression annulée');
+                            } catch { Toast.show('Erreur lors de l\'annulation'); }
+                          },
+                        });
+                      } catch { Toast.show('Erreur lors de la suppression'); }
                     }} style={{
                       color: T.muted, display: 'flex', cursor: 'pointer',
                       padding: 4, background: 'transparent', border: 'none',
@@ -713,18 +712,20 @@ function EditEntrySheet({ entry, onClose }) {
     } finally { setBusy(false); }
   };
 
+  // Immediate delete + undo toast. Closing the sheet right away keeps
+  // the user on the page they came from instead of navigating elsewhere.
   const remove = async () => {
-    const ok = await Confirm.ask({
-      title: 'Supprimer cette entrée ?',
-      message: 'Cette consommation sera retirée de votre historique.',
-      confirmText: 'Supprimer',
-      danger: true,
-    });
-    if (!ok) return;
     setBusy(true);
     try {
-      await deleteDrink(raw.id);
-      Toast.show('Entrée supprimée');
+      const row = await deleteDrinkWithSnapshot(raw.id);
+      Toast.show('Boisson supprimée', {
+        undo: async () => {
+          try {
+            await restoreDrinks([row]);
+            Toast.show('Suppression annulée');
+          } catch { Toast.show('Erreur lors de l\'annulation'); }
+        },
+      });
       onClose && onClose();
     } catch (e) {
       setErr(e && e.message ? e.message : 'Erreur');
@@ -895,18 +896,22 @@ function EditFamilySheet({ family, onClose }) {
     } finally { setBusy(false); }
   };
 
+  // Wipe every entry of this family, surface an undo toast that can
+  // re-add them all in one batch. Snapshot is captured before deletion
+  // by `deleteFamily`, so the undo is fully reversible.
   const delAll = async () => {
-    const ok = await Confirm.ask({
-      title: 'Supprimer toutes les entrées ?',
-      message: `Toutes les consommations de « ${family.name} » seront effacées de votre historique. Cette action est irréversible.`,
-      confirmText: 'Tout supprimer',
-      danger: true,
-    });
-    if (!ok) return;
     setBusy(true);
     try {
-      await deleteFamily(family);
-      Toast.show('Boisson supprimée');
+      const { count, snapshot } = await deleteFamily(family);
+      const label = count > 1 ? `${count} entrées supprimées` : 'Boisson supprimée';
+      Toast.show(label, {
+        undo: async () => {
+          try {
+            await restoreDrinks(snapshot);
+            Toast.show('Suppression annulée');
+          } catch { Toast.show('Erreur lors de l\'annulation'); }
+        },
+      });
       onClose && onClose();
     } catch (e) { setErr(e && e.message ? e.message : 'Erreur'); }
     finally { setBusy(false); }

@@ -85,10 +85,12 @@ function App() {
   }, [drinks, userSettings.userWeight, userSettings.userGender, bacTick]);
 
   React.useEffect(() => {
-    window.__alcoToastSetter = (msg) => {
-      setToast(msg);
+    window.__alcoToastSetter = (msg, opts) => {
+      setToast({ msg, opts: opts || null });
       clearTimeout(window.__aToast);
-      window.__aToast = setTimeout(() => setToast(null), 1800);
+      // Undo toasts stay visible longer so the user has time to react.
+      const ttl = opts && typeof opts.undo === 'function' ? 5000 : 1800;
+      window.__aToast = setTimeout(() => setToast(null), ttl);
     };
   }, []);
 
@@ -103,8 +105,11 @@ function App() {
         quantity: family.quantity,
         unit: family.unit,
         alcoholContent: family.alcohol || family.alcoholContent || 0,
-        date: n.toISOString().slice(0, 10),
-        time: n.toTimeString().slice(0, 5),
+        // Local date/time pair so BAC's 24h window stays consistent
+        // (UTC date + local time used to drop drinks added late at
+        // night in positive-UTC zones).
+        date: localDate(n),
+        time: localTime(n),
       });
       Toast.show(`« ${family.name} » ajoutée`);
     } catch (e) {
@@ -181,15 +186,33 @@ function App() {
           position: 'fixed',
           bottom: 'calc(96px + env(safe-area-inset-bottom))',
           left: '50%', transform: 'translateX(-50%)',
-          background: T.ink, color: T.bg, padding: '10px 18px', borderRadius: 99,
+          background: T.ink, color: T.bg, padding: '10px 14px 10px 18px', borderRadius: 99,
           fontSize: 13, fontWeight: 500, letterSpacing: -0.1,
           zIndex: 9999, boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-          display: 'flex', alignItems: 'center', gap: 8,
+          display: 'flex', alignItems: 'center', gap: 10,
           animation: 'fade 0.2s ease',
           maxWidth: 'calc(100vw - 24px)',
         }}>
           <span style={{ display: 'flex', color: T.accent }}><SvgIcon icon={Ic.check} size={14} /></span>
-          {toast}
+          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {toast.msg}
+          </span>
+          {toast.opts && typeof toast.opts.undo === 'function' && (
+            <button type="button"
+              onClick={() => {
+                const fn = toast.opts.undo;
+                clearTimeout(window.__aToast);
+                setToast(null);
+                try { fn(); } catch {}
+              }}
+              style={{
+                marginLeft: 4, padding: '5px 12px', borderRadius: 99,
+                background: T.accent, color: T.isDark ? T.bg : '#fff',
+                border: 'none', fontSize: 12, fontWeight: 600,
+                fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0,
+                letterSpacing: 0.1,
+              }}>Annuler</button>
+          )}
         </div>
       )}
     </div>
