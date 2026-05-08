@@ -22,6 +22,13 @@ function CategoriesTab({
   const ratings = useRatings();
   useCategoryIcons(); // keep window.__alcoCatIcons up to date
 
+  // If the open category was just deleted, drop back to the grid so the
+  // user isn't stranded inside an empty FamilyList for a missing cat.
+  React.useEffect(() => {
+    if (openCat && categories.length > 0 && !categories.some(c => c.name === openCat)) {
+      setOpenCat(null);
+    }
+  }, [openCat, categories, setOpenCat]);
   const families = React.useMemo(() => buildFamilies(drinks, ratings), [drinks, ratings]);
   const cats = React.useMemo(() => computeCategoryStats(categories, families), [categories, families]);
   const filtered = openCat ? families.filter(f => f.category === openCat && (query === '' || f.name.toLowerCase().includes((query || '').toLowerCase()))) : [];

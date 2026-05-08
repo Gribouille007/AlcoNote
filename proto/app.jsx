@@ -1,11 +1,59 @@
 // app.jsx — Top-level App: header, bottom nav, FAB, tab routing.
 
+// Catches render-time errors anywhere below it. Without this, a thrown
+// error during a delete-driven re-render would unmount the whole tree
+// and expose the splash again. We render a minimal recovery panel and
+// keep the React subtree alive.
+class AppErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error) {
+    try { console.error('AlcoNote runtime error:', error); } catch {}
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, display: 'grid', placeItems: 'center',
+        padding: 24, background: 'oklch(14% 0.008 50)', color: 'oklch(96% 0.008 85)',
+        zIndex: 9999, fontFamily: 'Geist, system-ui, sans-serif',
+      }}>
+        <div style={{ maxWidth: 360, textAlign: 'center' }}>
+          <div style={{
+            fontFamily: '"Instrument Serif", serif', fontStyle: 'italic',
+            fontSize: 28, marginBottom: 12,
+          }}>Une erreur est survenue</div>
+          <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 18, lineHeight: 1.5 }}>
+            L'application a rencontré un problème. Vos données restent intactes.
+          </div>
+          <button type="button" onClick={() => location.reload()} style={{
+            padding: '12px 22px', borderRadius: 12, fontSize: 13, fontWeight: 600,
+            background: 'oklch(72% 0.15 65)', color: 'oklch(14% 0.008 50)',
+            border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+          }}>Recharger</button>
+        </div>
+      </div>
+    );
+  }
+}
+
 function App() {
   useTheme();
   React.useEffect(() => {
     document.documentElement.setAttribute('data-theme', T._name);
     document.body.className = `theme-${T._name}`;
   });
+
+  // Once React has rendered for the first time, drop the splash element
+  // entirely so a future render error or transient empty-root state can
+  // never expose the "AlcoNote" splash on top of the UI.
+  React.useEffect(() => {
+    const splash = document.getElementById('alco-splash');
+    if (splash && splash.parentNode) splash.parentNode.removeChild(splash);
+  }, []);
 
   const [tab, setTab] = React.useState(() => localStorage.getItem('alconote.tab') || 'categories');
   const [adding, setAdding] = React.useState(false);
@@ -17,6 +65,24 @@ function App() {
   const [toast, setToast] = React.useState(null);
   const [catQuery, setCatQuery] = React.useState('');
   const [catOpen, setCatOpen] = React.useState(null);
+
+  // Single BAC computation shared by header pill and Stats section. The
+  // 60s tick keeps the value decaying live even when the user doesn't
+  // change tabs or add drinks.
+  const { drinks } = useDrinks();
+  const userSettings = useSettings();
+  const [bacTick, setBacTick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setBacTick(t => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const bacInfo = React.useMemo(() => {
+    const w = Number(userSettings.userWeight) || 70;
+    const g = userSettings.userGender || 'male';
+    if (typeof computeBacOverTime !== 'function') return { current: 0, points: [], drinks: [] };
+    return computeBacOverTime(drinks, w, g);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drinks, userSettings.userWeight, userSettings.userGender, bacTick]);
 
   React.useEffect(() => {
     window.__alcoToastSetter = (msg) => {
@@ -60,6 +126,7 @@ function App() {
   }, []);
 
   return (
+    <BacContext.Provider value={bacInfo}>
     <div className="alco-shell" style={{
       minHeight: '100dvh', height: '100dvh', display: 'flex', flexDirection: 'column',
       background: T.bg, color: T.ink, position: 'relative',
@@ -126,11 +193,11 @@ function App() {
         </div>
       )}
     </div>
+    </BacContext.Provider>
   );
 }
 
 function AppHeader({ tab, onMenu }) {
-  const settings = useSettings();
   const titles = {
     categories: 'Catégories',
     history: 'Historique',
@@ -139,20 +206,9 @@ function AppHeader({ tab, onMenu }) {
   const today = new Date();
   const dateStr = `${FR_DAYS_LONG[today.getDay()]} ${today.getDate()} ${FR_MONTHS_LONG[today.getMonth()]}`;
 
-  // Live BAC pill: re-tick every 60s so the value decays even when the
-  // user stays on the same tab without adding a drink.
-  const { drinks } = useDrinks();
-  const [tick, setTick] = React.useState(0);
-  React.useEffect(() => {
-    const id = setInterval(() => setTick(t => t + 1), 60_000);
-    return () => clearInterval(id);
-  }, []);
-  const bacInfo = React.useMemo(() => {
-    const w = settings.userWeight ? Number(settings.userWeight) : 70;
-    const g = settings.userGender || 'male';
-    return computeBacOverTime ? computeBacOverTime(drinks, w, g) : { current: 0 };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drinks, settings, tick]);
+  // Read from the App-level BacContext: same object reference as the
+  // Stats-tab gauge, so the pill always shows exactly the same mg/L.
+  const bacInfo = useBacInfo();
   const bac = bacInfo.current || 0;
 
   return (
@@ -304,7 +360,9 @@ async function mountAlcoNote() {
     console.error('AlcoNote: #root not found');
     return;
   }
-  ReactDOM.createRoot(root).render(<App/>);
+  ReactDOM.createRoot(root).render(
+    <AppErrorBoundary><App/></AppErrorBoundary>
+  );
 }
 
 // Kick off mount after Babel finishes
@@ -314,4 +372,4 @@ if (document.readyState === 'loading') {
   mountAlcoNote();
 }
 
-Object.assign(window, { App, AppHeader, BottomNav, Fab, mountAlcoNote });
+Object.assign(window, { App, AppErrorBoundary, AppHeader, BottomNav, Fab, mountAlcoNote });

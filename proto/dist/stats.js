@@ -1280,18 +1280,47 @@ function computeBacOverTime(drinks, weight, gender) {
     firstT
   };
 }
+
+// Single source of truth for BAC. Both the header pill and the Stats
+// section read from this context so they always show the exact same
+// rounded mg/L value, recomputed on the same 60s tick.
+const BacContext = React.createContext({
+  current: 0,
+  points: [],
+  drinks: []
+});
+function useBacInfo() {
+  return React.useContext(BacContext);
+}
+
+// Wraps SvgBACProjection in a width-measured container so the viewBox
+// matches actual pixel dimensions. Eliminates preserveAspectRatio
+// whitespace and prevents truncation of axis/threshold labels.
+function BACProjectionResponsive({
+  points
+}) {
+  const ref = React.useRef(null);
+  const width = useMeasuredWidth(ref, 320);
+  const height = Math.max(160, Math.min(220, Math.round(width * 0.55)));
+  return /*#__PURE__*/React.createElement("div", {
+    ref: ref,
+    style: {
+      width: '100%'
+    }
+  }, width > 0 && /*#__PURE__*/React.createElement(SvgBACProjection, {
+    points: points,
+    width: width,
+    height: height,
+    nowMs: Date.now()
+  }));
+}
 function BACSection({
-  drinks,
-  allDrinks,
-  settings,
   collapsed,
   toggleSection
 }) {
   const records = useBacRecords();
-  const weight = settings.userWeight ? Number(settings.userWeight) : 70;
-  const gender = settings.userGender || 'male';
-  const bacInfo = React.useMemo(() => computeBacOverTime(allDrinks, weight, gender), [allDrinks, weight, gender]);
-  const currentBAC = bacInfo.current;
+  const bacInfo = useBacInfo();
+  const currentBAC = bacInfo.current || 0;
   const level = bacLevel(currentBAC);
   const hoursToSober = currentBAC / 150;
   const hoursToLegal = Math.max(0, (currentBAC - 500) / 150);
@@ -1322,9 +1351,11 @@ function BACSection({
     });
     if (!ok) return;
     try {
-      await window.dbManager.deleteBACRecord(record.id);
-      window.dataBus && window.dataBus.bump();
-    } catch {}
+      await deleteBACRecord(record.id);
+      Toast.show('Record supprimé');
+    } catch {
+      Toast.show('Erreur lors de la suppression');
+    }
   };
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "bac",
@@ -1449,11 +1480,8 @@ function BACSection({
       marginBottom: 8,
       letterSpacing: -0.1
     }
-  }, "Projection d'alcool\xE9mie"), /*#__PURE__*/React.createElement(SvgBACProjection, {
-    points: bacInfo.points,
-    width: 320,
-    height: 170,
-    nowMs: Date.now()
+  }, "Projection d'alcool\xE9mie"), /*#__PURE__*/React.createElement(BACProjectionResponsive, {
+    points: bacInfo.points
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
@@ -2417,5 +2445,8 @@ Object.assign(window, {
   getPeriodRange,
   shiftAnchor,
   periodLabel,
-  computeBacOverTime
+  computeBacOverTime,
+  BacContext,
+  useBacInfo,
+  BACProjectionResponsive
 });

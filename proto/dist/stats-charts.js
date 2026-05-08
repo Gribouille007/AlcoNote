@@ -2,6 +2,30 @@
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 // stats-charts.jsx — SVG chart primitives for the Statistiques tab.
 
+// Measure a container's content-box width and re-render on resize so a
+// chart can size its viewBox to the actual pixel dimensions (no
+// preserveAspectRatio whitespace, no truncation).
+function useMeasuredWidth(ref, fallback = 320) {
+  const [width, setWidth] = React.useState(fallback);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => {
+      const w = el.clientWidth || el.getBoundingClientRect().width || fallback;
+      if (w > 0) setWidth(Math.round(w));
+    };
+    update();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(update);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [ref, fallback]);
+  return width;
+}
+
 // Local niceMax (different signature from shared.jsx -- ticks-based)
 function chartNiceMax(v, ticks = 4) {
   if (!v) return 1;
@@ -769,9 +793,12 @@ function SvgBACProjection({
   const svgRef = React.useRef(null);
   const [scrubT, setScrubT] = React.useState(null);
   const safePoints = points && points.length > 0 ? points : null;
+  // Right padding leaves room for the threshold labels ("500 légal",
+  // "200 mg/L") which are right-aligned. Left padding fits 4-digit
+  // BAC values on the y-axis.
   const pad = {
     t: 22,
-    r: 12,
+    r: 18,
     b: 28,
     l: 40
   };
@@ -1137,5 +1164,6 @@ Object.assign(window, {
   SvgBACProjection,
   SvgHistogram,
   useChartScrubber,
-  ChartTooltip
+  ChartTooltip,
+  useMeasuredWidth
 });

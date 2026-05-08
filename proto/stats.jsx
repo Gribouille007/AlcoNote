@@ -839,16 +839,38 @@ function computeBacOverTime(drinks, weight, gender) {
   };
 }
 
-function BACSection({ drinks, allDrinks, settings, collapsed, toggleSection }) {
-  const records = useBacRecords();
-  const weight = settings.userWeight ? Number(settings.userWeight) : 70;
-  const gender = settings.userGender || 'male';
+// Single source of truth for BAC. Both the header pill and the Stats
+// section read from this context so they always show the exact same
+// rounded mg/L value, recomputed on the same 60s tick.
+const BacContext = React.createContext({ current: 0, points: [], drinks: [] });
 
-  const bacInfo = React.useMemo(
-    () => computeBacOverTime(allDrinks, weight, gender),
-    [allDrinks, weight, gender]
+function useBacInfo() {
+  return React.useContext(BacContext);
+}
+
+// Wraps SvgBACProjection in a width-measured container so the viewBox
+// matches actual pixel dimensions. Eliminates preserveAspectRatio
+// whitespace and prevents truncation of axis/threshold labels.
+function BACProjectionResponsive({ points }) {
+  const ref = React.useRef(null);
+  const width = useMeasuredWidth(ref, 320);
+  const height = Math.max(160, Math.min(220, Math.round(width * 0.55)));
+  return (
+    <div ref={ref} style={{ width: '100%' }}>
+      {width > 0 && (
+        <SvgBACProjection
+          points={points} width={width} height={height}
+          nowMs={Date.now()}
+        />
+      )}
+    </div>
   );
-  const currentBAC = bacInfo.current;
+}
+
+function BACSection({ collapsed, toggleSection }) {
+  const records = useBacRecords();
+  const bacInfo = useBacInfo();
+  const currentBAC = bacInfo.current || 0;
   const level = bacLevel(currentBAC);
 
   const hoursToSober = currentBAC / 150;
@@ -881,7 +903,12 @@ function BACSection({ drinks, allDrinks, settings, collapsed, toggleSection }) {
       danger: true,
     });
     if (!ok) return;
-    try { await window.dbManager.deleteBACRecord(record.id); window.dataBus && window.dataBus.bump(); } catch {}
+    try {
+      await deleteBACRecord(record.id);
+      Toast.show('Record supprimé');
+    } catch {
+      Toast.show('Erreur lors de la suppression');
+    }
   };
 
   return (
@@ -937,10 +964,7 @@ function BACSection({ drinks, allDrinks, settings, collapsed, toggleSection }) {
           <div style={{
             color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 8, letterSpacing: -0.1,
           }}>Projection d'alcoolémie</div>
-          <SvgBACProjection
-            points={bacInfo.points} width={320} height={170}
-            nowMs={Date.now()}
-          />
+          <BACProjectionResponsive points={bacInfo.points} />
           <div style={{
             color: T.muted, fontSize: 10, marginTop: 6, fontStyle: 'italic', fontFamily: fontSerif,
           }}>Glissez le doigt sur le graphe pour voir le taux à un moment précis</div>
@@ -1537,4 +1561,5 @@ Object.assign(window, {
   RollingChart, LegendDot, MiniStat, StatRow, Card, StatSection,
   DeltaBadge,
   getPeriodRange, shiftAnchor, periodLabel, computeBacOverTime,
+  BacContext, useBacInfo, BACProjectionResponsive,
 });

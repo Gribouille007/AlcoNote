@@ -74,16 +74,36 @@
       background: radial-gradient(ellipse at top, oklch(22% 0.01 55), oklch(14% 0.008 50) 75%);
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    /* Disable text selection across the whole app — the surface acts
+       like a native UI, not a document. Inputs/textareas/contenteditable
+       still allow selection so the user can type and edit values. */
+    html, body, #root, .alco-shell {
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    input, textarea, [contenteditable="true"], [contenteditable=""] {
+      -webkit-user-select: text;
+      -moz-user-select: text;
+      -ms-user-select: text;
+      user-select: text;
+      -webkit-touch-callout: default;
+    }
     input, button, select, textarea { font-family: inherit; }
     /* hide scrollbars but keep scroll */
     *::-webkit-scrollbar { display: none; }
     * { scrollbar-width: none; }
     /* iOS-friendly date/time inputs */
     input[type="date"], input[type="time"] { min-height: 1.4em; }
-    /* loading splash */
+    /* loading splash — only visible until the React tree mounts. The
+       App component removes this element from the DOM as soon as it
+       runs, so a transient empty-root state during a re-render can
+       never expose the splash on top of the live UI. */
     #alco-splash {
       position: fixed; inset: 0; display: grid; place-items: center;
-      pointer-events: none; z-index: 0;
+      pointer-events: none; z-index: -1;
       font-family: "Instrument Serif", serif; font-style: italic;
       color: oklch(55% 0.008 70); font-size: 22px; letter-spacing: -0.3px;
     }
