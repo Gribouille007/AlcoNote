@@ -482,29 +482,72 @@ function SvgPolarClock({ hours, size = 260 }) {
 }
 
 // ── BAC projection curve ──────────────────────────────────────────
-// Scrubbable like the Revolut spending chart: pressing & dragging the
-// finger across the curve reveals the BAC at that exact moment, with
-// the elapsed/remaining time relative to "now" (t = 0).
-function SvgBACProjection({ points, width = 320, height = 150, now = 0 }) {
+// Scrubbable: dragging the finger across the curve reveals the BAC at
+// any moment. The ball position and tooltip BAC are linearly
+// interpolated between samples so the dot follows the finger smoothly.
+// Past = solid stroke with vertical gradient; future = dashed stroke;
+// the gradient runs green → orange → red so the curve is coloured by
+// its BAC level at every point without splitting into segments.
+function SvgBACProjection({ points, width = 320, height = 170, nowMs = Date.now() }) {
   if (!points || points.length === 0) {
     return <div style={{
       color: T.muted, fontSize: 11, padding: '20px 0', textAlign: 'center',
     }}>Aucune donnée d'alcoolémie</div>;
   }
-  const pad = { t: 18, r: 10, b: 22, l: 36 };
+  const pad = { t: 22, r: 12, b: 28, l: 40 };
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
-  const maxT = Math.max(...points.map(p => p.t));
-  const minT = Math.min(...points.map(p => p.t));
-  const maxB = chartNiceMax(Math.max(500, ...points.map(p => p.bac)), 4);
+  const minT = points[0].t;
+  const maxT = points[points.length - 1].t;
+  const peakBac = Math.max(...points.map(p => p.bac));
+  const maxB = chartNiceMax(Math.max(500, peakBac * 1.05), 4);
   const xs = t => pad.l + ((t - minT) / Math.max(0.001, (maxT - minT))) * w;
   const ys = b => pad.t + h * (1 - b / maxB);
-  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${xs(p.t)},${ys(p.bac)}`).join(' ');
-  const area = path + ` L${xs(maxT)},${pad.t + h} L${xs(minT)},${pad.t + h} Z`;
+  const baseY = pad.t + h;
+
+  const safe = T.good;
+  const warn = T.isDark ? 'oklch(72% 0.16 60)' : 'oklch(58% 0.16 55)';
+  const danger = T.isDark ? 'oklch(68% 0.20 25)' : 'oklch(54% 0.20 25)';
+  const bacColor = (b) => b > 500 ? danger : b > 200 ? warn : safe;
+
+  // Stable id suffix so multiple charts on the same page don't collide.
+  const idSuffix = React.useId().replace(/:/g, '');
+  const gradStrokeId = `bac-stroke-${idSuffix}`;
+  const gradAreaId = `bac-area-${idSuffix}`;
+
+  // Build a vertical gradient that matches the threshold colors. Stops
+  // are placed exactly at 200 and 500 mg/L so the colour transitions
+  // line up with the threshold lines. y goes 0 (top, max BAC) → 1 (bottom, 0).
+  const stop500 = 1 - Math.min(1, 500 / maxB);
+  const stop200 = 1 - Math.min(1, 200 / maxB);
+  const gradStops = (alpha = 1) => (
+    <>
+      <stop offset={`${(stop500 * 100).toFixed(2)}%`} stopColor={danger} stopOpacity={alpha} />
+      <stop offset={`${(stop500 * 100).toFixed(2)}%`} stopColor={warn} stopOpacity={alpha} />
+      <stop offset={`${(stop200 * 100).toFixed(2)}%`} stopColor={warn} stopOpacity={alpha} />
+      <stop offset={`${(stop200 * 100).toFixed(2)}%`} stopColor={safe} stopOpacity={alpha} />
+      <stop offset="100%" stopColor={safe} stopOpacity={alpha} />
+    </>
+  );
+
+  // Split into past (t ≤ 0) and future (t > 0). Include t=0 in both so
+  // the visual transition between solid and dashed has no gap.
+  const nowIdx = (() => {
+    for (let i = 0; i < points.length; i++) if (points[i].t >= 0) return i;
+    return points.length - 1;
+  })();
+  const past = points.slice(0, Math.max(1, nowIdx + 1));
+  const future = points.slice(nowIdx);
+
+  const pathOf = (pts) => pts.map((p, i) =>
+    `${i === 0 ? 'M' : 'L'}${xs(p.t)},${ys(p.bac)}`
+  ).join(' ');
+  const areaOf = (pts) => pathOf(pts) +
+    ` L${xs(pts[pts.length - 1].t)},${baseY} L${xs(pts[0].t)},${baseY} Z`;
 
   const thresh = [
-    { y: 200, label: '200 mg/L', color: T.good },
-    { y: 500, label: '500 légal', color: T.accent2 },
+    { y: 200, label: '200 mg/L', color: warn },
+    { y: 500, label: '500 légal', color: danger },
   ].filter(l => l.y <= maxB);
 
   const svgRef = React.useRef(null);
@@ -515,38 +558,59 @@ function SvgBACProjection({ points, width = 320, height = 150, now = 0 }) {
     setScrubT(Math.max(minT, Math.min(maxT, t)));
   });
 
-  // Pick the displayed point: scrubber wins, otherwise default to "now".
-  const focusT = scrubT != null ? scrubT : now;
-  const focusPoint = (() => {
-    if (focusT == null) return null;
-    let best = points[0], bestDiff = Math.abs(points[0].t - focusT);
-    for (let i = 1; i < points.length; i++) {
-      const diff = Math.abs(points[i].t - focusT);
-      if (diff < bestDiff) { best = points[i]; bestDiff = diff; }
+  // Linear interpolation between adjacent samples → smooth ball motion.
+  const interpAt = (t) => {
+    if (t <= points[0].t) return { t, bac: points[0].bac };
+    if (t >= points[points.length - 1].t) return { t, bac: points[points.length - 1].bac };
+    let lo = 0, hi = points.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (points[mid].t <= t) lo = mid; else hi = mid;
     }
-    return best;
+    const a = points[lo], b = points[hi];
+    const frac = (t - a.t) / Math.max(1e-9, (b.t - a.t));
+    return { t, bac: a.bac + (b.bac - a.bac) * frac };
+  };
+
+  const focusT = scrubT != null ? scrubT : 0;
+  const focus = interpAt(focusT);
+  const focusColor = bacColor(focus.bac);
+
+  const fmtClock = (t) => {
+    const d = new Date(nowMs + t * 3600_000);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  };
+  const ticksX = (() => {
+    const out = [];
+    for (let i = 0; i < 4; i++) out.push(minT + (maxT - minT) * (i / 3));
+    return out;
   })();
 
   const fmtRel = (t) => {
-    if (Math.abs(t) < 0.05) return 'maintenant';
-    const sign = t < 0 ? 'il y a ' : 'dans ';
-    const abs = Math.abs(t);
-    const hh = Math.floor(abs);
-    const mm = Math.round((abs - hh) * 60);
-    if (hh === 0) return `${sign}${mm}min`;
-    if (mm === 0) return `${sign}${hh}h`;
-    return `${sign}${hh}h${String(mm).padStart(2, '0')}`;
+    const minutes = Math.round(Math.abs(t) * 60);
+    if (minutes < 1) return 'maintenant';
+    const hh = Math.floor(minutes / 60);
+    const mm = minutes % 60;
+    const phrase = hh === 0 ? `${mm}min` : (mm === 0 ? `${hh}h` : `${hh}h${String(mm).padStart(2, '0')}`);
+    return t < 0 ? `il y a ${phrase}` : `dans ${phrase}`;
   };
+  const fmtStatus = (b) => b > 500 ? 'Au-delà' : b > 200 ? 'Léger' : 'Sobre';
 
   return (
     <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" height={height}
       style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
       <defs>
-        <linearGradient id="bac-grad" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stopColor={T.accent2} stopOpacity={0.35} />
-          <stop offset="1" stopColor={T.accent2} stopOpacity={0} />
+        <linearGradient id={gradStrokeId} x1="0" x2="0" y1="0" y2="1">
+          {gradStops(1)}
+        </linearGradient>
+        <linearGradient id={gradAreaId} x1="0" x2="0" y1="0" y2="1">
+          {gradStops(0.28)}
+          <stop offset="100%" stopColor={safe} stopOpacity={0} />
         </linearGradient>
       </defs>
+      {/* Y-axis grid + labels */}
       {[0, 0.5, 1].map((f, i) => (
         <g key={i}>
           <line x1={pad.l} x2={pad.l + w} y1={pad.t + h * (1 - f)} y2={pad.t + h * (1 - f)}
@@ -555,37 +619,64 @@ function SvgBACProjection({ points, width = 320, height = 150, now = 0 }) {
             textAnchor="end" fontFamily={fontNum}>{Math.round(maxB * f)}</text>
         </g>
       ))}
+      {/* Threshold reference lines */}
       {thresh.map((l, i) => (
         <g key={`th-${i}`}>
           <line x1={pad.l} x2={pad.l + w} y1={ys(l.y)} y2={ys(l.y)}
-            stroke={l.color} strokeDasharray="3 3" strokeWidth={0.8} opacity={0.7} />
+            stroke={l.color} strokeDasharray="3 3" strokeWidth={0.8} opacity={0.55} />
           <text x={pad.l + w - 2} y={ys(l.y) - 3} fontSize={8} fill={l.color}
             textAnchor="end" fontFamily={fontNum}>{l.label}</text>
         </g>
       ))}
-      <path d={area} fill="url(#bac-grad)" />
-      <path d={path} fill="none" stroke={T.accent2} strokeWidth={1.8} strokeLinejoin="round" />
-      {/* "Now" marker is always visible */}
-      {now >= minT && now <= maxT && (
-        <line x1={xs(now)} x2={xs(now)} y1={pad.t} y2={pad.t + h}
-          stroke={T.accent} strokeWidth={1} strokeDasharray="2 2" opacity={0.55} />
+      {/* Past area (filled with vertical color gradient) */}
+      {past.length > 1 && <path d={areaOf(past)} fill={`url(#${gradAreaId})`} />}
+      {/* Past curve (solid, color follows BAC level via gradient) */}
+      {past.length > 1 && (
+        <path d={pathOf(past)} fill="none"
+          stroke={`url(#${gradStrokeId})`} strokeWidth={2.4}
+          strokeLinejoin="round" strokeLinecap="round" />
       )}
-      {[0, 2, 4, 6, 8, 10, 12].filter(t => t >= minT && t <= maxT).map((t, i) => (
-        <text key={i} x={xs(t)} y={height - 6}
+      {/* Future curve (dashed) */}
+      {future.length > 1 && (
+        <path d={pathOf(future)} fill="none"
+          stroke={`url(#${gradStrokeId})`} strokeWidth={1.8} strokeOpacity={0.75}
+          strokeDasharray="5 4" strokeLinejoin="round" strokeLinecap="round" />
+      )}
+      {/* "Now" vertical marker */}
+      {0 >= minT && 0 <= maxT && (
+        <line x1={xs(0)} x2={xs(0)} y1={pad.t} y2={baseY}
+          stroke={T.ink2} strokeWidth={1} strokeDasharray="3 3" opacity={0.5} />
+      )}
+      {/* X-axis time labels (clock format) */}
+      {ticksX.map((t, i) => (
+        <text key={i} x={xs(t)} y={height - 10}
           fontSize={9} fill={T.muted} textAnchor="middle" fontFamily={fontNum}>
-          {t === 0 ? '0h' : `+${t}h`}
+          {fmtClock(t)}
         </text>
       ))}
-      {focusPoint && (
+      {/* "maintenant" caption above the now line (when not scrubbing) */}
+      {scrubT == null && 0 >= minT && 0 <= maxT && (
+        <text x={xs(0)} y={pad.t - 6}
+          fontSize={9} fill={T.ink2} textAnchor="middle" fontFamily={fontNum}>
+          maintenant
+        </text>
+      )}
+      {/* Scrubber ball + hair line + tooltip */}
+      {focus && (
         <>
-          <line x1={xs(focusPoint.t)} x2={xs(focusPoint.t)} y1={pad.t} y2={pad.t + h}
-            stroke={scrubT != null ? T.ink : T.accent} strokeWidth={1.2}
-            strokeDasharray={scrubT != null ? '0' : '2 2'} opacity={scrubT != null ? 0.85 : 0.55} />
-          <circle cx={xs(focusPoint.t)} cy={ys(focusPoint.bac)}
-            r={4.2} fill={scrubT != null ? T.ink : T.accent}
-            stroke={T.bg} strokeWidth={1.5} />
-          <ChartTooltip x={xs(focusPoint.t)} y={ys(focusPoint.bac)} width={width}
-            lines={[`${focusPoint.bac} mg/L`, fmtRel(focusPoint.t)]} />
+          <line x1={xs(focus.t)} x2={xs(focus.t)} y1={ys(focus.bac)} y2={baseY}
+            stroke={focusColor} strokeWidth={1} opacity={0.35} />
+          <circle cx={xs(focus.t)} cy={ys(focus.bac)} r={11}
+            fill={focusColor} fillOpacity={0.2} />
+          <circle cx={xs(focus.t)} cy={ys(focus.bac)} r={6}
+            fill={T.bg} stroke={focusColor} strokeWidth={1.5} />
+          <circle cx={xs(focus.t)} cy={ys(focus.bac)} r={3.5} fill={focusColor} />
+          <ChartTooltip x={xs(focus.t)} y={ys(focus.bac)} width={width}
+            lines={[
+              `${Math.round(focus.bac)} mg/L`,
+              fmtStatus(focus.bac),
+              fmtRel(focus.t),
+            ]} />
         </>
       )}
     </svg>

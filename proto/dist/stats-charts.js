@@ -751,14 +751,17 @@ function SvgPolarClock({
 }
 
 // ── BAC projection curve ──────────────────────────────────────────
-// Scrubbable like the Revolut spending chart: pressing & dragging the
-// finger across the curve reveals the BAC at that exact moment, with
-// the elapsed/remaining time relative to "now" (t = 0).
+// Scrubbable: dragging the finger across the curve reveals the BAC at
+// any moment. The ball position and tooltip BAC are linearly
+// interpolated between samples so the dot follows the finger smoothly.
+// Past = solid stroke with vertical gradient; future = dashed stroke;
+// the gradient runs green → orange → red so the curve is coloured by
+// its BAC level at every point without splitting into segments.
 function SvgBACProjection({
   points,
   width = 320,
-  height = 150,
-  now = 0
+  height = 170,
+  nowMs = Date.now()
 }) {
   if (!points || points.length === 0) {
     return /*#__PURE__*/React.createElement("div", {
@@ -771,28 +774,75 @@ function SvgBACProjection({
     }, "Aucune donn\xE9e d'alcool\xE9mie");
   }
   const pad = {
-    t: 18,
-    r: 10,
-    b: 22,
-    l: 36
+    t: 22,
+    r: 12,
+    b: 28,
+    l: 40
   };
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
-  const maxT = Math.max(...points.map(p => p.t));
-  const minT = Math.min(...points.map(p => p.t));
-  const maxB = chartNiceMax(Math.max(500, ...points.map(p => p.bac)), 4);
+  const minT = points[0].t;
+  const maxT = points[points.length - 1].t;
+  const peakBac = Math.max(...points.map(p => p.bac));
+  const maxB = chartNiceMax(Math.max(500, peakBac * 1.05), 4);
   const xs = t => pad.l + (t - minT) / Math.max(0.001, maxT - minT) * w;
   const ys = b => pad.t + h * (1 - b / maxB);
-  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${xs(p.t)},${ys(p.bac)}`).join(' ');
-  const area = path + ` L${xs(maxT)},${pad.t + h} L${xs(minT)},${pad.t + h} Z`;
+  const baseY = pad.t + h;
+  const safe = T.good;
+  const warn = T.isDark ? 'oklch(72% 0.16 60)' : 'oklch(58% 0.16 55)';
+  const danger = T.isDark ? 'oklch(68% 0.20 25)' : 'oklch(54% 0.20 25)';
+  const bacColor = b => b > 500 ? danger : b > 200 ? warn : safe;
+
+  // Stable id suffix so multiple charts on the same page don't collide.
+  const idSuffix = React.useId().replace(/:/g, '');
+  const gradStrokeId = `bac-stroke-${idSuffix}`;
+  const gradAreaId = `bac-area-${idSuffix}`;
+
+  // Build a vertical gradient that matches the threshold colors. Stops
+  // are placed exactly at 200 and 500 mg/L so the colour transitions
+  // line up with the threshold lines. y goes 0 (top, max BAC) → 1 (bottom, 0).
+  const stop500 = 1 - Math.min(1, 500 / maxB);
+  const stop200 = 1 - Math.min(1, 200 / maxB);
+  const gradStops = (alpha = 1) => /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("stop", {
+    offset: `${(stop500 * 100).toFixed(2)}%`,
+    stopColor: danger,
+    stopOpacity: alpha
+  }), /*#__PURE__*/React.createElement("stop", {
+    offset: `${(stop500 * 100).toFixed(2)}%`,
+    stopColor: warn,
+    stopOpacity: alpha
+  }), /*#__PURE__*/React.createElement("stop", {
+    offset: `${(stop200 * 100).toFixed(2)}%`,
+    stopColor: warn,
+    stopOpacity: alpha
+  }), /*#__PURE__*/React.createElement("stop", {
+    offset: `${(stop200 * 100).toFixed(2)}%`,
+    stopColor: safe,
+    stopOpacity: alpha
+  }), /*#__PURE__*/React.createElement("stop", {
+    offset: "100%",
+    stopColor: safe,
+    stopOpacity: alpha
+  }));
+
+  // Split into past (t ≤ 0) and future (t > 0). Include t=0 in both so
+  // the visual transition between solid and dashed has no gap.
+  const nowIdx = (() => {
+    for (let i = 0; i < points.length; i++) if (points[i].t >= 0) return i;
+    return points.length - 1;
+  })();
+  const past = points.slice(0, Math.max(1, nowIdx + 1));
+  const future = points.slice(nowIdx);
+  const pathOf = pts => pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${xs(p.t)},${ys(p.bac)}`).join(' ');
+  const areaOf = pts => pathOf(pts) + ` L${xs(pts[pts.length - 1].t)},${baseY} L${xs(pts[0].t)},${baseY} Z`;
   const thresh = [{
     y: 200,
     label: '200 mg/L',
-    color: T.good
+    color: warn
   }, {
     y: 500,
     label: '500 légal',
-    color: T.accent2
+    color: danger
   }].filter(l => l.y <= maxB);
   const svgRef = React.useRef(null);
   const [scrubT, setScrubT] = React.useState(null);
@@ -805,31 +855,53 @@ function SvgBACProjection({
     setScrubT(Math.max(minT, Math.min(maxT, t)));
   });
 
-  // Pick the displayed point: scrubber wins, otherwise default to "now".
-  const focusT = scrubT != null ? scrubT : now;
-  const focusPoint = (() => {
-    if (focusT == null) return null;
-    let best = points[0],
-      bestDiff = Math.abs(points[0].t - focusT);
-    for (let i = 1; i < points.length; i++) {
-      const diff = Math.abs(points[i].t - focusT);
-      if (diff < bestDiff) {
-        best = points[i];
-        bestDiff = diff;
-      }
+  // Linear interpolation between adjacent samples → smooth ball motion.
+  const interpAt = t => {
+    if (t <= points[0].t) return {
+      t,
+      bac: points[0].bac
+    };
+    if (t >= points[points.length - 1].t) return {
+      t,
+      bac: points[points.length - 1].bac
+    };
+    let lo = 0,
+      hi = points.length - 1;
+    while (hi - lo > 1) {
+      const mid = lo + hi >> 1;
+      if (points[mid].t <= t) lo = mid;else hi = mid;
     }
-    return best;
+    const a = points[lo],
+      b = points[hi];
+    const frac = (t - a.t) / Math.max(1e-9, b.t - a.t);
+    return {
+      t,
+      bac: a.bac + (b.bac - a.bac) * frac
+    };
+  };
+  const focusT = scrubT != null ? scrubT : 0;
+  const focus = interpAt(focusT);
+  const focusColor = bacColor(focus.bac);
+  const fmtClock = t => {
+    const d = new Date(nowMs + t * 3600_000);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  };
+  const ticksX = (() => {
+    const out = [];
+    for (let i = 0; i < 4; i++) out.push(minT + (maxT - minT) * (i / 3));
+    return out;
   })();
   const fmtRel = t => {
-    if (Math.abs(t) < 0.05) return 'maintenant';
-    const sign = t < 0 ? 'il y a ' : 'dans ';
-    const abs = Math.abs(t);
-    const hh = Math.floor(abs);
-    const mm = Math.round((abs - hh) * 60);
-    if (hh === 0) return `${sign}${mm}min`;
-    if (mm === 0) return `${sign}${hh}h`;
-    return `${sign}${hh}h${String(mm).padStart(2, '0')}`;
+    const minutes = Math.round(Math.abs(t) * 60);
+    if (minutes < 1) return 'maintenant';
+    const hh = Math.floor(minutes / 60);
+    const mm = minutes % 60;
+    const phrase = hh === 0 ? `${mm}min` : mm === 0 ? `${hh}h` : `${hh}h${String(mm).padStart(2, '0')}`;
+    return t < 0 ? `il y a ${phrase}` : `dans ${phrase}`;
   };
+  const fmtStatus = b => b > 500 ? 'Au-delà' : b > 200 ? 'Léger' : 'Sobre';
   return /*#__PURE__*/React.createElement("svg", _extends({
     ref: svgRef,
     viewBox: `0 0 ${width} ${height}`,
@@ -840,18 +912,20 @@ function SvgBACProjection({
       touchAction: 'pan-y'
     }
   }, scr.handlers), /*#__PURE__*/React.createElement("defs", null, /*#__PURE__*/React.createElement("linearGradient", {
-    id: "bac-grad",
+    id: gradStrokeId,
     x1: "0",
     x2: "0",
     y1: "0",
     y2: "1"
-  }, /*#__PURE__*/React.createElement("stop", {
-    offset: "0",
-    stopColor: T.accent2,
-    stopOpacity: 0.35
-  }), /*#__PURE__*/React.createElement("stop", {
-    offset: "1",
-    stopColor: T.accent2,
+  }, gradStops(1)), /*#__PURE__*/React.createElement("linearGradient", {
+    id: gradAreaId,
+    x1: "0",
+    x2: "0",
+    y1: "0",
+    y2: "1"
+  }, gradStops(0.28), /*#__PURE__*/React.createElement("stop", {
+    offset: "100%",
+    stopColor: safe,
     stopOpacity: 0
   }))), [0, 0.5, 1].map((f, i) => /*#__PURE__*/React.createElement("g", {
     key: i
@@ -881,7 +955,7 @@ function SvgBACProjection({
     stroke: l.color,
     strokeDasharray: "3 3",
     strokeWidth: 0.8,
-    opacity: 0.7
+    opacity: 0.55
   }), /*#__PURE__*/React.createElement("text", {
     x: pad.l + w - 2,
     y: ys(l.y) - 3,
@@ -889,53 +963,80 @@ function SvgBACProjection({
     fill: l.color,
     textAnchor: "end",
     fontFamily: fontNum
-  }, l.label))), /*#__PURE__*/React.createElement("path", {
-    d: area,
-    fill: "url(#bac-grad)"
-  }), /*#__PURE__*/React.createElement("path", {
-    d: path,
+  }, l.label))), past.length > 1 && /*#__PURE__*/React.createElement("path", {
+    d: areaOf(past),
+    fill: `url(#${gradAreaId})`
+  }), past.length > 1 && /*#__PURE__*/React.createElement("path", {
+    d: pathOf(past),
     fill: "none",
-    stroke: T.accent2,
+    stroke: `url(#${gradStrokeId})`,
+    strokeWidth: 2.4,
+    strokeLinejoin: "round",
+    strokeLinecap: "round"
+  }), future.length > 1 && /*#__PURE__*/React.createElement("path", {
+    d: pathOf(future),
+    fill: "none",
+    stroke: `url(#${gradStrokeId})`,
     strokeWidth: 1.8,
-    strokeLinejoin: "round"
-  }), now >= minT && now <= maxT && /*#__PURE__*/React.createElement("line", {
-    x1: xs(now),
-    x2: xs(now),
+    strokeOpacity: 0.75,
+    strokeDasharray: "5 4",
+    strokeLinejoin: "round",
+    strokeLinecap: "round"
+  }), 0 >= minT && 0 <= maxT && /*#__PURE__*/React.createElement("line", {
+    x1: xs(0),
+    x2: xs(0),
     y1: pad.t,
-    y2: pad.t + h,
-    stroke: T.accent,
+    y2: baseY,
+    stroke: T.ink2,
     strokeWidth: 1,
-    strokeDasharray: "2 2",
-    opacity: 0.55
-  }), [0, 2, 4, 6, 8, 10, 12].filter(t => t >= minT && t <= maxT).map((t, i) => /*#__PURE__*/React.createElement("text", {
+    strokeDasharray: "3 3",
+    opacity: 0.5
+  }), ticksX.map((t, i) => /*#__PURE__*/React.createElement("text", {
     key: i,
     x: xs(t),
-    y: height - 6,
+    y: height - 10,
     fontSize: 9,
     fill: T.muted,
     textAnchor: "middle",
     fontFamily: fontNum
-  }, t === 0 ? '0h' : `+${t}h`)), focusPoint && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("line", {
-    x1: xs(focusPoint.t),
-    x2: xs(focusPoint.t),
-    y1: pad.t,
-    y2: pad.t + h,
-    stroke: scrubT != null ? T.ink : T.accent,
-    strokeWidth: 1.2,
-    strokeDasharray: scrubT != null ? '0' : '2 2',
-    opacity: scrubT != null ? 0.85 : 0.55
+  }, fmtClock(t))), scrubT == null && 0 >= minT && 0 <= maxT && /*#__PURE__*/React.createElement("text", {
+    x: xs(0),
+    y: pad.t - 6,
+    fontSize: 9,
+    fill: T.ink2,
+    textAnchor: "middle",
+    fontFamily: fontNum
+  }, "maintenant"), focus && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("line", {
+    x1: xs(focus.t),
+    x2: xs(focus.t),
+    y1: ys(focus.bac),
+    y2: baseY,
+    stroke: focusColor,
+    strokeWidth: 1,
+    opacity: 0.35
   }), /*#__PURE__*/React.createElement("circle", {
-    cx: xs(focusPoint.t),
-    cy: ys(focusPoint.bac),
-    r: 4.2,
-    fill: scrubT != null ? T.ink : T.accent,
-    stroke: T.bg,
+    cx: xs(focus.t),
+    cy: ys(focus.bac),
+    r: 11,
+    fill: focusColor,
+    fillOpacity: 0.2
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: xs(focus.t),
+    cy: ys(focus.bac),
+    r: 6,
+    fill: T.bg,
+    stroke: focusColor,
     strokeWidth: 1.5
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: xs(focus.t),
+    cy: ys(focus.bac),
+    r: 3.5,
+    fill: focusColor
   }), /*#__PURE__*/React.createElement(ChartTooltip, {
-    x: xs(focusPoint.t),
-    y: ys(focusPoint.bac),
+    x: xs(focus.t),
+    y: ys(focus.bac),
     width: width,
-    lines: [`${focusPoint.bac} mg/L`, fmtRel(focusPoint.t)]
+    lines: [`${Math.round(focus.bac)} mg/L`, fmtStatus(focus.bac), fmtRel(focus.t)]
   })));
 }
 // ── Histogram (session duration / session BAC) ───────────────────
