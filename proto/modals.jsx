@@ -298,7 +298,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
             background: T.accent, color: T.isDark ? T.bg : '#fff', fontSize: 13, fontWeight: 600,
             cursor: busy ? 'wait' : 'pointer', letterSpacing: 0.1, opacity: busy ? 0.5 : 1,
             border: 'none', fontFamily: 'inherit',
-            boxShadow: `0 4px 18px ${T.accent}60`,
+            boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
           }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
         </div>
       </div>
@@ -467,7 +467,7 @@ function ScannerSheet({ onClose, onScanned }) {
             padding: '15px', borderRadius: 14,
             textAlign: 'center', fontSize: 14, fontWeight: 600, cursor: 'pointer',
             border: 'none', fontFamily: 'inherit',
-            boxShadow: `0 8px 30px ${T.accent}50`,
+            boxShadow: `0 8px 30px ${withAlpha(T.accent, 0.32)}`,
           }}>Utiliser ce produit</button>
         </div>
       )}
@@ -664,7 +664,7 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
             cursor: 'pointer', display: 'flex', alignItems: 'center',
             justifyContent: 'center', gap: 6,
             border: 'none', fontFamily: 'inherit',
-            boxShadow: `0 4px 18px ${T.accent}60`,
+            boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
           }}>
             <SvgIcon icon={Ic.plus} size={14} /> Ajouter à nouveau
           </button>
@@ -857,7 +857,7 @@ function EditEntrySheet({ entry, onClose }) {
             background: T.accent, color: T.isDark ? T.bg : '#fff', fontSize: 13, fontWeight: 600,
             cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.5 : 1,
             border: 'none', fontFamily: 'inherit',
-            boxShadow: `0 4px 18px ${T.accent}60`,
+            boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
           }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
         </div>
       </div>
@@ -1016,7 +1016,7 @@ function EditFamilySheet({ family, onClose }) {
             background: T.accent, color: T.isDark ? T.bg : '#fff', fontSize: 13, fontWeight: 600,
             cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.5 : 1,
             border: 'none', fontFamily: 'inherit',
-            boxShadow: `0 4px 18px ${T.accent}60`,
+            boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
           }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
         </div>
       </div>

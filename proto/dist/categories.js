@@ -708,7 +708,7 @@ function EditCategorySheet({
       opacity: busy ? 0.5 : 1,
       border: 'none',
       fontFamily: 'inherit',
-      boxShadow: `0 4px 18px ${T.accent}60`
+      boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`
     }
   }, busy ? 'Enregistrement…' : 'Enregistrer'), /*#__PURE__*/React.createElement("button", {
     type: "button",

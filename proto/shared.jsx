@@ -162,6 +162,16 @@ function catColor(name, l) {
   return `oklch(${L}% ${c.c} ${c.hue})`;
 }
 
+// Apply an alpha to any color string. oklch() supports `/ alpha` natively;
+// other formats fall back to the input unchanged. Replaces the legacy
+// `${color}NN` hex-alpha trick which is invalid CSS for non-hex colors.
+function withAlpha(color, a) {
+  if (typeof color !== 'string') return color;
+  const m = color.match(/^(\s*)oklch\((.*?)\)(\s*)$/i);
+  if (m) return `${m[1]}oklch(${m[2].trim()} / ${a})${m[3]}`;
+  return color;
+}
+
 function catBg(name) {
   const c = _ensureCat(name);
   return T.isDark
@@ -463,7 +473,7 @@ function ConfirmHost() {
             color: state.danger ? '#fff' : (T.isDark ? T.bg : '#fff'),
             border: 'none', fontSize: 13, fontWeight: 600,
             fontFamily: fontSans, cursor: 'pointer', letterSpacing: 0.1,
-            boxShadow: `0 4px 18px ${state.danger ? 'oklch(55% 0.20 25 / 0.5)' : `${T.accent}60`}`,
+            boxShadow: `0 4px 18px ${state.danger ? 'oklch(55% 0.20 25 / 0.5)' : withAlpha(T.accent, 0.4)}`,
           }}>{state.confirmText || 'Confirmer'}</button>
         </div>
       </div>
@@ -509,7 +519,7 @@ function niceMax(v, fallback = 1) {
 Object.assign(window, {
   T, THEMES, setTheme, applyTheme, useTheme,
   fontSans, fontSerif, fontNum,
-  Ic, SvgIcon, CAT, catColor, catBg,
+  Ic, SvgIcon, CAT, catColor, catBg, withAlpha,
   Toast,
   FR_DAYS_LONG, FR_DAYS_SHORT, FR_MONTHS_SHORT, FR_MONTHS_LONG, FR_MONTHS_DOTTED,
   fmtDateShort, fmtDateMedium, fmtDayHeader,

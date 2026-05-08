@@ -562,6 +562,16 @@ function catColor(name, l) {
   const L = l !== undefined ? l : T.isDark ? c.dark_l : c.light_l;
   return `oklch(${L}% ${c.c} ${c.hue})`;
 }
+
+// Apply an alpha to any color string. oklch() supports `/ alpha` natively;
+// other formats fall back to the input unchanged. Replaces the legacy
+// `${color}NN` hex-alpha trick which is invalid CSS for non-hex colors.
+function withAlpha(color, a) {
+  if (typeof color !== 'string') return color;
+  const m = color.match(/^(\s*)oklch\((.*?)\)(\s*)$/i);
+  if (m) return `${m[1]}oklch(${m[2].trim()} / ${a})${m[3]}`;
+  return color;
+}
 function catBg(name) {
   const c = _ensureCat(name);
   return T.isDark ? `oklch(${c.bg_l}% ${c.c * 0.5} ${c.hue})` : `oklch(94% ${c.c * 0.25} ${c.hue})`;
@@ -1082,7 +1092,7 @@ function ConfirmHost() {
       fontFamily: fontSans,
       cursor: 'pointer',
       letterSpacing: 0.1,
-      boxShadow: `0 4px 18px ${state.danger ? 'oklch(55% 0.20 25 / 0.5)' : `${T.accent}60`}`
+      boxShadow: `0 4px 18px ${state.danger ? 'oklch(55% 0.20 25 / 0.5)' : withAlpha(T.accent, 0.4)}`
     }
   }, state.confirmText || 'Confirmer'))));
 }
@@ -1132,6 +1142,7 @@ Object.assign(window, {
   CAT,
   catColor,
   catBg,
+  withAlpha,
   Toast,
   FR_DAYS_LONG,
   FR_DAYS_SHORT,

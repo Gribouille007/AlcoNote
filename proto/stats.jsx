@@ -306,7 +306,13 @@ function PeriodNav({ period, anchor, onShift }) {
 function StatSection({ id, title, action, children, sub, collapsed, toggleSection }) {
   const isOpen = !collapsed.has(id);
   return (
-    <div style={{ marginBottom: 14 }}>
+    <section style={{
+      marginBottom: 14,
+      background: T.surface,
+      borderRadius: 16,
+      border: `1px solid ${T.rule}`,
+      overflow: 'hidden',
+    }}>
       <button type="button"
         onClick={() => toggleSection(id)}
         aria-expanded={isOpen}
@@ -314,9 +320,9 @@ function StatSection({ id, title, action, children, sub, collapsed, toggleSectio
         style={{
           width: '100%', textAlign: 'left',
           display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
-          padding: '11px 14px', background: T.surface, borderRadius: 14,
-          border: `1px solid ${T.rule}`,
-          marginBottom: isOpen ? 10 : 0,
+          padding: '11px 14px', background: 'transparent',
+          borderTop: 'none', borderLeft: 'none', borderRight: 'none',
+          borderBottom: isOpen ? `1px solid ${T.rule}` : 'none',
           fontFamily: 'inherit', color: 'inherit',
         }}>
         <span style={{
@@ -339,15 +345,15 @@ function StatSection({ id, title, action, children, sub, collapsed, toggleSectio
         </div>
         {action}
       </button>
-      {isOpen && <div id={`alco-section-${id}`}>{children}</div>}
-    </div>
+      {isOpen && <div id={`alco-section-${id}`} style={{ padding: 12 }}>{children}</div>}
+    </section>
   );
 }
 
 function Card({ children, style, ...rest }) {
   return (
     <div style={{
-      background: T.surface, borderRadius: 18, padding: 16,
+      background: T.surface2, borderRadius: 14, padding: 14,
       border: `1px solid ${T.rule}`, ...style,
     }} {...rest}>
       {children}
@@ -433,7 +439,7 @@ function GeneralSection({ drinks, prevDrinks, prevRange, period, range, collapse
       }}>
         {cards.map((c, i) => (
           <div key={i} style={{
-            background: T.surface, borderRadius: 14, padding: '12px 10px',
+            background: T.surface2, borderRadius: 12, padding: '12px 10px',
             border: `1px solid ${T.rule}`, position: 'relative',
             display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
             minHeight: 64,
@@ -562,21 +568,41 @@ function DeltaBadge({ delta, better = 'down' }) {
   const flat = Math.abs(delta) < 0.5;
   const goodWhenUp = better === 'up';
   const positive = flat ? null : (rising ? goodWhenUp : !goodWhenUp);
-  const color = positive == null ? T.muted
-              : positive ? (T.isDark ? 'oklch(72% 0.14 155)' : 'oklch(45% 0.13 155)')
-                         : (T.isDark ? 'oklch(70% 0.18 30)'  : 'oklch(50% 0.18 30)');
-  const arrow = flat ? '→' : (rising ? '↑' : '↓');
+  const fg = positive == null ? T.muted
+           : positive ? (T.isDark ? 'oklch(78% 0.16 155)' : 'oklch(42% 0.14 155)')
+                      : (T.isDark ? 'oklch(74% 0.20 30)'  : 'oklch(48% 0.20 30)');
+  const bg = positive == null ? T.surface2
+           : positive ? (T.isDark ? 'oklch(28% 0.05 155)' : 'oklch(95% 0.04 155)')
+                      : (T.isDark ? 'oklch(28% 0.06 30)'  : 'oklch(95% 0.04 30)');
   const value = `${Math.abs(delta).toFixed(0)}%`;
+  // Inline SVG arrows render identically across platforms (no font fallback).
+  const arrow = flat ? (
+    <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="2" y1="6" x2="10" y2="6"/><polyline points="7 3 10 6 7 9"/>
+    </svg>
+  ) : rising ? (
+    <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="6" y1="10" x2="6" y2="2"/><polyline points="3 5 6 2 9 5"/>
+    </svg>
+  ) : (
+    <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="6" y1="2" x2="6" y2="10"/><polyline points="3 7 6 10 9 7"/>
+    </svg>
+  );
+  const ariaDir = flat ? 'stable' : (rising ? 'hausse' : 'baisse');
   return (
     <div style={{
       position: 'absolute', top: 8, right: 8,
-      display: 'flex', alignItems: 'center', gap: 2,
-      color, fontSize: 9, fontFamily: fontNum, fontWeight: 600,
-      background: T.surface2, padding: '1px 5px', borderRadius: 6,
-      border: `1px solid ${T.rule}`,
-      letterSpacing: 0,
-    }} aria-label={`${rising ? 'hausse' : 'baisse'} de ${value} vs période précédente`}>
-      <span style={{ fontSize: 10 }}>{arrow}</span>{value}
+      display: 'inline-flex', alignItems: 'center', gap: 3,
+      color: fg, fontSize: 9.5, fontFamily: fontNum, fontWeight: 600,
+      background: bg, padding: '2px 6px', borderRadius: 99,
+      border: `1px solid ${withAlpha(fg, 0.18)}`,
+      letterSpacing: 0, lineHeight: 1,
+    }} aria-label={`${ariaDir} de ${value} vs période précédente`}>
+      {arrow}{value}
     </div>
   );
 }
@@ -584,7 +610,7 @@ function DeltaBadge({ delta, better = 'down' }) {
 function MiniStat({ big, label }) {
   return (
     <div style={{
-      background: T.surface, borderRadius: 14, padding: '14px 10px',
+      background: T.surface2, borderRadius: 12, padding: '14px 10px',
       border: `1px solid ${T.rule}`,
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       textAlign: 'center',
@@ -721,7 +747,7 @@ function TopDrinksSection({ drinks, collapsed, toggleSection }) {
           }}>
             <div style={{
               width: 24, height: 24, borderRadius: 8,
-              background: i < 3 ? T.accent : T.surface2,
+              background: i < 3 ? T.accent : T.surface3,
               color: i < 3 ? (T.isDark ? T.bg : '#fff') : T.ink2,
               display: 'grid', placeItems: 'center', flexShrink: 0,
               fontSize: 11, fontWeight: 600, fontFamily: fontNum,
@@ -753,17 +779,17 @@ function TopDrinksSection({ drinks, collapsed, toggleSection }) {
   );
 }
 // ── 5. Alcoolémie (BAC + records) ────────────────────────────────
-// Widmark BAC computation.
-//   bac(t) = 10 · (Σ grams_absorbed_by_t) / (weight·r) − elimRate·(t − t_first_drink)
-// where 0.789 g/mL is ethanol density and `r` is Widmark's distribution
-// factor. Each drink absorbs linearly over `absorpHours` (default 0.5 h)
-// then contributes its full mass; elimination is a constant rate, NOT
-// dose-dependent.
+// Widmark BAC computation with instantaneous absorption — each drink jumps
+// straight to its peak contribution at consumption time, then the running
+// total decays at a constant elimination rate (mg/L/h). This matches the
+// legacy bac-chart.js behaviour: at t = first drink, BAC ≠ 0.
+//   bac(t) = max(0, Σ_{i:t≥t_i} [10·grams_i / (weight·r)] − elimRate·(t − t_first))
+// `r` is Widmark's distribution factor (male 0.68, female 0.55), `0.789`
+// is ethanol density g/mL.
 function computeBacOverTime(drinks, weight, gender) {
   const r = gender === 'female' ? 0.55 : 0.68;
   const w = weight || 70;
   const elimRate = 150; // mg/L/h elimination, ~ standard Widmark β
-  const absorpHours = 0.5;
   const now = Date.now();
   const lookback = 24 * 3600_000;
   const recent = drinks
@@ -772,44 +798,45 @@ function computeBacOverTime(drinks, weight, gender) {
     .filter(d => d._ts <= now && (now - d._ts) <= lookback)
     .sort((a, b) => a._ts - b._ts);
 
-  if (recent.length === 0) return { points: [], current: 0, drinks: [], elimRate, absorpHours };
+  if (recent.length === 0) return { points: [], current: 0, drinks: [], elimRate, nowT: 0 };
 
-  // Mass absorbed by hour h (relative to "now") for drink i.
+  // Per-drink peak contribution in mg/L. With instantaneous absorption,
+  // each drink jumps the BAC by `peak_i` at its consumption time.
   const grams = recent.map(d => toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789);
+  const peaks = grams.map(g => (g * 1000) / (w * r));
   const tStart = recent.map(d => (d._ts - now) / 3600_000); // negative hours
+  const firstT = tStart[0];
 
   function bacAt(h) {
-    // Total absorbed alcohol at time `h` (h=0 is now, positive = future)
     let absorbed = 0;
-    let earliest = +Infinity;
     for (let i = 0; i < recent.length; i++) {
-      const since = h - tStart[i]; // hours after this drink
-      if (since <= 0) continue;
-      earliest = Math.min(earliest, tStart[i]);
-      const frac = since >= absorpHours ? 1 : (since / absorpHours);
-      absorbed += grams[i] * frac;
+      if (h >= tStart[i]) absorbed += peaks[i];
     }
     if (absorbed <= 0) return 0;
-    // Bac in mg/L. Widmark output is ‰ (per-mil); ×100 → mg/dL; ×10 → mg/L.
-    const peak = (absorbed * 1000) / (w * r); // mg/L if no elimination
-    // Elimination since first drink, capped at "since first drink" — but
-    // we cap further at the time since absorption started so we never
-    // subtract for periods where no alcohol was metabolised yet.
-    const elimDuration = Math.max(0, h - earliest);
-    const eliminated = elimDuration * elimRate;
-    return Math.max(0, peak - eliminated);
+    const eliminated = Math.max(0, h - firstT) * elimRate;
+    return Math.max(0, absorbed - eliminated);
   }
 
-  // Sample from one hour before the first drink to twelve hours ahead,
-  // every 5 minutes, so the scrubber feels smooth.
-  const tMin = Math.min(0, tStart[0] - 0.25);
-  const tMax = 12;
-  const step = 5 / 60;
+  // Bound the curve to the actual session: from the first drink (so the
+  // curve starts at the real BAC, not a flat-zero pre-drink region) to
+  // a small buffer past sobriety. We always extend at least 30 min past
+  // "now" so the user keeps seeing the present.
+  const totalPeak = peaks.reduce((s, v) => s + v, 0);
+  const sobrietyT = firstT + (totalPeak / elimRate);
+  const tMin = firstT;                            // start exactly at first drink (BAC = peak_1)
+  const tMax = Math.max(0.5, sobrietyT + 0.5);    // 30 min past sobriety, at least 30 min ahead
+  const step = 1 / 60;                            // 1-minute resolution (smooth scrub)
   const pts = [];
   for (let t = tMin; t <= tMax + 1e-6; t += step) {
-    pts.push({ t: +t.toFixed(3), bac: Math.round(bacAt(t)) });
+    pts.push({ t: +t.toFixed(4), bac: bacAt(t) });
   }
-  return { points: pts, current: Math.round(bacAt(0)), drinks: recent, elimRate, absorpHours };
+  return {
+    points: pts,
+    current: Math.round(bacAt(0)),
+    drinks: recent,
+    elimRate, nowT: 0,
+    sobrietyT, firstT,
+  };
 }
 
 function BACSection({ drinks, allDrinks, settings, collapsed, toggleSection }) {
@@ -875,7 +902,7 @@ function BACSection({ drinks, allDrinks, settings, collapsed, toggleSection }) {
           display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
         }}>
           <div style={{
-            background: T.surface2, borderRadius: 12, padding: '12px 12px',
+            background: T.surface3, borderRadius: 12, padding: '12px 12px',
             border: `1px solid ${T.rule}`,
             display: 'flex', flexDirection: 'column', alignItems: 'center',
             textAlign: 'center',
@@ -889,7 +916,7 @@ function BACSection({ drinks, allDrinks, settings, collapsed, toggleSection }) {
             }}>{fmtTime(hoursToSober)}</div>
           </div>
           <div style={{
-            background: T.surface2, borderRadius: 12, padding: '12px 12px',
+            background: T.surface3, borderRadius: 12, padding: '12px 12px',
             border: `1px solid ${T.rule}`,
             display: 'flex', flexDirection: 'column', alignItems: 'center',
             textAlign: 'center',
@@ -910,7 +937,10 @@ function BACSection({ drinks, allDrinks, settings, collapsed, toggleSection }) {
           <div style={{
             color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 8, letterSpacing: -0.1,
           }}>Projection d'alcoolémie</div>
-          <SvgBACProjection points={bacInfo.points} width={320} height={150} now={0} />
+          <SvgBACProjection
+            points={bacInfo.points} width={320} height={170}
+            nowMs={Date.now()}
+          />
           <div style={{
             color: T.muted, fontSize: 10, marginTop: 6, fontStyle: 'italic', fontFamily: fontSerif,
           }}>Glissez le doigt sur le graphe pour voir le taux à un moment précis</div>
@@ -1024,18 +1054,18 @@ function BACRecordRow({ record, isHighest, onDelete }) {
       <div
         {...swipe.handlers}
         style={{
-          position: 'relative', background: T.surface, borderRadius: 14,
+          position: 'relative', background: T.surface2, borderRadius: 14,
           border: `1px solid ${isHighest ? level.color : T.rule}`,
           padding: '10px 12px',
           display: 'flex', alignItems: 'center', gap: 12,
           transform: `translateX(${swipe.offset}px)`,
           transition: swipe.dragging ? 'none' : 'transform 0.22s ease',
           touchAction: 'pan-y',
-          boxShadow: isHighest ? `0 0 0 1px ${level.color}40, 0 4px 12px ${level.color}20` : 'none',
+          boxShadow: isHighest ? `0 0 0 1px ${withAlpha(level.color, 0.25)}, 0 4px 12px ${withAlpha(level.color, 0.12)}` : 'none',
         }}>
         <div style={{
           width: 10, height: 10, borderRadius: 99, background: level.color, flexShrink: 0,
-          boxShadow: `0 0 8px ${level.color}80`,
+          boxShadow: `0 0 8px ${withAlpha(level.color, 0.5)}`,
         }}/>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
@@ -1062,15 +1092,17 @@ function BACRecordRow({ record, isHighest, onDelete }) {
   );
 }
 // ── 6. Carte des lieux ────────────────────────────────────────────
-// Renders a Leaflet map with one marker per geolocated drink in the
-// selected period. We dynamically inject the Leaflet CSS+JS once
-// (avoiding the cost on devices that never reach the stats tab) and
-// rebuild the map whenever the underlying drink list changes.
+// Renders a Leaflet map with one marker per geolocated drink. Markers
+// at the same / nearby locations are clustered via leaflet.markercluster
+// — each cluster shows the count of drinks it contains. Leaflet and the
+// markercluster plugin are lazy-loaded on first open of this section.
 function MapSection({ drinks, collapsed, toggleSection }) {
   const isOpen = !collapsed.has('map');
   const containerRef = React.useRef(null);
   const mapRef = React.useRef(null);
-  const [ready, setReady] = React.useState(typeof window !== 'undefined' && !!window.L);
+  const [ready, setReady] = React.useState(
+    typeof window !== 'undefined' && !!window.L && !!(window.L && window.L.markerClusterGroup)
+  );
   const [error, setError] = React.useState(null);
 
   // Drinks with valid coordinates (top-level or nested in `location`).
@@ -1080,30 +1112,33 @@ function MapSection({ drinks, collapsed, toggleSection }) {
     return Number.isFinite(parseFloat(lat)) && Number.isFinite(parseFloat(lng));
   }), [drinks]);
 
-  // Lazy-load Leaflet on first open of this section.
+  // Lazy-load Leaflet + markercluster plugin on first open.
   React.useEffect(() => {
     if (!isOpen || ready) return;
     let cancelled = false;
+    const loadCss = (id, href) => {
+      if (document.getElementById(id)) return;
+      const css = document.createElement('link');
+      css.id = id; css.rel = 'stylesheet'; css.href = href; css.crossOrigin = '';
+      document.head.appendChild(css);
+    };
+    const loadScript = (id, src) => new Promise((resolve, reject) => {
+      if (document.getElementById(id)) { resolve(); return; }
+      const s = document.createElement('script');
+      s.id = id; s.src = src; s.crossOrigin = '';
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
     const load = async () => {
       try {
-        if (!document.getElementById('alco-leaflet-css')) {
-          const css = document.createElement('link');
-          css.id = 'alco-leaflet-css';
-          css.rel = 'stylesheet';
-          css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-          css.crossOrigin = '';
-          document.head.appendChild(css);
-        }
+        loadCss('alco-leaflet-css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
+        loadCss('alco-cluster-css', 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css');
+        loadCss('alco-cluster-default-css', 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css');
         if (!window.L) {
-          await new Promise((resolve, reject) => {
-            const s = document.createElement('script');
-            s.id = 'alco-leaflet-js';
-            s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-            s.crossOrigin = '';
-            s.onload = resolve;
-            s.onerror = reject;
-            document.head.appendChild(s);
-          });
+          await loadScript('alco-leaflet-js', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js');
+        }
+        if (!window.L.markerClusterGroup) {
+          await loadScript('alco-cluster-js', 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js');
         }
         if (!cancelled) setReady(true);
       } catch (e) {
@@ -1118,7 +1153,7 @@ function MapSection({ drinks, collapsed, toggleSection }) {
   React.useEffect(() => {
     if (!isOpen || !ready || !containerRef.current) return;
     const L = window.L;
-    if (!L || typeof L.map !== 'function') return;
+    if (!L || typeof L.map !== 'function' || typeof L.markerClusterGroup !== 'function') return;
     // Always reset the container so React re-mounts (e.g. switching
     // tabs) doesn't end up with a "Map container is already
     // initialized" error from Leaflet.
@@ -1142,13 +1177,34 @@ function MapSection({ drinks, collapsed, toggleSection }) {
     const m = L.map(containerRef.current, {
       attributionControl: false,
       zoomControl: true,
-      preferCanvas: true,
     });
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19, attribution: '© OpenStreetMap',
     }).addTo(m);
     L.control.attribution({ position: 'bottomright', prefix: false })
       .addAttribution('© OSM').addTo(m);
+    // Cluster styling: count badge inside a warm-toned circle, sized
+    // up with the cluster's drink count for instant readability.
+    const accent = T._name === 'light' ? 'rgba(180,90,40,0.92)' : 'rgba(220,140,70,0.92)';
+    const clusterIcon = (cluster) => {
+      const n = cluster.getChildCount();
+      const size = n < 10 ? 32 : n < 100 ? 38 : 46;
+      const html = `<div style="
+          width:${size}px;height:${size}px;border-radius:50%;
+          background:${accent};color:#fff;
+          display:flex;align-items:center;justify-content:center;
+          font:600 12px/1 'Geist Mono', monospace;
+          border:2px solid rgba(255,255,255,0.85);
+          box-shadow:0 2px 8px rgba(0,0,0,0.28);
+        "><span>${n}</span></div>`;
+      return L.divIcon({ html, className: 'alco-cluster', iconSize: L.point(size, size) });
+    };
+    const cluster = L.markerClusterGroup({
+      showCoverageOnHover: false,
+      spiderfyOnMaxZoom: true,
+      maxClusterRadius: 40,
+      iconCreateFunction: clusterIcon,
+    });
     // Build popup content as DOM nodes so user-controlled fields
     // (drink name, location label) cannot inject HTML.
     const popupNode = (p) => {
@@ -1169,19 +1225,27 @@ function MapSection({ drinks, collapsed, toggleSection }) {
       }
       return wrap;
     };
+    const dotIcon = L.divIcon({
+      html: `<div style="
+        width:14px;height:14px;border-radius:50%;
+        background:${accent};
+        border:2px solid rgba(255,255,255,0.85);
+        box-shadow:0 2px 6px rgba(0,0,0,0.25);
+      "></div>`,
+      className: 'alco-pin',
+      iconSize: L.point(14, 14),
+      iconAnchor: L.point(7, 7),
+    });
     for (const p of points) {
-      L.circleMarker([p.lat, p.lng], {
-        radius: 7, weight: 2,
-        color: 'rgba(180,90,40,0.95)',
-        fillColor: 'rgba(220,140,70,0.85)', fillOpacity: 0.85,
-      })
-      .bindPopup(popupNode(p))
-      .addTo(m);
+      L.marker([p.lat, p.lng], { icon: dotIcon })
+        .bindPopup(popupNode(p))
+        .addTo(cluster);
     }
+    cluster.addTo(m);
     if (points.length === 1) {
       m.setView([points[0].lat, points[0].lng], 14);
     } else {
-      m.fitBounds(bounds, { padding: [16, 16], maxZoom: 14 });
+      m.fitBounds(bounds, { padding: [20, 20], maxZoom: 15 });
     }
     mapRef.current = m;
     // Leaflet sometimes lays out before the container has its final
@@ -1192,16 +1256,15 @@ function MapSection({ drinks, collapsed, toggleSection }) {
       try { m.remove(); } catch {}
       mapRef.current = null;
     };
-  }, [isOpen, ready, geoDrinks]);
+  }, [isOpen, ready, geoDrinks, T._name]);
 
   return (
     <StatSection id="map" title="Carte des consommations"
       sub={`${geoDrinks.length} consommation${geoDrinks.length !== 1 ? 's' : ''} géolocalisée${geoDrinks.length !== 1 ? 's' : ''}`}
       collapsed={collapsed} toggleSection={toggleSection}>
-      <Card style={{ padding: 8 }}>
-        <div ref={containerRef} style={{
+      <div ref={containerRef} style={{
           width: '100%', height: 260, borderRadius: 12, overflow: 'hidden',
-          background: T.surface2, position: 'relative',
+          background: T.surface2, border: `1px solid ${T.rule}`, position: 'relative',
         }}>
           {!ready && !error && (
             <div style={{
@@ -1223,7 +1286,6 @@ function MapSection({ drinks, collapsed, toggleSection }) {
             }}>Aucune consommation géolocalisée pour cette période</div>
           )}
         </div>
-      </Card>
     </StatSection>
   );
 }
@@ -1347,7 +1409,7 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection }) {
           display: 'flex', gap: 14, justifyContent: 'center', marginTop: 6,
           fontSize: 10.5, color: T.ink2,
         }}>
-          <LegendDot color={`${T.accent}40`} label="Brut" />
+          <LegendDot color={withAlpha(T.accent, 0.25)} label="Brut" />
           <LegendDot color={T.accent} label="7j" />
           <LegendDot color={T.ink2} label="30j" dashed />
         </div>
