@@ -1,194 +1,126 @@
-# AlcoNote - PWA de Suivi de Consommation d'Alcool
+# AlcoNote — Suivi de consommation d'alcool (PWA)
 
-AlcoNote est une Progressive Web App (PWA) complète pour le suivi de la consommation d'alcool avec des fonctionnalités avancées de scanner de code-barres, géolocalisation, et statistiques détaillées.
+AlcoNote est une Progressive Web App (PWA) pour suivre sa consommation
+d'alcool : ajout manuel ou par scan de code-barres, statistiques
+détaillées, taux d'alcoolémie et carte des lieux. Toutes les données
+restent sur l'appareil (IndexedDB) ; aucune donnée n'est envoyée à un
+serveur tiers.
 
-## 🚀 Fonctionnalités
+## Fonctionnalités
 
-### ✨ Interface Utilisateur
-- **Design Apple-like** : Interface moderne inspirée d'iOS
-- **Responsive** : S'adapte à tous les appareils (mobile, tablette, desktop)
-- **PWA** : Installable comme une application native
-- **Mode hors ligne** : Fonctionne sans connexion internet
+### Interface
+- Design éditorial sombre/clair, typographies Geist + Instrument Serif.
+- 3 onglets — Catégories, Historique, Statistiques — avec FAB central.
+- Tiroir paramètres (côté gauche) : thème, profil, export/import,
+  effacement.
 
-### 📱 Navigation
-- **3 onglets principaux** : Catégories, Boissons, Statistiques
-- **Menu paramètres** : Accessible via l'icône hamburger
-- **FAB (Floating Action Button)** : Bouton + central pour ajouter du contenu
-- **Raccourcis clavier** : Navigation rapide (1, 2, 3, A, S)
+### Boissons
+- Ajout manuel ou via scan de code-barres (Quagga + OpenFoodFacts).
+- Unités cL / L / EcoCup (25 cL).
+- Géolocalisation optionnelle à l'enregistrement.
+- Notes (étoiles 1–5) par nom de boisson.
+- Modification d'une entrée seule, ou de toute la "famille"
+  (nom + quantité + unité + degré).
+- Glisser vers la gauche pour supprimer (historique, records BAC).
 
-### 🍺 Gestion des Boissons
-- **Ajout manuel** : Formulaire complet avec suggestions automatiques
-- **Scanner de code-barres** : Reconnaissance automatique via QuaggaJS
-- **Auto-sauvegarde** : Les bières sont automatiquement sauvegardées après scan
-- **Unités multiples** : EcoCup (25cL), cL, L
-- **Géolocalisation** : Position automatique lors de l'ajout
-- **Groupement intelligent** : Boissons regroupées par nom et quantité
-- **Tri alphabétique** : Organisation claire des boissons
+### Statistiques
+Sept sections, toutes pliables, avec navigation par période
+(Jour · Semaine · Mois · Année · A. scol. · Tout) :
+- **Général** — boissons, sessions, volume, alcool pur, jours sobres
+  (calculés du début de la période jusqu'à aujourd'hui), avec un
+  badge Δ% par rapport à la période précédente.
+- **Temporel** — heure de pointe, jour de pointe, durée moyenne de
+  session, graphe d'heure (interactif) et radar par jour de la
+  semaine.
+- **Catégorie** — volume, ABV moyen, boisson favorite par catégorie.
+- **Top 10** — boissons les plus consommées avec note.
+- **Alcoolémie (BAC)** — jauge instantanée, projection scrubbable
+  façon Revolut (glissez le doigt pour voir le taux à un moment
+  précis), durées avant sobriété/conduite, records (limités au top 3).
+  Calcul : Widmark, élimination linéaire 150 mg/L/h, absorption en
+  30 min.
+- **Carte** — Leaflet + tuiles OpenStreetMap, un marker par
+  consommation géolocalisée (chargé à la demande).
+- **Évolution mensuelle** — courbe verres / grammes sur 6 mois.
+- **Avancées** — moyennes mobiles 7/30 j, horloge polaire 24 h,
+  distribution des sessions.
 
-### 📊 Statistiques Complètes
-- **Périodes flexibles** : Aujourd'hui, semaine, mois, année, personnalisé
-- **Navigation par jour** : Flèches pour naviguer jour par jour
-- **Statistiques générales** :
-  - Nombre total de boissons
-  - Volume total consommé
-  - Grammes d'alcool pur
-  - Nombre de sessions
-  - Jours sobres
-  - Moyennes par période
+Tous les graphes sont interactifs (tap/glisser pour révéler valeur et
+contexte).
 
-- **Analyse temporelle** :
-  - Heures de consommation
-  - Jours de la semaine
-  - Durée des sessions
-  - Temps entre sessions
+### En-tête
+- Pilule mg/L permanente affichant le BAC courant (rafraîchi chaque
+  minute).
 
-- **Statistiques par catégorie** :
-  - Répartition par type
-  - Volume moyen
-  - Degré d'alcool moyen
-  - Boisson préférée
-
-- **Indicateurs de santé** :
-  - Comparaison aux recommandations OMS
-  - Estimation du taux d'alcoolémie
-  - Consommation hebdomadaire
-
-### 🗂️ Organisation
-- **Catégories** : Bière, Vin, Spiritueux, Cocktail, Autre
-- **Tri intelligent** : Catégories triées par nombre de boissons
-- **Détail des boissons** : Vue détaillée avec historique par date
-- **Sections pliables** : Organisation par date avec possibilité de replier
-
-### 🔧 Fonctionnalités Avancées
-- **Swipe to delete** : Glisser vers la gauche pour supprimer
-- **Géolocalisation** : Tracking automatique des lieux de consommation
-- **Export/Import** : Sauvegarde et restauration des données
-- **Suggestions** : Auto-complétion basée sur l'historique
-- **Mode hors ligne** : Fonctionnement complet sans internet
-
-## 🛠️ Technologies Utilisées
-
-### Frontend
-- **HTML5** : Structure sémantique
-- **CSS3** : Design moderne avec variables CSS et animations
-- **JavaScript ES6+** : Logique applicative moderne
-- **PWA** : Service Worker, Web App Manifest
-
-### Stockage
-- **IndexedDB** : Base de données locale avec Dexie.js
-- **LocalStorage** : Paramètres utilisateur
-
-### APIs Externes
-- **OpenFoodFacts** : Reconnaissance des produits par code-barres
-- **Nominatim (OpenStreetMap)** : Géocodage inverse
-- **QuaggaJS** : Scanner de code-barres
-- **Chart.js** : Graphiques et visualisations
-
-### Géolocalisation
-- **HTML5 Geolocation API** : Position GPS
-- **Clustering** : Regroupement des lieux proches
-- **Analyse spatiale** : Statistiques par lieu
-
-## 📁 Structure du Projet
+## Architecture
 
 ```
 AlcoNote/
-├── index.html              # Page principale
+├── index.html              # Shell HTML
 ├── manifest.json           # Manifest PWA
-├── sw.js                   # Service Worker
-├── generate-icons.html     # Générateur d'icônes
-├── css/
-│   ├── main.css            # Styles principaux
-│   ├── components.css      # Composants UI
-│   └── responsive.css      # Design responsive
-├── js/
-│   ├── app.js              # Contrôleur principal
-│   ├── database.js         # Gestion IndexedDB
-│   ├── utils.js            # Fonctions utilitaires
-│   ├── scanner.js          # Scanner code-barres
-│   ├── statistics.js       # Calculs statistiques
-│   └── geolocation.js      # Géolocalisation
-└── assets/
-    └── icons/              # Icônes PWA
+├── sw.js                   # Service worker (cache versionnée)
+├── proto/                  # Source UI (React + JSX)
+│   ├── shared.jsx          # Tokens, icônes, primitives
+│   ├── data.jsx            # Hooks IndexedDB + adapter
+│   ├── stats-charts.jsx    # SVG charts (interactifs)
+│   ├── categories.jsx      # Onglet Catégories
+│   ├── history.jsx         # Onglet Historique
+│   ├── stats.jsx           # Onglet Statistiques
+│   ├── modals.jsx          # Sheets : ajout, détail, édition, settings
+│   ├── app.jsx             # Shell, navigation, header, FAB
+│   └── dist/               # Sortie Babel (chargée par index.html)
+├── js/                     # Backend hérité (DB, scanner, lookups)
+│   ├── database.js         # Wrapper Dexie (version 3 du schema)
+│   ├── utils.js
+│   └── scanner/
+│       ├── camera-scanner.js
+│       └── product-lookup.js
+├── tools/build.js          # Précompile proto/*.jsx → proto/dist/*.js
+└── package.json
 ```
 
-## 🚀 Installation et Utilisation
+### Build
 
-### Installation Locale
-1. Cloner ou télécharger le projet
-2. Ouvrir `generate-icons.html` dans un navigateur
-3. Cliquer sur chaque icône pour les télécharger dans `assets/icons/`
-4. Servir le projet via un serveur HTTP local
-5. Ouvrir `index.html` dans un navigateur moderne
-
-### Installation PWA
-1. Ouvrir l'application dans un navigateur compatible
-2. Cliquer sur "Installer" quand l'invite apparaît
-3. L'application sera installée comme une app native
-
-### Utilisation
-1. **Première utilisation** : Les catégories par défaut sont créées automatiquement
-2. **Ajouter une boisson** : Utiliser le bouton + ou scanner un code-barres
-3. **Consulter les statistiques** : Onglet Statistiques avec différentes périodes
-4. **Paramètres** : Menu hamburger pour configurer profil et données
-
-## 📱 Compatibilité
-
-### Navigateurs Supportés
-- **Chrome/Chromium** 80+ (recommandé)
-- **Firefox** 75+
-- **Safari** 13+
-- **Edge** 80+
-
-### Fonctionnalités par Plateforme
-- **Scanner** : Nécessite accès caméra (HTTPS requis)
-- **Géolocalisation** : Nécessite permission de localisation
-- **PWA** : Installation disponible sur tous les navigateurs modernes
-- **Hors ligne** : Fonctionnement complet sans internet
-
-## 🔒 Confidentialité et Sécurité
-
-- **Données locales** : Toutes les données restent sur l'appareil
-- **Pas de tracking** : Aucune donnée envoyée à des serveurs tiers
-- **APIs externes** : Utilisées uniquement pour enrichir les données
-- **Géolocalisation** : Stockée localement, jamais partagée
-
-## 🎨 Personnalisation
-
-### Couleurs
-Les couleurs peuvent être modifiées dans `css/main.css` via les variables CSS :
-```css
-:root {
-    --primary-color: #007AFF;
-    --success-color: #34C759;
-    --warning-color: #FF9500;
-    --error-color: #FF3B30;
-}
+```bash
+npm install        # une fois
+npm run build      # compile proto/*.jsx → proto/dist/*.js
+npm run watch      # rebuild en continu
 ```
 
-### Catégories
-Les catégories par défaut peuvent être modifiées dans `js/database.js`.
+Chaque `.jsx` se compile en un fichier global qui exporte ses
+composants via `Object.assign(window, …)` — il n'y a pas de bundler.
+Le HTML charge les scripts dans cet ordre :
+`shared → data → stats-charts → categories → history → stats →
+modals → app`.
 
-## 🤝 Contribution
+### Données
 
-Ce projet est conçu pour être facilement extensible :
-- Architecture modulaire
-- Code documenté
-- Séparation des responsabilités
-- APIs bien définies
+IndexedDB via Dexie 3, schéma v3 (`AlcoNoteDB`) :
+- `categories` (id, name, drinkCount)
+- `drinks` (id, name, category, quantity, unit, alcoholContent,
+  date, time, location, barcode)
+- `settings` (key, value)
+- `bacRecords` (id, bacValue, timestamp, drinkCount)
+- `drinkRatings` (drinkName, rating)
 
-## 📄 Licence
+Les overrides d'icônes de catégorie sont stockés comme settings de
+clé `cat.icon.<nom>`.
 
-Ce projet est fourni à des fins éducatives et de démonstration.
+## Compatibilité
 
-## 🆘 Support
+- Chrome/Edge 80+, Firefox 75+, Safari 13+
+- Scanner : caméra (HTTPS requis)
+- Géolocalisation : permission requise
+- Carte Leaflet : chargée depuis unpkg + tuiles OSM (réseau requis
+  uniquement pour la première vue)
 
-Pour toute question ou problème :
-1. Vérifier la console du navigateur pour les erreurs
-2. S'assurer que le serveur HTTPS est utilisé pour le scanner
-3. Vérifier les permissions caméra et géolocalisation
-4. Tester sur un navigateur compatible
+## Confidentialité
 
----
+- Toutes les données restent sur l'appareil.
+- APIs externes : OpenFoodFacts (scan), Nominatim (géocodage inverse),
+  tiles.openstreetmap.org (carte). Aucun tracking.
+- Export JSON / Import / Tout effacer disponibles dans les paramètres.
 
-**AlcoNote** - Une PWA moderne pour un suivi responsable de la consommation d'alcool.
+## Licence
+
+Projet fourni à des fins éducatives et de démonstration.

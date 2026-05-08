@@ -222,6 +222,16 @@ const Ic = {
   }, /*#__PURE__*/React.createElement("polyline", {
     points: "15 18 9 12 15 6"
   })),
+  chevR: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("polyline", {
+    points: "9 18 15 12 9 6"
+  })),
   back: /*#__PURE__*/React.createElement("svg", {
     viewBox: "0 0 24 24",
     fill: "none",
@@ -711,30 +721,49 @@ function Pill({
 }
 
 // ── Stars (rating) ────────────────────────────────────────────────
+// `value` reads `n` first (explicit prop wins over the named alias `rating`)
+// so a 0 is preserved (?? not ||).  Interactive mode: clicking star i sets
+// the rating to i; clicking star 1 when already at 1 clears the rating.
 function Stars({
-  rating = 0,
+  rating,
   n,
   size = 13,
   interactive,
   onChange
 }) {
-  const value = (typeof n === 'number' ? n : rating) || 0;
+  const raw = typeof n === 'number' ? n : rating;
+  const value = typeof raw === 'number' ? raw : 0;
   const cells = [1, 2, 3, 4, 5];
+  const handle = i => e => {
+    if (!interactive) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const next = i === 1 && value === 1 ? 0 : i;
+    onChange && onChange(next);
+  };
+  // Pad each cell so the touch target is large enough on small icons
+  const pad = Math.max(0, Math.ceil((22 - size) / 2));
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 1
-    }
+    },
+    role: interactive ? 'radiogroup' : undefined,
+    "aria-label": interactive ? 'Note' : undefined
   }, cells.map(i => /*#__PURE__*/React.createElement("span", {
     key: i,
-    onClick: interactive ? e => {
-      e.stopPropagation();
-      onChange && onChange(i === value ? 0 : i);
-    } : undefined,
+    role: interactive ? 'radio' : undefined,
+    "aria-checked": interactive ? i === value : undefined,
+    "aria-label": interactive ? `${i} étoile${i > 1 ? 's' : ''}` : undefined,
+    onPointerDown: interactive ? handle(i) : undefined,
+    onClick: interactive ? handle(i) : undefined,
     style: {
       color: i <= value ? T.accent : T.rule,
       display: 'flex',
-      cursor: interactive ? 'pointer' : 'default'
+      cursor: interactive ? 'pointer' : 'default',
+      padding: interactive ? `${pad}px ${Math.max(1, pad)}px` : 0,
+      margin: interactive ? `-${pad}px 0` : 0,
+      touchAction: 'manipulation'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.star,
@@ -743,15 +772,23 @@ function Stars({
 }
 
 // ── Category glyphs ───────────────────────────────────────────────
+// `glyph` lets a category override its icon by referencing another
+// category's name (e.g. an "IPA" category styled like "Bière"). When
+// omitted, the lookup falls back to the category name and finally to
+// the generic glass icon.
+const GLYPH_OPTIONS = ['Bière', 'Vin', 'Spiritueux', 'Cocktail', 'Autre'];
 function CategoryGlyph({
   name,
+  glyph,
   size = 22
 }) {
+  const customIcons = typeof window !== 'undefined' && window.__alcoCatIcons || {};
+  const key = glyph || customIcons[name] || name;
   const s = {
     width: size,
     height: size
   };
-  if (name === 'Bière') return /*#__PURE__*/React.createElement("svg", _extends({}, s, {
+  if (key === 'Bière') return /*#__PURE__*/React.createElement("svg", _extends({}, s, {
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
@@ -771,7 +808,7 @@ function CategoryGlyph({
     x2: "12",
     y2: "18"
   }));
-  if (name === 'Vin') return /*#__PURE__*/React.createElement("svg", _extends({}, s, {
+  if (key === 'Vin') return /*#__PURE__*/React.createElement("svg", _extends({}, s, {
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
@@ -789,7 +826,7 @@ function CategoryGlyph({
     x2: "16",
     y2: "21"
   }));
-  if (name === 'Spiritueux') return /*#__PURE__*/React.createElement("svg", _extends({}, s, {
+  if (key === 'Spiritueux') return /*#__PURE__*/React.createElement("svg", _extends({}, s, {
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
@@ -812,7 +849,7 @@ function CategoryGlyph({
     x2: "16",
     y2: "13"
   }));
-  if (name === 'Cocktail') return /*#__PURE__*/React.createElement("svg", _extends({}, s, {
+  if (key === 'Cocktail') return /*#__PURE__*/React.createElement("svg", _extends({}, s, {
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
@@ -882,7 +919,7 @@ const ghostButton = {
   textAlign: 'inherit'
 };
 
-// ── Sheet overlay (bottom sheet / right drawer) ───────────────────
+// ── Sheet overlay (bottom sheet / left or right drawer) ──────────
 function SheetOverlay({
   children,
   onClose,
@@ -895,6 +932,7 @@ function SheetOverlay({
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+  const isSide = side === 'left' || side === 'right';
   return /*#__PURE__*/React.createElement("div", {
     role: "presentation",
     onClick: onClose,
@@ -905,7 +943,7 @@ function SheetOverlay({
       zIndex: 100,
       display: 'flex',
       alignItems: side === 'bottom' ? 'flex-end' : 'stretch',
-      justifyContent: side === 'right' ? 'flex-end' : 'stretch',
+      justifyContent: side === 'right' ? 'flex-end' : side === 'left' ? 'flex-start' : 'stretch',
       animation: 'fade 0.2s ease'
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -913,10 +951,10 @@ function SheetOverlay({
     "aria-modal": "true",
     onClick: e => e.stopPropagation(),
     style: {
-      width: side === 'right' ? 'auto' : '100%',
-      maxWidth: side === 'right' ? '100%' : 'min(560px, 100%)',
+      width: isSide ? 'auto' : '100%',
+      maxWidth: isSide ? '100%' : 'min(560px, 100%)',
       margin: side === 'bottom' ? '0 auto' : 0,
-      height: side === 'right' ? '100%' : 'auto',
+      height: isSide ? '100%' : 'auto',
       display: 'flex',
       flexDirection: 'column'
     }
@@ -1073,6 +1111,8 @@ function niceMax(v, fallback = 1) {
   s.textContent = `
     @keyframes fade { from { opacity: 0 } to { opacity: 1 } }
     @keyframes slideUp { from { transform: translateY(16px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+    @keyframes slideRight { from { transform: translateX(-16px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
+    @keyframes slideLeft { from { transform: translateX(16px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
     @keyframes scaleIn { from { transform: scale(.96); opacity: 0 } to { transform: scale(1); opacity: 1 } }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
   `;
@@ -1109,6 +1149,7 @@ Object.assign(window, {
   Pill,
   Stars,
   CategoryGlyph,
+  GLYPH_OPTIONS,
   SheetOverlay,
   StatusBar,
   niceMax,

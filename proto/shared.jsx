@@ -97,6 +97,7 @@ const Ic = {
   scan:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3"/><path d="M16 4h3a1 1 0 0 1 1 1v3"/><path d="M20 16v3a1 1 0 0 1-1 1h-3"/><path d="M8 20H5a1 1 0 0 1-1-1v-3"/><line x1="7" y1="8" x2="7" y2="16"/><line x1="10" y1="8" x2="10" y2="16"/><line x1="13" y1="8" x2="13" y2="16"/><line x1="17" y1="8" x2="17" y2="16"/></svg>,
   chev:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>,
   chevL: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>,
+  chevR: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>,
   back:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>,
   trash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
   pin:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>,
@@ -283,17 +284,38 @@ function Pill({ active, onClick, children, color }) {
 }
 
 // ── Stars (rating) ────────────────────────────────────────────────
-function Stars({ rating = 0, n, size = 13, interactive, onChange }) {
-  const value = (typeof n === 'number' ? n : rating) || 0;
+// `value` reads `n` first (explicit prop wins over the named alias `rating`)
+// so a 0 is preserved (?? not ||).  Interactive mode: clicking star i sets
+// the rating to i; clicking star 1 when already at 1 clears the rating.
+function Stars({ rating, n, size = 13, interactive, onChange }) {
+  const raw = (typeof n === 'number' ? n : rating);
+  const value = (typeof raw === 'number' ? raw : 0);
   const cells = [1, 2, 3, 4, 5];
+  const handle = (i) => (e) => {
+    if (!interactive) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const next = (i === 1 && value === 1) ? 0 : i;
+    onChange && onChange(next);
+  };
+  // Pad each cell so the touch target is large enough on small icons
+  const pad = Math.max(0, Math.ceil((22 - size) / 2));
   return (
-    <div style={{ display: 'flex', gap: 1 }}>
+    <div style={{ display: 'flex', gap: 1 }} role={interactive ? 'radiogroup' : undefined}
+      aria-label={interactive ? 'Note' : undefined}>
       {cells.map(i => (
         <span key={i}
-          onClick={interactive ? (e) => { e.stopPropagation(); onChange && onChange(i === value ? 0 : i); } : undefined}
+          role={interactive ? 'radio' : undefined}
+          aria-checked={interactive ? (i === value) : undefined}
+          aria-label={interactive ? `${i} étoile${i > 1 ? 's' : ''}` : undefined}
+          onPointerDown={interactive ? handle(i) : undefined}
+          onClick={interactive ? handle(i) : undefined}
           style={{
             color: i <= value ? T.accent : T.rule,
             display: 'flex', cursor: interactive ? 'pointer' : 'default',
+            padding: interactive ? `${pad}px ${Math.max(1, pad)}px` : 0,
+            margin: interactive ? `-${pad}px 0` : 0,
+            touchAction: 'manipulation',
           }}>
           <SvgIcon icon={Ic.star} size={size} />
         </span>
@@ -303,12 +325,20 @@ function Stars({ rating = 0, n, size = 13, interactive, onChange }) {
 }
 
 // ── Category glyphs ───────────────────────────────────────────────
-function CategoryGlyph({ name, size = 22 }) {
+// `glyph` lets a category override its icon by referencing another
+// category's name (e.g. an "IPA" category styled like "Bière"). When
+// omitted, the lookup falls back to the category name and finally to
+// the generic glass icon.
+const GLYPH_OPTIONS = ['Bière', 'Vin', 'Spiritueux', 'Cocktail', 'Autre'];
+
+function CategoryGlyph({ name, glyph, size = 22 }) {
+  const customIcons = (typeof window !== 'undefined' && window.__alcoCatIcons) || {};
+  const key = glyph || customIcons[name] || name;
   const s = { width: size, height: size };
-  if (name === 'Bière') return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 6h8v14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V6z"/><path d="M15 9h2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><line x1="9" y1="10" x2="9" y2="18"/><line x1="12" y1="10" x2="12" y2="18"/></svg>;
-  if (name === 'Vin') return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 3h8l-1 7a3 3 0 0 1-6 0L8 3z"/><line x1="12" y1="13" x2="12" y2="20"/><line x1="8" y1="21" x2="16" y2="21"/></svg>;
-  if (name === 'Spiritueux') return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="8" y="8" width="8" height="13" rx="1"/><rect x="9.5" y="3" width="5" height="5" rx="0.5"/><line x1="8" y1="13" x2="16" y2="13"/></svg>;
-  if (name === 'Cocktail') return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4 4h16l-8 9-8-9z"/><line x1="12" y1="13" x2="12" y2="20"/><line x1="8" y1="21" x2="16" y2="21"/></svg>;
+  if (key === 'Bière') return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 6h8v14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V6z"/><path d="M15 9h2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><line x1="9" y1="10" x2="9" y2="18"/><line x1="12" y1="10" x2="12" y2="18"/></svg>;
+  if (key === 'Vin') return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 3h8l-1 7a3 3 0 0 1-6 0L8 3z"/><line x1="12" y1="13" x2="12" y2="20"/><line x1="8" y1="21" x2="16" y2="21"/></svg>;
+  if (key === 'Spiritueux') return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="8" y="8" width="8" height="13" rx="1"/><rect x="9.5" y="3" width="5" height="5" rx="0.5"/><line x1="8" y1="13" x2="16" y2="13"/></svg>;
+  if (key === 'Cocktail') return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4 4h16l-8 9-8-9z"/><line x1="12" y1="13" x2="12" y2="20"/><line x1="8" y1="21" x2="16" y2="21"/></svg>;
   return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="8"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/></svg>;
 }
 
@@ -338,26 +368,28 @@ const ghostButton = {
   textAlign: 'inherit',
 };
 
-// ── Sheet overlay (bottom sheet / right drawer) ───────────────────
+// ── Sheet overlay (bottom sheet / left or right drawer) ──────────
 function SheetOverlay({ children, onClose, side = 'bottom' }) {
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose && onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+  const isSide = side === 'left' || side === 'right';
   return (
     <div role="presentation" onClick={onClose} style={{
       position: 'fixed', inset: 0, background: T.scrim,
       zIndex: 100, display: 'flex',
       alignItems: side === 'bottom' ? 'flex-end' : 'stretch',
-      justifyContent: side === 'right' ? 'flex-end' : 'stretch',
+      justifyContent: side === 'right' ? 'flex-end'
+                     : side === 'left' ? 'flex-start' : 'stretch',
       animation: 'fade 0.2s ease',
     }}>
       <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} style={{
-        width: side === 'right' ? 'auto' : '100%',
-        maxWidth: side === 'right' ? '100%' : 'min(560px, 100%)',
+        width: isSide ? 'auto' : '100%',
+        maxWidth: isSide ? '100%' : 'min(560px, 100%)',
         margin: side === 'bottom' ? '0 auto' : 0,
-        height: side === 'right' ? '100%' : 'auto',
+        height: isSide ? '100%' : 'auto',
         display: 'flex', flexDirection: 'column',
       }}>
         {children}
@@ -466,6 +498,8 @@ function niceMax(v, fallback = 1) {
   s.textContent = `
     @keyframes fade { from { opacity: 0 } to { opacity: 1 } }
     @keyframes slideUp { from { transform: translateY(16px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+    @keyframes slideRight { from { transform: translateX(-16px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
+    @keyframes slideLeft { from { transform: translateX(16px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
     @keyframes scaleIn { from { transform: scale(.96); opacity: 0 } to { transform: scale(1); opacity: 1 } }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
   `;
@@ -480,7 +514,7 @@ Object.assign(window, {
   FR_DAYS_LONG, FR_DAYS_SHORT, FR_MONTHS_SHORT, FR_MONTHS_LONG, FR_MONTHS_DOTTED,
   fmtDateShort, fmtDateMedium, fmtDayHeader,
   toCl, gramsAlcohol, unitsAlcohol,
-  SearchInput, SectionHead, Pill, Stars, CategoryGlyph,
+  SearchInput, SectionHead, Pill, Stars, CategoryGlyph, GLYPH_OPTIONS,
   SheetOverlay, StatusBar, niceMax,
   Confirm, ConfirmHost,
   clickable, ghostButton,

@@ -5,6 +5,7 @@ function CategoriesTab({ onAdd, onOpenFamily, onDirectAdd, onEditFamily, query, 
   const { categories } = useCategories();
   const { drinks } = useDrinks();
   const ratings = useRatings();
+  useCategoryIcons(); // keep window.__alcoCatIcons up to date
 
   const families = React.useMemo(() => buildFamilies(drinks, ratings), [drinks, ratings]);
   const cats = React.useMemo(() => computeCategoryStats(categories, families), [categories, families]);
@@ -133,19 +134,37 @@ function CategoryCard({ cat, onClick, onEdit }) {
   );
 }
 function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat }) {
-  // Group families by (name + alcohol) so identical drinks collapse into one row
-  const grouped = [];
-  const seen = new Map();
+  // Sort families: identical-name groups stay contiguous, ordered by
+  // total entries inside the group, then by quantity asc inside each
+  // group. We keep one line per (name, qty, unit, abv) variant so the
+  // user can add each individually. Variants share a `groupKey` so
+  // FamilyRow can render the stacked-card visual cue.
+  const groupEntries = new Map(); // name → total entries (for sort)
+  const variantCounts = new Map(); // name → number of variant rows
   for (const f of families) {
-    const key = `${f.name.trim().toLowerCase()}::${f.alcohol}`;
-    if (seen.has(key)) {
-      const idx = seen.get(key);
-      grouped[idx].dupes.push(f);
-      grouped[idx].totalEntries += f.entries.length;
-    } else {
-      seen.set(key, grouped.length);
-      grouped.push({ ...f, dupes: [], totalEntries: f.entries.length });
-    }
+    const k = (f.name || '').trim().toLowerCase();
+    groupEntries.set(k, (groupEntries.get(k) || 0) + f.entries.length);
+    variantCounts.set(k, (variantCounts.get(k) || 0) + 1);
+  }
+  const sorted = [...families].sort((a, b) => {
+    const ka = (a.name || '').trim().toLowerCase();
+    const kb = (b.name || '').trim().toLowerCase();
+    const ga = groupEntries.get(ka) || 0;
+    const gb = groupEntries.get(kb) || 0;
+    if (gb !== ga) return gb - ga;
+    if (ka !== kb) return ka.localeCompare(kb);
+    if ((a.alcohol || 0) !== (b.alcohol || 0)) return (a.alcohol || 0) - (b.alcohol || 0);
+    return (a.quantity || 0) - (b.quantity || 0);
+  });
+
+  // Build per-row metadata: position within the same-name group.
+  const rows = [];
+  let prevKey = null, idx = 0;
+  for (const f of sorted) {
+    const key = (f.name || '').trim().toLowerCase();
+    if (key !== prevKey) idx = 0;
+    rows.push({ f, key, idx: idx++, total: variantCounts.get(key) || 1 });
+    prevKey = key;
   }
 
   return (
@@ -177,14 +196,17 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
         letterSpacing: -0.8, lineHeight: 1, marginBottom: 4,
       }}>{category}</div>
       <div style={{ color: T.muted, fontSize: 12, marginBottom: 18, letterSpacing: 0.1 }}>
-        {grouped.length} type{grouped.length !== 1 ? 's' : ''} ·
+        {sorted.length} variante{sorted.length !== 1 ? 's' : ''} ·
         {' '}{families.reduce((s, f) => s + f.entries.length, 0)} entrées au total
       </div>
 
-      {grouped.map(f => <FamilyRow key={f.id} family={f}
-        onClick={() => onOpen(f)} onDirectAdd={onDirectAdd} />)}
+      {rows.map(({ f, idx, total }) => (
+        <FamilyRow key={f.id} family={f}
+          variantIndex={idx} variantCount={total}
+          onClick={() => onOpen(f)} onDirectAdd={onDirectAdd} />
+      ))}
 
-      {grouped.length === 0 && (
+      {rows.length === 0 && (
         <div style={{ color: T.muted, fontSize: 13, padding: '40px 0', textAlign: 'center' }}>
           Aucun résultat
         </div>
@@ -193,64 +215,52 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
   );
 }
 
-function FamilyRow({ family: f, onClick, onDirectAdd }) {
+function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onClick, onDirectAdd }) {
   const color = catColor(f.category, 70);
-  const totalEntries = f.totalEntries !== undefined ? f.totalEntries : f.entries.length;
-  const dupeCount = (f.dupes ? f.dupes.length : 0) + 1;
-  const lastTs = f.entries[0]?.ts;
-  const lastStr = lastTs ? fmtDateShort(lastTs) : '—';
+  const totalEntries = f.entries.length;
+  // The number of units (verres standard) per drink — surfaced left of
+  // the plus button in saturated orange so it pops out of the row.
+  const units = unitsAlcohol(f.quantity, f.unit, f.alcohol);
+  const unitsStr = units >= 10 ? units.toFixed(0)
+                 : units >= 1  ? units.toFixed(1)
+                              : units.toFixed(2);
+  const orange = T.isDark ? 'oklch(70% 0.18 55)' : 'oklch(50% 0.18 50)';
+  const isFirstOfGroup = variantIndex === 0;
+  const isLastOfGroup  = variantIndex === variantCount - 1;
+  // Top margin: keep the visible vertical rhythm between groups, but
+  // attach variants of the same drink as a stacked card.
+  const topMargin = isFirstOfGroup ? 8 : 0;
   return (
     <div {...clickable(onClick, `Voir les détails de ${f.name}`)} style={{
       display: 'flex', alignItems: 'center', gap: 14,
-      padding: '14px 14px', background: T.surface, borderRadius: 14,
-      border: `1px solid ${T.rule}`, marginBottom: 8, cursor: 'pointer',
-      position: 'relative',
+      padding: '14px 14px', background: T.surface,
+      borderRadius: variantCount > 1
+        ? `${isFirstOfGroup ? 14 : 0}px ${isFirstOfGroup ? 14 : 0}px ${isLastOfGroup ? 14 : 0}px ${isLastOfGroup ? 14 : 0}px`
+        : 14,
+      border: `1px solid ${T.rule}`,
+      borderTop: !isFirstOfGroup ? `1px dashed ${T.rule}` : `1px solid ${T.rule}`,
+      borderBottom: !isLastOfGroup ? 'none' : `1px solid ${T.rule}`,
+      marginTop: topMargin,
+      marginBottom: isLastOfGroup ? 8 : 0,
+      cursor: 'pointer', position: 'relative',
     }}>
-      {dupeCount > 1 && (
-        <>
-          <div style={{
-            position: 'absolute', inset: '-3px 8px auto 8px', height: 6,
-            background: T.surface, borderRadius: '14px 14px 0 0',
-            borderTop: `1px solid ${T.rule}`,
-            borderLeft: `1px solid ${T.rule}`,
-            borderRight: `1px solid ${T.rule}`,
-            zIndex: -1,
-            opacity: 0.6,
-          }}/>
-          <div style={{
-            position: 'absolute', inset: '-6px 16px auto 16px', height: 6,
-            background: T.surface, borderRadius: '14px 14px 0 0',
-            borderTop: `1px solid ${T.rule}`,
-            borderLeft: `1px solid ${T.rule}`,
-            borderRight: `1px solid ${T.rule}`,
-            zIndex: -2,
-            opacity: 0.3,
-          }}/>
-        </>
-      )}
       <div style={{
         width: 40, height: 40, borderRadius: 12, background: catBg(f.category),
         display: 'grid', placeItems: 'center', color,
         flexShrink: 0, position: 'relative',
       }}>
         <CategoryGlyph name={f.category} />
-        {dupeCount > 1 && (
-          <div style={{
-            position: 'absolute', top: -6, right: -6,
-            minWidth: 18, height: 18, padding: '0 5px',
-            borderRadius: 9, background: T.accent,
-            color: T.isDark ? T.bg : '#fff',
-            fontSize: 10, fontWeight: 600, fontFamily: fontNum,
-            display: 'grid', placeItems: 'center',
-            border: `2px solid ${T.surface}`,
-          }}>×{dupeCount}</div>
-        )}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontSize: 14.5, color: T.ink, fontWeight: 500, letterSpacing: -0.2,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>{f.name}</div>
+        }}>{f.name}{variantCount > 1 && (
+          <span style={{
+            marginLeft: 8, fontSize: 10, color: T.muted, fontFamily: fontNum,
+            letterSpacing: 0.4, fontWeight: 400,
+          }}>{variantIndex + 1}/{variantCount}</span>
+        )}</div>
         <div style={{
           color: T.muted, fontSize: 11.5, marginTop: 3, letterSpacing: 0.1,
           display: 'flex', gap: 6, alignItems: 'center',
@@ -262,14 +272,19 @@ function FamilyRow({ family: f, onClick, onDirectAdd }) {
           <span>{totalEntries}×</span>
         </div>
       </div>
-      <div style={{ textAlign: 'right', marginRight: 4 }}>
+      <div title={`${unitsStr} unité${units > 1 ? 's' : ''} d'alcool par boisson`} style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
+        marginRight: 6,
+      }}>
         <div style={{
-          fontFamily: fontSerif, fontStyle: 'italic', fontSize: 13,
-          color: T.ink2,
-        }}>{lastStr}</div>
-        <div style={{ color: T.muted, fontSize: 9.5, letterSpacing: 0.3, marginTop: 2 }}>
-          dernière
-        </div>
+          fontFamily: fontNum, fontSize: 16, fontWeight: 700,
+          color: orange, letterSpacing: -0.2, lineHeight: 1,
+          fontVariantNumeric: 'tabular-nums',
+        }}>{unitsStr}</div>
+        <div style={{
+          color: T.muted, fontSize: 9, letterSpacing: 0.4, marginTop: 3,
+          textTransform: 'uppercase',
+        }}>U.</div>
       </div>
       <button type="button"
         onClick={(ev) => { ev.stopPropagation(); onDirectAdd && onDirectAdd(f); }}
@@ -281,7 +296,7 @@ function FamilyRow({ family: f, onClick, onDirectAdd }) {
           padding: 0, fontFamily: 'inherit',
         }}
         title="Ajouter à nouveau"
-        aria-label={`Ajouter ${f.name} à nouveau`}
+        aria-label={`Ajouter ${f.name} (${f.quantity} ${f.unit}, ${f.alcohol}°) à nouveau`}
       >
         <SvgIcon icon={Ic.plus} size={14} />
       </button>
@@ -289,11 +304,27 @@ function FamilyRow({ family: f, onClick, onDirectAdd }) {
   );
 }
 function EditCategorySheet({ category, onClose }) {
+  const { categories } = useCategories();
+  const { drinks } = useDrinks();
+  const icons = useCategoryIcons();
   const [name, setName] = React.useState(category);
-  const [glyph, setGlyph] = React.useState(category);
+  const initialGlyph = icons[category] || category;
+  const [glyph, setGlyphState] = React.useState(initialGlyph);
+  const userTouchedRef = React.useRef(false);
+  const setGlyph = (g) => { userTouchedRef.current = true; setGlyphState(g); };
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
-  const glyphOptions = ['Bière', 'Vin', 'Spiritueux', 'Cocktail', 'Autre'];
+
+  // If the persisted icon loads after this sheet mounts and the user
+  // hasn't touched the picker yet, adopt the persisted value.
+  React.useEffect(() => {
+    if (!userTouchedRef.current && icons[category]) {
+      setGlyphState(icons[category]);
+    }
+  }, [icons, category]);
+
+  const drinksInCat = drinks.filter(d => (d.category || '') === category).length;
+  const catObj = categories.find(c => c.name === category);
 
   const save = async () => {
     setErr('');
@@ -301,13 +332,58 @@ function EditCategorySheet({ category, onClose }) {
     if (!trimmed) { setErr('Le nom ne peut pas être vide'); return; }
     setBusy(true);
     try {
+      let finalName = category;
       if (trimmed !== category) {
         await renameCategory(category, trimmed);
-        Toast.show(`Catégorie « ${trimmed} » mise à jour`);
+        finalName = trimmed;
       }
+      // Persist the icon override, even if it equals the category name
+      // (`null` clears the override so future renames just track the name).
+      const iconValue = glyph && glyph !== finalName ? glyph : null;
+      await setCategoryIcon(finalName, iconValue);
+      Toast.show(`Catégorie « ${finalName} » mise à jour`);
       onClose && onClose();
     } catch (e) {
       setErr(e && e.message ? e.message : 'Erreur lors de l\'enregistrement');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!catObj) return;
+    let reassignTo = null;
+    if (drinksInCat > 0) {
+      const others = categories.filter(c => c.name !== category);
+      const fallback = others.find(c => c.name === 'Autre') || others[0];
+      if (!fallback) {
+        setErr('Impossible : créez d\'abord une autre catégorie pour y déplacer les boissons.');
+        return;
+      }
+      const ok = await Confirm.ask({
+        title: `Supprimer « ${category} » ?`,
+        message: `${drinksInCat} boisson${drinksInCat > 1 ? 's' : ''} sera${drinksInCat > 1 ? 'ont' : ''} déplacée${drinksInCat > 1 ? 's' : ''} dans « ${fallback.name} ». Cette action est irréversible.`,
+        confirmText: 'Supprimer',
+        danger: true,
+      });
+      if (!ok) return;
+      reassignTo = fallback.name;
+    } else {
+      const ok = await Confirm.ask({
+        title: `Supprimer « ${category} » ?`,
+        message: 'Cette action est irréversible.',
+        confirmText: 'Supprimer',
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    setBusy(true);
+    try {
+      await deleteCategory(catObj.id, { reassignTo, name: category });
+      Toast.show(`Catégorie supprimée`);
+      onClose && onClose();
+    } catch (e) {
+      setErr(e && e.message ? e.message : 'Erreur lors de la suppression');
     } finally {
       setBusy(false);
     }
@@ -322,6 +398,7 @@ function EditCategorySheet({ category, onClose }) {
         borderLeft: `1px solid ${T.rule}`,
         borderRight: `1px solid ${T.rule}`,
         animation: 'slideUp 0.25s ease',
+        overflowX: 'hidden',
       }}>
         <div style={{ display: 'grid', placeItems: 'center', paddingBottom: 10 }}>
           <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }}/>
@@ -347,19 +424,25 @@ function EditCategorySheet({ category, onClose }) {
           color: T.muted, fontSize: 10, letterSpacing: 1.2,
           textTransform: 'uppercase', marginBottom: 8,
         }}>Icône</div>
-        <div style={{ display: 'flex', gap: 10, marginBottom: 22, flexWrap: 'wrap' }}>
-          {glyphOptions.map(g => (
-            <div key={g} onClick={() => setGlyph(g)} style={{
-              width: 48, height: 48, borderRadius: 12,
-              background: glyph === g ? catBg(g) : T.surface2,
-              border: `1px solid ${glyph === g ? catColor(g, 60) : T.rule}`,
-              display: 'grid', placeItems: 'center',
-              color: glyph === g ? catColor(g, 75) : T.ink2,
-              cursor: 'pointer',
-            }}>
-              <CategoryGlyph name={g} />
-            </div>
-          ))}
+        <div role="radiogroup" aria-label="Icône de catégorie"
+          style={{ display: 'flex', gap: 10, marginBottom: 22, flexWrap: 'wrap' }}>
+          {GLYPH_OPTIONS.map(g => {
+            const selected = glyph === g;
+            return (
+              <button key={g} type="button" role="radio" aria-checked={selected}
+                aria-label={`Icône ${g}`}
+                onClick={() => setGlyph(g)} style={{
+                width: 52, height: 52, borderRadius: 12,
+                background: selected ? catBg(g) : T.surface2,
+                border: `1px solid ${selected ? catColor(g, 60) : T.rule}`,
+                display: 'grid', placeItems: 'center',
+                color: selected ? catColor(g, 75) : T.ink2,
+                cursor: 'pointer', padding: 0, fontFamily: 'inherit',
+              }}>
+                <CategoryGlyph glyph={g} />
+              </button>
+            );
+          })}
         </div>
 
         {err && (
@@ -378,6 +461,21 @@ function EditCategorySheet({ category, onClose }) {
           opacity: busy ? 0.5 : 1, border: 'none', fontFamily: 'inherit',
           boxShadow: `0 4px 18px ${T.accent}60`,
         }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
+
+        <button type="button" onClick={busy ? undefined : remove} disabled={busy} style={{
+          width: '100%',
+          marginTop: 12, padding: '12px', textAlign: 'center', borderRadius: 12,
+          background: 'oklch(35% 0.10 25 / 0.15)',
+          color: T.accent2,
+          border: '1px solid oklch(45% 0.15 25 / 0.4)',
+          fontSize: 12.5, fontWeight: 500, cursor: busy ? 'wait' : 'pointer',
+          opacity: busy ? 0.5 : 1, display: 'flex',
+          alignItems: 'center', justifyContent: 'center', gap: 6,
+          fontFamily: 'inherit',
+        }}>
+          <SvgIcon icon={Ic.trash} size={13} />
+          Supprimer la catégorie
+        </button>
       </div>
     </SheetOverlay>
   );

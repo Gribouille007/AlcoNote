@@ -210,8 +210,24 @@ function StatsTab() {
     return { start, end: range.end };
   }, [period, range, drinks]);
 
+  // Previous-period range, used to compute Δ% indicators on the
+  // headline cards. For 'all' there's no meaningful previous range.
+  const prevRange = React.useMemo(() => {
+    if (period === 'all') return null;
+    const prevAnchor = shiftAnchor(period, anchor, -1);
+    return getPeriodRange(period, prevAnchor);
+  }, [period, anchor]);
+
   const inRange = React.useMemo(() => filterDrinksInRange(drinks, allRange.start, allRange.end), [drinks, allRange]);
-  const sp = { collapsed, toggleSection, period, drinks: inRange, allDrinks: drinks, settings, range: allRange };
+  const inPrevRange = React.useMemo(
+    () => prevRange ? filterDrinksInRange(drinks, prevRange.start, prevRange.end) : null,
+    [drinks, prevRange]
+  );
+  const sp = {
+    collapsed, toggleSection, period, drinks: inRange, allDrinks: drinks,
+    prevDrinks: inPrevRange, prevRange,
+    settings, range: allRange, anchor,
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -223,6 +239,7 @@ function StatsTab() {
         <CategorySection {...sp} />
         <TopDrinksSection {...sp} />
         <BACSection {...sp} />
+        <MapSection {...sp} />
         <TrendsSection {...sp} />
         <AdvancedSection {...sp} />
       </div>
@@ -281,7 +298,7 @@ function PeriodNav({ period, anchor, onShift }) {
         fontStyle: 'italic', letterSpacing: -0.3, textAlign: 'center', flex: 1,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>{label}</div>
-      {arrowBtn(Ic.chev, 1, 'Période suivante')}
+      {arrowBtn(Ic.chevR, 1, 'Période suivante')}
     </div>
   );
 }
@@ -338,34 +355,73 @@ function Card({ children, style, ...rest }) {
   );
 }
 // ── 1. Général ────────────────────────────────────────────────────
-function GeneralSection({ drinks, period, range, collapsed, toggleSection }) {
+function GeneralSection({ drinks, prevDrinks, prevRange, period, range, collapsed, toggleSection }) {
   const agg = React.useMemo(() => aggregateGeneral(drinks), [drinks]);
+  const hasPrev = prevDrinks != null && prevRange != null;
+  const prevAgg = React.useMemo(() => aggregateGeneral(hasPrev ? prevDrinks : []), [prevDrinks, hasPrev]);
   const sessions = React.useMemo(() => computeSessions(drinks), [drinks]);
+  const prevSessions = React.useMemo(() => computeSessions(hasPrev ? prevDrinks : []), [prevDrinks, hasPrev]);
   const days = Math.max(1, Math.round((range.end - range.start) / 86400000) + 1);
+  const prevDays = hasPrev
+    ? Math.max(1, Math.round((prevRange.end - prevRange.start) / 86400000) + 1)
+    : 0;
+  // Sober-day count: only consider days from `range.start` up to `min(today, range.end)`,
+  // so future days within the period don't inflate the count.
+  const today = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const sober = (() => {
     const drinkDays = new Set(drinks.map(d => d.date));
+    const lastInclusive = range.end < today ? range.end : today;
+    if (lastInclusive < range.start) return 0;
     let count = 0;
-    for (let i = 0; i < days; i++) {
-      const d = new Date(range.start); d.setDate(d.getDate() + i);
+    for (let d = new Date(range.start); d <= lastInclusive; d = _addDays(d, 1)) {
       if (!drinkDays.has(_fmtIso(d))) count++;
     }
     return count;
   })();
+  // Same calculation, but the previous period's window is fully past
+  // so we always go to its real end.
+  const prevSober = hasPrev ? (() => {
+    const drinkDays = new Set(prevDrinks.map(d => d.date));
+    let count = 0;
+    for (let d = new Date(prevRange.start); d <= prevRange.end; d = _addDays(d, 1)) {
+      if (!drinkDays.has(_fmtIso(d))) count++;
+    }
+    return count;
+  })() : null;
+
+  // Δ% helper — `null` baseline means we don't show a badge (e.g. no
+  // previous period or it had zero of this metric).
+  const pctChange = (cur, prev) => {
+    if (prev == null || prev === 0) return null;
+    return ((cur - prev) / prev) * 100;
+  };
 
   const cards = [
-    { v: agg.count, l: 'Boissons' },
-    { v: sessions.length, l: 'Sessions', tip: 'Regroupées si < 4h' },
-    { v: `${(agg.volumeCl / 100).toFixed(1)}L`, l: 'Volume' },
-    { v: `${Math.round(agg.grams)}g`, l: 'Alcool pur' },
-    { v: agg.uniqueCount, l: 'Boissons diff.' },
+    { v: agg.count, l: 'Boissons',
+      delta: pctChange(agg.count, prevAgg.count), better: 'down' },
+    { v: sessions.length, l: 'Sessions', tip: 'Regroupées si < 4h',
+      delta: pctChange(sessions.length, prevSessions.length), better: 'down' },
+    { v: `${(agg.volumeCl / 100).toFixed(1)}L`, l: 'Volume',
+      delta: pctChange(agg.volumeCl, prevAgg.volumeCl), better: 'down' },
+    { v: `${Math.round(agg.grams)}g`, l: 'Alcool pur',
+      delta: pctChange(agg.grams, prevAgg.grams), better: 'down' },
+    { v: agg.uniqueCount, l: 'Boissons diff.',
+      delta: pctChange(agg.uniqueCount, prevAgg.uniqueCount), better: 'up' },
   ];
   if (period === 'week' || period === 'month' || period === 'year' || period === 'school') {
-    cards.push({ v: sober, l: 'Jours sobres' });
-    cards.push({ v: (agg.count / days).toFixed(1), l: 'Boissons/jour' });
+    cards.push({ v: sober, l: 'Jours sobres',
+      delta: pctChange(sober, prevSober),
+      better: 'up' });
+    cards.push({ v: (agg.count / days).toFixed(1), l: 'Boissons/jour',
+      delta: pctChange(agg.count / days, prevDays ? prevAgg.count / prevDays : null),
+      better: 'down' });
   }
   if (period === 'month' || period === 'year' || period === 'school') {
     const weeks = Math.max(1, days / 7);
-    cards.push({ v: (agg.count / weeks).toFixed(1), l: 'Boissons/sem.' });
+    const prevWeeks = prevDays ? Math.max(1, prevDays / 7) : 0;
+    cards.push({ v: (agg.count / weeks).toFixed(1), l: 'Boissons/sem.',
+      delta: pctChange(agg.count / weeks, prevWeeks ? prevAgg.count / prevWeeks : null),
+      better: 'down' });
   }
 
   const catDist = Object.entries(agg.byCategory).map(([name, v]) => ({ name, v }));
@@ -379,6 +435,8 @@ function GeneralSection({ drinks, period, range, collapsed, toggleSection }) {
           <div key={i} style={{
             background: T.surface, borderRadius: 14, padding: '12px 10px',
             border: `1px solid ${T.rule}`, position: 'relative',
+            display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+            minHeight: 64,
           }}>
             <div style={{
               fontFamily: fontSerif, fontSize: 22, color: T.ink,
@@ -388,6 +446,9 @@ function GeneralSection({ drinks, period, range, collapsed, toggleSection }) {
               color: T.muted, fontSize: 9.5, marginTop: 5, letterSpacing: 0.3,
               textTransform: 'uppercase', lineHeight: 1.2,
             }}>{c.l}</div>
+            {c.delta != null && period !== 'all' && (
+              <DeltaBadge delta={c.delta} better={c.better} />
+            )}
           </div>
         ))}
       </div>
@@ -477,8 +538,9 @@ function TemporalSection({ drinks, collapsed, toggleSection }) {
         }}>Par heure</div>
         <SvgBarChart
           data={agg.byHour.map((v, h) => ({ v, label: `${h}h` }))}
-          width={320} height={130} color={T.accent}
+          width={320} height={150} color={T.accent}
           formatX={(d, i) => i % 4 === 0 ? d.label : ''}
+          valueLabel="boisson(s)"
         />
       </Card>
 
@@ -486,9 +548,36 @@ function TemporalSection({ drinks, collapsed, toggleSection }) {
         <div style={{
           color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 4, letterSpacing: -0.1,
         }}>Par jour de la semaine</div>
-        <SvgRadar data={dailyData} size={230} color={T.good} />
+        <SvgRadar data={dailyData} size={250} color={T.good} valueLabel="boisson(s)" />
       </Card>
     </StatSection>
+  );
+}
+
+// `better: 'down'` → red on rise / green on fall (e.g. consumption metrics).
+// `better: 'up'`   → green on rise / red on fall (e.g. dry-day count).
+function DeltaBadge({ delta, better = 'down' }) {
+  if (delta == null || !isFinite(delta)) return null;
+  const rising = delta > 0;
+  const flat = Math.abs(delta) < 0.5;
+  const goodWhenUp = better === 'up';
+  const positive = flat ? null : (rising ? goodWhenUp : !goodWhenUp);
+  const color = positive == null ? T.muted
+              : positive ? (T.isDark ? 'oklch(72% 0.14 155)' : 'oklch(45% 0.13 155)')
+                         : (T.isDark ? 'oklch(70% 0.18 30)'  : 'oklch(50% 0.18 30)');
+  const arrow = flat ? '→' : (rising ? '↑' : '↓');
+  const value = `${Math.abs(delta).toFixed(0)}%`;
+  return (
+    <div style={{
+      position: 'absolute', top: 8, right: 8,
+      display: 'flex', alignItems: 'center', gap: 2,
+      color, fontSize: 9, fontFamily: fontNum, fontWeight: 600,
+      background: T.surface2, padding: '1px 5px', borderRadius: 6,
+      border: `1px solid ${T.rule}`,
+      letterSpacing: 0,
+    }} aria-label={`${rising ? 'hausse' : 'baisse'} de ${value} vs période précédente`}>
+      <span style={{ fontSize: 10 }}>{arrow}</span>{value}
+    </div>
   );
 }
 
@@ -664,42 +753,63 @@ function TopDrinksSection({ drinks, collapsed, toggleSection }) {
   );
 }
 // ── 5. Alcoolémie (BAC + records) ────────────────────────────────
-// Widmark BAC computation. weight in kg, gender 'male'|'female'.
+// Widmark BAC computation.
+//   bac(t) = 10 · (Σ grams_absorbed_by_t) / (weight·r) − elimRate·(t − t_first_drink)
+// where 0.789 g/mL is ethanol density and `r` is Widmark's distribution
+// factor. Each drink absorbs linearly over `absorpHours` (default 0.5 h)
+// then contributes its full mass; elimination is a constant rate, NOT
+// dose-dependent.
 function computeBacOverTime(drinks, weight, gender) {
-  // Returns array of { t: hours-from-now, bac: mg/L }
   const r = gender === 'female' ? 0.55 : 0.68;
-  const w = weight || 70; // fallback
-  const elimRate = 150; // mg/L/h elimination
-  const absorpHours = 0.5; // half-hour to reach peak
+  const w = weight || 70;
+  const elimRate = 150; // mg/L/h elimination, ~ standard Widmark β
+  const absorpHours = 0.5;
   const now = Date.now();
+  const lookback = 24 * 3600_000;
   const recent = drinks
     .filter(d => d.date && d.time)
     .map(d => ({ ...d, _ts: new Date(`${d.date}T${d.time}`).getTime() }))
-    .filter(d => (now - d._ts) <= 12 * 3600_000 && d._ts <= now)
+    .filter(d => d._ts <= now && (now - d._ts) <= lookback)
     .sort((a, b) => a._ts - b._ts);
 
-  if (recent.length === 0) return { points: [], current: 0, drinks: [] };
+  if (recent.length === 0) return { points: [], current: 0, drinks: [], elimRate, absorpHours };
 
+  // Mass absorbed by hour h (relative to "now") for drink i.
   const grams = recent.map(d => toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789);
-  const startHours = recent.map(d => (now - d._ts) / 3600_000); // hours ago
+  const tStart = recent.map(d => (d._ts - now) / 3600_000); // negative hours
 
-  function bacAt(hoursFromNow) {
-    let total = 0;
+  function bacAt(h) {
+    // Total absorbed alcohol at time `h` (h=0 is now, positive = future)
+    let absorbed = 0;
+    let earliest = +Infinity;
     for (let i = 0; i < recent.length; i++) {
-      const tSinceDrink = startHours[i] + hoursFromNow; // hours since the drink at t=hoursFromNow
-      if (tSinceDrink < 0) continue;
-      const fullBac = (grams[i] * 1000) / (w * r * 10); // mg/L (=mg/dL*10)
-      let factor;
-      if (tSinceDrink < absorpHours) factor = tSinceDrink / absorpHours;
-      else factor = Math.max(0, 1 - elimRate * (tSinceDrink - absorpHours) / Math.max(1, fullBac));
-      total += Math.max(0, fullBac * factor);
+      const since = h - tStart[i]; // hours after this drink
+      if (since <= 0) continue;
+      earliest = Math.min(earliest, tStart[i]);
+      const frac = since >= absorpHours ? 1 : (since / absorpHours);
+      absorbed += grams[i] * frac;
     }
-    return Math.max(0, total);
+    if (absorbed <= 0) return 0;
+    // Bac in mg/L. Widmark output is ‰ (per-mil); ×100 → mg/dL; ×10 → mg/L.
+    const peak = (absorbed * 1000) / (w * r); // mg/L if no elimination
+    // Elimination since first drink, capped at "since first drink" — but
+    // we cap further at the time since absorption started so we never
+    // subtract for periods where no alcohol was metabolised yet.
+    const elimDuration = Math.max(0, h - earliest);
+    const eliminated = elimDuration * elimRate;
+    return Math.max(0, peak - eliminated);
   }
 
+  // Sample from one hour before the first drink to twelve hours ahead,
+  // every 5 minutes, so the scrubber feels smooth.
+  const tMin = Math.min(0, tStart[0] - 0.25);
+  const tMax = 12;
+  const step = 5 / 60;
   const pts = [];
-  for (let t = -1; t <= 8; t += 0.25) pts.push({ t, bac: Math.round(bacAt(t)) });
-  return { points: pts, current: Math.round(bacAt(0)), drinks: recent };
+  for (let t = tMin; t <= tMax + 1e-6; t += step) {
+    pts.push({ t: +t.toFixed(3), bac: Math.round(bacAt(t)) });
+  }
+  return { points: pts, current: Math.round(bacAt(0)), drinks: recent, elimRate, absorpHours };
 }
 
 function BACSection({ drinks, allDrinks, settings, collapsed, toggleSection }) {
@@ -730,12 +840,21 @@ function BACSection({ drinks, allDrinks, settings, collapsed, toggleSection }) {
     hoursAgo: ((Date.now() - new Date(`${d.date}T${d.time}`).getTime()) / 3600_000).toFixed(1),
   }));
 
-  const sortedRecords = [...records].sort((a, b) => b.bacValue - a.bacValue);
+  // Cap the displayed records at 3 highest values to keep the section
+  // focused on milestones rather than a long history.
+  const sortedRecords = [...records].sort((a, b) => b.bacValue - a.bacValue).slice(0, 3);
   const highest = sortedRecords[0];
   const others = sortedRecords.slice(1);
 
-  const onDelete = async (id) => {
-    try { await window.dbManager.deleteBACRecord(id); window.dataBus && window.dataBus.bump(); } catch {}
+  const onDelete = async (record) => {
+    const ok = await Confirm.ask({
+      title: 'Supprimer ce record ?',
+      message: `Le pic à ${record.bacValue} mg/L sera retiré.`,
+      confirmText: 'Supprimer',
+      danger: true,
+    });
+    if (!ok) return;
+    try { await window.dbManager.deleteBACRecord(record.id); window.dataBus && window.dataBus.bump(); } catch {}
   };
 
   return (
@@ -791,10 +910,10 @@ function BACSection({ drinks, allDrinks, settings, collapsed, toggleSection }) {
           <div style={{
             color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 8, letterSpacing: -0.1,
           }}>Projection d'alcoolémie</div>
-          <SvgBACProjection points={bacInfo.points} width={320} height={130} now={0} />
+          <SvgBACProjection points={bacInfo.points} width={320} height={150} now={0} />
           <div style={{
             color: T.muted, fontSize: 10, marginTop: 6, fontStyle: 'italic', fontFamily: fontSerif,
-          }}>Glissez pour voir le taux à un moment précis</div>
+          }}>Glissez le doigt sur le graphe pour voir le taux à un moment précis</div>
         </Card>
       )}
 
@@ -880,7 +999,7 @@ function BACGauge({ bac, level }) {
 }
 
 function BACRecordRow({ record, isHighest, onDelete }) {
-  const [swiped, setSwiped] = React.useState(false);
+  const swipe = useSwipeToDelete(() => onDelete && onDelete(record), 96);
   const level = bacLevel(record.bacValue);
   const d = new Date(record.timestamp || record.date);
   const today = new Date();
@@ -896,20 +1015,22 @@ function BACRecordRow({ record, isHighest, onDelete }) {
         position: 'absolute', inset: 0, background: 'oklch(45% 0.18 25)',
         display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
         paddingRight: 20, color: '#fff', fontSize: 12, fontWeight: 500, gap: 8,
+        cursor: 'pointer',
       }}
-        onClick={() => onDelete(record.id)}>
+        onClick={() => onDelete && onDelete(record)}>
         <SvgIcon icon={Ic.trash} size={16} />
         <span>Supprimer</span>
       </div>
       <div
-        onClick={() => setSwiped(s => !s)}
+        {...swipe.handlers}
         style={{
           position: 'relative', background: T.surface, borderRadius: 14,
           border: `1px solid ${isHighest ? level.color : T.rule}`,
           padding: '10px 12px',
           display: 'flex', alignItems: 'center', gap: 12,
-          cursor: 'pointer', transition: 'transform 0.2s ease',
-          transform: swiped ? 'translateX(-96px)' : 'translateX(0)',
+          transform: `translateX(${swipe.offset}px)`,
+          transition: swipe.dragging ? 'none' : 'transform 0.22s ease',
+          touchAction: 'pan-y',
           boxShadow: isHighest ? `0 0 0 1px ${level.color}40, 0 4px 12px ${level.color}20` : 'none',
         }}>
         <div style={{
@@ -940,7 +1061,174 @@ function BACRecordRow({ record, isHighest, onDelete }) {
     </div>
   );
 }
-// ── 6. Évolution mensuelle ────────────────────────────────────────
+// ── 6. Carte des lieux ────────────────────────────────────────────
+// Renders a Leaflet map with one marker per geolocated drink in the
+// selected period. We dynamically inject the Leaflet CSS+JS once
+// (avoiding the cost on devices that never reach the stats tab) and
+// rebuild the map whenever the underlying drink list changes.
+function MapSection({ drinks, collapsed, toggleSection }) {
+  const isOpen = !collapsed.has('map');
+  const containerRef = React.useRef(null);
+  const mapRef = React.useRef(null);
+  const [ready, setReady] = React.useState(typeof window !== 'undefined' && !!window.L);
+  const [error, setError] = React.useState(null);
+
+  // Drinks with valid coordinates (top-level or nested in `location`).
+  const geoDrinks = React.useMemo(() => drinks.filter(d => {
+    const lat = d.latitude ?? d.location?.latitude;
+    const lng = d.longitude ?? d.location?.longitude;
+    return Number.isFinite(parseFloat(lat)) && Number.isFinite(parseFloat(lng));
+  }), [drinks]);
+
+  // Lazy-load Leaflet on first open of this section.
+  React.useEffect(() => {
+    if (!isOpen || ready) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        if (!document.getElementById('alco-leaflet-css')) {
+          const css = document.createElement('link');
+          css.id = 'alco-leaflet-css';
+          css.rel = 'stylesheet';
+          css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+          css.crossOrigin = '';
+          document.head.appendChild(css);
+        }
+        if (!window.L) {
+          await new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.id = 'alco-leaflet-js';
+            s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+            s.crossOrigin = '';
+            s.onload = resolve;
+            s.onerror = reject;
+            document.head.appendChild(s);
+          });
+        }
+        if (!cancelled) setReady(true);
+      } catch (e) {
+        if (!cancelled) setError('Carte indisponible (réseau ?)');
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [isOpen, ready]);
+
+  // Build / refresh the map whenever data or readiness changes.
+  React.useEffect(() => {
+    if (!isOpen || !ready || !containerRef.current) return;
+    const L = window.L;
+    if (!L || typeof L.map !== 'function') return;
+    // Always reset the container so React re-mounts (e.g. switching
+    // tabs) doesn't end up with a "Map container is already
+    // initialized" error from Leaflet.
+    if (mapRef.current) {
+      try { mapRef.current.remove(); } catch {}
+      mapRef.current = null;
+    }
+    if (geoDrinks.length === 0) return;
+    const points = geoDrinks.map(d => ({
+      lat: parseFloat(d.latitude ?? d.location.latitude),
+      lng: parseFloat(d.longitude ?? d.location.longitude),
+      d,
+    }));
+    const bounds = points.reduce(
+      (b, p) => [
+        [Math.min(b[0][0], p.lat), Math.min(b[0][1], p.lng)],
+        [Math.max(b[1][0], p.lat), Math.max(b[1][1], p.lng)],
+      ],
+      [[points[0].lat, points[0].lng], [points[0].lat, points[0].lng]]
+    );
+    const m = L.map(containerRef.current, {
+      attributionControl: false,
+      zoomControl: true,
+      preferCanvas: true,
+    });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '© OpenStreetMap',
+    }).addTo(m);
+    L.control.attribution({ position: 'bottomright', prefix: false })
+      .addAttribution('© OSM').addTo(m);
+    // Build popup content as DOM nodes so user-controlled fields
+    // (drink name, location label) cannot inject HTML.
+    const popupNode = (p) => {
+      const wrap = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = p.d.name || '';
+      wrap.appendChild(title);
+      wrap.appendChild(document.createElement('br'));
+      const meta = document.createElement('span');
+      meta.textContent = `${p.d.date || ''} · ${p.d.time || ''}`;
+      wrap.appendChild(meta);
+      const where = p.d.location?.name || p.d.location?.address || '';
+      if (where) {
+        wrap.appendChild(document.createElement('br'));
+        const place = document.createElement('span');
+        place.textContent = where;
+        wrap.appendChild(place);
+      }
+      return wrap;
+    };
+    for (const p of points) {
+      L.circleMarker([p.lat, p.lng], {
+        radius: 7, weight: 2,
+        color: 'rgba(180,90,40,0.95)',
+        fillColor: 'rgba(220,140,70,0.85)', fillOpacity: 0.85,
+      })
+      .bindPopup(popupNode(p))
+      .addTo(m);
+    }
+    if (points.length === 1) {
+      m.setView([points[0].lat, points[0].lng], 14);
+    } else {
+      m.fitBounds(bounds, { padding: [16, 16], maxZoom: 14 });
+    }
+    mapRef.current = m;
+    // Leaflet sometimes lays out before the container has its final
+    // height (when the section was just expanded); kick it once.
+    const id = setTimeout(() => { try { m.invalidateSize(); } catch {} }, 60);
+    return () => {
+      clearTimeout(id);
+      try { m.remove(); } catch {}
+      mapRef.current = null;
+    };
+  }, [isOpen, ready, geoDrinks]);
+
+  return (
+    <StatSection id="map" title="Carte des consommations"
+      sub={`${geoDrinks.length} consommation${geoDrinks.length !== 1 ? 's' : ''} géolocalisée${geoDrinks.length !== 1 ? 's' : ''}`}
+      collapsed={collapsed} toggleSection={toggleSection}>
+      <Card style={{ padding: 8 }}>
+        <div ref={containerRef} style={{
+          width: '100%', height: 260, borderRadius: 12, overflow: 'hidden',
+          background: T.surface2, position: 'relative',
+        }}>
+          {!ready && !error && (
+            <div style={{
+              position: 'absolute', inset: 0, display: 'grid', placeItems: 'center',
+              color: T.muted, fontSize: 11, fontFamily: fontSerif, fontStyle: 'italic',
+            }}>Chargement de la carte…</div>
+          )}
+          {error && (
+            <div style={{
+              position: 'absolute', inset: 0, display: 'grid', placeItems: 'center',
+              color: T.muted, fontSize: 11, padding: 16, textAlign: 'center',
+            }}>{error}</div>
+          )}
+          {ready && geoDrinks.length === 0 && (
+            <div style={{
+              position: 'absolute', inset: 0, display: 'grid', placeItems: 'center',
+              color: T.muted, fontSize: 11, fontFamily: fontSerif, fontStyle: 'italic',
+              textAlign: 'center', padding: 24,
+            }}>Aucune consommation géolocalisée pour cette période</div>
+          )}
+        </div>
+      </Card>
+    </StatSection>
+  );
+}
+
+// ── 7. Évolution mensuelle ────────────────────────────────────────
 function TrendsSection({ allDrinks, collapsed, toggleSection }) {
   const trends = React.useMemo(() => {
     const buckets = {};
@@ -1072,7 +1360,7 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection }) {
         <div style={{
           color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
         }}>Répartition sur 24 heures</div>
-        <SvgPolarClock hours={agg.byHour} size={240} />
+        <SvgPolarClock hours={agg.byHour} size={260} />
       </Card>
 
       <Card>
@@ -1088,7 +1376,7 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection }) {
             color: T.ink2, fontSize: 10.5, marginBottom: 4, textAlign: 'center',
             letterSpacing: 0.3, textTransform: 'uppercase',
           }}>Durée</div>
-          <SvgHistogram buckets={sessionDuration} width={300} height={140} color={T.accent} />
+          <SvgHistogram buckets={sessionDuration} width={320} height={150} color={T.accent} />
         </div>
       </Card>
     </StatSection>
@@ -1096,8 +1384,8 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection }) {
 }
 
 function RollingChart({ data }) {
-  const width = 320, height = 140;
-  const pad = { t: 8, r: 6, b: 24, l: 26 };
+  const width = 320, height = 160;
+  const pad = { t: 12, r: 10, b: 26, l: 32 };
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
   const max = chartNiceMax(Math.max(1, ...data.flatMap(r => [r.daily, r.r7, r.r30])), 3);
@@ -1109,19 +1397,34 @@ function RollingChart({ data }) {
   const pathR7 = data.map((r, i) => `${i === 0 ? 'M' : 'L'}${xs(i)},${ys(r.r7)}`).join(' ');
   const pathR30 = data.map((r, i) => `${i === 0 ? 'M' : 'L'}${xs(i)},${ys(r.r30)}`).join(' ');
 
+  const svgRef = React.useRef(null);
+  const [hover, setHover] = React.useState(null);
+  const scr = useChartScrubber(svgRef, null, (p) => {
+    if (!p) { setHover(null); return; }
+    const rel = (p.x - pad.l) / w;
+    const i = Math.max(0, Math.min(n - 1, Math.round(rel * (n - 1))));
+    setHover(i);
+  });
+
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} style={{ display: 'block' }}>
+    <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" height={height}
+      style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
       {[0, 0.5, 1].map((f, i) => (
-        <line key={i} x1={pad.l} x2={pad.l + w}
-          y1={pad.t + h * f} y2={pad.t + h * f}
-          stroke={T.rule} strokeDasharray="2 3" strokeWidth={0.6} />
+        <g key={i}>
+          <line x1={pad.l} x2={pad.l + w}
+            y1={pad.t + h * f} y2={pad.t + h * f}
+            stroke={T.rule} strokeDasharray="2 3" strokeWidth={0.6} />
+          <text x={pad.l - 4} y={pad.t + h * f + 3}
+            fontSize={9} fill={T.muted} textAnchor="end" fontFamily={fontNum}>
+            {Math.round(max * (1 - f))}g
+          </text>
+        </g>
       ))}
-      <text x={pad.l - 4} y={pad.t + 4} fontSize={8} fill={T.muted} textAnchor="end" fontFamily={fontNum}>{max}g</text>
-      <text x={pad.l - 4} y={pad.t + h + 3} fontSize={8} fill={T.muted} textAnchor="end" fontFamily={fontNum}>0</text>
       {data.map((r, i) => {
         const bh = (r.daily / max) * h;
         return <rect key={i} x={xs(i) - bw * 0.35} y={pad.t + h - bh}
-          width={bw * 0.7} height={bh} fill={T.accent} opacity={0.25} rx={1} />;
+          width={bw * 0.7} height={bh} fill={T.accent}
+          opacity={hover === i ? 0.55 : 0.25} rx={1} />;
       })}
       <path d={pathR7} fill="none" stroke={T.accent} strokeWidth={2} strokeLinejoin="round" />
       <path d={pathR30} fill="none" stroke={T.ink2} strokeWidth={1.4} strokeDasharray="3 2" strokeLinejoin="round" />
@@ -1131,6 +1434,23 @@ function RollingChart({ data }) {
             fontSize={9} fill={T.muted} textAnchor="middle" fontFamily={fontNum}>{data[i].date}</text>
         )
       ))}
+      {hover != null && (() => {
+        const r = data[hover];
+        const tx = xs(hover);
+        const cy7 = ys(r.r7);
+        return (
+          <>
+            <line x1={tx} x2={tx} y1={pad.t} y2={pad.t + h}
+              stroke={T.ink2} strokeDasharray="2 3" strokeWidth={0.8} opacity={0.7} />
+            <circle cx={tx} cy={ys(r.daily)} r={3} fill={T.accent} />
+            <circle cx={tx} cy={cy7} r={3} fill={T.accent} stroke={T.bg} strokeWidth={1} />
+            <circle cx={tx} cy={ys(r.r30)} r={3} fill={T.ink2} stroke={T.bg} strokeWidth={1} />
+            <ChartTooltip x={tx} y={cy7} width={width}
+              lines={[`${r.date}`, `${Math.round(r.daily)} g brut`,
+                      `${r.r7.toFixed(1)} g · 7j`, `${r.r30.toFixed(1)} g · 30j`]} />
+          </>
+        );
+      })()}
     </svg>
   );
 }
@@ -1150,8 +1470,9 @@ function LegendDot({ color, label, dashed }) {
 Object.assign(window, {
   StatsTab, PeriodSwitcher, PeriodNav,
   GeneralSection, TemporalSection, CategorySection,
-  TopDrinksSection, BACSection, TrendsSection, AdvancedSection,
+  TopDrinksSection, BACSection, MapSection, TrendsSection, AdvancedSection,
   BACGauge, BACRecordRow, bacLevel, BAC_LEVELS,
   RollingChart, LegendDot, MiniStat, StatRow, Card, StatSection,
+  DeltaBadge,
   getPeriodRange, shiftAnchor, periodLabel, computeBacOverTime,
 });
