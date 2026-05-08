@@ -1808,12 +1808,11 @@ function SettingsDrawer({
     });
     if (!ok) return;
     try {
-      await window.dbManager.clearAllData();
-      window.dataBus && window.dataBus.bump();
+      await clearAllData();
       Toast.show('Données effacées');
       onClose && onClose();
     } catch (e) {
-      Toast.show('Erreur');
+      Toast.show('Erreur lors de l\'effacement');
     }
   };
   return /*#__PURE__*/React.createElement(SheetOverlay, {

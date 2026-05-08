@@ -1066,11 +1066,12 @@ function SettingsDrawer({ open, onClose }) {
     });
     if (!ok) return;
     try {
-      await window.dbManager.clearAllData();
-      window.dataBus && window.dataBus.bump();
+      await clearAllData();
       Toast.show('Données effacées');
       onClose && onClose();
-    } catch (e) { Toast.show('Erreur'); }
+    } catch (e) {
+      Toast.show('Erreur lors de l\'effacement');
+    }
   };
 
   return (

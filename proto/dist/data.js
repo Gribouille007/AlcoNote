@@ -374,13 +374,33 @@ async function updateFamily(family, updates) {
 }
 async function deleteFamily(family) {
   const db = await waitForDb();
-  if (!db) return;
+  if (!db) throw new Error('DB indisponible');
   const all = await db.getAllDrinks();
   const matches = all.filter(d => (d.name || '').trim().toLowerCase() === (family.name || '').trim().toLowerCase() && d.quantity === family.quantity && (d.unit || '').toLowerCase() === (family.unit || '').toLowerCase() && (d.alcoholContent || 0) === (family.alcohol || 0));
   for (const m of matches) {
     await db.deleteDrink(m.id);
   }
   dataBus.bump();
+  return matches.length;
+}
+
+// Single BAC record removal -- only the one record, never spreads.
+async function deleteBACRecord(id) {
+  const db = await waitForDb();
+  if (!db) throw new Error('DB indisponible');
+  const r = await db.deleteBACRecord(id);
+  dataBus.bump();
+  return r;
+}
+
+// Wipe entire database (drinks, categories, settings). Caller is
+// responsible for collecting an explicit user confirmation.
+async function clearAllData() {
+  const db = await waitForDb();
+  if (!db) throw new Error('DB indisponible');
+  const r = await db.clearAllData();
+  dataBus.bump();
+  return r;
 }
 Object.assign(window, {
   dataBus,
@@ -406,6 +426,8 @@ Object.assign(window, {
   deleteCategory,
   updateFamily,
   deleteFamily,
+  deleteBACRecord,
+  clearAllData,
   loadCategoryIcons,
   setCategoryIcon
 });
