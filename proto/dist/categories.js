@@ -353,15 +353,8 @@ function FamilyRow({
 }) {
   const color = catColor(f.category, 70);
   const totalEntries = f.entries.length;
-  // The number of units (verres standard) per drink — surfaced left of
-  // the plus button in saturated orange so it pops out of the row.
-  const units = unitsAlcohol(f.quantity, f.unit, f.alcohol);
-  const unitsStr = units >= 10 ? units.toFixed(0) : units >= 1 ? units.toFixed(1) : units.toFixed(2);
-  const orange = T.isDark ? 'oklch(70% 0.18 55)' : 'oklch(50% 0.18 50)';
   const isFirstOfGroup = variantIndex === 0;
   const isLastOfGroup = variantIndex === variantCount - 1;
-  // Top margin: keep the visible vertical rhythm between groups, but
-  // attach variants of the same drink as a stacked card.
   const topMargin = isFirstOfGroup ? 8 : 0;
   return /*#__PURE__*/React.createElement("div", _extends({}, clickable(onClick, `Voir les détails de ${f.name}`), {
     style: {
@@ -431,37 +424,20 @@ function FamilyRow({
     style: {
       opacity: 0.4
     }
-  }, "\xB7"), /*#__PURE__*/React.createElement("span", null, f.alcohol, "\xB0"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      opacity: 0.4
-    }
-  }, "\xB7"), /*#__PURE__*/React.createElement("span", null, totalEntries, "\xD7"))), /*#__PURE__*/React.createElement("div", {
-    title: `${unitsStr} unité${units > 1 ? 's' : ''} d'alcool par boisson`,
-    style: {
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'flex-end',
-      marginRight: 6
-    }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, "\xB7"), /*#__PURE__*/React.createElement("span", null, f.alcohol, "\xB0"))), /*#__PURE__*/React.createElement("div", {
+    "aria-label": `${totalEntries} entrée${totalEntries > 1 ? 's' : ''}`,
     style: {
       fontFamily: fontNum,
-      fontSize: 16,
-      fontWeight: 700,
-      color: orange,
-      letterSpacing: -0.2,
+      fontSize: 14,
+      fontWeight: 600,
+      color: T.ink2,
+      letterSpacing: 0.2,
       lineHeight: 1,
-      fontVariantNumeric: 'tabular-nums'
+      fontVariantNumeric: 'tabular-nums',
+      marginRight: 6,
+      flexShrink: 0
     }
-  }, unitsStr), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: T.muted,
-      fontSize: 9,
-      letterSpacing: 0.4,
-      marginTop: 3,
-      textTransform: 'uppercase'
-    }
-  }, "U.")), /*#__PURE__*/React.createElement("button", {
+  }, "\xD7", totalEntries), /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: ev => {
       ev.stopPropagation();
@@ -533,9 +509,10 @@ function EditCategorySheet({
         await renameCategory(category, trimmed);
         finalName = trimmed;
       }
-      // Persist the icon override, even if it equals the category name
-      // (`null` clears the override so future renames just track the name).
-      const iconValue = glyph && glyph !== finalName ? glyph : null;
+      // Always persist the chosen glyph as an override so renames don't
+      // silently drop the icon. Saving the same value as the name is a
+      // no-op visually but keeps intent explicit.
+      const iconValue = glyph || finalName;
       await setCategoryIcon(finalName, iconValue);
       Toast.show(`Catégorie « ${finalName} » mise à jour`);
       onClose && onClose();
@@ -677,16 +654,19 @@ function EditCategorySheet({
         height: 52,
         borderRadius: 12,
         background: selected ? catBg(g) : T.surface2,
-        border: `1px solid ${selected ? catColor(g, 60) : T.rule}`,
+        border: `2px solid ${selected ? catColor(g, T.isDark ? 75 : 55) : T.rule}`,
         display: 'grid',
         placeItems: 'center',
-        color: selected ? catColor(g, 75) : T.ink2,
+        color: selected ? catColor(g, T.isDark ? 80 : 50) : T.ink2,
         cursor: 'pointer',
         padding: 0,
-        fontFamily: 'inherit'
+        fontFamily: 'inherit',
+        transition: 'background 0.15s ease, border-color 0.15s ease',
+        boxShadow: selected ? `0 0 0 3px ${withAlpha(catColor(g, T.isDark ? 75 : 55), 0.18)}` : 'none'
       }
     }, /*#__PURE__*/React.createElement(CategoryGlyph, {
-      glyph: g
+      glyph: g,
+      size: 26
     }));
   })), err && /*#__PURE__*/React.createElement("div", {
     style: {

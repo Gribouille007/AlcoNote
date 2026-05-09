@@ -408,12 +408,9 @@ function AddDrinkSheet({
   }, "%"))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
-      gridTemplateColumns: '1fr 1fr',
-      gap: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      minWidth: 0
+      gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+      gap: 10,
+      width: '100%'
     }
   }, /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Date"
@@ -425,13 +422,12 @@ function AddDrinkSheet({
       ...inputS(),
       padding: '10px 12px',
       minWidth: 0,
-      width: '100%'
+      maxWidth: '100%',
+      width: '100%',
+      WebkitAppearance: 'none',
+      appearance: 'none'
     }
-  }))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement(FieldGroup, {
+  })), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Heure"
   }, /*#__PURE__*/React.createElement("input", {
     type: "time",
@@ -441,9 +437,12 @@ function AddDrinkSheet({
       ...inputS(),
       padding: '10px 12px',
       minWidth: 0,
-      width: '100%'
+      maxWidth: '100%',
+      width: '100%',
+      WebkitAppearance: 'none',
+      appearance: 'none'
     }
-  })))), /*#__PURE__*/React.createElement(FieldGroup, {
+  }))), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Note (optionnelle)"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1376,12 +1375,9 @@ function EditEntrySheet({
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
-      gridTemplateColumns: '1fr 1fr',
-      gap: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      minWidth: 0
+      gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+      gap: 10,
+      width: '100%'
     }
   }, /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Date"
@@ -1393,13 +1389,12 @@ function EditEntrySheet({
       ...inputS(),
       padding: '10px 12px',
       minWidth: 0,
-      width: '100%'
+      maxWidth: '100%',
+      width: '100%',
+      WebkitAppearance: 'none',
+      appearance: 'none'
     }
-  }))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement(FieldGroup, {
+  })), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Heure"
   }, /*#__PURE__*/React.createElement("input", {
     type: "time",
@@ -1409,9 +1404,12 @@ function EditEntrySheet({
       ...inputS(),
       padding: '10px 12px',
       minWidth: 0,
-      width: '100%'
+      maxWidth: '100%',
+      width: '100%',
+      WebkitAppearance: 'none',
+      appearance: 'none'
     }
-  })))), err && /*#__PURE__*/React.createElement("div", {
+  }))), err && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.accent2,
       background: 'oklch(35% 0.10 25 / 0.15)',
