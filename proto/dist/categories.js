@@ -425,7 +425,7 @@ function FamilyRow({
       opacity: 0.4
     }
   }, "\xB7"), /*#__PURE__*/React.createElement("span", null, f.alcohol, "\xB0"))), /*#__PURE__*/React.createElement("div", {
-    "aria-label": `${totalEntries} entrée${totalEntries > 1 ? 's' : ''}`,
+    title: `${totalEntries} entrée${totalEntries > 1 ? 's' : ''}`,
     style: {
       fontFamily: fontNum,
       fontSize: 14,
@@ -509,11 +509,14 @@ function EditCategorySheet({
         await renameCategory(category, trimmed);
         finalName = trimmed;
       }
-      // Always persist the chosen glyph as an override so renames don't
-      // silently drop the icon. Saving the same value as the name is a
-      // no-op visually but keeps intent explicit.
+      // Persist the chosen glyph as an override so renames don't silently
+      // drop the icon. Skip the write when the resulting visual matches
+      // what's already stored to keep the settings store tidy.
       const iconValue = glyph || finalName;
-      await setCategoryIcon(finalName, iconValue);
+      const currentVisual = icons[finalName] || finalName;
+      if (iconValue !== currentVisual || finalName !== category) {
+        await setCategoryIcon(finalName, iconValue);
+      }
       Toast.show(`Catégorie « ${finalName} » mise à jour`);
       onClose && onClose();
     } catch (e) {
@@ -661,7 +664,7 @@ function EditCategorySheet({
         cursor: 'pointer',
         padding: 0,
         fontFamily: 'inherit',
-        transition: 'background 0.15s ease, border-color 0.15s ease',
+        transition: 'background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
         boxShadow: selected ? `0 0 0 3px ${withAlpha(catColor(g, T.isDark ? 75 : 55), 0.18)}` : 'none'
       }
     }, /*#__PURE__*/React.createElement(CategoryGlyph, {

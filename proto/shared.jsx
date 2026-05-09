@@ -252,10 +252,6 @@ function toCl(qty, unit) {
 function gramsAlcohol(qty, unit, abv) {
   return toCl(qty, unit) * 10 * ((abv || 0) / 100) * 0.789;
 }
-
-function unitsAlcohol(qty, unit, abv) {
-  return gramsAlcohol(qty, unit, abv) / 10;
-}
 // ── Search input ──────────────────────────────────────────────────
 function SearchInput({ value, onChange, placeholder }) {
   return (
@@ -550,7 +546,7 @@ Object.assign(window, {
   Toast,
   FR_DAYS_LONG, FR_DAYS_SHORT, FR_MONTHS_SHORT, FR_MONTHS_LONG, FR_MONTHS_DOTTED,
   fmtDateShort, fmtDateMedium, fmtDayHeader, localDate, localTime,
-  toCl, gramsAlcohol, unitsAlcohol,
+  toCl, gramsAlcohol,
   SearchInput, SectionHead, Pill, Stars, CategoryGlyph, GLYPH_OPTIONS,
   SheetOverlay, StatusBar, niceMax,
   Confirm, ConfirmHost,

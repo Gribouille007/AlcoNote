@@ -269,7 +269,7 @@ function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onClick, onD
           <span>{f.alcohol}°</span>
         </div>
       </div>
-      <div aria-label={`${totalEntries} entrée${totalEntries > 1 ? 's' : ''}`} style={{
+      <div title={`${totalEntries} entrée${totalEntries > 1 ? 's' : ''}`} style={{
         fontFamily: fontNum, fontSize: 14, fontWeight: 600,
         color: T.ink2, letterSpacing: 0.2, lineHeight: 1,
         fontVariantNumeric: 'tabular-nums', marginRight: 6, flexShrink: 0,
@@ -325,11 +325,14 @@ function EditCategorySheet({ category, onClose }) {
         await renameCategory(category, trimmed);
         finalName = trimmed;
       }
-      // Always persist the chosen glyph as an override so renames don't
-      // silently drop the icon. Saving the same value as the name is a
-      // no-op visually but keeps intent explicit.
+      // Persist the chosen glyph as an override so renames don't silently
+      // drop the icon. Skip the write when the resulting visual matches
+      // what's already stored to keep the settings store tidy.
       const iconValue = glyph || finalName;
-      await setCategoryIcon(finalName, iconValue);
+      const currentVisual = icons[finalName] || finalName;
+      if (iconValue !== currentVisual || finalName !== category) {
+        await setCategoryIcon(finalName, iconValue);
+      }
       Toast.show(`Catégorie « ${finalName} » mise à jour`);
       onClose && onClose();
     } catch (e) {
@@ -427,7 +430,7 @@ function EditCategorySheet({ category, onClose }) {
                 display: 'grid', placeItems: 'center',
                 color: selected ? catColor(g, T.isDark ? 80 : 50) : T.ink2,
                 cursor: 'pointer', padding: 0, fontFamily: 'inherit',
-                transition: 'background 0.15s ease, border-color 0.15s ease',
+                transition: 'background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
                 boxShadow: selected ? `0 0 0 3px ${withAlpha(catColor(g, T.isDark ? 75 : 55), 0.18)}` : 'none',
               }}>
                 <CategoryGlyph glyph={g} size={26} />
