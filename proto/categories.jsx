@@ -226,17 +226,8 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
 function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onClick, onDirectAdd }) {
   const color = catColor(f.category, 70);
   const totalEntries = f.entries.length;
-  // The number of units (verres standard) per drink — surfaced left of
-  // the plus button in saturated orange so it pops out of the row.
-  const units = unitsAlcohol(f.quantity, f.unit, f.alcohol);
-  const unitsStr = units >= 10 ? units.toFixed(0)
-                 : units >= 1  ? units.toFixed(1)
-                              : units.toFixed(2);
-  const orange = T.isDark ? 'oklch(70% 0.18 55)' : 'oklch(50% 0.18 50)';
   const isFirstOfGroup = variantIndex === 0;
   const isLastOfGroup  = variantIndex === variantCount - 1;
-  // Top margin: keep the visible vertical rhythm between groups, but
-  // attach variants of the same drink as a stacked card.
   const topMargin = isFirstOfGroup ? 8 : 0;
   return (
     <div {...clickable(onClick, `Voir les détails de ${f.name}`)} style={{
@@ -276,24 +267,13 @@ function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onClick, onD
           <span>{f.quantity} {f.unit}</span>
           <span style={{ opacity: 0.4 }}>·</span>
           <span>{f.alcohol}°</span>
-          <span style={{ opacity: 0.4 }}>·</span>
-          <span>{totalEntries}×</span>
         </div>
       </div>
-      <div title={`${unitsStr} unité${units > 1 ? 's' : ''} d'alcool par boisson`} style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
-        marginRight: 6,
-      }}>
-        <div style={{
-          fontFamily: fontNum, fontSize: 16, fontWeight: 700,
-          color: orange, letterSpacing: -0.2, lineHeight: 1,
-          fontVariantNumeric: 'tabular-nums',
-        }}>{unitsStr}</div>
-        <div style={{
-          color: T.muted, fontSize: 9, letterSpacing: 0.4, marginTop: 3,
-          textTransform: 'uppercase',
-        }}>U.</div>
-      </div>
+      <div title={`${totalEntries} entrée${totalEntries > 1 ? 's' : ''}`} style={{
+        fontFamily: fontNum, fontSize: 14, fontWeight: 600,
+        color: T.ink2, letterSpacing: 0.2, lineHeight: 1,
+        fontVariantNumeric: 'tabular-nums', marginRight: 6, flexShrink: 0,
+      }}>×{totalEntries}</div>
       <button type="button"
         onClick={(ev) => { ev.stopPropagation(); onDirectAdd && onDirectAdd(f); }}
         style={{
@@ -345,10 +325,14 @@ function EditCategorySheet({ category, onClose }) {
         await renameCategory(category, trimmed);
         finalName = trimmed;
       }
-      // Persist the icon override, even if it equals the category name
-      // (`null` clears the override so future renames just track the name).
-      const iconValue = glyph && glyph !== finalName ? glyph : null;
-      await setCategoryIcon(finalName, iconValue);
+      // Persist the chosen glyph as an override so renames don't silently
+      // drop the icon. Skip the write when the resulting visual matches
+      // what's already stored to keep the settings store tidy.
+      const iconValue = glyph || finalName;
+      const currentVisual = icons[finalName] || finalName;
+      if (iconValue !== currentVisual || finalName !== category) {
+        await setCategoryIcon(finalName, iconValue);
+      }
       Toast.show(`Catégorie « ${finalName} » mise à jour`);
       onClose && onClose();
     } catch (e) {
@@ -442,12 +426,14 @@ function EditCategorySheet({ category, onClose }) {
                 onClick={() => setGlyph(g)} style={{
                 width: 52, height: 52, borderRadius: 12,
                 background: selected ? catBg(g) : T.surface2,
-                border: `1px solid ${selected ? catColor(g, 60) : T.rule}`,
+                border: `2px solid ${selected ? catColor(g, T.isDark ? 75 : 55) : T.rule}`,
                 display: 'grid', placeItems: 'center',
-                color: selected ? catColor(g, 75) : T.ink2,
+                color: selected ? catColor(g, T.isDark ? 80 : 50) : T.ink2,
                 cursor: 'pointer', padding: 0, fontFamily: 'inherit',
+                transition: 'background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
+                boxShadow: selected ? `0 0 0 3px ${withAlpha(catColor(g, T.isDark ? 75 : 55), 0.18)}` : 'none',
               }}>
-                <CategoryGlyph glyph={g} />
+                <CategoryGlyph glyph={g} size={26} />
               </button>
             );
           })}

@@ -645,9 +645,6 @@ function toCl(qty, unit) {
 function gramsAlcohol(qty, unit, abv) {
   return toCl(qty, unit) * 10 * ((abv || 0) / 100) * 0.789;
 }
-function unitsAlcohol(qty, unit, abv) {
-  return gramsAlcohol(qty, unit, abv) / 10;
-}
 // ── Search input ──────────────────────────────────────────────────
 function SearchInput({
   value,
@@ -1182,7 +1179,6 @@ Object.assign(window, {
   localTime,
   toCl,
   gramsAlcohol,
-  unitsAlcohol,
   SearchInput,
   SectionHead,
   Pill,

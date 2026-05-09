@@ -233,19 +233,24 @@ function AddDrinkSheet({ open, prefill, onClose }) {
             </div>
           </FieldGroup>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div style={{ minWidth: 0 }}>
-              <FieldGroup label="Date">
-                <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                  style={{ ...inputS(), padding: '10px 12px', minWidth: 0, width: '100%' }}/>
-              </FieldGroup>
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <FieldGroup label="Heure">
-                <input type="time" value={time} onChange={e => setTime(e.target.value)}
-                  style={{ ...inputS(), padding: '10px 12px', minWidth: 0, width: '100%' }}/>
-              </FieldGroup>
-            </div>
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+            gap: 10, width: '100%',
+          }}>
+            <FieldGroup label="Date">
+              <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                style={{
+                  ...inputS(), padding: '10px 12px', minWidth: 0, maxWidth: '100%',
+                  width: '100%', WebkitAppearance: 'none', appearance: 'none',
+                }}/>
+            </FieldGroup>
+            <FieldGroup label="Heure">
+              <input type="time" value={time} onChange={e => setTime(e.target.value)}
+                style={{
+                  ...inputS(), padding: '10px 12px', minWidth: 0, maxWidth: '100%',
+                  width: '100%', WebkitAppearance: 'none', appearance: 'none',
+                }}/>
+            </FieldGroup>
           </div>
 
           <FieldGroup label="Note (optionnelle)">
@@ -817,19 +822,24 @@ function EditEntrySheet({ entry, onClose }) {
               placeholder="—"
               onChange={e => setAlc(e.target.value)} style={inputS()} />
           </FieldGroup>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div style={{ minWidth: 0 }}>
-              <FieldGroup label="Date">
-                <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                  style={{ ...inputS(), padding: '10px 12px', minWidth: 0, width: '100%' }}/>
-              </FieldGroup>
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <FieldGroup label="Heure">
-                <input type="time" value={time} onChange={e => setTime(e.target.value)}
-                  style={{ ...inputS(), padding: '10px 12px', minWidth: 0, width: '100%' }}/>
-              </FieldGroup>
-            </div>
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+            gap: 10, width: '100%',
+          }}>
+            <FieldGroup label="Date">
+              <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                style={{
+                  ...inputS(), padding: '10px 12px', minWidth: 0, maxWidth: '100%',
+                  width: '100%', WebkitAppearance: 'none', appearance: 'none',
+                }}/>
+            </FieldGroup>
+            <FieldGroup label="Heure">
+              <input type="time" value={time} onChange={e => setTime(e.target.value)}
+                style={{
+                  ...inputS(), padding: '10px 12px', minWidth: 0, maxWidth: '100%',
+                  width: '100%', WebkitAppearance: 'none', appearance: 'none',
+                }}/>
+            </FieldGroup>
           </div>
 
           {err && (
