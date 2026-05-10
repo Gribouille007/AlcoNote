@@ -559,42 +559,35 @@ function GeneralSection({
   const cards = [{
     v: agg.count,
     l: 'Boissons',
-    delta: pctChange(agg.count, prevAgg.count),
-    better: 'down'
+    delta: pctChange(agg.count, prevAgg.count)
   }, {
     v: sessions.length,
     l: 'Sessions',
     tip: 'Regroupées si < 4h',
-    delta: pctChange(sessions.length, prevSessions.length),
-    better: 'down'
+    delta: pctChange(sessions.length, prevSessions.length)
   }, {
     v: `${(agg.volumeCl / 100).toFixed(1)}L`,
     l: 'Volume',
-    delta: pctChange(agg.volumeCl, prevAgg.volumeCl),
-    better: 'down'
+    delta: pctChange(agg.volumeCl, prevAgg.volumeCl)
   }, {
     v: `${Math.round(agg.grams)}g`,
     l: 'Alcool pur',
-    delta: pctChange(agg.grams, prevAgg.grams),
-    better: 'down'
+    delta: pctChange(agg.grams, prevAgg.grams)
   }, {
     v: agg.uniqueCount,
     l: 'Boissons diff.',
-    delta: pctChange(agg.uniqueCount, prevAgg.uniqueCount),
-    better: 'up'
+    delta: pctChange(agg.uniqueCount, prevAgg.uniqueCount)
   }];
   if (period === 'week' || period === 'month' || period === 'year' || period === 'school') {
     cards.push({
       v: sober,
       l: 'Jours sobres',
-      delta: pctChange(sober, prevSober),
-      better: 'up'
+      delta: pctChange(sober, prevSober)
     });
     cards.push({
       v: (agg.count / days).toFixed(1),
       l: 'Boissons/jour',
-      delta: pctChange(agg.count / days, prevDays ? prevAgg.count / prevDays : null),
-      better: 'down'
+      delta: pctChange(agg.count / days, prevDays ? prevAgg.count / prevDays : null)
     });
   }
   if (period === 'month' || period === 'year' || period === 'school') {
@@ -603,8 +596,7 @@ function GeneralSection({
     cards.push({
       v: (agg.count / weeks).toFixed(1),
       l: 'Boissons/sem.',
-      delta: pctChange(agg.count / weeks, prevWeeks ? prevAgg.count / prevWeeks : null),
-      better: 'down'
+      delta: pctChange(agg.count / weeks, prevWeeks ? prevAgg.count / prevWeeks : null)
     });
   }
   const catDist = Object.entries(agg.byCategory).map(([name, v]) => ({
@@ -655,8 +647,7 @@ function GeneralSection({
       lineHeight: 1.2
     }
   }, c.l), c.delta != null && period !== 'all' && /*#__PURE__*/React.createElement(DeltaBadge, {
-    delta: c.delta,
-    better: c.better
+    delta: c.delta
   })))), catDist.length > 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
@@ -819,17 +810,15 @@ function TemporalSection({
   })));
 }
 
-// `better: 'down'` → red on rise / green on fall (e.g. consumption metrics).
-// `better: 'up'`   → green on rise / red on fall (e.g. dry-day count).
+// Pure direction badge: green when the metric rises vs the previous
+// period, red when it falls, neutral when essentially flat (< 0.5 %).
 function DeltaBadge({
-  delta,
-  better = 'down'
+  delta
 }) {
   if (delta == null || !isFinite(delta)) return null;
   const rising = delta > 0;
   const flat = Math.abs(delta) < 0.5;
-  const goodWhenUp = better === 'up';
-  const positive = flat ? null : rising ? goodWhenUp : !goodWhenUp;
+  const positive = flat ? null : rising;
   const fg = positive == null ? T.muted : positive ? T.isDark ? 'oklch(78% 0.16 155)' : 'oklch(42% 0.14 155)' : T.isDark ? 'oklch(74% 0.20 30)' : 'oklch(48% 0.20 30)';
   const bg = positive == null ? T.surface2 : positive ? T.isDark ? 'oklch(28% 0.05 155)' : 'oklch(95% 0.04 155)' : T.isDark ? 'oklch(28% 0.06 30)' : 'oklch(95% 0.04 30)';
   const value = `${Math.abs(delta).toFixed(0)}%`;

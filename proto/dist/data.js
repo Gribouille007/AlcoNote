@@ -289,7 +289,32 @@ async function addCategory(name) {
 async function renameCategory(oldName, newName) {
   const db = await waitForDb();
   if (!db) return;
+  // Capture any explicit icon override BEFORE the rename so we can move
+  // it to the new key. If there's no explicit override but the old name
+  // was a built-in glyph (Bière, Vin, …), we pin the new name to that
+  // glyph too — otherwise <CategoryGlyph> would silently fall back to
+  // the generic glass icon for the renamed category.
+  const oldKey = `cat.icon.${oldName}`;
+  const newKey = `cat.icon.${newName}`;
+  let existing = null;
+  try {
+    existing = await db.getSetting(oldKey);
+  } catch {}
+  const builtIn = ['Bière', 'Vin', 'Spiritueux', 'Cocktail'];
+  const toWrite = existing || (builtIn.includes(oldName) ? oldName : null);
   await db.renameCategory(oldName, newName);
+  try {
+    if (existing) await db.setSetting(oldKey, null);
+    if (toWrite) await db.setSetting(newKey, toWrite);
+  } catch {}
+  if (typeof window !== 'undefined') {
+    const m = {
+      ...(window.__alcoCatIcons || {})
+    };
+    delete m[oldName];
+    if (toWrite) m[newName] = toWrite;
+    window.__alcoCatIcons = m;
+  }
   dataBus.bump();
 }
 async function deleteCategory(id, options = {}) {
