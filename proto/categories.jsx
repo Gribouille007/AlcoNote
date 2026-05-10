@@ -15,6 +15,14 @@ function CategoriesTab({ onAdd, onOpenFamily, onDirectAdd, onEditFamily, query, 
     }
   }, [openCat, categories, setOpenCat]);
 
+  // Same idea for the edit sheet — close it if the underlying category
+  // vanished (deleted from elsewhere) so it doesn't operate on stale data.
+  React.useEffect(() => {
+    if (editCat && categories.length > 0 && !categories.some(c => c.name === editCat)) {
+      setEditCat(null);
+    }
+  }, [editCat, categories]);
+
   const families = React.useMemo(() => buildFamilies(drinks, ratings), [drinks, ratings]);
   const cats = React.useMemo(() => computeCategoryStats(categories, families), [categories, families]);
 
@@ -296,19 +304,24 @@ function EditCategorySheet({ category, onClose }) {
   const { drinks } = useDrinks();
   const icons = useCategoryIcons();
   const [name, setName] = React.useState(category);
-  const initialGlyph = icons[category] || category;
-  const [glyph, setGlyphState] = React.useState(initialGlyph);
+  // `glyph` holds the user's *explicit* choice (null until they tap one
+  // of the picker tiles). The picker still needs something to highlight
+  // when there's no override — `displayedGlyph` resolves that fallback
+  // to whatever <CategoryGlyph> actually paints for `category`, so the
+  // highlighted tile always matches the icon shown on the card.
+  const [glyph, setGlyphState] = React.useState(() => icons[category] || null);
   const userTouchedRef = React.useRef(false);
   const setGlyph = (g) => { userTouchedRef.current = true; setGlyphState(g); };
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
 
-  // If the persisted icon loads after this sheet mounts and the user
-  // hasn't touched the picker yet, adopt the persisted value.
+  const displayedGlyph = glyph
+    || (GLYPH_OPTIONS.includes(category) ? category : 'Autre');
+
+  // Adopt the persisted override once it loads (or is updated elsewhere)
+  // — but never overwrite a pick the user has already made in this sheet.
   React.useEffect(() => {
-    if (!userTouchedRef.current && icons[category]) {
-      setGlyphState(icons[category]);
-    }
+    if (!userTouchedRef.current) setGlyphState(icons[category] || null);
   }, [icons, category]);
 
   const drinksInCat = drinks.filter(d => (d.category || '') === category).length;
@@ -322,16 +335,14 @@ function EditCategorySheet({ category, onClose }) {
     try {
       let finalName = category;
       if (trimmed !== category) {
+        // renameCategory migrates any existing icon override to the new
+        // name, so we only need to persist when the user explicitly
+        // picked a different glyph in this sheet.
         await renameCategory(category, trimmed);
         finalName = trimmed;
       }
-      // Persist the chosen glyph as an override so renames don't silently
-      // drop the icon. Skip the write when the resulting visual matches
-      // what's already stored to keep the settings store tidy.
-      const iconValue = glyph || finalName;
-      const currentVisual = icons[finalName] || finalName;
-      if (iconValue !== currentVisual || finalName !== category) {
-        await setCategoryIcon(finalName, iconValue);
+      if (userTouchedRef.current && glyph) {
+        await setCategoryIcon(finalName, glyph);
       }
       Toast.show(`Catégorie « ${finalName} » mise à jour`);
       onClose && onClose();
@@ -419,7 +430,7 @@ function EditCategorySheet({ category, onClose }) {
         <div role="radiogroup" aria-label="Icône de catégorie"
           style={{ display: 'flex', gap: 10, marginBottom: 22, flexWrap: 'wrap' }}>
           {GLYPH_OPTIONS.map(g => {
-            const selected = glyph === g;
+            const selected = displayedGlyph === g;
             return (
               <button key={g} type="button" role="radio" aria-checked={selected}
                 aria-label={`Icône ${g}`}
