@@ -5,7 +5,8 @@ function CategoriesTab({ onAdd, onOpenFamily, onDirectAdd, onEditFamily, query, 
   const { categories } = useCategories();
   const { drinks } = useDrinks();
   const ratings = useRatings();
-  useCategoryIcons(); // keep window.__alcoCatIcons up to date
+  // Icon overrides re-render <CategoryGlyph> via CategoryIconsContext
+  // (provided at App root) — no need for this tab to subscribe.
 
   // If the open category was just deleted, drop back to the grid so the
   // user isn't stranded inside an empty FamilyList for a missing cat.
@@ -56,7 +57,7 @@ function CategoriesTab({ onAdd, onOpenFamily, onDirectAdd, onEditFamily, query, 
   );
 }
 
-function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat }) {
+function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, onDirectAdd, onAdd }) {
   const q = (query || '').toLowerCase();
   const matchedFams = q
     ? families.filter(f =>
@@ -149,7 +150,7 @@ function CategoryCard({ cat, onClick, onEdit }) {
     </div>
   );
 }
-function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat }) {
+function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat, onEditFamily }) {
   // Sort families: identical-name groups stay contiguous, ordered by
   // total entries inside the group, then by quantity asc inside each
   // group. We keep one line per (name, qty, unit, abv) variant so the
@@ -401,7 +402,7 @@ function EditCategorySheet({ category, onClose }) {
         borderLeft: `1px solid ${T.rule}`,
         borderRight: `1px solid ${T.rule}`,
         animation: 'slideUp 0.25s ease',
-        overflowX: 'hidden',
+        overflowX: 'hidden', overflowY: 'auto', maxHeight: '92dvh',
       }}>
         <div style={{ display: 'grid', placeItems: 'center', paddingBottom: 10 }}>
           <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }}/>

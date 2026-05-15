@@ -498,7 +498,7 @@ function FactCell({ label, value, last }) {
 // Drink detail sheet - shows family info and entries timeline
 function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
   const ratings = useRatings();
-  const { drinks } = useDrinks();
+  const { drinks, loading } = useDrinks();
   // Pin the drink-family identity from props once: we want to keep
   // showing the same family even after a single entry inside it gets
   // deleted (so the timeline updates instead of the sheet closing).
@@ -508,6 +508,9 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
   }, [family, entry]);
   // Re-derive the live family from the current drinks list, so deletes
   // and edits propagate without keeping a stale entries[] reference.
+  // Fall back to the seed's own entries on initial mount (before the DB
+  // load finishes) so the sheet renders the timeline immediately instead
+  // of an empty shell.
   const liveFamily = React.useMemo(() => {
     const seed = seedRef.current;
     if (!seed) return null;
@@ -518,14 +521,22 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
                     x.quantity === seed.quantity &&
                     (x.unit || '').toLowerCase() === (seed.unit || '').toLowerCase() &&
                     (x.alcohol || 0) === (seed.alcohol || 0));
-    return match || { ...seed, entries: [] };
+    if (match) return match;
+    // No match yet: while drinks are still loading, reuse the seed's
+    // entries (they came from the caller's already-loaded list) instead
+    // of returning an empty array — otherwise the auto-close below would
+    // fire on mount and the sheet would disappear instantly.
+    return { ...seed, entries: seed.entries || [] };
   }, [drinks, ratings]);
-  // Close automatically when the family no longer has any entries.
+  // Close automatically when the family no longer has any entries — but
+  // only once drinks have loaded, so we don't close before the data
+  // arrives.
   React.useEffect(() => {
+    if (loading) return;
     if (liveFamily && liveFamily.entries && liveFamily.entries.length === 0) {
       onClose && onClose();
     }
-  }, [liveFamily, onClose]);
+  }, [liveFamily, loading, onClose]);
   const f = liveFamily || family || (entry && entry.family);
   if (!f) return null;
   const color = catColor(f.category, 70);
