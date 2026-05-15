@@ -82,7 +82,9 @@ function CategoryGrid({
   query,
   onOpen,
   onOpenFamily,
-  onEditCat
+  onEditCat,
+  onDirectAdd,
+  onAdd
 }) {
   const q = (query || '').toLowerCase();
   const matchedFams = q ? families.filter(f => f.name.toLowerCase().includes(q) || f.category.toLowerCase().includes(q)) : [];
@@ -226,7 +228,8 @@ function FamilyList({
   onBack,
   onOpen,
   onDirectAdd,
-  onEditCat
+  onEditCat,
+  onEditFamily
 }) {
   // Sort families: identical-name groups stay contiguous, ordered by
   // total entries inside the group, then by quantity asc inside each
@@ -586,7 +589,9 @@ function EditCategorySheet({
       borderLeft: `1px solid ${T.rule}`,
       borderRight: `1px solid ${T.rule}`,
       animation: 'slideUp 0.25s ease',
-      overflowX: 'hidden'
+      overflowX: 'hidden',
+      overflowY: 'auto',
+      maxHeight: '92dvh'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {

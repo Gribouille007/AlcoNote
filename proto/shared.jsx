@@ -364,17 +364,43 @@ function Stars({ rating, n, size = 13, interactive, onChange }) {
 // category's name (e.g. an "IPA" category styled like "Bière"). When
 // omitted, the lookup falls back to the category name and finally to
 // the generic glass icon.
-const GLYPH_OPTIONS = ['Bière', 'Vin', 'Spiritueux', 'Cocktail', 'Autre'];
+//
+// Each entry is a render function returning an SVG with the canonical
+// 24x24 viewBox + stroke="currentColor" line style. Keep new icons
+// visually consistent (1.5 stroke, no fill) so the picker stays even.
+const GLYPHS = {
+  'Bière': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 6h8v14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V6z"/><path d="M15 9h2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><line x1="9" y1="10" x2="9" y2="18"/><line x1="12" y1="10" x2="12" y2="18"/></svg>,
+  'Vin': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 3h8l-1 7a3 3 0 0 1-6 0L8 3z"/><line x1="12" y1="13" x2="12" y2="20"/><line x1="8" y1="21" x2="16" y2="21"/></svg>,
+  'Spiritueux': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="8" y="8" width="8" height="13" rx="1"/><rect x="9.5" y="3" width="5" height="5" rx="0.5"/><line x1="8" y1="13" x2="16" y2="13"/></svg>,
+  'Cocktail': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4 4h16l-8 9-8-9z"/><line x1="12" y1="13" x2="12" y2="20"/><line x1="8" y1="21" x2="16" y2="21"/></svg>,
+  'Champagne': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9.5 3h5l-0.5 9a2 2 0 0 1-4 0L9.5 3z"/><line x1="12" y1="14" x2="12" y2="20"/><line x1="9" y1="21" x2="15" y2="21"/><circle cx="11" cy="7" r="0.4" fill="currentColor"/><circle cx="13" cy="9" r="0.4" fill="currentColor"/><circle cx="11.5" cy="11" r="0.4" fill="currentColor"/></svg>,
+  'Whisky': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M6 8h12l-1 12a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 8z"/><rect x="8.5" y="11" width="3.2" height="3.2" rx="0.5"/><rect x="13" y="14.5" width="2.8" height="2.8" rx="0.5"/></svg>,
+  'Shot': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 8h6l-0.5 11a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2L9 8z"/><line x1="9" y1="13" x2="15" y2="13"/></svg>,
+  'Cidre': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 7c-3-2-7-1-7 4 0 5 3 11 7 11s7-6 7-11c0-5-4-6-7-4z"/><path d="M12 7v-2c0-1 1-2 2-2"/><path d="M14 3.5c0.5-0.3 1-0.3 1.5 0"/></svg>,
+  'Saké': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 3h4v3c0 1 1 2 2 3 1 1 2 2 2 4v7a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-7c0-2 1-3 2-4 1-1 2-2 2-3V3z"/><line x1="7" y1="13" x2="17" y2="13"/></svg>,
+  'Café': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 9h12v7a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V9z"/><path d="M17 11h2a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2h-2"/><path d="M8 4c0 1 0 2 1 3"/><path d="M11 4c0 1 0 2 1 3"/></svg>,
+  'Liqueur': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 3h4v4l1.2 2v9a2 2 0 0 1-2 2h-2.4a2 2 0 0 1-2-2v-9L10 7V3z"/><line x1="9" y1="13" x2="15" y2="13"/><rect x="10.5" y="15" width="3" height="2.8" rx="0.3"/></svg>,
+  'Pinte': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 4h10l-1 17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1L7 4z"/><line x1="8" y1="9" x2="16" y2="9"/></svg>,
+  'Punch': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 11h18l-1 8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2L3 11z"/><line x1="2" y1="11" x2="22" y2="11"/><path d="M14 4l-1 7"/><circle cx="15" cy="3.5" r="1.5"/></svg>,
+  'Apéritif': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 4c0 6 3 9 5 9s5-3 5-9z"/><line x1="12" y1="13" x2="12" y2="20"/><line x1="9" y1="21" x2="15" y2="21"/></svg>,
+  'Autre': (s) => <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="8"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/></svg>,
+};
+
+const GLYPH_OPTIONS = Object.keys(GLYPHS);
 
 function CategoryGlyph({ name, glyph, size = 22 }) {
-  const customIcons = (typeof window !== 'undefined' && window.__alcoCatIcons) || {};
+  // Subscribe to the icon-overrides map via the hook so React re-renders
+  // every <CategoryGlyph> when the user changes a category's icon.
+  // Previously we read `window.__alcoCatIcons` synchronously inside
+  // render — that global mutation was invisible to React's reconciler,
+  // so cards kept painting the old glyph after a save.
+  const customIcons = (typeof useCategoryIcons === 'function')
+    ? useCategoryIcons()
+    : ((typeof window !== 'undefined' && window.__alcoCatIcons) || {});
   const key = glyph || customIcons[name] || name;
   const s = { width: size, height: size };
-  if (key === 'Bière') return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 6h8v14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V6z"/><path d="M15 9h2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><line x1="9" y1="10" x2="9" y2="18"/><line x1="12" y1="10" x2="12" y2="18"/></svg>;
-  if (key === 'Vin') return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 3h8l-1 7a3 3 0 0 1-6 0L8 3z"/><line x1="12" y1="13" x2="12" y2="20"/><line x1="8" y1="21" x2="16" y2="21"/></svg>;
-  if (key === 'Spiritueux') return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="8" y="8" width="8" height="13" rx="1"/><rect x="9.5" y="3" width="5" height="5" rx="0.5"/><line x1="8" y1="13" x2="16" y2="13"/></svg>;
-  if (key === 'Cocktail') return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4 4h16l-8 9-8-9z"/><line x1="12" y1="13" x2="12" y2="20"/><line x1="8" y1="21" x2="16" y2="21"/></svg>;
-  return <svg {...s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="8"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/></svg>;
+  const draw = GLYPHS[key] || GLYPHS['Autre'];
+  return draw(s);
 }
 
 // ── Clickable card props (for divs that contain inner buttons) ────
@@ -544,7 +570,7 @@ function niceMax(v, fallback = 1) {
 Object.assign(window, {
   T, THEMES, setTheme, applyTheme, useTheme,
   fontSans, fontSerif, fontNum,
-  Ic, SvgIcon, CAT, catColor, catBg, withAlpha,
+  Ic, SvgIcon, CAT, catColor, catBg, withAlpha, GLYPHS,
   Toast,
   FR_DAYS_LONG, FR_DAYS_SHORT, FR_MONTHS_SHORT, FR_MONTHS_LONG, FR_MONTHS_DOTTED,
   fmtDateShort, fmtDateMedium, fmtDayHeader, localDate, localTime,
