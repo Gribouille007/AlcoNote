@@ -72,7 +72,12 @@ class AppErrorBoundary extends React.Component {
     }, "Recharger")));
   }
 }
-function App() {
+
+// Inner shell — wrapped by the data providers in <App/> so every
+// `useDrinks/useRatings/useCategories/useSettings` call inside reads
+// from a single shared subscription instead of each spawning its own
+// IndexedDB round-trip on every dataBus.bump.
+function AppShell() {
   useTheme();
   React.useEffect(() => {
     document.documentElement.setAttribute('data-theme', T._name);
@@ -87,6 +92,18 @@ function App() {
     if (splash && splash.parentNode) splash.parentNode.removeChild(splash);
   }, []);
   const [tab, setTab] = React.useState(() => localStorage.getItem('alconote.tab') || 'categories');
+  // Lazy-sticky mount: only the active tab is rendered on launch, then
+  // every tab the user visits stays mounted (display:none when hidden)
+  // so subsequent switches don't pay the StatsTab remount cost.
+  const [activated, setActivated] = React.useState(() => new Set([tab]));
+  React.useEffect(() => {
+    setActivated(prev => {
+      if (prev.has(tab)) return prev;
+      const next = new Set(prev);
+      next.add(tab);
+      return next;
+    });
+  }, [tab]);
   const [adding, setAdding] = React.useState(false);
   const [prefill, setPrefill] = React.useState(null);
   const [settings, setSettings] = React.useState(false);
@@ -103,12 +120,18 @@ function App() {
   const {
     drinks
   } = useDrinks();
+  const ratings = useRatings();
   const userSettings = useSettings();
   // One subscription at the root for the category-icon overrides map.
   // <CategoryGlyph> reads from CategoryIconsContext, so changing an
   // icon refreshes every glyph in the tree without each instance
   // needing its own dataBus subscription.
   const catIcons = useCategoryIcons();
+  // Families: hoisted from the legacy "build per-tab" pattern to a
+  // single memo here. HistoryTab / CategoriesTab / DrinkDetailSheet
+  // all consume the same array, so a drinks bump rebuilds the grouping
+  // exactly once instead of once per visible tab.
+  const families = React.useMemo(() => buildFamilies(drinks, ratings), [drinks, ratings]);
   const [bacTick, setBacTick] = React.useState(0);
   React.useEffect(() => {
     const id = setInterval(() => setBacTick(t => t + 1), 60_000);
@@ -171,8 +194,21 @@ function App() {
     setOpenFamily(null);
     setOpenEntry(null);
   }, []);
+
+  // Inactive tabs render with display:none so React keeps their subtree
+  // alive but the browser skips layout / paint. Combined with the
+  // shared data context above, switching tabs becomes a CSS toggle
+  // instead of a full unmount + remount + refetch.
+  const tabContainer = id => ({
+    flex: 1,
+    minHeight: 0,
+    display: tab === id ? 'flex' : 'none',
+    flexDirection: 'column'
+  });
   return /*#__PURE__*/React.createElement(CategoryIconsContext.Provider, {
     value: catIcons
+  }, /*#__PURE__*/React.createElement(FamiliesContext.Provider, {
+    value: families
   }, /*#__PURE__*/React.createElement(BacContext.Provider, {
     value: bacInfo
   }, /*#__PURE__*/React.createElement("div", {
@@ -197,7 +233,9 @@ function App() {
       display: 'flex',
       flexDirection: 'column'
     }
-  }, tab === 'categories' && /*#__PURE__*/React.createElement(CategoriesTab, {
+  }, activated.has('categories') && /*#__PURE__*/React.createElement("div", {
+    style: tabContainer('categories')
+  }, /*#__PURE__*/React.createElement(CategoriesTab, {
     onOpenFamily: setOpenFamily,
     onAdd: () => setAdding(true),
     onDirectAdd: directAdd,
@@ -206,10 +244,14 @@ function App() {
     setQuery: setCatQuery,
     openCat: catOpen,
     setOpenCat: setCatOpen
-  }), tab === 'history' && /*#__PURE__*/React.createElement(HistoryTab, {
+  })), activated.has('history') && /*#__PURE__*/React.createElement("div", {
+    style: tabContainer('history')
+  }, /*#__PURE__*/React.createElement(HistoryTab, {
     onOpenEntry: setOpenEntry,
     onDirectAdd: directAdd
-  }), tab === 'stats' && /*#__PURE__*/React.createElement(StatsTab, null)), /*#__PURE__*/React.createElement(Fab, {
+  })), activated.has('stats') && /*#__PURE__*/React.createElement("div", {
+    style: tabContainer('stats')
+  }, /*#__PURE__*/React.createElement(StatsTab, null))), /*#__PURE__*/React.createElement(Fab, {
     onClick: () => {
       setPrefill(null);
       setAdding(true);
@@ -305,7 +347,13 @@ function App() {
       flexShrink: 0,
       letterSpacing: 0.1
     }
-  }, "Annuler")))));
+  }, "Annuler"))))));
+}
+
+// Outer App: hosts the data providers so AppShell's hooks read from
+// a single subscription rather than N parallel ones.
+function App() {
+  return /*#__PURE__*/React.createElement(SettingsProvider, null, /*#__PURE__*/React.createElement(CategoriesProvider, null, /*#__PURE__*/React.createElement(RatingsProvider, null, /*#__PURE__*/React.createElement(DrinksProvider, null, /*#__PURE__*/React.createElement(AppShell, null)))));
 }
 function AppHeader({
   tab,
@@ -636,6 +684,7 @@ if (document.readyState === 'loading') {
 }
 Object.assign(window, {
   App,
+  AppShell,
   AppErrorBoundary,
   AppHeader,
   BottomNav,

@@ -40,7 +40,11 @@ class AppErrorBoundary extends React.Component {
   }
 }
 
-function App() {
+// Inner shell — wrapped by the data providers in <App/> so every
+// `useDrinks/useRatings/useCategories/useSettings` call inside reads
+// from a single shared subscription instead of each spawning its own
+// IndexedDB round-trip on every dataBus.bump.
+function AppShell() {
   useTheme();
   React.useEffect(() => {
     document.documentElement.setAttribute('data-theme', T._name);
@@ -56,6 +60,17 @@ function App() {
   }, []);
 
   const [tab, setTab] = React.useState(() => localStorage.getItem('alconote.tab') || 'categories');
+  // Lazy-sticky mount: only the active tab is rendered on launch, then
+  // every tab the user visits stays mounted (display:none when hidden)
+  // so subsequent switches don't pay the StatsTab remount cost.
+  const [activated, setActivated] = React.useState(() => new Set([tab]));
+  React.useEffect(() => {
+    setActivated(prev => {
+      if (prev.has(tab)) return prev;
+      const next = new Set(prev); next.add(tab); return next;
+    });
+  }, [tab]);
+
   const [adding, setAdding] = React.useState(false);
   const [prefill, setPrefill] = React.useState(null);
   const [settings, setSettings] = React.useState(false);
@@ -70,12 +85,21 @@ function App() {
   // 60s tick keeps the value decaying live even when the user doesn't
   // change tabs or add drinks.
   const { drinks } = useDrinks();
+  const ratings = useRatings();
   const userSettings = useSettings();
   // One subscription at the root for the category-icon overrides map.
   // <CategoryGlyph> reads from CategoryIconsContext, so changing an
   // icon refreshes every glyph in the tree without each instance
   // needing its own dataBus subscription.
   const catIcons = useCategoryIcons();
+  // Families: hoisted from the legacy "build per-tab" pattern to a
+  // single memo here. HistoryTab / CategoriesTab / DrinkDetailSheet
+  // all consume the same array, so a drinks bump rebuilds the grouping
+  // exactly once instead of once per visible tab.
+  const families = React.useMemo(
+    () => buildFamilies(drinks, ratings),
+    [drinks, ratings]
+  );
   const [bacTick, setBacTick] = React.useState(0);
   React.useEffect(() => {
     const id = setInterval(() => setBacTick(t => t + 1), 60_000);
@@ -135,8 +159,19 @@ function App() {
     setOpenEntry(null);
   }, []);
 
+  // Inactive tabs render with display:none so React keeps their subtree
+  // alive but the browser skips layout / paint. Combined with the
+  // shared data context above, switching tabs becomes a CSS toggle
+  // instead of a full unmount + remount + refetch.
+  const tabContainer = (id) => ({
+    flex: 1, minHeight: 0,
+    display: tab === id ? 'flex' : 'none',
+    flexDirection: 'column',
+  });
+
   return (
     <CategoryIconsContext.Provider value={catIcons}>
+    <FamiliesContext.Provider value={families}>
     <BacContext.Provider value={bacInfo}>
     <div className="alco-shell" style={{
       minHeight: '100dvh', height: '100dvh', display: 'flex', flexDirection: 'column',
@@ -145,20 +180,28 @@ function App() {
     }}>
       <AppHeader tab={tab} onMenu={() => setSettings(true)} />
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {tab === 'categories' && (
-          <CategoriesTab
-            onOpenFamily={setOpenFamily}
-            onAdd={() => setAdding(true)}
-            onDirectAdd={directAdd}
-            onEditFamily={onEdit}
-            query={catQuery} setQuery={setCatQuery}
-            openCat={catOpen} setOpenCat={setCatOpen}
-          />
+        {activated.has('categories') && (
+          <div style={tabContainer('categories')}>
+            <CategoriesTab
+              onOpenFamily={setOpenFamily}
+              onAdd={() => setAdding(true)}
+              onDirectAdd={directAdd}
+              onEditFamily={onEdit}
+              query={catQuery} setQuery={setCatQuery}
+              openCat={catOpen} setOpenCat={setCatOpen}
+            />
+          </div>
         )}
-        {tab === 'history' && (
-          <HistoryTab onOpenEntry={setOpenEntry} onDirectAdd={directAdd} />
+        {activated.has('history') && (
+          <div style={tabContainer('history')}>
+            <HistoryTab onOpenEntry={setOpenEntry} onDirectAdd={directAdd} />
+          </div>
         )}
-        {tab === 'stats' && <StatsTab />}
+        {activated.has('stats') && (
+          <div style={tabContainer('stats')}>
+            <StatsTab />
+          </div>
+        )}
       </div>
 
       <Fab onClick={() => { setPrefill(null); setAdding(true); }} />
@@ -227,7 +270,24 @@ function App() {
       )}
     </div>
     </BacContext.Provider>
+    </FamiliesContext.Provider>
     </CategoryIconsContext.Provider>
+  );
+}
+
+// Outer App: hosts the data providers so AppShell's hooks read from
+// a single subscription rather than N parallel ones.
+function App() {
+  return (
+    <SettingsProvider>
+      <CategoriesProvider>
+        <RatingsProvider>
+          <DrinksProvider>
+            <AppShell />
+          </DrinksProvider>
+        </RatingsProvider>
+      </CategoriesProvider>
+    </SettingsProvider>
   );
 }
 
@@ -406,4 +466,4 @@ if (document.readyState === 'loading') {
   mountAlcoNote();
 }
 
-Object.assign(window, { App, AppErrorBoundary, AppHeader, BottomNav, Fab, mountAlcoNote });
+Object.assign(window, { App, AppShell, AppErrorBoundary, AppHeader, BottomNav, Fab, mountAlcoNote });

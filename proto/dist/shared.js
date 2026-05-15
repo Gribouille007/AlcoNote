@@ -1348,6 +1348,65 @@ function StatusBar() {
   return null;
 }
 
+// ── Service-worker version probe ─────────────────────────────────
+// Reads whatever version the actually-running SW has cached. The
+// SW echoes back its CACHE_NAME (`alconote-vX.Y.Z`) over a
+// MessageChannel — we extract the `vX.Y.Z` suffix for display. The
+// hook re-asks on `controllerchange` so a freshly-activated SW
+// surfaces its new version without a manual reload.
+//
+// Returns `null` until the answer arrives, or if no SW is registered
+// (file:// preview, browser without SW support, etc.). The caller is
+// expected to render a fallback ("—") in that case.
+function useSWVersion() {
+  const [version, setVersion] = React.useState(null);
+  // Mirror of `version` for the retry timeout. The effect closes
+  // around the initial `null`, so reading `version` directly in the
+  // setTimeout always sees null; a ref gives us the live value so
+  // the retry skips when we already have an answer.
+  const versionRef = React.useRef(null);
+  React.useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    let cancelled = false;
+    const apply = raw => {
+      if (cancelled) return;
+      // CACHE_NAME shape: "alconote-vX.Y.Z" — pluck the version
+      // suffix, fall back to the raw value if the SW ever ships a
+      // different format.
+      const m = String(raw || '').match(/v[\d.]+/);
+      const next = m ? m[0] : raw || null;
+      versionRef.current = next;
+      setVersion(next);
+    };
+    const ask = () => {
+      const ctrl = navigator.serviceWorker.controller;
+      if (!ctrl) return;
+      try {
+        const ch = new MessageChannel();
+        ch.port1.onmessage = e => apply(e && e.data && e.data.version);
+        ctrl.postMessage({
+          type: 'GET_VERSION'
+        }, [ch.port2]);
+      } catch {}
+    };
+    ask();
+    const onChange = () => ask();
+    navigator.serviceWorker.addEventListener('controllerchange', onChange);
+    // Some browsers deliver the controller on a microtask after the
+    // page loads; retry once after a short delay if we still don't
+    // have an answer.
+    const retry = setTimeout(() => {
+      if (!versionRef.current) ask();
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(retry);
+      navigator.serviceWorker.removeEventListener('controllerchange', onChange);
+    };
+  }, []);
+  return version;
+}
+
 // ── niceMax ──────────────────────────────────────────────────────
 function niceMax(v, fallback = 1) {
   if (!isFinite(v) || v <= 0) return fallback;
@@ -1414,5 +1473,6 @@ Object.assign(window, {
   Confirm,
   ConfirmHost,
   clickable,
-  ghostButton
+  ghostButton,
+  useSWVersion
 });

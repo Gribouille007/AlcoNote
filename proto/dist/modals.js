@@ -816,9 +816,14 @@ function DrinkDetailSheet({
 }) {
   const ratings = useRatings();
   const {
-    drinks,
     loading
   } = useDrinks();
+  // Read the shared families memo from FamiliesContext instead of
+  // rebuilding the grouping locally — `buildFamilies(drinks, ratings)`
+  // ran on every bump and produced a brand-new array each time, which
+  // forced this sheet through the same recompute that HistoryTab and
+  // CategoriesTab were already doing.
+  const families = useFamilies();
   // Pin the drink-family identity from props once: we want to keep
   // showing the same family even after a single entry inside it gets
   // deleted (so the timeline updates instead of the sheet closing).
@@ -834,8 +839,7 @@ function DrinkDetailSheet({
   const liveFamily = React.useMemo(() => {
     const seed = seedRef.current;
     if (!seed) return null;
-    const fams = buildFamilies(drinks, ratings);
-    const match = fams.find(x => x.id === seed.id) || fams.find(x => x.name === seed.name && x.quantity === seed.quantity && (x.unit || '').toLowerCase() === (seed.unit || '').toLowerCase() && (x.alcohol || 0) === (seed.alcohol || 0));
+    const match = families.find(x => x.id === seed.id) || families.find(x => x.name === seed.name && x.quantity === seed.quantity && (x.unit || '').toLowerCase() === (seed.unit || '').toLowerCase() && (x.alcohol || 0) === (seed.alcohol || 0));
     if (match) return match;
     // No match yet: while drinks are still loading, reuse the seed's
     // entries (they came from the caller's already-loaded list) instead
@@ -845,7 +849,7 @@ function DrinkDetailSheet({
       ...seed,
       entries: seed.entries || []
     };
-  }, [drinks, ratings]);
+  }, [families]);
   // Close automatically when the family no longer has any entries — but
   // only once drinks have loaded, so we don't close before the data
   // arrives.
@@ -1157,6 +1161,7 @@ function EditEntrySheet({
   const {
     categories
   } = useCategories();
+  const ratings = useRatings();
   const raw = entry.raw || entry;
   const [name, setName] = React.useState(raw.name || '');
   const [qty, setQty] = React.useState(raw.quantity != null ? raw.quantity : '');
@@ -1165,6 +1170,9 @@ function EditEntrySheet({
   const [cat, setCat] = React.useState(raw.category || '');
   const [date, setDate] = React.useState(raw.date || _now().date);
   const [time, setTime] = React.useState(raw.time || _now().time);
+  // Ratings are keyed by drink name; editing an entry's rating moves
+  // the value to whatever name the user saves under.
+  const [rating, setRating] = React.useState(ratings[raw.name] != null ? ratings[raw.name] : 0);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   const save = async () => {
@@ -1180,8 +1188,9 @@ function EditEntrySheet({
     }
     setBusy(true);
     try {
+      const finalName = name.trim();
       await updateDrink(raw.id, {
-        name: name.trim(),
+        name: finalName,
         category: cat,
         quantity: qtyNum,
         unit,
@@ -1189,6 +1198,12 @@ function EditEntrySheet({
         date,
         time
       });
+      // Renaming the entry only changes this row's name; siblings in
+      // the family keep theirs. The old-name rating stays valid as
+      // long as ANY drink keeps that name, so we never wipe it here.
+      if (rating !== (ratings[finalName] || 0)) {
+        await saveRating(finalName, rating);
+      }
       Toast.show('Boisson modifiée');
       onClose && onClose();
     } catch (e) {
@@ -1421,7 +1436,33 @@ function EditEntrySheet({
       WebkitAppearance: 'none',
       appearance: 'none'
     }
-  }))), err && /*#__PURE__*/React.createElement("div", {
+  }))), /*#__PURE__*/React.createElement(FieldGroup, {
+    label: "Note"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: T.surface2,
+      border: `1px solid ${T.rule}`,
+      borderRadius: 12,
+      padding: '10px 14px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between'
+    }
+  }, /*#__PURE__*/React.createElement(Stars, {
+    n: rating,
+    interactive: true,
+    size: 18,
+    onChange: setRating
+  }), rating > 0 && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setRating(0),
+    style: {
+      ...ghostButton,
+      color: T.muted,
+      fontSize: 11,
+      cursor: 'pointer'
+    }
+  }, "Effacer"))), err && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.accent2,
       background: 'oklch(35% 0.10 25 / 0.15)',
@@ -1508,11 +1549,17 @@ function EditFamilySheet({
   const {
     categories
   } = useCategories();
+  const ratings = useRatings();
   const [name, setName] = React.useState(family.name);
   const [qty, setQty] = React.useState(family.quantity);
   const [unit, setUnit] = React.useState(family.unit);
   const [alc, setAlc] = React.useState(family.alcohol);
   const [cat, setCat] = React.useState(family.category);
+  // Ratings are keyed by drink name (not per family / per entry), so
+  // we seed from the current name's value and persist under whatever
+  // name the user ends up saving. Renaming the family migrates the
+  // rating to the new key.
+  const [rating, setRating] = React.useState(ratings[family.name] != null ? ratings[family.name] : family.rating || 0);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   const save = async () => {
@@ -1522,13 +1569,25 @@ function EditFamilySheet({
     }
     setBusy(true);
     try {
+      const finalName = name.trim();
+      const renamed = finalName !== family.name;
       await updateFamily(family, {
-        name: name.trim(),
+        name: finalName,
         quantity: Number(qty) || 0,
         unit,
         alcoholContent: Number(alc) || 0,
         category: cat
       });
+      // Migrate the rating to the new key when the family is renamed,
+      // then wipe the orphan row under the old name. Without the second
+      // call, deleting then re-adding a drink with the old name would
+      // resurrect the old rating from a stale row in `drinkRatings`.
+      if (rating !== (ratings[finalName] || 0)) {
+        await saveRating(finalName, rating);
+      }
+      if (renamed && ratings[family.name] != null) {
+        await saveRating(family.name, 0);
+      }
       Toast.show('Boisson mise à jour');
       onClose && onClose();
     } catch (e) {
@@ -1714,7 +1773,33 @@ function EditFamilySheet({
     step: "0.1",
     onChange: e => setAlc(+e.target.value || 0),
     style: inputS()
-  })), err && /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement(FieldGroup, {
+    label: "Note"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: T.surface2,
+      border: `1px solid ${T.rule}`,
+      borderRadius: 12,
+      padding: '10px 14px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between'
+    }
+  }, /*#__PURE__*/React.createElement(Stars, {
+    n: rating,
+    interactive: true,
+    size: 18,
+    onChange: setRating
+  }), rating > 0 && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setRating(0),
+    style: {
+      ...ghostButton,
+      color: T.muted,
+      fontSize: 11,
+      cursor: 'pointer'
+    }
+  }, "Effacer"))), err && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.accent2,
       background: 'oklch(35% 0.10 25 / 0.15)',
@@ -1798,6 +1883,10 @@ function SettingsDrawer({
 }) {
   const settings = useSettings();
   const fileInputRef = React.useRef(null);
+  // Read the running SW's reported version so the footer always
+  // matches the cache actually shipping. Falls back to "—" when no
+  // SW is registered (browser preview, file://).
+  const swVersion = useSWVersion();
   if (!open) return null;
   const onExport = async () => {
     try {
@@ -1950,7 +2039,7 @@ function SettingsDrawer({
       padding: '24px 0',
       letterSpacing: 0.3
     }
-  }, "AlcoNote \xB7 v3.0"))));
+  }, "AlcoNote \xB7 ", swVersion || '—'))));
 }
 function ThemePicker() {
   useTheme();

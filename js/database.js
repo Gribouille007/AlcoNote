@@ -713,10 +713,14 @@ class DatabaseManager {
 
     async clearAllData() {
         try {
-            await this.db.transaction('rw', this.db.categories, this.db.drinks, this.db.settings, async () => {
+            // Include drinkRatings in the wipe — leaving them behind orphaned
+            // every star rating in the DB after a "Tout effacer", which then
+            // resurrected onto any drink the user re-added with the same name.
+            await this.db.transaction('rw', this.db.categories, this.db.drinks, this.db.settings, this.db.drinkRatings, async () => {
                 await this.db.categories.clear();
                 await this.db.drinks.clear();
                 await this.db.settings.clear();
+                await this.db.drinkRatings.clear();
             });
 
             // Reinitialize default settings only

@@ -7,7 +7,13 @@
 const DEFAULT_CATEGORY_NAMES = ['Bière', 'Vin', 'Spiritueux', 'Cocktail', 'Autre'];
 
 // Bus -- listeners are notified when DB writes happen so any component can
-// re-fetch. Components should also call `dataBus.bump()` after mutating.
+// re-fetch. Each `bump(channel)` carries an optional channel name
+// (`drinks` / `ratings` / `categories` / `settings`); subscribers may
+// filter by channel via `useDataVersion(['drinks'])`. Calling `bump()`
+// without a channel fans out to everyone (used by `clearAllData` and
+// any legacy caller). Components should call `dataBus.bump(channel)`
+// after writes; the channels prevent a rating write from forcing
+// every drinks/categories/settings provider to re-fetch.
 const dataBus = (() => {
   const subs = new Set();
   return {
@@ -15,18 +21,23 @@ const dataBus = (() => {
       subs.add(fn);
       return () => subs.delete(fn);
     },
-    bump() {
+    bump(channel) {
       subs.forEach(fn => {
         try {
-          fn();
+          fn(channel);
         } catch (e) {}
       });
     }
   };
 })();
-function useDataVersion() {
+function useDataVersion(channels) {
   const [v, setV] = React.useState(0);
-  React.useEffect(() => dataBus.sub(() => setV(x => x + 1)), []);
+  React.useEffect(() => dataBus.sub(ch => {
+    // Channel-less bumps (clearAllData, legacy callers) fan out to
+    // everyone. A subscriber with no `channels` arg also accepts all.
+    if (channels && ch && !channels.includes(ch)) return;
+    setV(x => x + 1);
+  }), [channels && channels.join(',')]);
   return v;
 }
 
@@ -87,62 +98,73 @@ async function _ensureDefaultCategories() {
   return _seedPromise;
 }
 
-// ── Hook: load categories list ────────────────────────────────────
-function useCategories() {
-  const v = useDataVersion();
-  const [cats, setCats] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
-  React.useEffect(() => {
-    let alive = true;
-    (async () => {
-      const db = await waitForDb();
-      if (!db) return;
-      await _ensureDefaultCategories();
-      const list = await db.getAllCategories();
-      if (alive) {
-        setCats(list);
-        setLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [v]);
-  return {
-    categories: cats,
-    loading
-  };
-}
+// ── Contexts for hoisted data ────────────────────────────────────
+// App-level providers fetch once per dataBus.bump and broadcast to
+// every child. Each `useX()` hook just reads its context — no per-
+// consumer DB round-trip. Without an outer provider the default value
+// is returned (empty list / empty map), which only matters during the
+// transient ReactDOM bootstrap before <App/> commits.
+const DrinksContext = React.createContext({
+  drinks: [],
+  loading: true
+});
+const RatingsContext = React.createContext({});
+const CategoriesContext = React.createContext({
+  categories: [],
+  loading: true
+});
+const SettingsContext = React.createContext({});
+// Families are derived from drinks + ratings — hoisted once at App
+// level so HistoryTab / CategoriesTab / DrinkDetailSheet share the same
+// memo instead of each rebuilding the grouping on every dataBus bump.
+const FamiliesContext = React.createContext([]);
 
-// ── Hook: load all drinks (chronological) ────────────────────────
-function useDrinks() {
-  const v = useDataVersion();
-  const [drinks, setDrinks] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
+// Channels each provider listens to. Hoisted to module scope so the
+// useDataVersion dep `channels.join(',')` stays a stable string and
+// the effect doesn't re-subscribe on every render.
+const _CH_DRINKS = ['drinks'];
+const _CH_RATINGS = ['ratings'];
+// Categories react to direct writes AND to renames that cascade into
+// the drinks table — `drinkCount` per category is recomputed there.
+const _CH_CATEGORIES = ['categories', 'drinks'];
+const _CH_SETTINGS = ['settings'];
+
+// Single DB fetch per relevant dataBus.bump. The four providers below
+// each own one async load + one state cell; their children read via
+// context. With per-channel subscriptions, a rating write no longer
+// forces drinks/categories/settings to re-fetch — cuts the bump
+// fan-out from 4 fetches to 1 in the common case.
+function DrinksProvider({
+  children
+}) {
+  const v = useDataVersion(_CH_DRINKS);
+  const [state, setState] = React.useState({
+    drinks: [],
+    loading: true
+  });
   React.useEffect(() => {
     let alive = true;
     (async () => {
       const db = await waitForDb();
       if (!db) return;
       const list = await db.getAllDrinks();
-      if (alive) {
-        setDrinks(list);
-        setLoading(false);
-      }
+      if (alive) setState({
+        drinks: list,
+        loading: false
+      });
     })();
     return () => {
       alive = false;
     };
   }, [v]);
-  return {
-    drinks,
-    loading
-  };
+  return React.createElement(DrinksContext.Provider, {
+    value: state
+  }, children);
 }
-
-// ── Hook: load drink ratings ──────────────────────────────────────
-function useRatings() {
-  const v = useDataVersion();
+function RatingsProvider({
+  children
+}) {
+  const v = useDataVersion(_CH_RATINGS);
   const [map, setMap] = React.useState({});
   React.useEffect(() => {
     let alive = true;
@@ -159,7 +181,68 @@ function useRatings() {
       alive = false;
     };
   }, [v]);
-  return map;
+  return React.createElement(RatingsContext.Provider, {
+    value: map
+  }, children);
+}
+function CategoriesProvider({
+  children
+}) {
+  const v = useDataVersion(_CH_CATEGORIES);
+  const [state, setState] = React.useState({
+    categories: [],
+    loading: true
+  });
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const db = await waitForDb();
+      if (!db) return;
+      await _ensureDefaultCategories();
+      const list = await db.getAllCategories();
+      if (alive) setState({
+        categories: list,
+        loading: false
+      });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [v]);
+  return React.createElement(CategoriesContext.Provider, {
+    value: state
+  }, children);
+}
+function SettingsProvider({
+  children
+}) {
+  const v = useDataVersion(_CH_SETTINGS);
+  const [s, setS] = React.useState({});
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const out = await loadSettings();
+      if (alive) setS(out);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [v]);
+  return React.createElement(SettingsContext.Provider, {
+    value: s
+  }, children);
+}
+function useCategories() {
+  return React.useContext(CategoriesContext);
+}
+function useDrinks() {
+  return React.useContext(DrinksContext);
+}
+function useRatings() {
+  return React.useContext(RatingsContext);
+}
+function useFamilies() {
+  return React.useContext(FamiliesContext);
 }
 // ── Family aggregation ───────────────────────────────────────────
 // A "family" groups distinct drinks by (name + quantity + unit + alcohol).
@@ -243,22 +326,10 @@ async function saveSetting(key, value) {
   const db = await waitForDb();
   if (!db) return;
   await db.setSetting(key, value);
-  dataBus.bump();
+  dataBus.bump('settings');
 }
 function useSettings() {
-  const v = useDataVersion();
-  const [s, setS] = React.useState({});
-  React.useEffect(() => {
-    let alive = true;
-    (async () => {
-      const out = await loadSettings();
-      if (alive) setS(out);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [v]);
-  return s;
+  return React.useContext(SettingsContext);
 }
 
 // ── BAC records ───────────────────────────────────────────────────
@@ -281,32 +352,43 @@ function useBacRecords(limit = 50) {
 }
 
 // ── Mutations ─────────────────────────────────────────────────────
+// Each mutation bumps only the channels its write actually touches —
+// providers subscribed to other channels won't refetch. updateDrink
+// and friends bump 'drinks' (the row table) AND 'categories' when the
+// category field changes, because the legacy DB layer recomputes
+// `drinkCount` on the affected categories.
 async function addDrink(payload) {
   const db = await waitForDb();
   if (!db) throw new Error('DB indisponible');
   const r = await db.addDrink(payload);
-  dataBus.bump();
+  dataBus.bump('drinks');
+  // addDrink updates the target category's drinkCount.
+  dataBus.bump('categories');
   return r;
 }
 async function updateDrink(id, updates) {
   const db = await waitForDb();
   if (!db) throw new Error('DB indisponible');
   const r = await db.updateDrink(id, updates);
-  dataBus.bump();
+  dataBus.bump('drinks');
+  // Category drinkCount is recomputed when `category` changes; safest
+  // to always bump (cheap) so the categories grid stays accurate.
+  dataBus.bump('categories');
   return r;
 }
 async function deleteDrink(id) {
   const db = await waitForDb();
   if (!db) throw new Error('DB indisponible');
   const r = await db.deleteDrink(id);
-  dataBus.bump();
+  dataBus.bump('drinks');
+  dataBus.bump('categories');
   return r;
 }
 async function saveRating(drinkName, rating) {
   const db = await waitForDb();
   if (!db) return;
   await db.setRating(drinkName, rating);
-  dataBus.bump();
+  dataBus.bump('ratings');
 }
 async function addCategory(name) {
   const db = await waitForDb();
@@ -314,7 +396,7 @@ async function addCategory(name) {
   const r = await db.addCategory({
     name
   });
-  dataBus.bump();
+  dataBus.bump('categories');
   return r;
 }
 async function renameCategory(oldName, newName) {
@@ -346,7 +428,12 @@ async function renameCategory(oldName, newName) {
     if (toWrite) m[newName] = toWrite;
     window.__alcoCatIcons = m;
   }
-  dataBus.bump();
+
+  // renameCategory cascades into the drinks table (every drink with
+  // that category gets rewritten), so bump both channels.
+  dataBus.bump('categories');
+  dataBus.bump('drinks');
+  if (toWrite || existing) dataBus.bump('settings');
 }
 async function deleteCategory(id, options = {}) {
   const db = await waitForDb();
@@ -383,7 +470,9 @@ async function deleteCategory(id, options = {}) {
       window.__alcoCatIcons = m;
     }
   }
-  dataBus.bump();
+  dataBus.bump('categories');
+  if (options.reassignTo) dataBus.bump('drinks');
+  if (name) dataBus.bump('settings');
 }
 
 // ── Category icon overrides ───────────────────────────────────────
@@ -411,7 +500,10 @@ async function setCategoryIcon(name, glyph) {
     };
     if (glyph) window.__alcoCatIcons[name] = glyph;else delete window.__alcoCatIcons[name];
   }
-  dataBus.bump();
+  // Icon overrides live in the settings table; useCategoryIcons is
+  // subscribed to ['settings', 'categories'] so this single bump
+  // refreshes every glyph in the tree.
+  dataBus.bump('settings');
 }
 
 // All mutating helpers (setCategoryIcon, renameCategory, deleteCategory)
@@ -420,8 +512,13 @@ async function setCategoryIcon(name, glyph) {
 // gives a consistent snapshot without a round-trip through IndexedDB.
 // Eliminates the 1-frame stale render that used to leave the old glyph
 // on screen right after the user saved a new icon.
+//
+// Subscribes to the same channels that touch the icon mirror:
+// `settings` covers `setCategoryIcon` writes, `categories` covers
+// rename/delete which also rewrite the mirror keys.
+const _CH_CAT_ICONS = ['settings', 'categories'];
 function useCategoryIcons() {
-  const v = useDataVersion();
+  const v = useDataVersion(_CH_CAT_ICONS);
   return React.useMemo(() => typeof window !== 'undefined' && window.__alcoCatIcons || {}, [v]);
 }
 
@@ -434,7 +531,9 @@ async function updateFamily(family, updates) {
   for (const m of matches) {
     await db.updateDrink(m.id, updates);
   }
-  dataBus.bump();
+  dataBus.bump('drinks');
+  // Category drinkCount may shift when `category` is part of `updates`.
+  dataBus.bump('categories');
 }
 
 // CONTRACT CHANGE (v3.5.0): now returns `{ count, snapshot }` instead of
@@ -453,7 +552,8 @@ async function deleteFamily(family) {
   for (const m of matches) {
     await db.deleteDrink(m.id);
   }
-  dataBus.bump();
+  dataBus.bump('drinks');
+  dataBus.bump('categories');
   return {
     count: matches.length,
     snapshot
@@ -480,7 +580,8 @@ async function restoreDrinks(drinks) {
     } = d;
     await db.addDrink(payload);
   }
-  dataBus.bump();
+  dataBus.bump('drinks');
+  dataBus.bump('categories');
 }
 
 // Single-drink delete that returns the original row, so callers can
@@ -494,7 +595,8 @@ async function deleteDrinkWithSnapshot(id) {
   const row = await db.getDrinkById(id);
   if (!row) throw new Error('Boisson introuvable');
   await db.deleteDrink(id);
-  dataBus.bump();
+  dataBus.bump('drinks');
+  dataBus.bump('categories');
   return row;
 }
 
@@ -548,6 +650,16 @@ Object.assign(window, {
   useSettings,
   useBacRecords,
   useCategoryIcons,
+  useFamilies,
+  DrinksContext,
+  RatingsContext,
+  CategoriesContext,
+  SettingsContext,
+  FamiliesContext,
+  DrinksProvider,
+  RatingsProvider,
+  CategoriesProvider,
+  SettingsProvider,
   buildFamilies,
   computeCategoryStats,
   flattenEntries,

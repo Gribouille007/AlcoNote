@@ -1,9 +1,9 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v3.5.9';
-const STATIC_CACHE = 'alconote-static-v3.5.9';
-const DYNAMIC_CACHE = 'alconote-dynamic-v3.5.9';
+const CACHE_NAME = 'alconote-v3.6.0';
+const STATIC_CACHE = 'alconote-static-v3.6.0';
+const DYNAMIC_CACHE = 'alconote-dynamic-v3.6.0';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -244,9 +244,14 @@ async function staleWhileRevalidate(request) {
 // Create offline response for failed requests
 function createOfflineResponse(request) {
     const url = new URL(request.url);
-    
+    // Guard against missing Accept header — some user agents / fetches
+    // (e.g. internal preload, no-CORS subresources) omit it entirely
+    // and `null.includes(...)` would throw, masking the real network
+    // failure with a TypeError in the SW console.
+    const accept = request.headers.get('accept') || '';
+
     // For HTML requests, return offline page
-    if (request.headers.get('accept').includes('text/html')) {
+    if (accept.includes('text/html')) {
         return new Response(`
             <!DOCTYPE html>
             <html>
@@ -316,7 +321,7 @@ function createOfflineResponse(request) {
     }
     
     // For API requests, return JSON error
-    if (request.headers.get('accept').includes('application/json')) {
+    if (accept.includes('application/json')) {
         return new Response(JSON.stringify({
             error: 'Offline',
             message: 'Cette fonctionnalité nécessite une connexion internet'
