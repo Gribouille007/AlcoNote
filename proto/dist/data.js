@@ -39,21 +39,52 @@ async function waitForDb() {
   }
   return window.dbManager;
 }
+
+// Seeds the 5 default categories ONCE per database, gated by the
+// `cat._initialized` setting. Without that flag, we'd re-seed defaults
+// every time the user emptied the categories table (e.g. after deleting
+// the last remaining category), making it effectively impossible to
+// fully clear the list.
+//
+// `_seedDone` short-circuits subsequent calls after a successful seed
+// (or after we've confirmed via the flag that the seed is already
+// done), avoiding a DB round-trip on every dataBus.bump. `_seedPromise`
+// coalesces concurrent callers during the very first mount, and is
+// cleared on failure so the next call retries instead of being stuck
+// on a memoized no-op promise.
+let _seedDone = false;
+let _seedPromise = null;
 async function _ensureDefaultCategories() {
-  const db = await waitForDb();
-  if (!db) return;
-  try {
-    const existing = await db.getAllCategories();
-    if (existing.length === 0) {
-      for (const name of DEFAULT_CATEGORY_NAMES) {
-        try {
-          await db.addCategory({
-            name
-          });
-        } catch (e) {}
+  if (_seedDone) return;
+  if (_seedPromise) return _seedPromise;
+  _seedPromise = (async () => {
+    try {
+      const db = await waitForDb();
+      if (!db) return;
+      const flag = await db.getSetting('cat._initialized');
+      if (flag) {
+        _seedDone = true;
+        return;
       }
+      const existing = await db.getAllCategories();
+      if (existing.length === 0) {
+        for (const name of DEFAULT_CATEGORY_NAMES) {
+          try {
+            await db.addCategory({
+              name
+            });
+          } catch (e) {}
+        }
+      }
+      await db.setSetting('cat._initialized', true);
+      _seedDone = true;
+    } catch (e) {
+      // swallow — caller is best-effort
+    } finally {
+      if (!_seedDone) _seedPromise = null;
     }
-  } catch (e) {}
+  })();
+  return _seedPromise;
 }
 
 // ── Hook: load categories list ────────────────────────────────────
@@ -336,10 +367,22 @@ async function deleteCategory(id, options = {}) {
     }
   }
   await db.deleteCategory(id);
-  // Also drop any persisted custom icon mapping
-  try {
-    await db.setSetting(`cat.icon.${options.name || ''}`, null);
-  } catch {}
+  // Also drop any persisted custom icon mapping and the matching
+  // runtime mirror entry so a future cat reusing the same name doesn't
+  // inherit a stale glyph.
+  const name = options.name || '';
+  if (name) {
+    try {
+      await db.setSetting(`cat.icon.${name}`, null);
+    } catch {}
+    if (typeof window !== 'undefined' && window.__alcoCatIcons && name in window.__alcoCatIcons) {
+      const m = {
+        ...window.__alcoCatIcons
+      };
+      delete m[name];
+      window.__alcoCatIcons = m;
+    }
+  }
   dataBus.bump();
 }
 
@@ -370,20 +413,16 @@ async function setCategoryIcon(name, glyph) {
   }
   dataBus.bump();
 }
+
+// All mutating helpers (setCategoryIcon, renameCategory, deleteCategory)
+// keep `window.__alcoCatIcons` synchronously in lockstep with the DB
+// before bumping the bus, so reading it inside a useMemo gated on `v`
+// gives a consistent snapshot without a round-trip through IndexedDB.
+// Eliminates the 1-frame stale render that used to leave the old glyph
+// on screen right after the user saved a new icon.
 function useCategoryIcons() {
   const v = useDataVersion();
-  const [icons, setIcons] = React.useState(() => typeof window !== 'undefined' && window.__alcoCatIcons || {});
-  React.useEffect(() => {
-    let alive = true;
-    (async () => {
-      const m = await loadCategoryIcons();
-      if (alive) setIcons(m);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [v]);
-  return icons;
+  return React.useMemo(() => typeof window !== 'undefined' && window.__alcoCatIcons || {}, [v]);
 }
 
 // Apply same updates to every drink that shares (name + qty + unit + abv)
@@ -486,11 +525,16 @@ async function restoreBACRecord(record) {
 }
 
 // Wipe entire database (drinks, categories, settings). Caller is
-// responsible for collecting an explicit user confirmation.
+// responsible for collecting an explicit user confirmation. The seed
+// memoization and runtime icon mirror are reset so the next load
+// re-seeds defaults exactly once on the empty DB.
 async function clearAllData() {
   const db = await waitForDb();
   if (!db) throw new Error('DB indisponible');
   const r = await db.clearAllData();
+  _seedDone = false;
+  _seedPromise = null;
+  if (typeof window !== 'undefined') window.__alcoCatIcons = {};
   dataBus.bump();
   return r;
 }

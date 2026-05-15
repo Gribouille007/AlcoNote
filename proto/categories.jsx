@@ -27,10 +27,13 @@ function CategoriesTab({ onAdd, onOpenFamily, onDirectAdd, onEditFamily, query, 
   const families = React.useMemo(() => buildFamilies(drinks, ratings), [drinks, ratings]);
   const cats = React.useMemo(() => computeCategoryStats(categories, families), [categories, families]);
 
-  const filtered = openCat
-    ? families.filter(f => f.category === openCat &&
-        (query === '' || f.name.toLowerCase().includes((query || '').toLowerCase())))
-    : [];
+  const filtered = React.useMemo(() => {
+    if (!openCat) return [];
+    const q = (query || '').toLowerCase();
+    return families.filter(f =>
+      f.category === openCat && (!q || f.name.toLowerCase().includes(q))
+    );
+  }, [openCat, families, query]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -59,11 +62,13 @@ function CategoriesTab({ onAdd, onOpenFamily, onDirectAdd, onEditFamily, query, 
 
 function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, onDirectAdd, onAdd }) {
   const q = (query || '').toLowerCase();
-  const matchedFams = q
-    ? families.filter(f =>
-        f.name.toLowerCase().includes(q) ||
-        f.category.toLowerCase().includes(q))
-    : [];
+  const matchedFams = React.useMemo(() => {
+    if (!q) return [];
+    return families.filter(f =>
+      f.name.toLowerCase().includes(q) ||
+      f.category.toLowerCase().includes(q)
+    );
+  }, [families, q]);
 
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '0 18px 120px' }}>
@@ -155,34 +160,40 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
   // total entries inside the group, then by quantity asc inside each
   // group. We keep one line per (name, qty, unit, abv) variant so the
   // user can add each individually. Variants share a `groupKey` so
-  // FamilyRow can render the stacked-card visual cue.
-  const groupEntries = new Map(); // name → total entries (for sort)
-  const variantCounts = new Map(); // name → number of variant rows
-  for (const f of families) {
-    const k = (f.name || '').trim().toLowerCase();
-    groupEntries.set(k, (groupEntries.get(k) || 0) + f.entries.length);
-    variantCounts.set(k, (variantCounts.get(k) || 0) + 1);
-  }
-  const sorted = [...families].sort((a, b) => {
-    const ka = (a.name || '').trim().toLowerCase();
-    const kb = (b.name || '').trim().toLowerCase();
-    const ga = groupEntries.get(ka) || 0;
-    const gb = groupEntries.get(kb) || 0;
-    if (gb !== ga) return gb - ga;
-    if (ka !== kb) return ka.localeCompare(kb);
-    if ((a.alcohol || 0) !== (b.alcohol || 0)) return (a.alcohol || 0) - (b.alcohol || 0);
-    return (a.quantity || 0) - (b.quantity || 0);
-  });
-
-  // Build per-row metadata: position within the same-name group.
-  const rows = [];
-  let prevKey = null, idx = 0;
-  for (const f of sorted) {
-    const key = (f.name || '').trim().toLowerCase();
-    if (key !== prevKey) idx = 0;
-    rows.push({ f, key, idx: idx++, total: variantCounts.get(key) || 1 });
-    prevKey = key;
-  }
+  // FamilyRow can render the stacked-card visual cue. Memoized so a
+  // search keystroke or unrelated dataBus bump doesn't recompute the
+  // whole grouping when the filtered `families` array reference is
+  // unchanged.
+  const { rows, sortedLen, entriesTotal } = React.useMemo(() => {
+    const groupEntries = new Map(); // name → total entries (for sort)
+    const variantCounts = new Map(); // name → number of variant rows
+    for (const f of families) {
+      const k = (f.name || '').trim().toLowerCase();
+      groupEntries.set(k, (groupEntries.get(k) || 0) + f.entries.length);
+      variantCounts.set(k, (variantCounts.get(k) || 0) + 1);
+    }
+    const sorted = [...families].sort((a, b) => {
+      const ka = (a.name || '').trim().toLowerCase();
+      const kb = (b.name || '').trim().toLowerCase();
+      const ga = groupEntries.get(ka) || 0;
+      const gb = groupEntries.get(kb) || 0;
+      if (gb !== ga) return gb - ga;
+      if (ka !== kb) return ka.localeCompare(kb);
+      if ((a.alcohol || 0) !== (b.alcohol || 0)) return (a.alcohol || 0) - (b.alcohol || 0);
+      return (a.quantity || 0) - (b.quantity || 0);
+    });
+    const out = [];
+    let prevKey = null, idx = 0;
+    for (const f of sorted) {
+      const key = (f.name || '').trim().toLowerCase();
+      if (key !== prevKey) idx = 0;
+      out.push({ f, key, idx: idx++, total: variantCounts.get(key) || 1 });
+      prevKey = key;
+    }
+    let entries = 0;
+    for (const f of families) entries += f.entries.length;
+    return { rows: out, sortedLen: sorted.length, entriesTotal: entries };
+  }, [families]);
 
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '0 18px 120px' }}>
@@ -213,8 +224,8 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
         letterSpacing: -0.8, lineHeight: 1, marginBottom: 4,
       }}>{category}</div>
       <div style={{ color: T.muted, fontSize: 12, marginBottom: 18, letterSpacing: 0.1 }}>
-        {sorted.length} variante{sorted.length !== 1 ? 's' : ''} ·
-        {' '}{families.reduce((s, f) => s + f.entries.length, 0)} entrées au total
+        {sortedLen} variante{sortedLen !== 1 ? 's' : ''} ·
+        {' '}{entriesTotal} entrées au total
       </div>
 
       {rows.map(({ f, idx, total }) => (
@@ -302,22 +313,35 @@ function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onClick, onD
 }
 function EditCategorySheet({ category, onClose }) {
   const { categories } = useCategories();
-  const { drinks } = useDrinks();
-  const icons = useCategoryIcons();
+  // Read overrides from the App-level CategoryIconsContext rather than
+  // re-subscribing locally — keeps the sheet in sync with whatever the
+  // grid is painting without a second DB round-trip on every bump.
+  const icons = React.useContext(CategoryIconsContext);
   const [name, setName] = React.useState(category);
-  // `glyph` holds the user's *explicit* choice (null until they tap one
-  // of the picker tiles). The picker still needs something to highlight
-  // when there's no override — `displayedGlyph` resolves that fallback
-  // to whatever <CategoryGlyph> actually paints for `category`, so the
-  // highlighted tile always matches the icon shown on the card.
+  // `glyph` holds the user's *explicit* choice in this sheet. `null`
+  // means "no explicit pick yet" (use whatever's currently persisted)
+  // and a string means the user actively selected that tile — including
+  // the `'__reset__'` sentinel which means "drop the override".
   const [glyph, setGlyphState] = React.useState(() => icons[category] || null);
   const userTouchedRef = React.useRef(false);
   const setGlyph = (g) => { userTouchedRef.current = true; setGlyphState(g); };
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
+  // Re-entry guards — protect against double-tap on Save/Supprimer
+  // before React has flipped `busy` and disabled the buttons.
+  const savingRef = React.useRef(false);
+  const removingRef = React.useRef(false);
 
-  const displayedGlyph = glyph
-    || (GLYPH_OPTIONS.includes(category) ? category : 'Autre');
+  // What the picker should highlight. After "Réinitialiser" we fall
+  // back to the same logic <CategoryGlyph> uses when there's no
+  // override, so the highlighted tile matches the card.
+  const displayedGlyph = (glyph && glyph !== '__reset__')
+    ? glyph
+    : (GLYPH_OPTIONS.includes(category) ? category : 'Autre');
+
+  // Keep the form in sync if the sheet is reused for a different
+  // category (rare in current routing, but cheap to guard against).
+  React.useEffect(() => { setName(category); }, [category]);
 
   // Adopt the persisted override once it loads (or is updated elsewhere)
   // — but never overwrite a pick the user has already made in this sheet.
@@ -325,13 +349,21 @@ function EditCategorySheet({ category, onClose }) {
     if (!userTouchedRef.current) setGlyphState(icons[category] || null);
   }, [icons, category]);
 
-  const drinksInCat = drinks.filter(d => (d.category || '') === category).length;
-  const catObj = categories.find(c => c.name === category);
+  // Use the category row's maintained `drinkCount` instead of fetching
+  // every drink and filtering — `useDrinks()` would re-run on every
+  // dataBus bump and is overkill when all we need is one tally.
+  const catObj = React.useMemo(
+    () => categories.find(c => c.name === category),
+    [categories, category],
+  );
+  const drinksInCat = catObj?.drinkCount || 0;
 
   const save = async () => {
+    if (savingRef.current) return;
     setErr('');
     const trimmed = (name || '').trim();
     if (!trimmed) { setErr('Le nom ne peut pas être vide'); return; }
+    savingRef.current = true;
     setBusy(true);
     try {
       let finalName = category;
@@ -342,8 +374,16 @@ function EditCategorySheet({ category, onClose }) {
         await renameCategory(category, trimmed);
         finalName = trimmed;
       }
-      if (userTouchedRef.current && glyph) {
-        await setCategoryIcon(finalName, glyph);
+      if (userTouchedRef.current) {
+        // '__reset__' wipes the persisted override entirely so the
+        // category falls back to its name-based default glyph.
+        const next = glyph === '__reset__' ? null : glyph;
+        // Skip the write when the user picked Reset on a category that
+        // had no override to begin with — nothing to delete.
+        const hadOverride = !!icons[category];
+        if (next || (glyph === '__reset__' && hadOverride)) {
+          await setCategoryIcon(finalName, next);
+        }
       }
       Toast.show(`Catégorie « ${finalName} » mise à jour`);
       onClose && onClose();
@@ -351,11 +391,23 @@ function EditCategorySheet({ category, onClose }) {
       setErr(e && e.message ? e.message : 'Erreur lors de l\'enregistrement');
     } finally {
       setBusy(false);
+      savingRef.current = false;
     }
   };
 
   const remove = async () => {
-    if (!catObj) return;
+    if (removingRef.current) return;
+    setErr('');
+    // Resolve fresh from the current categories array on click instead
+    // of caching at render — if the list re-fetched (e.g. concurrent
+    // delete elsewhere), the row id we'd otherwise hand to the DB might
+    // already be stale. If the cat really is gone, bail visibly instead
+    // of silently no-op'ing.
+    const fresh = categories.find(c => c.name === category);
+    if (!fresh) {
+      setErr('Catégorie introuvable — elle a peut-être déjà été supprimée.');
+      return;
+    }
     let reassignTo = null;
     if (drinksInCat > 0) {
       const others = categories.filter(c => c.name !== category);
@@ -381,17 +433,22 @@ function EditCategorySheet({ category, onClose }) {
       });
       if (!ok) return;
     }
+    removingRef.current = true;
     setBusy(true);
     try {
-      await deleteCategory(catObj.id, { reassignTo, name: category });
+      await deleteCategory(fresh.id, { reassignTo, name: category });
       Toast.show(`Catégorie supprimée`);
       onClose && onClose();
     } catch (e) {
       setErr(e && e.message ? e.message : 'Erreur lors de la suppression');
     } finally {
       setBusy(false);
+      removingRef.current = false;
     }
   };
+
+  const hasOverride = !!icons[category];
+  const showResetTile = hasOverride || glyph === '__reset__';
 
   return (
     <SheetOverlay onClose={onClose}>
@@ -431,7 +488,7 @@ function EditCategorySheet({ category, onClose }) {
         <div role="radiogroup" aria-label="Icône de catégorie"
           style={{ display: 'flex', gap: 10, marginBottom: 22, flexWrap: 'wrap' }}>
           {GLYPH_OPTIONS.map(g => {
-            const selected = displayedGlyph === g;
+            const selected = displayedGlyph === g && glyph !== '__reset__';
             return (
               <button key={g} type="button" role="radio" aria-checked={selected}
                 aria-label={`Icône ${g}`}
@@ -449,6 +506,24 @@ function EditCategorySheet({ category, onClose }) {
               </button>
             );
           })}
+          {showResetTile && (
+            <button type="button" role="radio"
+              aria-checked={glyph === '__reset__'}
+              aria-label="Réinitialiser l'icône"
+              onClick={() => setGlyph('__reset__')}
+              title="Revenir à l'icône par défaut"
+              style={{
+                width: 52, height: 52, borderRadius: 12,
+                background: glyph === '__reset__' ? T.surface3 : T.surface2,
+                border: `2px dashed ${glyph === '__reset__' ? T.ink2 : T.rule}`,
+                display: 'grid', placeItems: 'center',
+                color: glyph === '__reset__' ? T.ink : T.muted,
+                cursor: 'pointer', padding: 0, fontFamily: 'inherit',
+                transition: 'background 0.15s ease, border-color 0.15s ease',
+              }}>
+              <SvgIcon icon={Ic.refresh} size={18} />
+            </button>
+          )}
         </div>
 
         {err && (
