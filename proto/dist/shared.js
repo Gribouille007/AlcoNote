@@ -1360,23 +1360,30 @@ function StatusBar() {
 // expected to render a fallback ("—") in that case.
 function useSWVersion() {
   const [version, setVersion] = React.useState(null);
+  // Mirror of `version` for the retry timeout. The effect closes
+  // around the initial `null`, so reading `version` directly in the
+  // setTimeout always sees null; a ref gives us the live value so
+  // the retry skips when we already have an answer.
+  const versionRef = React.useRef(null);
   React.useEffect(() => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
     let cancelled = false;
+    const apply = raw => {
+      if (cancelled) return;
+      // CACHE_NAME shape: "alconote-vX.Y.Z" — pluck the version
+      // suffix, fall back to the raw value if the SW ever ships a
+      // different format.
+      const m = String(raw || '').match(/v[\d.]+/);
+      const next = m ? m[0] : raw || null;
+      versionRef.current = next;
+      setVersion(next);
+    };
     const ask = () => {
       const ctrl = navigator.serviceWorker.controller;
       if (!ctrl) return;
       try {
         const ch = new MessageChannel();
-        ch.port1.onmessage = e => {
-          if (cancelled) return;
-          const raw = e && e.data && e.data.version || '';
-          // CACHE_NAME shape: "alconote-vX.Y.Z" — pluck the version
-          // suffix, fall back to the raw value if the SW ever ships
-          // a different format.
-          const m = String(raw).match(/v[\d.]+/);
-          setVersion(m ? m[0] : raw || null);
-        };
+        ch.port1.onmessage = e => apply(e && e.data && e.data.version);
         ctrl.postMessage({
           type: 'GET_VERSION'
         }, [ch.port2]);
@@ -1386,17 +1393,16 @@ function useSWVersion() {
     const onChange = () => ask();
     navigator.serviceWorker.addEventListener('controllerchange', onChange);
     // Some browsers deliver the controller on a microtask after the
-    // page loads; retry once after a short delay if we didn't catch
-    // one synchronously.
+    // page loads; retry once after a short delay if we still don't
+    // have an answer.
     const retry = setTimeout(() => {
-      if (!version) ask();
+      if (!versionRef.current) ask();
     }, 400);
     return () => {
       cancelled = true;
       clearTimeout(retry);
       navigator.serviceWorker.removeEventListener('controllerchange', onChange);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return version;
 }

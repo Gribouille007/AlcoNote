@@ -739,6 +739,9 @@ function EditEntrySheet({ entry, onClose }) {
         date,
         time,
       });
+      // Renaming the entry only changes this row's name; siblings in
+      // the family keep theirs. The old-name rating stays valid as
+      // long as ANY drink keeps that name, so we never wipe it here.
       if (rating !== (ratings[finalName] || 0)) {
         await saveRating(finalName, rating);
       }
@@ -951,6 +954,7 @@ function EditFamilySheet({ family, onClose }) {
     setBusy(true);
     try {
       const finalName = name.trim();
+      const renamed = finalName !== family.name;
       await updateFamily(family, {
         name: finalName,
         quantity: Number(qty) || 0,
@@ -958,11 +962,15 @@ function EditFamilySheet({ family, onClose }) {
         alcoholContent: Number(alc) || 0,
         category: cat,
       });
-      // Persist rating under the (possibly new) name. Skip the write
-      // when the value hasn't changed from the persisted one to avoid
-      // a redundant dataBus bump.
+      // Migrate the rating to the new key when the family is renamed,
+      // then wipe the orphan row under the old name. Without the second
+      // call, deleting then re-adding a drink with the old name would
+      // resurrect the old rating from a stale row in `drinkRatings`.
       if (rating !== (ratings[finalName] || 0)) {
         await saveRating(finalName, rating);
+      }
+      if (renamed && ratings[family.name] != null) {
+        await saveRating(family.name, 0);
       }
       Toast.show('Boisson mise à jour');
       onClose && onClose();
@@ -1123,24 +1131,14 @@ function EditFamilySheet({ family, onClose }) {
     </SheetOverlay>
   );
 }
-// Version footer — reads the running service-worker's reported
-// version so the label always reflects the cache name actually
-// shipping, not a hardcoded string that drifts behind sw.js. Falls
-// back to "—" when no SW is registered (browser preview, file://).
-function AppVersionFooter() {
-  const v = useSWVersion();
-  return (
-    <div style={{
-      color: T.muted, fontSize: 10, textAlign: 'center',
-      padding: '24px 0', letterSpacing: 0.3,
-    }}>AlcoNote · {v || '—'}</div>
-  );
-}
-
 // ── Settings drawer ────────────────────────────────────────────────
 function SettingsDrawer({ open, onClose }) {
   const settings = useSettings();
   const fileInputRef = React.useRef(null);
+  // Read the running SW's reported version so the footer always
+  // matches the cache actually shipping. Falls back to "—" when no
+  // SW is registered (browser preview, file://).
+  const swVersion = useSWVersion();
 
   if (!open) return null;
 
@@ -1232,7 +1230,10 @@ function SettingsDrawer({ open, onClose }) {
           <input ref={fileInputRef} type="file" accept=".json,application/json"
             style={{ display: 'none' }} onChange={onFile}/>
 
-          <AppVersionFooter />
+          <div style={{
+            color: T.muted, fontSize: 10, textAlign: 'center',
+            padding: '24px 0', letterSpacing: 0.3,
+          }}>AlcoNote · {swVersion || '—'}</div>
         </div>
       </div>
     </SheetOverlay>
@@ -1357,6 +1358,6 @@ function SettingRow({ label, value, icon, danger, last, onClick }) {
 }
 Object.assign(window, {
   AddDrinkSheet, ScannerSheet, DrinkDetailSheet, EditFamilySheet, EditEntrySheet,
-  SettingsDrawer, AppVersionFooter, FieldGroup, ImpactStat, FactCell,
+  SettingsDrawer, FieldGroup, ImpactStat, FactCell,
   ThemePicker, ProfileRow, GenderPicker, SettingsGroup, SettingRow,
 });
