@@ -11,6 +11,58 @@ aussi `README.md` pour la vue produit.
 - Source UI : `proto/*.jsx` → build → `proto/dist/*.js` chargé par
   `index.html`.
 
+## Direction artistique (DA) — règle absolue
+
+**Tout ce qui est implémenté DOIT respecter la DA existante.** Aucun
+nouveau composant, écran, card ou bouton ne doit s'écarter du système
+ci-dessous. Si une teinte, un token ou une primitive manque, on
+l'ajoute au système (`shared.jsx`) puis on l'utilise — jamais de
+valeur en dur.
+
+- **Couleurs** : exclusivement via `T.*`. Aucun littéral `#hex`,
+  `rgb()`, ni `oklch(...)` inline dans les composants. Les exceptions
+  (couleurs OKLCH dans `BAC_LEVELS`, `bacColor`, niveaux d'alerte) sont
+  centralisées et nommées.
+- **Surfaces** : `T.surface` pour les sections, `T.surface2` pour les
+  cards/stat blocks, `T.surface3` pour les sub-blocks ; bordure
+  toujours `1px solid ${T.rule}` ; radius 12 (mini stats), 14 (Card),
+  16 (StatSection).
+- **Typo** : `fontSerif` *italic* pour les chiffres clés et titres
+  expressifs ; `fontNum` (Geist Mono) pour tous les nombres
+  tabulaires (mesures, dates, pourcentages, durées) ; `fontSans` (par
+  défaut) pour le reste. Police montée à `font-family: 'inherit'` sur
+  les `<button>` et `<input>`.
+- **Labels secondaires** : `T.muted`, `fontSize: 9.5–10`,
+  `letterSpacing: 0.3`, `textTransform: 'uppercase'`.
+- **Icônes** : toujours via `<SvgIcon icon={Ic.xxx} size={N} />`. Ne
+  jamais inliner un `<svg>` ad-hoc — l'ajouter à `Ic` dans
+  `shared.jsx`.
+- **Boutons** : `border: 'none'`, `fontFamily: 'inherit'`, `cursor:
+  'pointer'`, `padding: 0` quand reset ; reset complet via le spread
+  `...ghostButton` quand transparent.
+- **Espacements** : multiples pairs (4, 6, 8, 10, 12, 14, 16, 18, 22).
+  Pas de `padding: 13px`.
+- **Chiffres importants** (mini stat card) : `fontFamily: fontSerif`,
+  `fontSize: 22`, `letterSpacing: -0.3 à -0.4`, `lineHeight: 1`.
+- **Composition** : réutiliser `Card`, `MiniStat`, `StatSection`,
+  `StatRow`, `DeltaBadge`, `Stars`, `Pill`, `SvgIcon` plutôt que
+  recréer un conteneur. Pour une stat card "iconifiée", étendre
+  `MiniStat` (props `icon`/`accent`) au lieu de dupliquer.
+- **Animations** : utiliser celles déjà injectées dans `shared.jsx`
+  (`fade`, `slideUp`, `slideRight`, `slideLeft`, `scaleIn`, `pulse`).
+  Transitions : `0.18–0.22s ease`.
+- **Charts** : tous via les primitives de `stats-charts.jsx`
+  (`SvgBarChart`, `SvgRadar`, `SvgDonut`, `SvgLineChart`,
+  `SvgPolarClock`, `SvgBACProjection`, `SvgHistogram`). Toujours
+  passer par `useChartScrubber` + `<ChartTooltip>` pour la
+  scrub/tooltip — jamais d'overlay HTML.
+- **Confirmations** : `Confirm.ask({...})`, jamais `window.confirm`.
+- **Toasts** : `Toast.show(msg, { undo })`, jamais d'alerte custom.
+
+Avant de pousser un nouveau composant : relire la liste ci-dessus en
+diagonale et vérifier chaque point. Une couleur en dur ou un
+`<svg>` inline est un bug DA.
+
 ## Workflow build
 
 ```bash

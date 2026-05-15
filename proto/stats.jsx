@@ -1,11 +1,14 @@
 // stats.jsx — Tab 3: Statistiques
-// Sections: Général, Temporel, Catégorie, Top, BAC, Évolution mensuelle,
-// Avancées. All sections are collapsible (state persisted in localStorage)
-// and read from the real IndexedDB layer via the `useDrinks` / `useBacRecords`
-// hooks. The legacy stats-calculator helpers in `js/stats-calculators/*` can
-// be plugged in here when more advanced metrics are needed; for now the
-// proto-aligned aggregations are computed inline so they stay in sync with
-// the layout.
+// Sections: Général, Temporel, Catégorie, Top, BAC, Carte, Évolution
+// mensuelle, Avancées. All sections are collapsible (state persisted in
+// localStorage) and read from the real IndexedDB layer via the
+// `useDrinks` hook. BAC records are derived client-side from drinks
+// (one peak per Widmark session) — no DB writes — so they always stay
+// in sync with the underlying data.
+//
+// Aggregations and sessions are computed once in StatsTab and passed to
+// every section via `sp` to avoid recomputing the same sums in three
+// places.
 
 const STATS_COLLAPSED_KEY = 'alconote.stats.collapsed';
 
@@ -160,25 +163,139 @@ function aggregateGeneral(drinks) {
   return stats;
 }
 
-// Approximate sessions: drinks within 4h of each other
-function computeSessions(drinks) {
-  const sorted = drinks
+// BAC-driven sessions: a session begins at the first drink that pushes
+// BAC from 0 to >0 and ends exactly when BAC returns to 0 (Widmark
+// model, instantaneous absorption, linear elimination at `elimRate`).
+// Replaces the legacy 4-hour gap heuristic so a "session" reflects a
+// real drinking episode (matches the BAC projection curve and the
+// "Temps bourré" / records-per-session features).
+//
+// Each session carries its own deterministic id (`sess::<startTs>`) so
+// the user can mask individual records from the BAC list and the
+// masking persists across renders without a DB write.
+const BAC_ELIM_RATE = 150; // mg/L/h, standard Widmark β
+
+function computeBACSessions(drinks, weight = 70, gender = 'male') {
+  const r = gender === 'female' ? 0.55 : 0.68;
+  const w = weight || 70;
+  const hour = 3600_000;
+
+  const valid = drinks
     .filter(d => d.date && d.time)
     .map(d => ({ ...d, _ts: new Date(`${d.date}T${d.time}`).getTime() }))
+    .filter(d => Number.isFinite(d._ts))
     .sort((a, b) => a._ts - b._ts);
+
+  if (valid.length === 0) return [];
+
   const sessions = [];
   let cur = null;
-  for (const d of sorted) {
-    if (!cur || (d._ts - cur.endTs) > 4 * 3600_000) {
-      cur = { startTs: d._ts, endTs: d._ts, drinks: [d], grams: 0 };
-      sessions.push(cur);
-    } else {
-      cur.endTs = d._ts;
-      cur.drinks.push(d);
+  let bac = 0;
+  let lastTs = 0;
+
+  for (const d of valid) {
+    if (cur) {
+      // Eliminate from lastTs to d._ts. If BAC would hit 0 in that
+      // interval, close the session at the exact moment it hits 0.
+      const dh = (d._ts - lastTs) / hour;
+      const drop = BAC_ELIM_RATE * dh;
+      if (drop >= bac) {
+        cur.endTs = lastTs + (bac / BAC_ELIM_RATE) * hour;
+        cur = null;
+        bac = 0;
+      } else {
+        bac -= drop;
+      }
     }
-    cur.grams += toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789;
+
+    const grams = toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789;
+    const peak = (grams * 1000) / (w * r);
+
+    if (!cur) {
+      cur = {
+        id: 'sess::' + d._ts,
+        startTs: d._ts,
+        endTs: d._ts,           // provisional, overwritten when session closes
+        drinks: [d],
+        grams,
+        peakBac: peak,
+        peakTs: d._ts,
+      };
+      sessions.push(cur);
+      bac = peak;
+    } else {
+      cur.drinks.push(d);
+      cur.grams += grams;
+      bac += peak;
+      if (bac > cur.peakBac) {
+        cur.peakBac = bac;
+        cur.peakTs = d._ts;
+      }
+    }
+    lastTs = d._ts;
+  }
+
+  if (cur) {
+    cur.endTs = lastTs + (bac / BAC_ELIM_RATE) * hour;
   }
   return sessions;
+}
+
+// Total time within `range` where BAC > 0 (= sum of session intervals
+// clamped to the period bounds). Returns milliseconds.
+function computeBourreTime(sessions, range) {
+  if (!sessions || sessions.length === 0 || !range) return 0;
+  const startMs = range.start.getTime();
+  // `range.end` is set to 00:00 of the last day in the period; expand
+  // to "end of that day" so a session that finishes at 23:59 still
+  // counts within the period.
+  const endMs = range.end.getTime() + 86400_000;
+  let total = 0;
+  for (const s of sessions) {
+    const a = Math.max(s.startTs, startMs);
+    const b = Math.min(s.endTs, endMs);
+    if (b > a) total += b - a;
+  }
+  return total;
+}
+
+// Consecutive-day drinking streak. Tolerant: streak is still valid if
+// the user drank yesterday but not yet today (avoids resetting at
+// midnight). Returns 0 when the most recent drink is older than
+// yesterday.
+function computeStreak(drinks) {
+  if (!drinks || drinks.length === 0) return 0;
+  const drinkDays = new Set(drinks.map(d => d.date).filter(Boolean));
+  if (drinkDays.size === 0) return 0;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const yesterday = _addDays(today, -1);
+  let cursor;
+  if (drinkDays.has(_fmtIso(today))) cursor = new Date(today);
+  else if (drinkDays.has(_fmtIso(yesterday))) cursor = new Date(yesterday);
+  else return 0;
+  let streak = 0;
+  while (drinkDays.has(_fmtIso(cursor))) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
+// Render a duration in ms as "Xj Yh", "Xh Ymm", "Xm" — picks the
+// largest unit that gives a non-trivial number. Returns "—" for ≤ 0.
+function fmtBourreTime(ms) {
+  if (!ms || ms <= 0) return '—';
+  const totalMin = Math.round(ms / 60_000);
+  if (totalMin < 60) return `${totalMin}m`;
+  const totalH = totalMin / 60;
+  if (totalH < 24) {
+    const h = Math.floor(totalH);
+    const m = totalMin - h * 60;
+    return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, '0')}`;
+  }
+  const days = Math.floor(totalH / 24);
+  const h = Math.round(totalH - days * 24);
+  return h === 0 ? `${days}j` : `${days}j ${h}h`;
 }
 // ── Main StatsTab ─────────────────────────────────────────────────
 function StatsTab() {
@@ -223,10 +340,47 @@ function StatsTab() {
     () => prevRange ? filterDrinksInRange(drinks, prevRange.start, prevRange.end) : null,
     [drinks, prevRange]
   );
+
+  // Hoisted aggregations: every section reads from the same memo so we
+  // never recompute the same sum/session in three places. The Widmark
+  // params come from settings and feed `computeBACSessions` so a
+  // session reflects the user's real elimination rate.
+  const weight = Number(settings.userWeight) || 70;
+  const gender = settings.userGender || 'male';
+  const agg = React.useMemo(() => aggregateGeneral(inRange), [inRange]);
+  const prevAgg = React.useMemo(
+    () => inPrevRange ? aggregateGeneral(inPrevRange) : null,
+    [inPrevRange]
+  );
+  const sessions = React.useMemo(
+    () => computeBACSessions(inRange, weight, gender),
+    [inRange, weight, gender]
+  );
+  const prevSessions = React.useMemo(
+    () => inPrevRange ? computeBACSessions(inPrevRange, weight, gender) : null,
+    [inPrevRange, weight, gender]
+  );
+  // All-time sessions feed BAC records (one per session, ranked by
+  // peak) and the streak — those are not constrained to the visible
+  // period.
+  const allSessions = React.useMemo(
+    () => computeBACSessions(drinks, weight, gender),
+    [drinks, weight, gender]
+  );
+  const streak = React.useMemo(() => computeStreak(drinks), [drinks]);
+  const bourreMs = React.useMemo(() => computeBourreTime(sessions, allRange), [sessions, allRange]);
+  const prevBourreMs = React.useMemo(
+    () => prevSessions && prevRange ? computeBourreTime(prevSessions, prevRange) : null,
+    [prevSessions, prevRange]
+  );
+
   const sp = {
     collapsed, toggleSection, period, drinks: inRange, allDrinks: drinks,
     prevDrinks: inPrevRange, prevRange,
     settings, range: allRange, anchor,
+    agg, prevAgg, sessions, prevSessions, allSessions,
+    streak, bourreMs, prevBourreMs,
+    weight, gender,
   };
 
   return (
@@ -361,12 +515,11 @@ function Card({ children, style, ...rest }) {
   );
 }
 // ── 1. Général ────────────────────────────────────────────────────
-function GeneralSection({ drinks, prevDrinks, prevRange, period, range, collapsed, toggleSection }) {
-  const agg = React.useMemo(() => aggregateGeneral(drinks), [drinks]);
+function GeneralSection({
+  drinks, prevDrinks, prevRange, period, range, collapsed, toggleSection,
+  agg, prevAgg, sessions, prevSessions, streak, bourreMs, prevBourreMs,
+}) {
   const hasPrev = prevDrinks != null && prevRange != null;
-  const prevAgg = React.useMemo(() => aggregateGeneral(hasPrev ? prevDrinks : []), [prevDrinks, hasPrev]);
-  const sessions = React.useMemo(() => computeSessions(drinks), [drinks]);
-  const prevSessions = React.useMemo(() => computeSessions(hasPrev ? prevDrinks : []), [prevDrinks, hasPrev]);
   const days = Math.max(1, Math.round((range.end - range.start) / 86400000) + 1);
   const prevDays = hasPrev
     ? Math.max(1, Math.round((prevRange.end - prevRange.start) / 86400000) + 1)
@@ -374,7 +527,7 @@ function GeneralSection({ drinks, prevDrinks, prevRange, period, range, collapse
   // Sober-day count: only consider days from `range.start` up to `min(today, range.end)`,
   // so future days within the period don't inflate the count.
   const today = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
-  const sober = (() => {
+  const sober = React.useMemo(() => {
     const drinkDays = new Set(drinks.map(d => d.date));
     const lastInclusive = range.end < today ? range.end : today;
     if (lastInclusive < range.start) return 0;
@@ -383,17 +536,18 @@ function GeneralSection({ drinks, prevDrinks, prevRange, period, range, collapse
       if (!drinkDays.has(_fmtIso(d))) count++;
     }
     return count;
-  })();
+  }, [drinks, range, today]);
   // Same calculation, but the previous period's window is fully past
   // so we always go to its real end.
-  const prevSober = hasPrev ? (() => {
+  const prevSober = React.useMemo(() => {
+    if (!hasPrev) return null;
     const drinkDays = new Set(prevDrinks.map(d => d.date));
     let count = 0;
     for (let d = new Date(prevRange.start); d <= prevRange.end; d = _addDays(d, 1)) {
       if (!drinkDays.has(_fmtIso(d))) count++;
     }
     return count;
-  })() : null;
+  }, [prevDrinks, prevRange, hasPrev]);
 
   // Δ% helper — `null` baseline means we don't show a badge (e.g. no
   // previous period or it had zero of this metric).
@@ -402,57 +556,61 @@ function GeneralSection({ drinks, prevDrinks, prevRange, period, range, collapse
     return ((cur - prev) / prev) * 100;
   };
 
-  const cards = [
-    { v: agg.count, l: 'Boissons',
-      delta: pctChange(agg.count, prevAgg.count) },
-    { v: sessions.length, l: 'Sessions', tip: 'Regroupées si < 4h',
-      delta: pctChange(sessions.length, prevSessions.length) },
-    { v: `${(agg.volumeCl / 100).toFixed(1)}L`, l: 'Volume',
-      delta: pctChange(agg.volumeCl, prevAgg.volumeCl) },
-    { v: `${Math.round(agg.grams)}g`, l: 'Alcool pur',
-      delta: pctChange(agg.grams, prevAgg.grams) },
-    { v: agg.uniqueCount, l: 'Boissons diff.',
-      delta: pctChange(agg.uniqueCount, prevAgg.uniqueCount) },
-  ];
-  if (period === 'week' || period === 'month' || period === 'year' || period === 'school') {
-    cards.push({ v: sober, l: 'Jours sobres',
-      delta: pctChange(sober, prevSober) });
-    cards.push({ v: (agg.count / days).toFixed(1), l: 'Boissons/jour',
-      delta: pctChange(agg.count / days, prevDays ? prevAgg.count / prevDays : null) });
-  }
-  if (period === 'month' || period === 'year' || period === 'school') {
-    const weeks = Math.max(1, days / 7);
-    const prevWeeks = prevDays ? Math.max(1, prevDays / 7) : 0;
-    cards.push({ v: (agg.count / weeks).toFixed(1), l: 'Boissons/sem.',
-      delta: pctChange(agg.count / weeks, prevWeeks ? prevAgg.count / prevWeeks : null) });
-  }
+  const cards = React.useMemo(() => {
+    const out = [
+      { v: agg.count, l: 'Boissons',
+        delta: pctChange(agg.count, prevAgg ? prevAgg.count : null) },
+      { v: sessions.length, l: 'Sessions',
+        delta: pctChange(sessions.length, prevSessions ? prevSessions.length : null) },
+      { v: `${(agg.volumeCl / 100).toFixed(1)}L`, l: 'Volume',
+        delta: pctChange(agg.volumeCl, prevAgg ? prevAgg.volumeCl : null) },
+      { v: `${Math.round(agg.grams)}g`, l: 'Alcool pur',
+        delta: pctChange(agg.grams, prevAgg ? prevAgg.grams : null) },
+      { v: agg.uniqueCount, l: 'Boissons diff.',
+        delta: pctChange(agg.uniqueCount, prevAgg ? prevAgg.uniqueCount : null) },
+      { v: fmtBourreTime(bourreMs), l: 'Temps bourré',
+        delta: pctChange(bourreMs, prevBourreMs),
+        icon: Ic.hourglass },
+    ];
+    if (period === 'week' || period === 'month' || period === 'year' || period === 'school') {
+      out.push({ v: sober, l: 'Jours sobres',
+        delta: pctChange(sober, prevSober) });
+      out.push({ v: (agg.count / days).toFixed(1), l: 'Boissons/jour',
+        delta: pctChange(agg.count / days, prevDays && prevAgg ? prevAgg.count / prevDays : null) });
+    }
+    if (period === 'month' || period === 'year' || period === 'school') {
+      const weeks = Math.max(1, days / 7);
+      const prevWeeks = prevDays ? Math.max(1, prevDays / 7) : 0;
+      out.push({ v: (agg.count / weeks).toFixed(1), l: 'Boissons/sem.',
+        delta: pctChange(agg.count / weeks, prevWeeks && prevAgg ? prevAgg.count / prevWeeks : null) });
+    }
+    return out;
+  }, [agg, prevAgg, sessions, prevSessions, sober, prevSober, bourreMs, prevBourreMs, days, prevDays, period]);
 
-  const catDist = Object.entries(agg.byCategory).map(([name, v]) => ({ name, v }));
+  // Donut: sort categories by descending count so both the arc order
+  // and the legend list match the user's mental "biggest first" model.
+  const catDist = React.useMemo(
+    () => Object.entries(agg.byCategory)
+      .map(([name, v]) => ({ name, v }))
+      .sort((a, b) => b.v - a.v),
+    [agg.byCategory]
+  );
+  const catTotal = React.useMemo(() => catDist.reduce((s, x) => s + x.v, 0), [catDist]);
 
   return (
     <StatSection id="general" title="Statistiques générales" sub="Vue d'ensemble de votre consommation" collapsed={collapsed} toggleSection={toggleSection}>
+      {streak > 0 && (
+        <HeroStatCard icon={Ic.flame} label="Streak"
+          value={streak}
+          suffix={`jour${streak > 1 ? 's' : ''} d'affilée`} />
+      )}
+
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12,
       }}>
         {cards.map((c, i) => (
-          <div key={i} style={{
-            background: T.surface2, borderRadius: 12, padding: '12px 10px',
-            border: `1px solid ${T.rule}`, position: 'relative',
-            display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-            minHeight: 64,
-          }}>
-            <div style={{
-              fontFamily: fontSerif, fontSize: 22, color: T.ink,
-              letterSpacing: -0.4, lineHeight: 1,
-            }}>{c.v}</div>
-            <div style={{
-              color: T.muted, fontSize: 9.5, marginTop: 5, letterSpacing: 0.3,
-              textTransform: 'uppercase', lineHeight: 1.2,
-            }}>{c.l}</div>
-            {c.delta != null && period !== 'all' && (
-              <DeltaBadge delta={c.delta} />
-            )}
-          </div>
+          <StatCell key={c.l} value={c.v} label={c.l} icon={c.icon}
+            delta={c.delta} period={period} />
         ))}
       </div>
 
@@ -467,8 +625,7 @@ function GeneralSection({ drinks, prevDrinks, prevRange, period, range, collapse
             </div>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
               {catDist.map(d => {
-                const total = catDist.reduce((s, x) => s + x.v, 0);
-                const pct = Math.round((d.v / total) * 100);
+                const pct = catTotal > 0 ? Math.round((d.v / catTotal) * 100) : 0;
                 return (
                   <div key={d.name} style={{
                     display: 'flex', alignItems: 'center', gap: 8, fontSize: 11,
@@ -498,19 +655,106 @@ function GeneralSection({ drinks, prevDrinks, prevRange, period, range, collapse
   );
 }
 
+// Stat tile in the headline grid. Optional `icon` prints a small glyph
+// to the left of the value (used by "Temps bourré" — others stay
+// number-only to preserve the dense 3-column rhythm). Memoized so a
+// re-render of the parent doesn't ripple through every tile when only
+// one of them actually changed.
+const StatCell = React.memo(function StatCell({ value, label, icon, delta, period }) {
+  return (
+    <div style={{
+      background: T.surface2, borderRadius: 12, padding: '12px 10px',
+      border: `1px solid ${T.rule}`, position: 'relative',
+      display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+      minHeight: 64,
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'baseline', gap: 6,
+        fontFamily: fontSerif, fontSize: 22, color: T.ink,
+        letterSpacing: -0.4, lineHeight: 1,
+      }}>
+        {icon && (
+          <span style={{ color: T.muted, display: 'flex', alignSelf: 'center' }}>
+            <SvgIcon icon={icon} size={13} />
+          </span>
+        )}
+        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+      </div>
+      <div style={{
+        color: T.muted, fontSize: 9.5, marginTop: 5, letterSpacing: 0.3,
+        textTransform: 'uppercase', lineHeight: 1.2,
+      }}>{label}</div>
+      {delta != null && period !== 'all' && <DeltaBadge delta={delta} />}
+    </div>
+  );
+});
+
+// Full-width "hero" stat card: large accent-tinted icon badge on the
+// left, label + serif value on the right. Used for the streak to give
+// it visual weight matching the BAC gauge below; same primitive could
+// host future hero metrics (longest sober streak, …) without dupe.
+const HeroStatCard = React.memo(function HeroStatCard({ icon, label, value, suffix }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12,
+      background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
+      borderRadius: 14, padding: '12px 14px', marginBottom: 10,
+    }}>
+      <div style={{
+        width: 36, height: 36, borderRadius: 12,
+        display: 'grid', placeItems: 'center',
+        background: withAlpha(T.accent, 0.18), color: T.accent, flexShrink: 0,
+      }}>
+        <SvgIcon icon={icon} size={20} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          color: T.muted, fontSize: 9.5, letterSpacing: 0.4,
+          textTransform: 'uppercase', marginBottom: 2,
+        }}>{label}</div>
+        <div style={{
+          fontFamily: fontSerif, fontSize: 22, color: T.ink,
+          letterSpacing: -0.3, lineHeight: 1, fontStyle: 'italic',
+        }}>
+          {value}
+          {suffix && (
+            <span style={{
+              fontStyle: 'normal', fontFamily: fontSans, fontSize: 12,
+              color: T.ink2, marginLeft: 6, letterSpacing: 0,
+            }}>{suffix}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// Show every 4th hour label on the hourly bar chart, blank for the
+// rest — declared at module level so the reference stays stable
+// across renders (React.memo on SvgBarChart relies on it).
+const hourlyFormatX = (d, i) => i % 4 === 0 ? d.label : '';
+
 // ── 2. Analyse temporelle ─────────────────────────────────────────
-function TemporalSection({ drinks, collapsed, toggleSection }) {
-  const agg = React.useMemo(() => aggregateGeneral(drinks), [drinks]);
+function TemporalSection({ drinks, collapsed, toggleSection, agg, sessions }) {
   const peakHour = agg.byHour.indexOf(Math.max(...agg.byHour));
   const peakDow = agg.byDow.indexOf(Math.max(...agg.byDow));
   const dayNames = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
-  const sessions = React.useMemo(() => computeSessions(drinks), [drinks]);
   const avgDuration = sessions.length > 0
     ? sessions.reduce((s, x) => s + (x.endTs - x.startTs), 0) / sessions.length / 3600_000
     : 0;
-  const between = sessions.length > 1
-    ? (sessions[sessions.length - 1].startTs - sessions[0].endTs) / (sessions.length - 1) / 86400_000
-    : 0;
+  // Mean gap between consecutive sessions: Σ (sessions[i+1].start −
+  // sessions[i].end) / (N − 1). The previous formula computed
+  // (last.start − first.end) / (N−1), which conflates total elapsed
+  // time with the per-pair gap and drifts whenever sessions overlap or
+  // the spacing varies.
+  const between = (() => {
+    if (sessions.length < 2) return 0;
+    let totalGap = 0;
+    for (let i = 1; i < sessions.length; i++) {
+      totalGap += sessions[i].startTs - sessions[i - 1].endTs;
+    }
+    return (totalGap / (sessions.length - 1)) / 86400_000;
+  })();
 
   const fmtH = (h) => {
     if (!h) return '—';
@@ -519,10 +763,20 @@ function TemporalSection({ drinks, collapsed, toggleSection }) {
     return mm === 0 ? `${hh}h` : `${hh}h ${String(mm).padStart(2, '0')}`;
   };
 
-  const dailyData = ['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((label, i) => {
-    const dow = (i + 1) % 7;
-    return { label, day: dow, v: agg.byDow[dow], today: dow === new Date().getDay() };
-  });
+  const dailyData = React.useMemo(() => {
+    const todayDow = new Date().getDay();
+    return ['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((label, i) => {
+      const dow = (i + 1) % 7;
+      return { label, day: dow, v: agg.byDow[dow], today: dow === todayDow };
+    });
+  }, [agg.byDow]);
+
+  // Pre-shape hourly data so a parent re-render doesn't allocate a
+  // fresh array; React.memo on SvgBarChart relies on reference equality.
+  const hourlyData = React.useMemo(
+    () => agg.byHour.map((v, h) => ({ v, label: `${h}h` })),
+    [agg.byHour]
+  );
 
   return (
     <StatSection id="temporal" title="Analyse temporelle" collapsed={collapsed} toggleSection={toggleSection} sub="Répartition par heures et jours">
@@ -540,9 +794,9 @@ function TemporalSection({ drinks, collapsed, toggleSection }) {
           color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 10, letterSpacing: -0.1,
         }}>Par heure</div>
         <SvgBarChart
-          data={agg.byHour.map((v, h) => ({ v, label: `${h}h` }))}
+          data={hourlyData}
           width={320} height={150} color={T.accent}
-          formatX={(d, i) => i % 4 === 0 ? d.label : ''}
+          formatX={hourlyFormatX}
           valueLabel="boisson(s)"
         />
       </Card>
@@ -870,11 +1124,43 @@ function BACProjectionResponsive({ points }) {
   );
 }
 
-function BACSection({ collapsed, toggleSection }) {
-  const records = useBacRecords();
+// Persistent set of session ids the user has hidden from the BAC
+// records list. Sessions are derived from drinks, so "deleting" a
+// record means masking — the record reappears on undo without
+// touching the underlying drinks.
+const HIDDEN_BAC_RECORDS_KEY = 'alconote.stats.hiddenBacRecords';
+function loadHiddenBacRecords() {
+  try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_BAC_RECORDS_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+function saveHiddenBacRecords(set) {
+  try { localStorage.setItem(HIDDEN_BAC_RECORDS_KEY, JSON.stringify([...set])); } catch {}
+}
+
+// Records below this BAC aren't surfaced as "records" — a single
+// pint shouldn't sit alongside actual milestones. Mirrors the legacy
+// `recordBACIfPeak` 200 mg/L threshold.
+const BAC_RECORD_MIN = 200;
+
+function BACSection({ collapsed, toggleSection, allSessions }) {
   const bacInfo = useBacInfo();
   const currentBAC = bacInfo.current || 0;
   const level = bacLevel(currentBAC);
+  const [hidden, setHidden] = React.useState(loadHiddenBacRecords);
+
+  // Prune orphan ids: sessions disappear when their drinks are
+  // deleted, so the hidden set should follow. Otherwise localStorage
+  // grows unbounded over years of usage.
+  React.useEffect(() => {
+    if (!allSessions || hidden.size === 0) return;
+    const live = new Set(allSessions.map(s => s.id));
+    let changed = false;
+    const next = new Set();
+    for (const id of hidden) {
+      if (live.has(id)) next.add(id); else changed = true;
+    }
+    if (changed) { saveHiddenBacRecords(next); setHidden(next); }
+  }, [allSessions, hidden]);
 
   const hoursToSober = currentBAC / 150;
   const hoursToLegal = Math.max(0, (currentBAC - 500) / 150);
@@ -885,41 +1171,55 @@ function BACSection({ collapsed, toggleSection }) {
     return `${hh}h${String(mm).padStart(2, '0')}`;
   };
 
-  const relevantDrinks = bacInfo.drinks.slice(-3).reverse().map(d => ({
-    name: d.name,
-    qty: `${d.quantity} ${d.unit}`,
-    abv: d.alcoholContent || 0,
-    hoursAgo: ((Date.now() - new Date(`${d.date}T${d.time}`).getTime()) / 3600_000).toFixed(1),
-  }));
+  const relevantDrinks = React.useMemo(() => {
+    const now = Date.now();
+    return bacInfo.drinks.slice(-3).reverse().map(d => ({
+      name: d.name,
+      qty: `${d.quantity} ${d.unit}`,
+      abv: d.alcoholContent || 0,
+      hoursAgo: ((now - new Date(`${d.date}T${d.time}`).getTime()) / 3600_000).toFixed(1),
+    }));
+  }, [bacInfo.drinks]);
 
-  // Cap the displayed records at 3 highest values to keep the section
-  // focused on milestones rather than a long history.
-  const sortedRecords = [...records].sort((a, b) => b.bacValue - a.bacValue).slice(0, 3);
+  // One record per drinking session above the 200 mg/L threshold:
+  // peak BAC of that session, timestamped at the moment of the peak.
+  // Cap to the top 3 so the list reads as milestones, not a log.
+  const sortedRecords = React.useMemo(() => {
+    return (allSessions || [])
+      .filter(s => s.peakBac >= BAC_RECORD_MIN && !hidden.has(s.id))
+      .map(s => ({
+        id: s.id,
+        bacValue: Math.round(s.peakBac),
+        timestamp: new Date(s.peakTs),
+        date: _fmtIso(new Date(s.peakTs)),
+        drinkCount: s.drinks.length,
+      }))
+      .sort((a, b) => b.bacValue - a.bacValue)
+      .slice(0, 3);
+  }, [allSessions, hidden]);
+  const totalRecords = React.useMemo(
+    () => (allSessions || []).filter(s => s.peakBac >= BAC_RECORD_MIN && !hidden.has(s.id)).length,
+    [allSessions, hidden]
+  );
   const highest = sortedRecords[0];
   const others = sortedRecords.slice(1);
 
-  // Immediate delete + undo, mirroring the drink-delete pattern. Avoids
-  // a confirm modal stalling the swipe gesture and keeps the user on
-  // the Stats tab.
-  const onDelete = async (record) => {
-    const snapshot = { ...record };
-    try {
-      await deleteBACRecord(record.id);
-      Toast.show('Record supprimé', {
-        undo: async () => {
-          try {
-            await restoreBACRecord(snapshot);
-            Toast.show('Suppression annulée');
-          } catch (err) {
-            console.warn('AlcoNote: restoreBACRecord failed', err);
-            Toast.show('Erreur lors de l\'annulation');
-          }
-        },
-      });
-    } catch (err) {
-      console.warn('AlcoNote: deleteBACRecord failed', err);
-      Toast.show('Erreur lors de la suppression');
-    }
+  // Immediate delete + undo, mirroring the drink-delete pattern.
+  // Records are derived from drinks so we mask the session id locally
+  // — undo just removes it from the hidden set; nothing touches the DB.
+  const onDelete = (record) => {
+    const id = record.id;
+    setHidden(prev => {
+      const next = new Set(prev); next.add(id); saveHiddenBacRecords(next); return next;
+    });
+    Toast.show('Record masqué', {
+      undo: () => {
+        setHidden(prev => {
+          const next = new Set(prev); next.delete(id); saveHiddenBacRecords(next); return next;
+        });
+        Toast.show('Record restauré');
+      },
+    });
   };
 
   return (
@@ -1008,7 +1308,7 @@ function BACSection({ collapsed, toggleSection }) {
         </Card>
       )}
 
-      {records.length > 0 && (
+      {sortedRecords.length > 0 && (
         <div>
           <div style={{
             display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
@@ -1021,7 +1321,7 @@ function BACSection({ collapsed, toggleSection }) {
               color: T.muted, fontSize: 10.5, fontFamily: fontNum,
               background: T.surface2, padding: '2px 8px', borderRadius: 99,
               border: `1px solid ${T.rule}`,
-            }}>{records.length}</div>
+            }}>{totalRecords}</div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {highest && <BACRecordRow record={highest} isHighest onDelete={onDelete} />}
@@ -1386,10 +1686,7 @@ function TrendsSection({ allDrinks, collapsed, toggleSection }) {
 }
 
 // ── 7. Analyses avancées ─────────────────────────────────────────
-function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection }) {
-  const agg = aggregateGeneral(drinks);
-  const sessions = computeSessions(drinks);
-
+function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, sessions }) {
   const rolling = React.useMemo(() => {
     const byDay = {};
     for (const d of allDrinks) {
@@ -1506,6 +1803,7 @@ function RollingChart({ data }) {
   return (
     <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" height={height}
       style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
+      <rect x="0" y="0" width={width} height={height} fill="transparent" />
       {[0, 0.5, 1].map((f, i) => (
         <g key={i}>
           <line x1={pad.l} x2={pad.l + w}
@@ -1570,7 +1868,9 @@ Object.assign(window, {
   TopDrinksSection, BACSection, MapSection, TrendsSection, AdvancedSection,
   BACGauge, BACRecordRow, bacLevel, BAC_LEVELS,
   RollingChart, LegendDot, MiniStat, StatRow, Card, StatSection,
-  DeltaBadge,
+  DeltaBadge, StatCell, HeroStatCard,
   getPeriodRange, shiftAnchor, periodLabel, computeBacOverTime,
+  computeBACSessions, computeBourreTime, computeStreak, fmtBourreTime,
+  BAC_ELIM_RATE, BAC_RECORD_MIN,
   BacContext, useBacInfo, BACProjectionResponsive,
 });
