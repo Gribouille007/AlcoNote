@@ -1554,6 +1554,124 @@ function computeBacOverTime(drinks, weight, gender) {
   };
 }
 
+// Forecast: extrapolate the *current* session forward by assuming the
+// user keeps drinking at the same g/h pace until the mean historical
+// session duration is reached, then declines at the standard Widmark
+// elimination rate down to 0.
+//
+//   currentRateGph  = grams_so_far / max(5min, elapsed_in_session)
+//   estStopMs       = sessionStart + mean(past_session_durations)
+//   bac(t≤tStop)    = currentBac + (consumptionSlope − elimRate) · t
+//   bac(t>tStop)    = bacAtStop − elimRate · (t − tStop)
+//
+// The function also returns the mean historical peak BAC and the ETA at
+// which the projected curve first reaches that peak — `null` if the
+// projection never gets there (which the chart renders as an "∞" marker
+// pinned to the right edge).
+function computeBacForecast(currentDrinks, currentBac, allSessions, weight, gender, nowMs) {
+  const r = gender === 'female' ? 0.55 : 0.68;
+  const w = weight || 70;
+  const elimRate = 150; // mg/L/h, must match computeBacOverTime
+
+  const valid = (currentDrinks || []).filter(d => d.date && d.time).map(d => ({
+    ...d,
+    _ts: new Date(`${d.date}T${d.time}`).getTime()
+  })).filter(d => Number.isFinite(d._ts) && d._ts <= nowMs).sort((a, b) => a._ts - b._ts);
+  const hasCurrentSession = valid.length > 0 && currentBac > 0;
+  const past = (allSessions || []).filter(s => s.endTs <= nowMs && s.drinks && s.drinks.length > 0);
+  const hasHistory = past.length >= 1;
+  const meanPeakBac = hasHistory ? past.reduce((s, x) => s + (x.peakBac || 0), 0) / past.length : null;
+  const meanDurationMs = hasHistory ? past.reduce((s, x) => s + Math.max(0, x.endTs - x.startTs), 0) / past.length : null;
+  if (!hasCurrentSession) {
+    return {
+      currentRateGph: 0,
+      meanDurationMs,
+      estStopMs: null,
+      meanPeakBac,
+      projectedPoints: [],
+      etaPeakHours: null,
+      hasHistory,
+      hasCurrentSession: false,
+      sessionStartMs: nowMs
+    };
+  }
+  const sessionStartMs = valid[0]._ts;
+  // Minimum window of 5 min so a single just-poured drink doesn't blow
+  // the rate up to several hundred g/h.
+  const elapsedH = Math.max(5 / 60, (nowMs - sessionStartMs) / 3600_000);
+  const totalGrams = valid.reduce((s, d) => s + toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789, 0);
+  const currentRateGph = totalGrams / elapsedH;
+
+  // No history → assume consumption stops now (only the elimination
+  // tail is projected). Otherwise project until the historical mean
+  // session duration is exhausted.
+  const estStopMs = meanDurationMs != null ? Math.max(nowMs, sessionStartMs + meanDurationMs) : nowMs;
+  const consumptionSlope = currentRateGph * 1000 / (w * r); // mg/L/h injected by drinking
+  const netSlope = consumptionSlope - elimRate;
+  const tStopH = (estStopMs - nowMs) / 3600_000;
+  const bacAtStop = Math.max(0, currentBac + netSlope * tStopH);
+  const tEndH = tStopH + bacAtStop / elimRate;
+  const projectedPoints = [];
+  const step = 1 / 60; // 1-min resolution, matches SvgBACForecast scrub granularity
+  for (let t = 0; t <= tEndH + 1e-6; t += step) {
+    let bac;
+    if (t <= tStopH) {
+      bac = currentBac + netSlope * t;
+    } else {
+      bac = bacAtStop - elimRate * (t - tStopH);
+    }
+    projectedPoints.push({
+      t: +t.toFixed(4),
+      bac: Math.max(0, bac)
+    });
+  }
+
+  // ETA peak: first time the projection crosses the historical peak.
+  // null when the projection never reaches it (peak too high vs. rate).
+  let etaPeakHours = null;
+  if (meanPeakBac != null && projectedPoints.length > 0) {
+    if (currentBac >= meanPeakBac) {
+      etaPeakHours = 0;
+    } else if (netSlope > 0) {
+      for (const p of projectedPoints) {
+        if (p.bac >= meanPeakBac) {
+          etaPeakHours = p.t;
+          break;
+        }
+      }
+    }
+  }
+  return {
+    currentRateGph,
+    meanDurationMs,
+    estStopMs,
+    meanPeakBac,
+    projectedPoints,
+    etaPeakHours,
+    hasHistory,
+    hasCurrentSession,
+    sessionStartMs
+  };
+}
+
+// Toggle state for the secondary "Prévision de session" chart. The
+// calculations always run (so other panels could re-use them); the
+// toggle only governs visibility of the chart + mini-stats.
+const FORECAST_ENABLED_KEY = 'alconote.stats.bacForecast.enabled';
+function loadForecastEnabled() {
+  try {
+    const v = localStorage.getItem(FORECAST_ENABLED_KEY);
+    return v == null ? true : v === '1';
+  } catch {
+    return true;
+  }
+}
+function saveForecastEnabled(enabled) {
+  try {
+    localStorage.setItem(FORECAST_ENABLED_KEY, enabled ? '1' : '0');
+  } catch {}
+}
+
 // Single source of truth for BAC. Both the header pill and the Stats
 // section read from this context so they always show the exact same
 // rounded mg/L value, recomputed on the same 60s tick.
@@ -1595,6 +1713,31 @@ function BACProjectionResponsive({
     nowMs: Date.now()
   }));
 }
+function BACForecastResponsive({
+  realPoints,
+  projectedPoints,
+  meanPeakBac,
+  etaPeakHours
+}) {
+  const ref = React.useRef(null);
+  const width = useMeasuredWidth(ref, 320);
+  const height = Math.max(180, Math.min(240, Math.round(width * 0.6)));
+  return /*#__PURE__*/React.createElement("div", {
+    ref: ref,
+    style: {
+      width: '100%',
+      minHeight: 180
+    }
+  }, width > 0 && /*#__PURE__*/React.createElement(SvgBACForecast, {
+    realPoints: realPoints,
+    projectedPoints: projectedPoints,
+    meanPeakBac: meanPeakBac,
+    etaPeakHours: etaPeakHours,
+    width: width,
+    height: height,
+    nowMs: Date.now()
+  }));
+}
 
 // Persistent set of session ids the user has hidden from the BAC
 // records list. Sessions are derived from drinks, so "deleting" a
@@ -1618,15 +1761,136 @@ function saveHiddenBacRecords(set) {
 // pint shouldn't sit alongside actual milestones. Mirrors the legacy
 // `recordBACIfPeak` 200 mg/L threshold.
 const BAC_RECORD_MIN = 200;
+
+// Two-segment pill toggle for the "Prévision de session" card. Mirrors
+// the visual contract of PeriodSwitcher at a smaller scale so the
+// section header stays uncluttered. Uppercase labels match the
+// "secondary label" treatment from the design system.
+function ForecastToggle({
+  enabled,
+  onChange
+}) {
+  const pill = (active, label, onClick) => /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: onClick,
+    "aria-pressed": active,
+    style: {
+      ...ghostButton,
+      padding: '4px 9px',
+      borderRadius: 7,
+      background: active ? T.accent : 'transparent',
+      color: active ? T.isDark ? T.bg : '#fff' : T.muted,
+      fontSize: 9.5,
+      letterSpacing: 0.3,
+      textTransform: 'uppercase',
+      fontWeight: active ? 600 : 500,
+      transition: 'background 0.18s ease, color 0.18s ease'
+    }
+  }, label);
+  return /*#__PURE__*/React.createElement("div", {
+    role: "group",
+    "aria-label": "Affichage de la pr\xE9vision",
+    style: {
+      display: 'flex',
+      gap: 2,
+      padding: 2,
+      background: T.surface3,
+      borderRadius: 9,
+      border: `1px solid ${T.rule}`,
+      flexShrink: 0
+    }
+  }, pill(enabled, 'Affichée', () => onChange(true)), pill(!enabled, 'Masquée', () => onChange(false)));
+}
+
+// 2×2 grid of small stats summarising the forecast: current g/h rate,
+// mean historical session duration, mean historical peak BAC, ETA peak.
+// Missing values render as "—" so the grid layout stays stable when
+// the user has no past sessions yet.
+function ForecastMiniStats({
+  forecast,
+  fmtTime
+}) {
+  const rate = forecast.hasCurrentSession ? `${forecast.currentRateGph.toFixed(1)} g/h` : '—';
+  const duration = forecast.meanDurationMs != null ? fmtTime(forecast.meanDurationMs / 3600_000) : '—';
+  const peak = forecast.meanPeakBac != null ? `${Math.round(forecast.meanPeakBac)}` : '—';
+  const eta = forecast.etaPeakHours != null ? fmtTime(forecast.etaPeakHours) : forecast.meanPeakBac != null && forecast.hasCurrentSession ? '∞' : '—';
+  const item = (icon, label, value, unit) => /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: T.surface3,
+      borderRadius: 12,
+      padding: '10px 8px',
+      border: `1px solid ${T.rule}`,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      textAlign: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 5,
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: icon,
+    size: 11,
+    color: T.muted
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 9.5,
+      letterSpacing: 0.3,
+      textTransform: 'uppercase'
+    }
+  }, label)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: fontSerif,
+      fontSize: 18,
+      color: T.ink,
+      letterSpacing: -0.3,
+      lineHeight: 1
+    }
+  }, value), unit && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 9,
+      marginTop: 3,
+      fontFamily: fontNum,
+      letterSpacing: 0.2
+    }
+  }, unit));
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(4, 1fr)',
+      gap: 6,
+      marginBottom: 10
+    }
+  }, item(Ic.flame, 'Rythme', rate, null), item(Ic.hourglass, 'Durée moy', duration, null), item(Ic.star, 'Peak moy', peak, 'mg/L'), item(Ic.clock, 'ETA peak', eta, null));
+}
 function BACSection({
   collapsed,
   toggleSection,
-  allSessions
+  allSessions,
+  weight,
+  gender
 }) {
   const bacInfo = useBacInfo();
   const currentBAC = bacInfo.current || 0;
   const level = bacLevel(currentBAC);
   const [hidden, setHidden] = React.useState(loadHiddenBacRecords);
+  const [forecastEnabled, setForecastEnabledState] = React.useState(loadForecastEnabled);
+  const setForecastEnabled = v => {
+    setForecastEnabledState(v);
+    saveForecastEnabled(v);
+  };
+
+  // Forecast is always computed (the toggle only governs visibility),
+  // so other panels could reuse the same memo without forcing the user
+  // to enable display.
+  const forecast = React.useMemo(() => computeBacForecast(bacInfo.drinks, currentBAC, allSessions, weight, gender, Date.now()), [bacInfo.drinks, currentBAC, allSessions, weight, gender]);
+  const realPastPoints = React.useMemo(() => (bacInfo.points || []).filter(p => p.t <= 0), [bacInfo.points]);
 
   // Prune orphan ids: sessions disappear when their drinks are
   // deleted, so the hidden set should follow. Otherwise localStorage
@@ -1834,7 +2098,45 @@ function BACSection({
       fontStyle: 'italic',
       fontFamily: fontSerif
     }
-  }, "Glissez le doigt sur le graphe pour voir le taux \xE0 un moment pr\xE9cis")), relevantDrinks.length > 0 && /*#__PURE__*/React.createElement(Card, {
+  }, "Glissez le doigt sur le graphe pour voir le taux \xE0 un moment pr\xE9cis")), forecast.hasCurrentSession && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+      marginBottom: forecastEnabled ? 8 : 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.ink,
+      fontSize: 12.5,
+      fontWeight: 500,
+      letterSpacing: -0.1
+    }
+  }, "Pr\xE9vision de session"), /*#__PURE__*/React.createElement(ForecastToggle, {
+    enabled: forecastEnabled,
+    onChange: setForecastEnabled
+  })), forecastEnabled && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(ForecastMiniStats, {
+    forecast: forecast,
+    fmtTime: fmtTime
+  }), /*#__PURE__*/React.createElement(BACForecastResponsive, {
+    realPoints: realPastPoints,
+    projectedPoints: forecast.projectedPoints,
+    meanPeakBac: forecast.meanPeakBac,
+    etaPeakHours: forecast.etaPeakHours
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 10,
+      marginTop: 6,
+      fontStyle: 'italic',
+      fontFamily: fontSerif
+    }
+  }, forecast.hasHistory ? 'Extrapolation au rythme actuel jusqu\'à la durée moyenne de vos sessions passées' : 'Rythme actuel · pas encore de session passée pour estimer la durée'))), relevantDrinks.length > 0 && /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 10
     }
@@ -2806,5 +3108,9 @@ Object.assign(window, {
   BAC_RECORD_MIN,
   BacContext,
   useBacInfo,
-  BACProjectionResponsive
+  BACProjectionResponsive,
+  computeBacForecast,
+  BACForecastResponsive,
+  ForecastToggle,
+  ForecastMiniStats
 });
