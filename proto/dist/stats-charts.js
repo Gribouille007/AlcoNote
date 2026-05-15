@@ -1272,6 +1272,19 @@ function SvgHistogram({
     });
   })());
 }
+
+// Memoize every chart at the export boundary: their data props come
+// from useMemo'd parents, so reference equality holds and a parent
+// re-render (e.g. a different stats section toggling open/closed)
+// doesn't force the chart's heavy SVG paths to recompute. Their own
+// internal state (scrub hover) still triggers re-renders normally.
+SvgBarChart = React.memo(SvgBarChart);
+SvgRadar = React.memo(SvgRadar);
+SvgDonut = React.memo(SvgDonut);
+SvgLineChart = React.memo(SvgLineChart);
+SvgPolarClock = React.memo(SvgPolarClock);
+SvgBACProjection = React.memo(SvgBACProjection);
+SvgHistogram = React.memo(SvgHistogram);
 Object.assign(window, {
   chartNiceMax,
   SvgBarChart,

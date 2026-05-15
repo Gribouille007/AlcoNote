@@ -692,53 +692,56 @@ function GeneralSection({
     if (prev == null || prev === 0) return null;
     return (cur - prev) / prev * 100;
   };
-  const cards = [{
-    v: agg.count,
-    l: 'Boissons',
-    delta: pctChange(agg.count, prevAgg ? prevAgg.count : null)
-  }, {
-    v: sessions.length,
-    l: 'Sessions',
-    delta: pctChange(sessions.length, prevSessions ? prevSessions.length : null)
-  }, {
-    v: `${(agg.volumeCl / 100).toFixed(1)}L`,
-    l: 'Volume',
-    delta: pctChange(agg.volumeCl, prevAgg ? prevAgg.volumeCl : null)
-  }, {
-    v: `${Math.round(agg.grams)}g`,
-    l: 'Alcool pur',
-    delta: pctChange(agg.grams, prevAgg ? prevAgg.grams : null)
-  }, {
-    v: agg.uniqueCount,
-    l: 'Boissons diff.',
-    delta: pctChange(agg.uniqueCount, prevAgg ? prevAgg.uniqueCount : null)
-  }, {
-    v: fmtBourreTime(bourreMs),
-    l: 'Temps bourré',
-    delta: pctChange(bourreMs, prevBourreMs),
-    icon: Ic.hourglass
-  }];
-  if (period === 'week' || period === 'month' || period === 'year' || period === 'school') {
-    cards.push({
-      v: sober,
-      l: 'Jours sobres',
-      delta: pctChange(sober, prevSober)
-    });
-    cards.push({
-      v: (agg.count / days).toFixed(1),
-      l: 'Boissons/jour',
-      delta: pctChange(agg.count / days, prevDays && prevAgg ? prevAgg.count / prevDays : null)
-    });
-  }
-  if (period === 'month' || period === 'year' || period === 'school') {
-    const weeks = Math.max(1, days / 7);
-    const prevWeeks = prevDays ? Math.max(1, prevDays / 7) : 0;
-    cards.push({
-      v: (agg.count / weeks).toFixed(1),
-      l: 'Boissons/sem.',
-      delta: pctChange(agg.count / weeks, prevWeeks && prevAgg ? prevAgg.count / prevWeeks : null)
-    });
-  }
+  const cards = React.useMemo(() => {
+    const out = [{
+      v: agg.count,
+      l: 'Boissons',
+      delta: pctChange(agg.count, prevAgg ? prevAgg.count : null)
+    }, {
+      v: sessions.length,
+      l: 'Sessions',
+      delta: pctChange(sessions.length, prevSessions ? prevSessions.length : null)
+    }, {
+      v: `${(agg.volumeCl / 100).toFixed(1)}L`,
+      l: 'Volume',
+      delta: pctChange(agg.volumeCl, prevAgg ? prevAgg.volumeCl : null)
+    }, {
+      v: `${Math.round(agg.grams)}g`,
+      l: 'Alcool pur',
+      delta: pctChange(agg.grams, prevAgg ? prevAgg.grams : null)
+    }, {
+      v: agg.uniqueCount,
+      l: 'Boissons diff.',
+      delta: pctChange(agg.uniqueCount, prevAgg ? prevAgg.uniqueCount : null)
+    }, {
+      v: fmtBourreTime(bourreMs),
+      l: 'Temps bourré',
+      delta: pctChange(bourreMs, prevBourreMs),
+      icon: Ic.hourglass
+    }];
+    if (period === 'week' || period === 'month' || period === 'year' || period === 'school') {
+      out.push({
+        v: sober,
+        l: 'Jours sobres',
+        delta: pctChange(sober, prevSober)
+      });
+      out.push({
+        v: (agg.count / days).toFixed(1),
+        l: 'Boissons/jour',
+        delta: pctChange(agg.count / days, prevDays && prevAgg ? prevAgg.count / prevDays : null)
+      });
+    }
+    if (period === 'month' || period === 'year' || period === 'school') {
+      const weeks = Math.max(1, days / 7);
+      const prevWeeks = prevDays ? Math.max(1, prevDays / 7) : 0;
+      out.push({
+        v: (agg.count / weeks).toFixed(1),
+        l: 'Boissons/sem.',
+        delta: pctChange(agg.count / weeks, prevWeeks && prevAgg ? prevAgg.count / prevWeeks : null)
+      });
+    }
+    return out;
+  }, [agg, prevAgg, sessions, prevSessions, sober, prevSober, bourreMs, prevBourreMs, days, prevDays, period]);
 
   // Donut: sort categories by descending count so both the arc order
   // and the legend list match the user's mental "biggest first" model.
@@ -753,8 +756,11 @@ function GeneralSection({
     sub: "Vue d'ensemble de votre consommation",
     collapsed: collapsed,
     toggleSection: toggleSection
-  }, streak > 0 && /*#__PURE__*/React.createElement(StreakCard, {
-    streak: streak
+  }, streak > 0 && /*#__PURE__*/React.createElement(HeroStatCard, {
+    icon: Ic.flame,
+    label: "Streak",
+    value: streak,
+    suffix: `jour${streak > 1 ? 's' : ''} d'affilée`
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
@@ -841,8 +847,10 @@ function GeneralSection({
 
 // Stat tile in the headline grid. Optional `icon` prints a small glyph
 // to the left of the value (used by "Temps bourré" — others stay
-// number-only to preserve the dense 3-column rhythm).
-function StatCell({
+// number-only to preserve the dense 3-column rhythm). Memoized so a
+// re-render of the parent doesn't ripple through every tile when only
+// one of them actually changed.
+const StatCell = React.memo(function StatCell({
   value,
   label,
   icon,
@@ -900,13 +908,17 @@ function StatCell({
   }, label), delta != null && period !== 'all' && /*#__PURE__*/React.createElement(DeltaBadge, {
     delta: delta
   }));
-}
+});
 
-// "Streak" highlight card. Always full-width, accent-tinted, flame
-// glyph — mirrors the visual weight of the BAC gauge so it reads as a
-// hero metric without clashing with the dense stat grid below.
-function StreakCard({
-  streak
+// Full-width "hero" stat card: large accent-tinted icon badge on the
+// left, label + serif value on the right. Used for the streak to give
+// it visual weight matching the BAC gauge below; same primitive could
+// host future hero metrics (longest sober streak, …) without dupe.
+const HeroStatCard = React.memo(function HeroStatCard({
+  icon,
+  label,
+  value,
+  suffix
 }) {
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -931,7 +943,7 @@ function StreakCard({
       flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
-    icon: Ic.flame,
+    icon: icon,
     size: 20
   })), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -946,7 +958,7 @@ function StreakCard({
       textTransform: 'uppercase',
       marginBottom: 2
     }
-  }, "Streak"), /*#__PURE__*/React.createElement("div", {
+  }, label), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
       fontSize: 22,
@@ -955,7 +967,7 @@ function StreakCard({
       lineHeight: 1,
       fontStyle: 'italic'
     }
-  }, streak, /*#__PURE__*/React.createElement("span", {
+  }, value, suffix && /*#__PURE__*/React.createElement("span", {
     style: {
       fontStyle: 'normal',
       fontFamily: fontSans,
@@ -964,8 +976,13 @@ function StreakCard({
       marginLeft: 6,
       letterSpacing: 0
     }
-  }, "jour", streak > 1 ? 's' : '', " d'affil\xE9e"))));
-}
+  }, suffix))));
+});
+
+// Show every 4th hour label on the hourly bar chart, blank for the
+// rest — declared at module level so the reference stays stable
+// across renders (React.memo on SvgBarChart relies on it).
+const hourlyFormatX = (d, i) => i % 4 === 0 ? d.label : '';
 
 // ── 2. Analyse temporelle ─────────────────────────────────────────
 function TemporalSection({
@@ -998,15 +1015,25 @@ function TemporalSection({
     const mm = Math.round((h - hh) * 60);
     return mm === 0 ? `${hh}h` : `${hh}h ${String(mm).padStart(2, '0')}`;
   };
-  const dailyData = ['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((label, i) => {
-    const dow = (i + 1) % 7;
-    return {
-      label,
-      day: dow,
-      v: agg.byDow[dow],
-      today: dow === new Date().getDay()
-    };
-  });
+  const dailyData = React.useMemo(() => {
+    const todayDow = new Date().getDay();
+    return ['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((label, i) => {
+      const dow = (i + 1) % 7;
+      return {
+        label,
+        day: dow,
+        v: agg.byDow[dow],
+        today: dow === todayDow
+      };
+    });
+  }, [agg.byDow]);
+
+  // Pre-shape hourly data so a parent re-render doesn't allocate a
+  // fresh array; React.memo on SvgBarChart relies on reference equality.
+  const hourlyData = React.useMemo(() => agg.byHour.map((v, h) => ({
+    v,
+    label: `${h}h`
+  })), [agg.byHour]);
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "temporal",
     title: "Analyse temporelle",
@@ -1045,14 +1072,11 @@ function TemporalSection({
       letterSpacing: -0.1
     }
   }, "Par heure"), /*#__PURE__*/React.createElement(SvgBarChart, {
-    data: agg.byHour.map((v, h) => ({
-      v,
-      label: `${h}h`
-    })),
+    data: hourlyData,
     width: 320,
     height: 150,
     color: T.accent,
-    formatX: (d, i) => i % 4 === 0 ? d.label : '',
+    formatX: hourlyFormatX,
     valueLabel: "boisson(s)"
   })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1589,6 +1613,11 @@ function saveHiddenBacRecords(set) {
     localStorage.setItem(HIDDEN_BAC_RECORDS_KEY, JSON.stringify([...set]));
   } catch {}
 }
+
+// Records below this BAC aren't surfaced as "records" — a single
+// pint shouldn't sit alongside actual milestones. Mirrors the legacy
+// `recordBACIfPeak` 200 mg/L threshold.
+const BAC_RECORD_MIN = 200;
 function BACSection({
   collapsed,
   toggleSection,
@@ -1598,6 +1627,23 @@ function BACSection({
   const currentBAC = bacInfo.current || 0;
   const level = bacLevel(currentBAC);
   const [hidden, setHidden] = React.useState(loadHiddenBacRecords);
+
+  // Prune orphan ids: sessions disappear when their drinks are
+  // deleted, so the hidden set should follow. Otherwise localStorage
+  // grows unbounded over years of usage.
+  React.useEffect(() => {
+    if (!allSessions || hidden.size === 0) return;
+    const live = new Set(allSessions.map(s => s.id));
+    let changed = false;
+    const next = new Set();
+    for (const id of hidden) {
+      if (live.has(id)) next.add(id);else changed = true;
+    }
+    if (changed) {
+      saveHiddenBacRecords(next);
+      setHidden(next);
+    }
+  }, [allSessions, hidden]);
   const hoursToSober = currentBAC / 150;
   const hoursToLegal = Math.max(0, (currentBAC - 500) / 150);
   const fmtTime = h => {
@@ -1606,18 +1652,21 @@ function BACSection({
       mm = Math.round((h - hh) * 60);
     return `${hh}h${String(mm).padStart(2, '0')}`;
   };
-  const relevantDrinks = bacInfo.drinks.slice(-3).reverse().map(d => ({
-    name: d.name,
-    qty: `${d.quantity} ${d.unit}`,
-    abv: d.alcoholContent || 0,
-    hoursAgo: ((Date.now() - new Date(`${d.date}T${d.time}`).getTime()) / 3600_000).toFixed(1)
-  }));
+  const relevantDrinks = React.useMemo(() => {
+    const now = Date.now();
+    return bacInfo.drinks.slice(-3).reverse().map(d => ({
+      name: d.name,
+      qty: `${d.quantity} ${d.unit}`,
+      abv: d.alcoholContent || 0,
+      hoursAgo: ((now - new Date(`${d.date}T${d.time}`).getTime()) / 3600_000).toFixed(1)
+    }));
+  }, [bacInfo.drinks]);
 
-  // One record per drinking session: peak BAC of that session,
-  // timestamped at the moment the peak occurred. Cap to the top 3 so
-  // the list stays focused on milestones. Hidden ids are filtered out.
+  // One record per drinking session above the 200 mg/L threshold:
+  // peak BAC of that session, timestamped at the moment of the peak.
+  // Cap to the top 3 so the list reads as milestones, not a log.
   const sortedRecords = React.useMemo(() => {
-    return (allSessions || []).filter(s => !hidden.has(s.id)).map(s => ({
+    return (allSessions || []).filter(s => s.peakBac >= BAC_RECORD_MIN && !hidden.has(s.id)).map(s => ({
       id: s.id,
       bacValue: Math.round(s.peakBac),
       timestamp: new Date(s.peakTs),
@@ -1625,7 +1674,7 @@ function BACSection({
       drinkCount: s.drinks.length
     })).sort((a, b) => b.bacValue - a.bacValue).slice(0, 3);
   }, [allSessions, hidden]);
-  const totalRecords = (allSessions || []).filter(s => !hidden.has(s.id)).length;
+  const totalRecords = React.useMemo(() => (allSessions || []).filter(s => s.peakBac >= BAC_RECORD_MIN && !hidden.has(s.id)).length, [allSessions, hidden]);
   const highest = sortedRecords[0];
   const others = sortedRecords.slice(1);
 
@@ -2744,7 +2793,7 @@ Object.assign(window, {
   StatSection,
   DeltaBadge,
   StatCell,
-  StreakCard,
+  HeroStatCard,
   getPeriodRange,
   shiftAnchor,
   periodLabel,
@@ -2754,6 +2803,7 @@ Object.assign(window, {
   computeStreak,
   fmtBourreTime,
   BAC_ELIM_RATE,
+  BAC_RECORD_MIN,
   BacContext,
   useBacInfo,
   BACProjectionResponsive
