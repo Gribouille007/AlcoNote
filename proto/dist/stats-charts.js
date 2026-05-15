@@ -1187,6 +1187,358 @@ function SvgBACProjection({
     lines: [`${Math.round(focus.bac)} mg/L`, fmtStatus(focus.bac), fmtRel(focus.t)]
   })));
 }
+// ── BAC forecast (current session projection vs. historical baseline) ──
+// Plots two segments on the same axes:
+//   • realPoints (t ≤ 0)        : the BAC actually realized so far in
+//     the current session (solid stroke, gradient by level).
+//   • projectedPoints (t ≥ 0)   : the BAC if the user keeps drinking
+//     at `currentRateGph` until the estimated session end, then linear
+//     elimination at 150 mg/L/h (dashed stroke, same gradient).
+// On top of that:
+//   • A horizontal reference line at `meanPeakBac` (mean of past peaks).
+//   • A vertical marker at `etaPeakHours` (when the projection crosses
+//     the historical peak). When the projection never reaches the peak,
+//     the marker is anchored at the right edge with an "∞" label so the
+//     "always shown" contract is honored.
+// The scrubber sweeps across the merged real+projected series so the
+// tooltip follows the finger smoothly from past to future.
+function SvgBACForecast({
+  realPoints,
+  projectedPoints,
+  meanPeakBac,
+  etaPeakHours,
+  width = 320,
+  height = 200,
+  nowMs = Date.now()
+}) {
+  const idSuffix = React.useId().replace(/:/g, '');
+  const svgRef = React.useRef(null);
+  const [scrubT, setScrubT] = React.useState(null);
+  const safeReal = realPoints && realPoints.length > 0 ? realPoints : null;
+  const safeProj = projectedPoints && projectedPoints.length > 0 ? projectedPoints : null;
+  const hasAnyCurve = !!(safeReal || safeProj);
+  const merged = React.useMemo(() => {
+    const a = safeReal || [];
+    const b = safeProj || [];
+    // Drop the duplicate t=0 sample if both series carry one.
+    if (a.length && b.length && Math.abs(a[a.length - 1].t - b[0].t) < 1e-6) {
+      return a.concat(b.slice(1));
+    }
+    return a.concat(b);
+  }, [safeReal, safeProj]);
+  const pad = {
+    t: 16,
+    r: 14,
+    b: 22,
+    l: 36
+  };
+  const w = width - pad.l - pad.r;
+  const minT = merged.length ? merged[0].t : 0;
+  const maxT = merged.length ? merged[merged.length - 1].t : 1;
+  const scr = useChartScrubber(svgRef, null, p => {
+    if (!p) {
+      setScrubT(null);
+      return;
+    }
+    const clampedX = Math.max(pad.l, Math.min(pad.l + w, p.x));
+    const t = minT + (clampedX - pad.l) / Math.max(1, w) * (maxT - minT);
+    setScrubT(Math.max(minT, Math.min(maxT, t)));
+  });
+  if (!hasAnyCurve) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: T.muted,
+        fontSize: 11,
+        padding: '20px 0',
+        textAlign: 'center'
+      }
+    }, "Aucune donn\xE9e pour la pr\xE9vision");
+  }
+  const h = height - pad.t - pad.b;
+  const peakBac = Math.max(...merged.map(p => p.bac), meanPeakBac || 0);
+  // Same headroom logic as SvgBACProjection; ensure the mean peak line
+  // is comfortably inside the viewport so its label doesn't clip the top.
+  const maxB = chartNiceMax(Math.max(80, peakBac * 1.15), 4);
+  const xs = t => pad.l + (t - minT) / Math.max(0.001, maxT - minT) * w;
+  const ys = b => pad.t + h * (1 - b / maxB);
+  const baseY = pad.t + h;
+  const safe = T.good;
+  const warn = T.isDark ? 'oklch(72% 0.16 60)' : 'oklch(58% 0.16 55)';
+  const danger = T.isDark ? 'oklch(68% 0.20 25)' : 'oklch(54% 0.20 25)';
+  const bacColor = b => b > 500 ? danger : b > 200 ? warn : safe;
+  const gradStrokeId = `bacf-stroke-${idSuffix}`;
+  const gradAreaId = `bacf-area-${idSuffix}`;
+  const stop500 = 1 - Math.min(1, 500 / maxB);
+  const stop200 = 1 - Math.min(1, 200 / maxB);
+  const gradStops = (alpha = 1) => /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("stop", {
+    offset: `${(stop500 * 100).toFixed(2)}%`,
+    stopColor: danger,
+    stopOpacity: alpha
+  }), /*#__PURE__*/React.createElement("stop", {
+    offset: `${(stop500 * 100).toFixed(2)}%`,
+    stopColor: warn,
+    stopOpacity: alpha
+  }), /*#__PURE__*/React.createElement("stop", {
+    offset: `${(stop200 * 100).toFixed(2)}%`,
+    stopColor: warn,
+    stopOpacity: alpha
+  }), /*#__PURE__*/React.createElement("stop", {
+    offset: `${(stop200 * 100).toFixed(2)}%`,
+    stopColor: safe,
+    stopOpacity: alpha
+  }), /*#__PURE__*/React.createElement("stop", {
+    offset: "100%",
+    stopColor: safe,
+    stopOpacity: alpha
+  }));
+  const pathOf = pts => pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${xs(p.t)},${ys(p.bac)}`).join(' ');
+  const areaOf = pts => pathOf(pts) + ` L${xs(pts[pts.length - 1].t)},${baseY} L${xs(pts[0].t)},${baseY} Z`;
+  const thresh = [{
+    y: 200,
+    label: '200 mg/L',
+    color: warn
+  }, {
+    y: 500,
+    label: '500 légal',
+    color: danger
+  }].filter(l => l.y <= maxB);
+  const interpAt = t => {
+    if (merged.length === 0) return {
+      t,
+      bac: 0
+    };
+    if (t <= merged[0].t) return {
+      t,
+      bac: merged[0].bac
+    };
+    if (t >= merged[merged.length - 1].t) return {
+      t,
+      bac: merged[merged.length - 1].bac
+    };
+    let lo = 0,
+      hi = merged.length - 1;
+    while (hi - lo > 1) {
+      const mid = lo + hi >> 1;
+      if (merged[mid].t <= t) lo = mid;else hi = mid;
+    }
+    const a = merged[lo],
+      b = merged[hi];
+    const frac = (t - a.t) / Math.max(1e-9, b.t - a.t);
+    return {
+      t,
+      bac: a.bac + (b.bac - a.bac) * frac
+    };
+  };
+  const focusT = scrubT != null ? scrubT : 0;
+  const focus = interpAt(focusT);
+  const focusColor = bacColor(focus.bac);
+  const fmtClock = t => {
+    const d = new Date(nowMs + t * 3600_000);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  };
+  const ticksX = (() => {
+    const out = [];
+    for (let i = 0; i < 4; i++) out.push(minT + (maxT - minT) * (i / 3));
+    return out;
+  })();
+  const fmtRel = t => {
+    const minutes = Math.round(Math.abs(t) * 60);
+    if (minutes < 1) return 'maintenant';
+    const hh = Math.floor(minutes / 60);
+    const mm = minutes % 60;
+    const phrase = hh === 0 ? `${mm}min` : mm === 0 ? `${hh}h` : `${hh}h${String(mm).padStart(2, '0')}`;
+    return t < 0 ? `il y a ${phrase}` : `dans ${phrase}`;
+  };
+  const fmtStatus = b => b > 500 ? 'Au-delà' : b > 200 ? 'Léger' : 'Sobre';
+
+  // ETA marker: positioned on the projected curve when reachable, or
+  // anchored at the right edge when the projection never crosses the
+  // mean peak (so the contract "marker shown even if never reached" holds).
+  const etaReachable = etaPeakHours != null && etaPeakHours >= minT && etaPeakHours <= maxT;
+  const etaX = etaReachable ? xs(etaPeakHours) : xs(maxT);
+  const etaLabelText = etaReachable ? Math.abs(etaPeakHours) < 1e-3 ? 'peak · maintenant' : `peak · ${etaPeakHours < 1 ? `${Math.round(etaPeakHours * 60)}min` : `${Math.floor(etaPeakHours)}h${String(Math.round((etaPeakHours - Math.floor(etaPeakHours)) * 60)).padStart(2, '0')}`}` : 'peak · ∞';
+  // Anchor the label on the side of the marker that has room — flips
+  // to "end" once the marker enters the right half of the plot area so
+  // the text never clips the SVG edge.
+  const etaAnchor = etaX > pad.l + w * 0.62 ? 'end' : 'start';
+  const etaTextX = etaX + (etaAnchor === 'end' ? -4 : 4);
+  return /*#__PURE__*/React.createElement("svg", _extends({
+    ref: svgRef,
+    viewBox: `0 0 ${width} ${height}`,
+    width: "100%",
+    height: height,
+    style: {
+      display: 'block',
+      touchAction: 'pan-y'
+    }
+  }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
+    x: "0",
+    y: "0",
+    width: width,
+    height: height,
+    fill: "transparent"
+  }), /*#__PURE__*/React.createElement("defs", null, /*#__PURE__*/React.createElement("linearGradient", {
+    id: gradStrokeId,
+    x1: "0",
+    x2: "0",
+    y1: "0",
+    y2: "1"
+  }, gradStops(1)), /*#__PURE__*/React.createElement("linearGradient", {
+    id: gradAreaId,
+    x1: "0",
+    x2: "0",
+    y1: "0",
+    y2: "1"
+  }, gradStops(0.28), /*#__PURE__*/React.createElement("stop", {
+    offset: "100%",
+    stopColor: safe,
+    stopOpacity: 0
+  }))), [0, 0.5, 1].map((f, i) => /*#__PURE__*/React.createElement("g", {
+    key: i
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: pad.l,
+    x2: pad.l + w,
+    y1: pad.t + h * (1 - f),
+    y2: pad.t + h * (1 - f),
+    stroke: T.rule,
+    strokeDasharray: "2 3",
+    strokeWidth: 0.5,
+    opacity: 0.6
+  }), /*#__PURE__*/React.createElement("text", {
+    x: pad.l - 4,
+    y: pad.t + h * (1 - f) + 3,
+    fontSize: 9,
+    fill: T.muted,
+    textAnchor: "end",
+    fontFamily: fontNum
+  }, Math.round(maxB * f)))), thresh.map((l, i) => /*#__PURE__*/React.createElement("g", {
+    key: `th-${i}`
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: pad.l,
+    x2: pad.l + w,
+    y1: ys(l.y),
+    y2: ys(l.y),
+    stroke: l.color,
+    strokeDasharray: "3 3",
+    strokeWidth: 0.8,
+    opacity: 0.55
+  }), /*#__PURE__*/React.createElement("text", {
+    x: pad.l + w - 2,
+    y: ys(l.y) - 3,
+    fontSize: 8,
+    fill: l.color,
+    textAnchor: "end",
+    fontFamily: fontNum
+  }, l.label))), meanPeakBac != null && meanPeakBac > 0 && meanPeakBac <= maxB && /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("line", {
+    x1: pad.l,
+    x2: pad.l + w,
+    y1: ys(meanPeakBac),
+    y2: ys(meanPeakBac),
+    stroke: T.ink2,
+    strokeDasharray: "4 4",
+    strokeWidth: 1,
+    opacity: 0.65
+  }), /*#__PURE__*/React.createElement("text", {
+    x: pad.l + 4,
+    y: ys(meanPeakBac) - 3,
+    fontSize: 8.5,
+    fill: T.ink2,
+    textAnchor: "start",
+    fontFamily: fontNum
+  }, "peak moyen \xB7 ", Math.round(meanPeakBac))), safeReal && safeReal.length > 1 && /*#__PURE__*/React.createElement("path", {
+    d: areaOf(safeReal),
+    fill: `url(#${gradAreaId})`
+  }), safeReal && safeReal.length > 1 && /*#__PURE__*/React.createElement("path", {
+    d: pathOf(safeReal),
+    fill: "none",
+    stroke: `url(#${gradStrokeId})`,
+    strokeWidth: 2.4,
+    strokeLinejoin: "round",
+    strokeLinecap: "round"
+  }), safeProj && safeProj.length > 1 && /*#__PURE__*/React.createElement("path", {
+    d: pathOf(safeProj),
+    fill: "none",
+    stroke: `url(#${gradStrokeId})`,
+    strokeWidth: 1.8,
+    strokeOpacity: 0.75,
+    strokeDasharray: "5 4",
+    strokeLinejoin: "round",
+    strokeLinecap: "round"
+  }), 0 >= minT && 0 <= maxT && /*#__PURE__*/React.createElement("line", {
+    x1: xs(0),
+    x2: xs(0),
+    y1: pad.t,
+    y2: baseY,
+    stroke: T.ink2,
+    strokeWidth: 1,
+    strokeDasharray: "3 3",
+    opacity: 0.5
+  }), meanPeakBac != null && meanPeakBac > 0 && /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("line", {
+    x1: etaX,
+    x2: etaX,
+    y1: pad.t,
+    y2: baseY,
+    stroke: T.ink,
+    strokeWidth: 1,
+    strokeDasharray: "1 3",
+    opacity: etaReachable ? 0.55 : 0.3
+  }), /*#__PURE__*/React.createElement("text", {
+    x: etaTextX,
+    y: pad.t + 9,
+    fontSize: 8.5,
+    fill: etaReachable ? T.ink2 : T.muted,
+    textAnchor: etaAnchor,
+    fontFamily: fontNum
+  }, etaLabelText)), ticksX.map((t, i) => /*#__PURE__*/React.createElement("text", {
+    key: i,
+    x: xs(t),
+    y: height - 10,
+    fontSize: 9,
+    fill: T.muted,
+    textAnchor: "middle",
+    fontFamily: fontNum
+  }, fmtClock(t))), scrubT == null && 0 >= minT && 0 <= maxT && /*#__PURE__*/React.createElement("text", {
+    x: xs(0),
+    y: pad.t - 6,
+    fontSize: 9,
+    fill: T.ink2,
+    textAnchor: "middle",
+    fontFamily: fontNum
+  }, "maintenant"), focus && merged.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("line", {
+    x1: xs(focus.t),
+    x2: xs(focus.t),
+    y1: ys(focus.bac),
+    y2: baseY,
+    stroke: focusColor,
+    strokeWidth: 1,
+    opacity: 0.35
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: xs(focus.t),
+    cy: ys(focus.bac),
+    r: 11,
+    fill: focusColor,
+    fillOpacity: 0.2
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: xs(focus.t),
+    cy: ys(focus.bac),
+    r: 6,
+    fill: T.bg,
+    stroke: focusColor,
+    strokeWidth: 1.5
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: xs(focus.t),
+    cy: ys(focus.bac),
+    r: 3.5,
+    fill: focusColor
+  }), /*#__PURE__*/React.createElement(ChartTooltip, {
+    x: xs(focus.t),
+    y: ys(focus.bac),
+    width: width,
+    lines: [`${Math.round(focus.bac)} mg/L`, fmtStatus(focus.bac), fmtRel(focus.t)]
+  })));
+}
 // ── Histogram (session duration / session BAC) ───────────────────
 function SvgHistogram({
   buckets,
@@ -1284,6 +1636,7 @@ SvgDonut = React.memo(SvgDonut);
 SvgLineChart = React.memo(SvgLineChart);
 SvgPolarClock = React.memo(SvgPolarClock);
 SvgBACProjection = React.memo(SvgBACProjection);
+SvgBACForecast = React.memo(SvgBACForecast);
 SvgHistogram = React.memo(SvgHistogram);
 Object.assign(window, {
   chartNiceMax,
@@ -1293,6 +1646,7 @@ Object.assign(window, {
   SvgLineChart,
   SvgPolarClock,
   SvgBACProjection,
+  SvgBACForecast,
   SvgHistogram,
   useChartScrubber,
   ChartTooltip,
