@@ -40,7 +40,11 @@ function CategoriesTab({
   }, [editCat, categories]);
   const families = React.useMemo(() => buildFamilies(drinks, ratings), [drinks, ratings]);
   const cats = React.useMemo(() => computeCategoryStats(categories, families), [categories, families]);
-  const filtered = openCat ? families.filter(f => f.category === openCat && (query === '' || f.name.toLowerCase().includes((query || '').toLowerCase()))) : [];
+  const filtered = React.useMemo(() => {
+    if (!openCat) return [];
+    const q = (query || '').toLowerCase();
+    return families.filter(f => f.category === openCat && (!q || f.name.toLowerCase().includes(q)));
+  }, [openCat, families, query]);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -88,7 +92,10 @@ function CategoryGrid({
   onAdd
 }) {
   const q = (query || '').toLowerCase();
-  const matchedFams = q ? families.filter(f => f.name.toLowerCase().includes(q) || f.category.toLowerCase().includes(q)) : [];
+  const matchedFams = React.useMemo(() => {
+    if (!q) return [];
+    return families.filter(f => f.name.toLowerCase().includes(q) || f.category.toLowerCase().includes(q));
+  }, [families, q]);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
@@ -236,40 +243,54 @@ function FamilyList({
   // total entries inside the group, then by quantity asc inside each
   // group. We keep one line per (name, qty, unit, abv) variant so the
   // user can add each individually. Variants share a `groupKey` so
-  // FamilyRow can render the stacked-card visual cue.
-  const groupEntries = new Map(); // name → total entries (for sort)
-  const variantCounts = new Map(); // name → number of variant rows
-  for (const f of families) {
-    const k = (f.name || '').trim().toLowerCase();
-    groupEntries.set(k, (groupEntries.get(k) || 0) + f.entries.length);
-    variantCounts.set(k, (variantCounts.get(k) || 0) + 1);
-  }
-  const sorted = [...families].sort((a, b) => {
-    const ka = (a.name || '').trim().toLowerCase();
-    const kb = (b.name || '').trim().toLowerCase();
-    const ga = groupEntries.get(ka) || 0;
-    const gb = groupEntries.get(kb) || 0;
-    if (gb !== ga) return gb - ga;
-    if (ka !== kb) return ka.localeCompare(kb);
-    if ((a.alcohol || 0) !== (b.alcohol || 0)) return (a.alcohol || 0) - (b.alcohol || 0);
-    return (a.quantity || 0) - (b.quantity || 0);
-  });
-
-  // Build per-row metadata: position within the same-name group.
-  const rows = [];
-  let prevKey = null,
-    idx = 0;
-  for (const f of sorted) {
-    const key = (f.name || '').trim().toLowerCase();
-    if (key !== prevKey) idx = 0;
-    rows.push({
-      f,
-      key,
-      idx: idx++,
-      total: variantCounts.get(key) || 1
+  // FamilyRow can render the stacked-card visual cue. Memoized so a
+  // search keystroke or unrelated dataBus bump doesn't recompute the
+  // whole grouping when the filtered `families` array reference is
+  // unchanged.
+  const {
+    rows,
+    sortedLen,
+    entriesTotal
+  } = React.useMemo(() => {
+    const groupEntries = new Map(); // name → total entries (for sort)
+    const variantCounts = new Map(); // name → number of variant rows
+    for (const f of families) {
+      const k = (f.name || '').trim().toLowerCase();
+      groupEntries.set(k, (groupEntries.get(k) || 0) + f.entries.length);
+      variantCounts.set(k, (variantCounts.get(k) || 0) + 1);
+    }
+    const sorted = [...families].sort((a, b) => {
+      const ka = (a.name || '').trim().toLowerCase();
+      const kb = (b.name || '').trim().toLowerCase();
+      const ga = groupEntries.get(ka) || 0;
+      const gb = groupEntries.get(kb) || 0;
+      if (gb !== ga) return gb - ga;
+      if (ka !== kb) return ka.localeCompare(kb);
+      if ((a.alcohol || 0) !== (b.alcohol || 0)) return (a.alcohol || 0) - (b.alcohol || 0);
+      return (a.quantity || 0) - (b.quantity || 0);
     });
-    prevKey = key;
-  }
+    const out = [];
+    let prevKey = null,
+      idx = 0;
+    for (const f of sorted) {
+      const key = (f.name || '').trim().toLowerCase();
+      if (key !== prevKey) idx = 0;
+      out.push({
+        f,
+        key,
+        idx: idx++,
+        total: variantCounts.get(key) || 1
+      });
+      prevKey = key;
+    }
+    let entries = 0;
+    for (const f of families) entries += f.entries.length;
+    return {
+      rows: out,
+      sortedLen: sorted.length,
+      entriesTotal: entries
+    };
+  }, [families]);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
@@ -336,7 +357,7 @@ function FamilyList({
       marginBottom: 18,
       letterSpacing: 0.1
     }
-  }, sorted.length, " variante", sorted.length !== 1 ? 's' : '', " \xB7", ' ', families.reduce((s, f) => s + f.entries.length, 0), " entr\xE9es au total"), rows.map(({
+  }, sortedLen, " variante", sortedLen !== 1 ? 's' : '', " \xB7", ' ', entriesTotal, " entr\xE9es au total"), rows.map(({
     f,
     idx,
     total
@@ -486,13 +507,15 @@ function EditCategorySheet({
   const {
     drinks
   } = useDrinks();
-  const icons = useCategoryIcons();
+  // Read overrides from the App-level CategoryIconsContext rather than
+  // re-subscribing locally — keeps the sheet in sync with whatever the
+  // grid is painting without a second DB round-trip on every bump.
+  const icons = React.useContext(CategoryIconsContext);
   const [name, setName] = React.useState(category);
-  // `glyph` holds the user's *explicit* choice (null until they tap one
-  // of the picker tiles). The picker still needs something to highlight
-  // when there's no override — `displayedGlyph` resolves that fallback
-  // to whatever <CategoryGlyph> actually paints for `category`, so the
-  // highlighted tile always matches the icon shown on the card.
+  // `glyph` holds the user's *explicit* choice in this sheet. `null`
+  // means "no explicit pick yet" (use whatever's currently persisted)
+  // and a string means the user actively selected that tile — including
+  // the `'__reset__'` sentinel which means "drop the override".
   const [glyph, setGlyphState] = React.useState(() => icons[category] || null);
   const userTouchedRef = React.useRef(false);
   const setGlyph = g => {
@@ -501,15 +524,24 @@ function EditCategorySheet({
   };
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
-  const displayedGlyph = glyph || (GLYPH_OPTIONS.includes(category) ? category : 'Autre');
+
+  // What the picker should highlight. After "Réinitialiser" we fall
+  // back to the same logic <CategoryGlyph> uses when there's no
+  // override, so the highlighted tile matches the card.
+  const displayedGlyph = glyph && glyph !== '__reset__' ? glyph : GLYPH_OPTIONS.includes(category) ? category : 'Autre';
+
+  // Keep the form in sync if the sheet is reused for a different
+  // category (rare in current routing, but cheap to guard against).
+  React.useEffect(() => {
+    setName(category);
+  }, [category]);
 
   // Adopt the persisted override once it loads (or is updated elsewhere)
   // — but never overwrite a pick the user has already made in this sheet.
   React.useEffect(() => {
     if (!userTouchedRef.current) setGlyphState(icons[category] || null);
   }, [icons, category]);
-  const drinksInCat = drinks.filter(d => (d.category || '') === category).length;
-  const catObj = categories.find(c => c.name === category);
+  const drinksInCat = React.useMemo(() => drinks.filter(d => (d.category || '') === category).length, [drinks, category]);
   const save = async () => {
     setErr('');
     const trimmed = (name || '').trim();
@@ -527,8 +559,13 @@ function EditCategorySheet({
         await renameCategory(category, trimmed);
         finalName = trimmed;
       }
-      if (userTouchedRef.current && glyph) {
-        await setCategoryIcon(finalName, glyph);
+      if (userTouchedRef.current) {
+        // '__reset__' wipes the persisted override entirely so the
+        // category falls back to its name-based default glyph.
+        const next = glyph === '__reset__' ? null : glyph;
+        if (next || glyph === '__reset__') {
+          await setCategoryIcon(finalName, next);
+        }
       }
       Toast.show(`Catégorie « ${finalName} » mise à jour`);
       onClose && onClose();
@@ -539,7 +576,17 @@ function EditCategorySheet({
     }
   };
   const remove = async () => {
-    if (!catObj) return;
+    setErr('');
+    // Resolve fresh from the current categories array on click instead
+    // of caching at render — if the list re-fetched (e.g. concurrent
+    // delete elsewhere), the row id we'd otherwise hand to the DB might
+    // already be stale. If the cat really is gone, bail visibly instead
+    // of silently no-op'ing.
+    const fresh = categories.find(c => c.name === category);
+    if (!fresh) {
+      setErr('Catégorie introuvable — elle a peut-être déjà été supprimée.');
+      return;
+    }
     let reassignTo = null;
     if (drinksInCat > 0) {
       const others = categories.filter(c => c.name !== category);
@@ -567,7 +614,7 @@ function EditCategorySheet({
     }
     setBusy(true);
     try {
-      await deleteCategory(catObj.id, {
+      await deleteCategory(fresh.id, {
         reassignTo,
         name: category
       });
@@ -579,6 +626,8 @@ function EditCategorySheet({
       setBusy(false);
     }
   };
+  const hasOverride = !!icons[category];
+  const showResetTile = hasOverride || glyph === '__reset__';
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: onClose
   }, /*#__PURE__*/React.createElement("div", {
@@ -659,7 +708,7 @@ function EditCategorySheet({
       flexWrap: 'wrap'
     }
   }, GLYPH_OPTIONS.map(g => {
-    const selected = displayedGlyph === g;
+    const selected = displayedGlyph === g && glyph !== '__reset__';
     return /*#__PURE__*/React.createElement("button", {
       key: g,
       type: "button",
@@ -686,7 +735,31 @@ function EditCategorySheet({
       glyph: g,
       size: 26
     }));
-  })), err && /*#__PURE__*/React.createElement("div", {
+  }), showResetTile && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    role: "radio",
+    "aria-checked": glyph === '__reset__',
+    "aria-label": "R\xE9initialiser l'ic\xF4ne",
+    onClick: () => setGlyph('__reset__'),
+    title: "Revenir \xE0 l'ic\xF4ne par d\xE9faut",
+    style: {
+      width: 52,
+      height: 52,
+      borderRadius: 12,
+      background: glyph === '__reset__' ? T.surface3 : T.surface2,
+      border: `2px dashed ${glyph === '__reset__' ? T.ink2 : T.rule}`,
+      display: 'grid',
+      placeItems: 'center',
+      color: glyph === '__reset__' ? T.ink : T.muted,
+      cursor: 'pointer',
+      padding: 0,
+      fontFamily: 'inherit',
+      transition: 'background 0.15s ease, border-color 0.15s ease'
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.refresh,
+    size: 18
+  }))), err && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.accent2,
       background: 'oklch(35% 0.10 25 / 0.15)',

@@ -454,7 +454,11 @@ class DatabaseManager {
 
     async setSetting(key, value) {
         try {
-            await this.db.settings.put({ key, value });
+            if (value === null || value === undefined) {
+                await this.db.settings.delete(key);
+            } else {
+                await this.db.settings.put({ key, value });
+            }
             return true;
         } catch (error) {
             console.error('Error setting setting:', error);

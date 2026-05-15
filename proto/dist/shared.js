@@ -497,6 +497,18 @@ const Ic = {
     strokeLinejoin: "round"
   }, /*#__PURE__*/React.createElement("path", {
     d: "M6 2h12v3a6 6 0 0 1-3.5 5.45L13 11l1.5.55A6 6 0 0 1 18 17v3H6v-3a6 6 0 0 1 3.5-5.45L11 11l-1.5-.55A6 6 0 0 1 6 5V2z"
+  })),
+  refresh: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("polyline", {
+    points: "3 4 3 10 9 10"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M3.51 15a9 9 0 1 0 2.13-9.36L3 10"
   }))
 };
 function SvgIcon({
