@@ -18,9 +18,9 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
   const [editEntry, setEditEntry] = React.useState(null);
 
   const { categories } = useCategories();
-  const { drinks } = useDrinks();
-  const ratings = useRatings();
-  const families = React.useMemo(() => buildFamilies(drinks, ratings), [drinks, ratings]);
+  // Single shared families memo from the App-level FamiliesContext —
+  // avoids re-building (drinks × ratings) per tab on every bump.
+  const families = useFamilies();
   const allEntries = React.useMemo(() => flattenEntries(families), [families]);
 
   // Delete immediately, no modal — surface an "Annuler" toast for 5s

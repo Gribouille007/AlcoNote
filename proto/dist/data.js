@@ -87,61 +87,59 @@ async function _ensureDefaultCategories() {
   return _seedPromise;
 }
 
-// ── Hook: load categories list ────────────────────────────────────
-function useCategories() {
-  const v = useDataVersion();
-  const [cats, setCats] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
-  React.useEffect(() => {
-    let alive = true;
-    (async () => {
-      const db = await waitForDb();
-      if (!db) return;
-      await _ensureDefaultCategories();
-      const list = await db.getAllCategories();
-      if (alive) {
-        setCats(list);
-        setLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [v]);
-  return {
-    categories: cats,
-    loading
-  };
-}
+// ── Contexts for hoisted data ────────────────────────────────────
+// App-level providers fetch once per dataBus.bump and broadcast to
+// every child. Each `useX()` hook just reads its context — no per-
+// consumer DB round-trip. Without an outer provider the default value
+// is returned (empty list / empty map), which only matters during the
+// transient ReactDOM bootstrap before <App/> commits.
+const DrinksContext = React.createContext({
+  drinks: [],
+  loading: true
+});
+const RatingsContext = React.createContext({});
+const CategoriesContext = React.createContext({
+  categories: [],
+  loading: true
+});
+const SettingsContext = React.createContext({});
+// Families are derived from drinks + ratings — hoisted once at App
+// level so HistoryTab / CategoriesTab / DrinkDetailSheet share the same
+// memo instead of each rebuilding the grouping on every dataBus bump.
+const FamiliesContext = React.createContext([]);
 
-// ── Hook: load all drinks (chronological) ────────────────────────
-function useDrinks() {
+// Single DB fetch per dataBus.bump. The four providers below each own
+// one async load + one state cell; their children read via context.
+function DrinksProvider({
+  children
+}) {
   const v = useDataVersion();
-  const [drinks, setDrinks] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
+  const [state, setState] = React.useState({
+    drinks: [],
+    loading: true
+  });
   React.useEffect(() => {
     let alive = true;
     (async () => {
       const db = await waitForDb();
       if (!db) return;
       const list = await db.getAllDrinks();
-      if (alive) {
-        setDrinks(list);
-        setLoading(false);
-      }
+      if (alive) setState({
+        drinks: list,
+        loading: false
+      });
     })();
     return () => {
       alive = false;
     };
   }, [v]);
-  return {
-    drinks,
-    loading
-  };
+  return React.createElement(DrinksContext.Provider, {
+    value: state
+  }, children);
 }
-
-// ── Hook: load drink ratings ──────────────────────────────────────
-function useRatings() {
+function RatingsProvider({
+  children
+}) {
   const v = useDataVersion();
   const [map, setMap] = React.useState({});
   React.useEffect(() => {
@@ -159,7 +157,68 @@ function useRatings() {
       alive = false;
     };
   }, [v]);
-  return map;
+  return React.createElement(RatingsContext.Provider, {
+    value: map
+  }, children);
+}
+function CategoriesProvider({
+  children
+}) {
+  const v = useDataVersion();
+  const [state, setState] = React.useState({
+    categories: [],
+    loading: true
+  });
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const db = await waitForDb();
+      if (!db) return;
+      await _ensureDefaultCategories();
+      const list = await db.getAllCategories();
+      if (alive) setState({
+        categories: list,
+        loading: false
+      });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [v]);
+  return React.createElement(CategoriesContext.Provider, {
+    value: state
+  }, children);
+}
+function SettingsProvider({
+  children
+}) {
+  const v = useDataVersion();
+  const [s, setS] = React.useState({});
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const out = await loadSettings();
+      if (alive) setS(out);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [v]);
+  return React.createElement(SettingsContext.Provider, {
+    value: s
+  }, children);
+}
+function useCategories() {
+  return React.useContext(CategoriesContext);
+}
+function useDrinks() {
+  return React.useContext(DrinksContext);
+}
+function useRatings() {
+  return React.useContext(RatingsContext);
+}
+function useFamilies() {
+  return React.useContext(FamiliesContext);
 }
 // ── Family aggregation ───────────────────────────────────────────
 // A "family" groups distinct drinks by (name + quantity + unit + alcohol).
@@ -246,19 +305,7 @@ async function saveSetting(key, value) {
   dataBus.bump();
 }
 function useSettings() {
-  const v = useDataVersion();
-  const [s, setS] = React.useState({});
-  React.useEffect(() => {
-    let alive = true;
-    (async () => {
-      const out = await loadSettings();
-      if (alive) setS(out);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [v]);
-  return s;
+  return React.useContext(SettingsContext);
 }
 
 // ── BAC records ───────────────────────────────────────────────────
@@ -548,6 +595,16 @@ Object.assign(window, {
   useSettings,
   useBacRecords,
   useCategoryIcons,
+  useFamilies,
+  DrinksContext,
+  RatingsContext,
+  CategoriesContext,
+  SettingsContext,
+  FamiliesContext,
+  DrinksProvider,
+  RatingsProvider,
+  CategoriesProvider,
+  SettingsProvider,
   buildFamilies,
   computeCategoryStats,
   flattenEntries,

@@ -540,6 +540,55 @@ function StatusBar() {
   return null;
 }
 
+// ── Service-worker version probe ─────────────────────────────────
+// Reads whatever version the actually-running SW has cached. The
+// SW echoes back its CACHE_NAME (`alconote-vX.Y.Z`) over a
+// MessageChannel — we extract the `vX.Y.Z` suffix for display. The
+// hook re-asks on `controllerchange` so a freshly-activated SW
+// surfaces its new version without a manual reload.
+//
+// Returns `null` until the answer arrives, or if no SW is registered
+// (file:// preview, browser without SW support, etc.). The caller is
+// expected to render a fallback ("—") in that case.
+function useSWVersion() {
+  const [version, setVersion] = React.useState(null);
+  React.useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    let cancelled = false;
+    const ask = () => {
+      const ctrl = navigator.serviceWorker.controller;
+      if (!ctrl) return;
+      try {
+        const ch = new MessageChannel();
+        ch.port1.onmessage = (e) => {
+          if (cancelled) return;
+          const raw = (e && e.data && e.data.version) || '';
+          // CACHE_NAME shape: "alconote-vX.Y.Z" — pluck the version
+          // suffix, fall back to the raw value if the SW ever ships
+          // a different format.
+          const m = String(raw).match(/v[\d.]+/);
+          setVersion(m ? m[0] : (raw || null));
+        };
+        ctrl.postMessage({ type: 'GET_VERSION' }, [ch.port2]);
+      } catch {}
+    };
+    ask();
+    const onChange = () => ask();
+    navigator.serviceWorker.addEventListener('controllerchange', onChange);
+    // Some browsers deliver the controller on a microtask after the
+    // page loads; retry once after a short delay if we didn't catch
+    // one synchronously.
+    const retry = setTimeout(() => { if (!version) ask(); }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(retry);
+      navigator.serviceWorker.removeEventListener('controllerchange', onChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return version;
+}
+
 // ── niceMax ──────────────────────────────────────────────────────
 function niceMax(v, fallback = 1) {
   if (!isFinite(v) || v <= 0) return fallback;
@@ -581,4 +630,5 @@ Object.assign(window, {
   SheetOverlay, StatusBar, niceMax,
   Confirm, ConfirmHost,
   clickable, ghostButton,
+  useSWVersion,
 });

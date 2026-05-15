@@ -498,7 +498,13 @@ function FactCell({ label, value, last }) {
 // Drink detail sheet - shows family info and entries timeline
 function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
   const ratings = useRatings();
-  const { drinks, loading } = useDrinks();
+  const { loading } = useDrinks();
+  // Read the shared families memo from FamiliesContext instead of
+  // rebuilding the grouping locally — `buildFamilies(drinks, ratings)`
+  // ran on every bump and produced a brand-new array each time, which
+  // forced this sheet through the same recompute that HistoryTab and
+  // CategoriesTab were already doing.
+  const families = useFamilies();
   // Pin the drink-family identity from props once: we want to keep
   // showing the same family even after a single entry inside it gets
   // deleted (so the timeline updates instead of the sheet closing).
@@ -514,9 +520,8 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
   const liveFamily = React.useMemo(() => {
     const seed = seedRef.current;
     if (!seed) return null;
-    const fams = buildFamilies(drinks, ratings);
-    const match = fams.find(x => x.id === seed.id) ||
-                  fams.find(x =>
+    const match = families.find(x => x.id === seed.id) ||
+                  families.find(x =>
                     x.name === seed.name &&
                     x.quantity === seed.quantity &&
                     (x.unit || '').toLowerCase() === (seed.unit || '').toLowerCase() &&
@@ -527,7 +532,7 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
     // of returning an empty array — otherwise the auto-close below would
     // fire on mount and the sheet would disappear instantly.
     return { ...seed, entries: seed.entries || [] };
-  }, [drinks, ratings]);
+  }, [families]);
   // Close automatically when the family no longer has any entries — but
   // only once drinks have loaded, so we don't close before the data
   // arrives.
@@ -700,6 +705,7 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
 // happens naturally because `buildFamilies` keys on (name+qty+unit+abv).
 function EditEntrySheet({ entry, onClose }) {
   const { categories } = useCategories();
+  const ratings = useRatings();
   const raw = entry.raw || entry;
   const [name, setName] = React.useState(raw.name || '');
   const [qty, setQty] = React.useState(raw.quantity != null ? raw.quantity : '');
@@ -708,6 +714,11 @@ function EditEntrySheet({ entry, onClose }) {
   const [cat, setCat] = React.useState(raw.category || '');
   const [date, setDate] = React.useState(raw.date || _now().date);
   const [time, setTime] = React.useState(raw.time || _now().time);
+  // Ratings are keyed by drink name; editing an entry's rating moves
+  // the value to whatever name the user saves under.
+  const [rating, setRating] = React.useState(
+    ratings[raw.name] != null ? ratings[raw.name] : 0
+  );
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
 
@@ -718,8 +729,9 @@ function EditEntrySheet({ entry, onClose }) {
     if (qtyNum <= 0) { setErr('Quantité invalide'); return; }
     setBusy(true);
     try {
+      const finalName = name.trim();
       await updateDrink(raw.id, {
-        name: name.trim(),
+        name: finalName,
         category: cat,
         quantity: qtyNum,
         unit,
@@ -727,6 +739,9 @@ function EditEntrySheet({ entry, onClose }) {
         date,
         time,
       });
+      if (rating !== (ratings[finalName] || 0)) {
+        await saveRating(finalName, rating);
+      }
       Toast.show('Boisson modifiée');
       onClose && onClose();
     } catch (e) {
@@ -853,6 +868,20 @@ function EditEntrySheet({ entry, onClose }) {
             </FieldGroup>
           </div>
 
+          <FieldGroup label="Note">
+            <div style={{
+              background: T.surface2, border: `1px solid ${T.rule}`, borderRadius: 12,
+              padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <Stars n={rating} interactive size={18} onChange={setRating}/>
+              {rating > 0 && (
+                <button type="button" onClick={() => setRating(0)} style={{
+                  ...ghostButton, color: T.muted, fontSize: 11, cursor: 'pointer',
+                }}>Effacer</button>
+              )}
+            </div>
+          </FieldGroup>
+
           {err && (
             <div style={{
               color: T.accent2, background: 'oklch(35% 0.10 25 / 0.15)',
@@ -901,11 +930,19 @@ function EditEntrySheet({ entry, onClose }) {
 // change category, delete all entries)
 function EditFamilySheet({ family, onClose }) {
   const { categories } = useCategories();
+  const ratings = useRatings();
   const [name, setName] = React.useState(family.name);
   const [qty, setQty] = React.useState(family.quantity);
   const [unit, setUnit] = React.useState(family.unit);
   const [alc, setAlc] = React.useState(family.alcohol);
   const [cat, setCat] = React.useState(family.category);
+  // Ratings are keyed by drink name (not per family / per entry), so
+  // we seed from the current name's value and persist under whatever
+  // name the user ends up saving. Renaming the family migrates the
+  // rating to the new key.
+  const [rating, setRating] = React.useState(
+    ratings[family.name] != null ? ratings[family.name] : (family.rating || 0)
+  );
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
 
@@ -913,13 +950,20 @@ function EditFamilySheet({ family, onClose }) {
     if (!name.trim()) { setErr('Le nom est requis'); return; }
     setBusy(true);
     try {
+      const finalName = name.trim();
       await updateFamily(family, {
-        name: name.trim(),
+        name: finalName,
         quantity: Number(qty) || 0,
         unit,
         alcoholContent: Number(alc) || 0,
         category: cat,
       });
+      // Persist rating under the (possibly new) name. Skip the write
+      // when the value hasn't changed from the persisted one to avoid
+      // a redundant dataBus bump.
+      if (rating !== (ratings[finalName] || 0)) {
+        await saveRating(finalName, rating);
+      }
       Toast.show('Boisson mise à jour');
       onClose && onClose();
     } catch (e) {
@@ -1022,6 +1066,20 @@ function EditFamilySheet({ family, onClose }) {
             <input type="number" value={alc} step="0.1" onChange={e => setAlc(+e.target.value || 0)} style={inputS()} />
           </FieldGroup>
 
+          <FieldGroup label="Note">
+            <div style={{
+              background: T.surface2, border: `1px solid ${T.rule}`, borderRadius: 12,
+              padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <Stars n={rating} interactive size={18} onChange={setRating}/>
+              {rating > 0 && (
+                <button type="button" onClick={() => setRating(0)} style={{
+                  ...ghostButton, color: T.muted, fontSize: 11, cursor: 'pointer',
+                }}>Effacer</button>
+              )}
+            </div>
+          </FieldGroup>
+
           {err && (
             <div style={{
               color: T.accent2, background: 'oklch(35% 0.10 25 / 0.15)',
@@ -1065,6 +1123,20 @@ function EditFamilySheet({ family, onClose }) {
     </SheetOverlay>
   );
 }
+// Version footer — reads the running service-worker's reported
+// version so the label always reflects the cache name actually
+// shipping, not a hardcoded string that drifts behind sw.js. Falls
+// back to "—" when no SW is registered (browser preview, file://).
+function AppVersionFooter() {
+  const v = useSWVersion();
+  return (
+    <div style={{
+      color: T.muted, fontSize: 10, textAlign: 'center',
+      padding: '24px 0', letterSpacing: 0.3,
+    }}>AlcoNote · {v || '—'}</div>
+  );
+}
+
 // ── Settings drawer ────────────────────────────────────────────────
 function SettingsDrawer({ open, onClose }) {
   const settings = useSettings();
@@ -1160,10 +1232,7 @@ function SettingsDrawer({ open, onClose }) {
           <input ref={fileInputRef} type="file" accept=".json,application/json"
             style={{ display: 'none' }} onChange={onFile}/>
 
-          <div style={{
-            color: T.muted, fontSize: 10, textAlign: 'center',
-            padding: '24px 0', letterSpacing: 0.3,
-          }}>AlcoNote · v3.0</div>
+          <AppVersionFooter />
         </div>
       </div>
     </SheetOverlay>
@@ -1288,6 +1357,6 @@ function SettingRow({ label, value, icon, danger, last, onClick }) {
 }
 Object.assign(window, {
   AddDrinkSheet, ScannerSheet, DrinkDetailSheet, EditFamilySheet, EditEntrySheet,
-  SettingsDrawer, FieldGroup, ImpactStat, FactCell,
+  SettingsDrawer, AppVersionFooter, FieldGroup, ImpactStat, FactCell,
   ThemePicker, ProfileRow, GenderPicker, SettingsGroup, SettingRow,
 });

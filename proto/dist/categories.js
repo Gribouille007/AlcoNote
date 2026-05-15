@@ -16,10 +16,9 @@ function CategoriesTab({
   const {
     categories
   } = useCategories();
-  const {
-    drinks
-  } = useDrinks();
-  const ratings = useRatings();
+  // Families are built once at App root and broadcast via FamiliesContext
+  // — no per-tab rebuild on every dataBus bump.
+  const families = useFamilies();
   // Icon overrides re-render <CategoryGlyph> via CategoryIconsContext
   // (provided at App root) — no need for this tab to subscribe.
 
@@ -38,7 +37,6 @@ function CategoriesTab({
       setEditCat(null);
     }
   }, [editCat, categories]);
-  const families = React.useMemo(() => buildFamilies(drinks, ratings), [drinks, ratings]);
   const cats = React.useMemo(() => computeCategoryStats(categories, families), [categories, families]);
   const filtered = React.useMemo(() => {
     if (!openCat) return [];

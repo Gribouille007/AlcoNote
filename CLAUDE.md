@@ -194,6 +194,44 @@ clé `cat.icon.<nom>`. `loadCategoryIcons()` (appelée au mount par
 constante `CACHE_NAME / STATIC_CACHE / DYNAMIC_CACHE` et la liste
 `STATIC_FILES` si on ajoute un script.
 
+### Version affichée dans Paramètres
+
+La ligne « AlcoNote · vX.Y.Z » du tiroir Paramètres est **lue
+dynamiquement** depuis le SW en exécution via
+`navigator.serviceWorker.controller.postMessage({type:'GET_VERSION'})`.
+Le hook `useSWVersion()` (dans `shared.jsx`) en extrait le suffixe
+`vX.Y.Z` du `CACHE_NAME`. **Source unique de vérité : `sw.js`.** Pas
+besoin de toucher au footer côté React quand on bump une version —
+il suivra automatiquement la nouvelle valeur dès activation du
+nouveau SW. Sans SW (preview `file://`), le footer affiche `—`.
+
+## Données partagées via Contexts
+
+Pour éviter que chaque tab refasse son propre `db.getAllX()` à
+chaque `dataBus.bump()`, les hooks de données sont **hoistés** au
+niveau racine de `<App/>` via 4 providers (`DrinksProvider`,
+`RatingsProvider`, `CategoriesProvider`, `SettingsProvider` dans
+`data.jsx`). Les hooks `useDrinks() / useRatings() / useCategories()
+/ useSettings()` sont devenus de simples `React.useContext(...)`.
+Conséquence : un nouveau composant qui consomme ces données ne
+déclenche **pas** de fetch IndexedDB supplémentaire — il lit la même
+référence que le reste de l'arbre.
+
+`<FamiliesContext>` complète le dispositif : `buildFamilies(drinks,
+ratings)` n'est calculé **qu'une seule fois** dans `AppShell` puis
+exposé via le context. `CategoriesTab`, `HistoryTab` et
+`DrinkDetailSheet` consomment via `useFamilies()` au lieu de
+rebuilder la map à chaque bump.
+
+## Onglets persistants
+
+Les 3 tabs (Catégories / Historique / Stats) ne sont **pas**
+démontés au switch : ils restent dans le DOM avec
+`display: none`. Seul le premier tab actif au lancement est monté
+(le tab persisté en localStorage). Chaque tab visité ensuite reste
+monté pour la session. Cela évite le coût de re-mount du StatsTab
+(8 sections, plusieurs SVG charts) lors des allers-retours.
+
 ## Tests manuels avant push
 
 - Add drink avec / sans prefill, chaque unité, chaque catégorie.
