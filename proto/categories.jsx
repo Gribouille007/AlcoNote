@@ -5,7 +5,8 @@ function CategoriesTab({ onAdd, onOpenFamily, onDirectAdd, onEditFamily, query, 
   const { categories } = useCategories();
   const { drinks } = useDrinks();
   const ratings = useRatings();
-  useCategoryIcons(); // keep window.__alcoCatIcons up to date
+  // Icon overrides re-render <CategoryGlyph> via CategoryIconsContext
+  // (provided at App root) — no need for this tab to subscribe.
 
   // If the open category was just deleted, drop back to the grid so the
   // user isn't stranded inside an empty FamilyList for a missing cat.

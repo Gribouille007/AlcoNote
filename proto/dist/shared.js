@@ -1109,17 +1109,20 @@ const GLYPHS = {
   }))
 };
 const GLYPH_OPTIONS = Object.keys(GLYPHS);
+
+// Provided at the App root with the current icon-overrides map. Every
+// <CategoryGlyph> reads from this context so a single dataBus
+// subscription (App-level) re-renders every glyph on the screen
+// instead of N per-instance subscriptions. Reading window.__alcoCatIcons
+// during render used to leave stale glyphs because the global mutation
+// was invisible to React's reconciler.
+const CategoryIconsContext = React.createContext({});
 function CategoryGlyph({
   name,
   glyph,
   size = 22
 }) {
-  // Subscribe to the icon-overrides map via the hook so React re-renders
-  // every <CategoryGlyph> when the user changes a category's icon.
-  // Previously we read `window.__alcoCatIcons` synchronously inside
-  // render — that global mutation was invisible to React's reconciler,
-  // so cards kept painting the old glyph after a save.
-  const customIcons = typeof useCategoryIcons === 'function' ? useCategoryIcons() : typeof window !== 'undefined' && window.__alcoCatIcons || {};
+  const customIcons = React.useContext(CategoryIconsContext);
   const key = glyph || customIcons[name] || name;
   const s = {
     width: size,
@@ -1373,7 +1376,7 @@ Object.assign(window, {
   catColor,
   catBg,
   withAlpha,
-  GLYPHS,
+  CategoryIconsContext,
   Toast,
   FR_DAYS_LONG,
   FR_DAYS_SHORT,

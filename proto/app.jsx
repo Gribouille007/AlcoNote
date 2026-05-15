@@ -71,6 +71,11 @@ function App() {
   // change tabs or add drinks.
   const { drinks } = useDrinks();
   const userSettings = useSettings();
+  // One subscription at the root for the category-icon overrides map.
+  // <CategoryGlyph> reads from CategoryIconsContext, so changing an
+  // icon refreshes every glyph in the tree without each instance
+  // needing its own dataBus subscription.
+  const catIcons = useCategoryIcons();
   const [bacTick, setBacTick] = React.useState(0);
   React.useEffect(() => {
     const id = setInterval(() => setBacTick(t => t + 1), 60_000);
@@ -131,6 +136,7 @@ function App() {
   }, []);
 
   return (
+    <CategoryIconsContext.Provider value={catIcons}>
     <BacContext.Provider value={bacInfo}>
     <div className="alco-shell" style={{
       minHeight: '100dvh', height: '100dvh', display: 'flex', flexDirection: 'column',
@@ -221,6 +227,7 @@ function App() {
       )}
     </div>
     </BacContext.Provider>
+    </CategoryIconsContext.Provider>
   );
 }
 
