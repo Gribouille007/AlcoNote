@@ -38,14 +38,31 @@ function chartNiceMax(v, ticks = 4) {
 // client-coordinates back to the SVG's viewBox, and exposes the closest
 // data index along with the active flag (only true while the user is
 // actively dragging or hovering).
-function useChartScrubber(svgRef, getRect, onChange) {
+//
+// Robustness vs. the previous version:
+//  - We track the active pointer id so a second finger landing on the
+//    SVG mid-scrub never replaces the first (multi-touch sanity).
+//  - A window-level pointerup/cancel listener guarantees we always
+//    release, even when setPointerCapture silently failed (some
+//    browsers drop capture across re-mounts) and the up event fires
+//    outside the SVG.
+//  - We only preventDefault on touch moves while actively dragging —
+//    this lets vertical scrolling on the page-as-a-whole stay smooth
+//    until the user actually grips the chart.
+//  - The scrub jumps to the touch point on pointerdown so the ball is
+//    under the finger on the very first frame.
+function useChartScrubber(svgRef, _unused, onChange) {
   const [active, setActive] = React.useState(false);
   const draggingRef = React.useRef(false);
+  const pointerIdRef = React.useRef(null);
+  const onChangeRef = React.useRef(onChange);
+  React.useEffect(() => { onChangeRef.current = onChange; });
 
   const project = (e) => {
     const svg = svgRef.current;
     if (!svg) return null;
     const rect = svg.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
     const vb = (svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
     const vbX = vb[0] || 0, vbY = vb[1] || 0;
     const vbW = vb[2] || rect.width;
@@ -59,61 +76,92 @@ function useChartScrubber(svgRef, getRect, onChange) {
     };
   };
 
-  const handler = (kind) => (e) => {
-    if (kind === 'down') {
-      draggingRef.current = true;
-      setActive(true);
-      // Capture on the SVG itself, not whatever sub-element the user
-      // happened to press — sub-elements can be re-rendered/removed
-      // during scrubbing (e.g. the hover circle). Project immediately
-      // so the ball jumps to the touch point on the very first frame
-      // rather than waiting for the next move event.
-      try {
-        if (e.currentTarget && e.currentTarget.setPointerCapture) {
-          e.currentTarget.setPointerCapture(e.pointerId);
-        }
-      } catch {}
-      const p0 = project(e);
-      if (p0) onChange && onChange(p0);
-      return;
-    }
-    if (kind === 'up') {
+  // Window-level safety net: if the OS swallows pointerup (capture
+  // dropped, page scrolled the SVG out, …) we still want to release.
+  React.useEffect(() => {
+    const release = (e) => {
+      if (!draggingRef.current) return;
+      if (pointerIdRef.current != null && e && e.pointerId !== pointerIdRef.current) return;
       draggingRef.current = false;
+      pointerIdRef.current = null;
       setActive(false);
-      onChange && onChange(null);
-      try {
-        if (e.currentTarget && e.currentTarget.releasePointerCapture) {
-          e.currentTarget.releasePointerCapture(e.pointerId);
-        }
-      } catch {}
+      onChangeRef.current && onChangeRef.current(null);
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+    return () => {
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointercancel', release);
+    };
+  }, []);
+
+  const onPointerDown = (e) => {
+    // Ignore additional pointers while one is already scrubbing; the
+    // first finger keeps control until it releases.
+    if (draggingRef.current && pointerIdRef.current !== e.pointerId) return;
+    draggingRef.current = true;
+    pointerIdRef.current = e.pointerId;
+    setActive(true);
+    try {
+      if (e.currentTarget && e.currentTarget.setPointerCapture) {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+    } catch {}
+    const p0 = project(e);
+    if (p0) onChangeRef.current && onChangeRef.current(p0);
+  };
+
+  const onPointerMove = (e) => {
+    if (draggingRef.current) {
+      if (pointerIdRef.current != null && e.pointerId !== pointerIdRef.current) return;
+      const p = project(e);
+      if (!p) return;
+      // Only block default behavior while actively dragging on touch —
+      // this prevents the page scroll from fighting with the scrub but
+      // still lets a passive vertical swipe scroll the page when the
+      // finger is just hovering over the chart.
+      if (e.pointerType === 'touch' && e.cancelable) e.preventDefault();
+      onChangeRef.current && onChangeRef.current(p);
       return;
     }
-    // pointerleave: only reset if we are NOT in the middle of a drag.
-    // While dragging, pointer capture should keep the events flowing
-    // even when the finger drifts off the SVG; treating leave as a
-    // release made the ball snap back to t=0 and "disconnected" from
-    // the finger mid-scrub.
-    if (kind === 'leave') {
-      if (draggingRef.current) return;
-      setActive(false);
-      onChange && onChange(null);
-      return;
-    }
-    if (kind === 'move' && !draggingRef.current && e.pointerType === 'touch') return;
+    // Hover (mouse only): touch devices don't fire hover so we ignore
+    // them here and let pointerdown drive the scrub.
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') return;
     const p = project(e);
     if (!p) return;
-    if (e.cancelable) e.preventDefault();
-    onChange && onChange(p);
+    onChangeRef.current && onChangeRef.current(p);
+  };
+
+  const onPointerUp = (e) => {
+    if (pointerIdRef.current != null && e.pointerId !== pointerIdRef.current) return;
+    draggingRef.current = false;
+    pointerIdRef.current = null;
+    setActive(false);
+    onChangeRef.current && onChangeRef.current(null);
+    try {
+      if (e.currentTarget && e.currentTarget.releasePointerCapture) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {}
+  };
+
+  // pointerleave: clear hover (mouse). While dragging on touch, pointer
+  // capture keeps events flowing even when the finger drifts off — so
+  // we explicitly do nothing.
+  const onPointerLeave = (e) => {
+    if (draggingRef.current) return;
+    setActive(false);
+    onChangeRef.current && onChangeRef.current(null);
   };
 
   return {
     active,
     handlers: {
-      onPointerDown: handler('down'),
-      onPointerMove: handler('move'),
-      onPointerUp: handler('up'),
-      onPointerLeave: handler('leave'),
-      onPointerCancel: handler('up'),
+      onPointerDown,
+      onPointerMove,
+      onPointerUp,
+      onPointerLeave,
+      onPointerCancel: onPointerUp,
     },
   };
 }
@@ -159,6 +207,7 @@ function SvgBarChart({ data, width = 320, height = 140, color, formatX, formatTo
   return (
     <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" height={height}
       style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
+      <rect x="0" y="0" width={width} height={height} fill="transparent" />
       {[0, 0.5, 1].map((f, i) => (
         <line key={i} x1={pad.l} x2={width - pad.r}
           y1={pad.t + h * (1 - f)} y2={pad.t + h * (1 - f)}
@@ -251,6 +300,7 @@ function SvgRadar({ data, size = 220, color, valueLabel }) {
   return (
     <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} width="100%" height={size}
       style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
+      <rect x="0" y="0" width={size} height={size} fill="transparent" />
       {rings.map((f, i) => (
         <path key={i} d={gridPath(f)} fill="none" stroke={T.rule} strokeWidth={0.6}
           strokeDasharray={i === rings.length - 1 ? 'none' : '2 3'} />
@@ -322,7 +372,10 @@ function SvgDonut({ data, size = 140, thickness = 22 }) {
     if (!p) { setHover(null); return; }
     const dx = p.x - cx, dy = p.y - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < r - thickness * 0.6 || dist > r + thickness * 0.6) { setHover(null); return; }
+    // Generous hit band (entire ring + a comfortable inner/outer
+    // tolerance) so a tap close to the donut still selects the
+    // segment instead of clearing the focus.
+    if (dist < r - thickness * 1.1 || dist > r + thickness * 1.1) { setHover(null); return; }
     let a = Math.atan2(dy, dx);
     if (a < -Math.PI / 2) a += 2 * Math.PI;
     const idx = segments.findIndex(s => a >= s.a0 && a <= s.a1);
@@ -335,6 +388,10 @@ function SvgDonut({ data, size = 140, thickness = 22 }) {
   return (
     <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} width={size} height={size}
       style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
+      {/* Transparent capture rect: makes the whole SVG hit-testable
+          so pointer events arrive at the root, not at individual <path>
+          arcs (which can miss events near segment boundaries). */}
+      <rect x="0" y="0" width={size} height={size} fill="transparent" />
       <circle cx={cx} cy={cy} r={r} fill="none" stroke={T.rule} strokeWidth={thickness} />
       {segments.map((s, i) => (
         <path key={i} d={s.path} fill="none"
@@ -387,6 +444,7 @@ function SvgLineChart({ series, labels, width = 320, height = 170 }) {
   return (
     <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" height={height}
       style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
+      <rect x="0" y="0" width={width} height={height} fill="transparent" />
       <defs>
         <linearGradient id="lg-a" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0" stopColor={T.accent} stopOpacity={0.35} />
@@ -490,6 +548,7 @@ function SvgPolarClock({ hours, size = 260 }) {
   return (
     <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} width="100%" height={size}
       style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
+      <rect x="0" y="0" width={size} height={size} fill="transparent" />
       <circle cx={cx} cy={cy} r={rOuter} fill="none" stroke={T.rule} strokeWidth={0.5} strokeDasharray="2 3" />
       <circle cx={cx} cy={cy} r={rInner} fill="none" stroke={T.rule} strokeWidth={0.5} />
       {[0.33, 0.66].map((f, i) => (
@@ -664,6 +723,7 @@ function SvgBACProjection({ points, width = 320, height = 200, nowMs = Date.now(
   return (
     <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" height={height}
       style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
+      <rect x="0" y="0" width={width} height={height} fill="transparent" />
       <defs>
         <linearGradient id={gradStrokeId} x1="0" x2="0" y1="0" y2="1">
           {gradStops(1)}
@@ -762,6 +822,7 @@ function SvgHistogram({ buckets, width = 320, height = 150, color, valueLabel })
   return (
     <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" height={height}
       style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
+      <rect x="0" y="0" width={width} height={height} fill="transparent" />
       {buckets.map((b, i) => {
         const bh = b.v > 0 ? Math.max(2, (b.v / max) * h) : 0;
         const x = pad.l + i * bw + bw * 0.12;
