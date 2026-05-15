@@ -504,9 +504,6 @@ function EditCategorySheet({
   const {
     categories
   } = useCategories();
-  const {
-    drinks
-  } = useDrinks();
   // Read overrides from the App-level CategoryIconsContext rather than
   // re-subscribing locally — keeps the sheet in sync with whatever the
   // grid is painting without a second DB round-trip on every bump.
@@ -524,6 +521,10 @@ function EditCategorySheet({
   };
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
+  // Re-entry guards — protect against double-tap on Save/Supprimer
+  // before React has flipped `busy` and disabled the buttons.
+  const savingRef = React.useRef(false);
+  const removingRef = React.useRef(false);
 
   // What the picker should highlight. After "Réinitialiser" we fall
   // back to the same logic <CategoryGlyph> uses when there's no
@@ -541,14 +542,21 @@ function EditCategorySheet({
   React.useEffect(() => {
     if (!userTouchedRef.current) setGlyphState(icons[category] || null);
   }, [icons, category]);
-  const drinksInCat = React.useMemo(() => drinks.filter(d => (d.category || '') === category).length, [drinks, category]);
+
+  // Use the category row's maintained `drinkCount` instead of fetching
+  // every drink and filtering — `useDrinks()` would re-run on every
+  // dataBus bump and is overkill when all we need is one tally.
+  const catObj = React.useMemo(() => categories.find(c => c.name === category), [categories, category]);
+  const drinksInCat = catObj?.drinkCount || 0;
   const save = async () => {
+    if (savingRef.current) return;
     setErr('');
     const trimmed = (name || '').trim();
     if (!trimmed) {
       setErr('Le nom ne peut pas être vide');
       return;
     }
+    savingRef.current = true;
     setBusy(true);
     try {
       let finalName = category;
@@ -563,7 +571,10 @@ function EditCategorySheet({
         // '__reset__' wipes the persisted override entirely so the
         // category falls back to its name-based default glyph.
         const next = glyph === '__reset__' ? null : glyph;
-        if (next || glyph === '__reset__') {
+        // Skip the write when the user picked Reset on a category that
+        // had no override to begin with — nothing to delete.
+        const hadOverride = !!icons[category];
+        if (next || glyph === '__reset__' && hadOverride) {
           await setCategoryIcon(finalName, next);
         }
       }
@@ -573,9 +584,11 @@ function EditCategorySheet({
       setErr(e && e.message ? e.message : 'Erreur lors de l\'enregistrement');
     } finally {
       setBusy(false);
+      savingRef.current = false;
     }
   };
   const remove = async () => {
+    if (removingRef.current) return;
     setErr('');
     // Resolve fresh from the current categories array on click instead
     // of caching at render — if the list re-fetched (e.g. concurrent
@@ -612,6 +625,7 @@ function EditCategorySheet({
       });
       if (!ok) return;
     }
+    removingRef.current = true;
     setBusy(true);
     try {
       await deleteCategory(fresh.id, {
@@ -624,6 +638,7 @@ function EditCategorySheet({
       setErr(e && e.message ? e.message : 'Erreur lors de la suppression');
     } finally {
       setBusy(false);
+      removingRef.current = false;
     }
   };
   const hasOverride = !!icons[category];

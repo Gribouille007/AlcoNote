@@ -44,17 +44,28 @@ async function waitForDb() {
 // `cat._initialized` setting. Without that flag, we'd re-seed defaults
 // every time the user emptied the categories table (e.g. after deleting
 // the last remaining category), making it effectively impossible to
-// fully clear the list. Process-local memoization avoids racing parallel
-// callers during the very first mount.
+// fully clear the list.
+//
+// `_seedDone` short-circuits subsequent calls after a successful seed
+// (or after we've confirmed via the flag that the seed is already
+// done), avoiding a DB round-trip on every dataBus.bump. `_seedPromise`
+// coalesces concurrent callers during the very first mount, and is
+// cleared on failure so the next call retries instead of being stuck
+// on a memoized no-op promise.
+let _seedDone = false;
 let _seedPromise = null;
 async function _ensureDefaultCategories() {
+  if (_seedDone) return;
   if (_seedPromise) return _seedPromise;
   _seedPromise = (async () => {
-    const db = await waitForDb();
-    if (!db) return;
     try {
+      const db = await waitForDb();
+      if (!db) return;
       const flag = await db.getSetting('cat._initialized');
-      if (flag) return;
+      if (flag) {
+        _seedDone = true;
+        return;
+      }
       const existing = await db.getAllCategories();
       if (existing.length === 0) {
         for (const name of DEFAULT_CATEGORY_NAMES) {
@@ -65,10 +76,13 @@ async function _ensureDefaultCategories() {
           } catch (e) {}
         }
       }
-      try {
-        await db.setSetting('cat._initialized', true);
-      } catch {}
-    } catch (e) {}
+      await db.setSetting('cat._initialized', true);
+      _seedDone = true;
+    } catch (e) {
+      // swallow — caller is best-effort
+    } finally {
+      if (!_seedDone) _seedPromise = null;
+    }
   })();
   return _seedPromise;
 }
@@ -518,6 +532,7 @@ async function clearAllData() {
   const db = await waitForDb();
   if (!db) throw new Error('DB indisponible');
   const r = await db.clearAllData();
+  _seedDone = false;
   _seedPromise = null;
   if (typeof window !== 'undefined') window.__alcoCatIcons = {};
   dataBus.bump();
