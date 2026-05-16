@@ -42,6 +42,10 @@ class CameraScanner {
         // Callbacks
         this.onBarcodeConfirmed = null;
         this.onError = null;
+        // Distinct from onError so the consumer can show a
+        // user-friendly "scanning timeout" message instead of the
+        // generic "Caméra indisponible" used for hardware failures.
+        this.onInactivity = null;
 
         // Timers
         this.inactivityTimeout = null;
@@ -357,12 +361,11 @@ class CameraScanner {
             if (this.isScanning) {
                 console.log('No barcode detected in 30 seconds, stopping scanner');
                 this.stop();
-                // Tell the wrapping React sheet so it can update its UI
-                // (status text, close affordance) instead of leaving the
-                // user with a frozen viewport. Falls back to the visible
-                // Toast when no error callback is attached.
-                if (typeof this.onError === 'function') {
-                    try { this.onError(new Error('Inactivité — scanner arrêté')); } catch {}
+                // Notify the wrapping React sheet via a dedicated
+                // callback so it can update its UI without conflating
+                // the timeout with a hardware error.
+                if (typeof this.onInactivity === 'function') {
+                    try { this.onInactivity(); } catch {}
                 }
                 this._notify('Arrêt automatique du scanner (inactivité)');
             }

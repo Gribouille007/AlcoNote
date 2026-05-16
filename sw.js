@@ -8,9 +8,13 @@ const DYNAMIC_CACHE = 'alconote-dynamic-v3.8.0';
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
 
-// Files to cache for offline functionality
+// Files to cache for offline functionality. The bare `'/'` entry is
+// intentionally NOT listed: navigations go through the networkFirst
+// branch in `fetch` (so the root is never matched against
+// isStaticFile), and including it would either be dead under the
+// strict path-equals match, or — with the old `url.includes()` form —
+// match every URL on the same origin.
 const STATIC_FILES = [
-    '/',
     '/index.html',
     '/manifest.json',
     // Backend logic (kept from legacy)

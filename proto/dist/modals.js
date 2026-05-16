@@ -613,6 +613,7 @@ function ScannerSheet({
           }
         };
         cam.onError = () => setStatusText('Caméra indisponible');
+        cam.onInactivity = () => setStatusText('Scanner arrêté (inactivité)');
         await cam.start();
         startedRef.current = true;
       } catch (e) {
@@ -1606,11 +1607,17 @@ function EditFamilySheet({
         await saveRating(finalName, rating);
       }
       if (renamed && ratings[family.name] != null) {
-        let stillUsed = false;
+        // Default to "still used" so a transient DB error doesn't
+        // clobber the rating that a sibling family may still own. We
+        // only wipe when we've positively confirmed no drink keeps
+        // the old name.
+        let stillUsed = true;
         try {
           const all = await window.dbManager.getAllDrinks();
           stillUsed = all.some(d => d.name === family.name);
-        } catch {}
+        } catch (e) {
+          console.warn('AlcoNote: orphan-rating check failed, keeping rating', e);
+        }
         if (!stillUsed) await saveRating(family.name, 0);
       }
       Toast.show('Boisson mise à jour');
