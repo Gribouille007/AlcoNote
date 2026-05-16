@@ -1358,7 +1358,15 @@ function SvgBACForecast({
   // mean peak (so the contract "marker shown even if never reached" holds).
   const etaReachable = etaPeakHours != null && etaPeakHours >= minT && etaPeakHours <= maxT;
   const etaX = etaReachable ? xs(etaPeakHours) : xs(maxT);
-  const etaLabelText = etaReachable ? Math.abs(etaPeakHours) < 1e-3 ? 'peak · maintenant' : `peak · ${etaPeakHours < 1 ? `${Math.round(etaPeakHours * 60)}min` : `${Math.floor(etaPeakHours)}h${String(Math.round((etaPeakHours - Math.floor(etaPeakHours)) * 60)).padStart(2, '0')}`}` : 'peak · ∞';
+  // Round to whole minutes FIRST so values like 1.999h don't render as
+  // "1h60" (floor=1, frac×60≈60 → "1h60"). Carry overflow into hours.
+  const etaLabelText = etaReachable ? Math.abs(etaPeakHours) < 1e-3 ? 'peak · maintenant' : (() => {
+    const totalMin = Math.round(etaPeakHours * 60);
+    if (totalMin < 60) return `peak · ${totalMin}min`;
+    const hh = Math.floor(totalMin / 60);
+    const mm = totalMin - hh * 60;
+    return `peak · ${hh}h${String(mm).padStart(2, '0')}`;
+  })() : 'peak · ∞';
   // Anchor the label on the side of the marker that has room — flips
   // to "end" once the marker enters the right half of the plot area so
   // the text never clips the SVG edge.

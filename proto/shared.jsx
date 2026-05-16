@@ -467,12 +467,24 @@ function SheetOverlay({ children, onClose, side = 'bottom' }) {
 // once near the top of the tree.
 const Confirm = (() => {
   let setter = null;
+  // Track the active dialog's resolver so a second `ask()` invocation
+  // — which replaces the dialog state — still resolves the first
+  // promise (with `false`) instead of leaving it dangling forever.
+  let pendingResolve = null;
   return {
     _bind(fn) { setter = fn; },
     ask(opts) {
       return new Promise(resolve => {
         if (!setter) { resolve(window.confirm(opts.message || '')); return; }
-        setter({ ...opts, _resolve: resolve });
+        if (pendingResolve) {
+          try { pendingResolve(false); } catch {}
+        }
+        pendingResolve = resolve;
+        const wrapped = (ok) => {
+          if (pendingResolve === resolve) pendingResolve = null;
+          resolve(ok);
+        };
+        setter({ ...opts, _resolve: wrapped });
       });
     },
   };

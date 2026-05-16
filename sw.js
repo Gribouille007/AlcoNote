@@ -1,9 +1,9 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v3.7.0';
-const STATIC_CACHE = 'alconote-static-v3.7.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v3.7.0';
+const CACHE_NAME = 'alconote-v3.8.0';
+const STATIC_CACHE = 'alconote-static-v3.8.0';
+const DYNAMIC_CACHE = 'alconote-dynamic-v3.8.0';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -152,9 +152,25 @@ function isCacheFirstUrl(url) {
     return CACHE_FIRST_URLS.some(pattern => url.includes(pattern));
 }
 
-// Check if URL is a static file
+// Check if URL is a static file. We previously matched with `url.includes(file)`
+// which always returned true because `STATIC_FILES` contains `/` (the app root)
+// and every URL contains that substring — so every previously-unmatched fetch
+// silently became cacheFirst and could never refresh. Now we compare strictly:
+// either the URL path matches a listed entry, or the URL ends with one of the
+// listed absolute paths (covers the cross-origin CDN entries).
 function isStaticFile(url) {
-    return STATIC_FILES.some(file => url.endsWith(file) || url.includes(file));
+    try {
+        const u = new URL(url);
+        const sameOrigin = u.origin === self.location.origin;
+        return STATIC_FILES.some(file => {
+            if (file === url) return true;
+            if (file.startsWith('http')) return file === url;
+            if (sameOrigin) return u.pathname === file;
+            return false;
+        });
+    } catch {
+        return false;
+    }
 }
 
 // Network First Strategy - for dynamic content and APIs

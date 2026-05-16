@@ -86,7 +86,10 @@ function AddDrinkSheet({ open, prefill, onClose }) {
 
   const qtyNum = Number(qty) || 0;
   const alcNum = Number(alc) || 0;
-  const volCl = unit === 'EcoCup' ? qtyNum * 25 : unit === 'L' ? qtyNum * 100 : qtyNum;
+  // Use the shared toCl so non-canonical units (e.g. "ml" coming from
+  // a scanner result) are converted correctly instead of being treated
+  // as cL by a local case-sensitive ternary.
+  const volCl = toCl(qtyNum, unit);
   const g = +(volCl * 10 * (alcNum / 100) * 0.789).toFixed(1);
 
   const submit = async () => {
@@ -341,17 +344,24 @@ function ScannerSheet({ onClose, onScanned }) {
           setStatusText('Recherche du produit…');
           try {
             const lookup = window.productLookup;
-            const product = lookup ? await lookup.lookupProduct(code) : null;
+            // `lookup` is the public method on ProductLookup; the legacy
+            // name `lookupProduct` doesn't exist and used to throw on
+            // every scan, surfacing only "Erreur de recherche".
+            const product = lookup ? await lookup.lookup(code) : null;
             if (cancelled) return;
             if (product) {
               setStatus('found');
-              setStatusText(`${product.name || product.product_name || 'Produit'} détectée`);
+              setStatusText(`${product.name || 'Produit'} détecté`);
+              // ProductLookup returns servingQuantity / servingUnit
+              // (computed defaults per category) — the legacy form used
+              // `quantity`/`unit` which never existed on the result and
+              // silently fell back to 33 cL for every scan.
               const norm = {
-                name: product.name || product.product_name || '',
+                name: product.name || '',
                 category: product.category || 'Bière',
-                alcoholContent: product.alcoholContent || product.alcohol || 0,
-                quantity: product.quantity || 33,
-                unit: product.unit || 'cL',
+                alcoholContent: product.alcoholContent || 0,
+                quantity: product.servingQuantity || 33,
+                unit: product.servingUnit || 'cL',
                 barcode: code,
               };
               setFoundProduct(norm);
@@ -361,6 +371,7 @@ function ScannerSheet({ onClose, onScanned }) {
               setStatusText(`Code ${code} reconnu (sans correspondance)`);
             }
           } catch (e) {
+            console.warn('AlcoNote: product lookup failed', e);
             setStatusText('Erreur de recherche');
           }
         };
@@ -950,27 +961,38 @@ function EditFamilySheet({ family, onClose }) {
   const [err, setErr] = React.useState('');
 
   const save = async () => {
+    setErr('');
     if (!name.trim()) { setErr('Le nom est requis'); return; }
+    const qtyNum = Number(qty) || 0;
+    if (qtyNum <= 0) { setErr('Quantité invalide'); return; }
     setBusy(true);
     try {
       const finalName = name.trim();
       const renamed = finalName !== family.name;
       await updateFamily(family, {
         name: finalName,
-        quantity: Number(qty) || 0,
+        quantity: qtyNum,
         unit,
         alcoholContent: Number(alc) || 0,
         category: cat,
       });
-      // Migrate the rating to the new key when the family is renamed,
-      // then wipe the orphan row under the old name. Without the second
-      // call, deleting then re-adding a drink with the old name would
-      // resurrect the old rating from a stale row in `drinkRatings`.
+      // Migrate the rating to the new key when the family is renamed.
+      // We previously zeroed `ratings[family.name]` unconditionally to
+      // avoid resurrecting the old rating on a future re-add — but that
+      // also clobbered the rating for any *other* family still sharing
+      // the old name (e.g. "Pilsner" 25 cL vs "Pilsner" 50 cL). Now we
+      // re-fetch the drinks list and only drop the orphan when no
+      // sibling family keeps the old name.
       if (rating !== (ratings[finalName] || 0)) {
         await saveRating(finalName, rating);
       }
       if (renamed && ratings[family.name] != null) {
-        await saveRating(family.name, 0);
+        let stillUsed = false;
+        try {
+          const all = await window.dbManager.getAllDrinks();
+          stillUsed = all.some(d => d.name === family.name);
+        } catch {}
+        if (!stillUsed) await saveRating(family.name, 0);
       }
       Toast.show('Boisson mise à jour');
       onClose && onClose();

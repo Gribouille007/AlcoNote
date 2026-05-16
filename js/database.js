@@ -140,13 +140,19 @@ class DatabaseManager {
 
     async addCategory(categoryData) {
         try {
-            const existingCategory = await this.getCategoryByName(categoryData.name);
+            // Trim before duplicate check so " Bière" and "Bière" aren't
+            // treated as distinct rows (renameCategory already trims).
+            const name = (categoryData.name || '').trim();
+            if (!name) {
+                throw new Error('Le nom de catégorie est invalide');
+            }
+            const existingCategory = await this.getCategoryByName(name);
             if (existingCategory) {
                 throw new Error('Une catégorie avec ce nom existe déjà');
             }
 
             const categoryToAdd = {
-                name: categoryData.name,
+                name,
                 drinkCount: 0
             };
 
@@ -358,6 +364,9 @@ class DatabaseManager {
     async updateDrink(id, updates) {
         try {
             const oldDrink = await this.getDrinkById(id);
+            if (!oldDrink) {
+                throw new Error('Boisson non trouvée');
+            }
 
             // Convert quantity based on unit if quantity or unit is being updated
             if (updates.quantity !== undefined || updates.unit !== undefined) {

@@ -304,9 +304,26 @@ class CameraScanner {
             if (this.isScanning && !this.hasDetected) {
                 console.log('No detection yet, widening decoder readers');
                 this._reconfigureReaders(this.broadReaders);
-                Utils.showMessage('Recherche de codes élargie pour une meilleure détection', 'info');
+                // Surface via the proto Toast when available; the legacy
+                // `Utils.showMessage` toast is unstyled in the proto build
+                // (its CSS is no longer loaded) and never reaches the user.
+                this._notify('Recherche de codes élargie pour une meilleure détection');
             }
         }, timeoutMs);
+    }
+
+    _notify(message) {
+        try {
+            if (typeof window !== 'undefined' && window.Toast && typeof window.Toast.show === 'function') {
+                window.Toast.show(message);
+                return;
+            }
+        } catch {}
+        try {
+            if (typeof Utils !== 'undefined' && typeof Utils.showMessage === 'function') {
+                Utils.showMessage(message, 'info');
+            }
+        } catch {}
     }
 
     _clearFallbackTimer() {
@@ -340,7 +357,14 @@ class CameraScanner {
             if (this.isScanning) {
                 console.log('No barcode detected in 30 seconds, stopping scanner');
                 this.stop();
-                Utils.showMessage('Arrêt automatique du scanner (inactivité)', 'info');
+                // Tell the wrapping React sheet so it can update its UI
+                // (status text, close affordance) instead of leaving the
+                // user with a frozen viewport. Falls back to the visible
+                // Toast when no error callback is attached.
+                if (typeof this.onError === 'function') {
+                    try { this.onError(new Error('Inactivité — scanner arrêté')); } catch {}
+                }
+                this._notify('Arrêt automatique du scanner (inactivité)');
             }
         }, this.inactivityDuration);
     }
