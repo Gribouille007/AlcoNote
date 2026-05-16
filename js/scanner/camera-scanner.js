@@ -42,6 +42,10 @@ class CameraScanner {
         // Callbacks
         this.onBarcodeConfirmed = null;
         this.onError = null;
+        // Distinct from onError so the consumer can show a
+        // user-friendly "scanning timeout" message instead of the
+        // generic "Caméra indisponible" used for hardware failures.
+        this.onInactivity = null;
 
         // Timers
         this.inactivityTimeout = null;
@@ -304,9 +308,26 @@ class CameraScanner {
             if (this.isScanning && !this.hasDetected) {
                 console.log('No detection yet, widening decoder readers');
                 this._reconfigureReaders(this.broadReaders);
-                Utils.showMessage('Recherche de codes élargie pour une meilleure détection', 'info');
+                // Surface via the proto Toast when available; the legacy
+                // `Utils.showMessage` toast is unstyled in the proto build
+                // (its CSS is no longer loaded) and never reaches the user.
+                this._notify('Recherche de codes élargie pour une meilleure détection');
             }
         }, timeoutMs);
+    }
+
+    _notify(message) {
+        try {
+            if (typeof window !== 'undefined' && window.Toast && typeof window.Toast.show === 'function') {
+                window.Toast.show(message);
+                return;
+            }
+        } catch {}
+        try {
+            if (typeof Utils !== 'undefined' && typeof Utils.showMessage === 'function') {
+                Utils.showMessage(message, 'info');
+            }
+        } catch {}
     }
 
     _clearFallbackTimer() {
@@ -340,7 +361,13 @@ class CameraScanner {
             if (this.isScanning) {
                 console.log('No barcode detected in 30 seconds, stopping scanner');
                 this.stop();
-                Utils.showMessage('Arrêt automatique du scanner (inactivité)', 'info');
+                // Notify the wrapping React sheet via a dedicated
+                // callback so it can update its UI without conflating
+                // the timeout with a hardware error.
+                if (typeof this.onInactivity === 'function') {
+                    try { this.onInactivity(); } catch {}
+                }
+                this._notify('Arrêt automatique du scanner (inactivité)');
             }
         }, this.inactivityDuration);
     }
