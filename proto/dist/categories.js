@@ -554,24 +554,36 @@ function EditCategorySheet({
       setErr('Le nom ne peut pas être vide');
       return;
     }
+    // Capture the override existence BEFORE any mutation — once the
+    // rename below bumps the bus, `icons[category]` may already be
+    // stale (the old key no longer exists in the refreshed map).
+    const hadOverride = !!icons[category];
+    const userTouched = userTouchedRef.current;
+    const nameChanged = trimmed !== category;
+    // If neither the name nor the icon was touched, this is a no-op
+    // save. Surfacing a toast in that case used to mislead users into
+    // thinking something changed when nothing did.
+    if (!nameChanged && !userTouched) {
+      onClose && onClose();
+      return;
+    }
     savingRef.current = true;
     setBusy(true);
     try {
       let finalName = category;
-      if (trimmed !== category) {
-        // renameCategory migrates any existing icon override to the new
-        // name, so we only need to persist when the user explicitly
-        // picked a different glyph in this sheet.
+      if (nameChanged) {
+        // renameCategory migrates any existing icon override to the
+        // new name. If it throws, we abort before touching the icon —
+        // the user will see the error and the sheet stays open.
         await renameCategory(category, trimmed);
         finalName = trimmed;
       }
-      if (userTouchedRef.current) {
+      if (userTouched) {
         // '__reset__' wipes the persisted override entirely so the
         // category falls back to its name-based default glyph.
         const next = glyph === '__reset__' ? null : glyph;
-        // Skip the write when the user picked Reset on a category that
-        // had no override to begin with — nothing to delete.
-        const hadOverride = !!icons[category];
+        // Skip the write when the user picked Reset on a category
+        // that had no override to begin with — nothing to delete.
         if (next || glyph === '__reset__' && hadOverride) {
           await setCategoryIcon(finalName, next);
         }
@@ -598,8 +610,24 @@ function EditCategorySheet({
       setErr('Catégorie introuvable — elle a peut-être déjà été supprimée.');
       return;
     }
+    // `catObj.drinkCount` is a cached counter on the row and can drift
+    // (e.g. drinks added through a legacy code path that didn't call
+    // updateCategoryDrinkCount). Querying the drinks table directly
+    // gives the authoritative count and prevents the "deleteCategory
+    // refuses non-empty" error that used to surface when the cache
+    // said 0 but real drinks existed.
+    let realCount = 0;
+    try {
+      const db = await waitForDb();
+      if (!db) throw new Error('Base de données indisponible');
+      const drinksOfCat = await db.getDrinksByCategory(category);
+      realCount = drinksOfCat.length;
+    } catch (e) {
+      setErr(e && e.message ? e.message : 'Impossible de lire les boissons.');
+      return;
+    }
     let reassignTo = null;
-    if (drinksInCat > 0) {
+    if (realCount > 0) {
       const others = categories.filter(c => c.name !== category);
       const fallback = others.find(c => c.name === 'Autre') || others[0];
       if (!fallback) {
@@ -608,7 +636,7 @@ function EditCategorySheet({
       }
       const ok = await Confirm.ask({
         title: `Supprimer « ${category} » ?`,
-        message: `${drinksInCat} boisson${drinksInCat > 1 ? 's' : ''} sera${drinksInCat > 1 ? 'ont' : ''} déplacée${drinksInCat > 1 ? 's' : ''} dans « ${fallback.name} ». Cette action est irréversible.`,
+        message: `${realCount} boisson${realCount > 1 ? 's' : ''} sera${realCount > 1 ? 'ont' : ''} déplacée${realCount > 1 ? 's' : ''} dans « ${fallback.name} ». Cette action est irréversible.`,
         confirmText: 'Supprimer',
         danger: true
       });
