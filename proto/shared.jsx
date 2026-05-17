@@ -18,6 +18,7 @@ const THEMES = {
     shadow:   '0 60px 120px rgba(0,0,0,0.5)',
     accentSoft: 'oklch(30% 0.04 65)',
     accentSoftBorder: 'oklch(38% 0.05 65)',
+    accentRing: 'oklch(80% 0.12 65)',
     scrim:    'rgba(0,0,0,0.65)',
     deltaPos:    'oklch(78% 0.16 155)',
     deltaNeg:    'oklch(74% 0.20 30)',
@@ -40,6 +41,7 @@ const THEMES = {
     shadow:   '0 20px 60px rgba(60,40,20,0.12)',
     accentSoft: 'oklch(95% 0.04 65)',
     accentSoftBorder: 'oklch(85% 0.08 65)',
+    accentRing: 'oklch(60% 0.15 50)',
     scrim:    'rgba(40,30,20,0.35)',
     deltaPos:    'oklch(42% 0.14 155)',
     deltaNeg:    'oklch(48% 0.20 30)',
@@ -131,9 +133,9 @@ const Ic = {
   bars:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
 };
 
-function SvgIcon({ icon, size = 18, color }) {
+function SvgIcon({ icon, size = 18, color, ariaHidden = true }) {
   return (
-    <span style={{
+    <span aria-hidden={ariaHidden ? 'true' : undefined} style={{
       display: 'inline-flex', width: size, height: size,
       color: color || 'currentColor',
     }}>

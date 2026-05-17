@@ -20,6 +20,7 @@ const THEMES = {
     shadow: '0 60px 120px rgba(0,0,0,0.5)',
     accentSoft: 'oklch(30% 0.04 65)',
     accentSoftBorder: 'oklch(38% 0.05 65)',
+    accentRing: 'oklch(80% 0.12 65)',
     scrim: 'rgba(0,0,0,0.65)',
     deltaPos: 'oklch(78% 0.16 155)',
     deltaNeg: 'oklch(74% 0.20 30)',
@@ -42,6 +43,7 @@ const THEMES = {
     shadow: '0 20px 60px rgba(60,40,20,0.12)',
     accentSoft: 'oklch(95% 0.04 65)',
     accentSoftBorder: 'oklch(85% 0.08 65)',
+    accentRing: 'oklch(60% 0.15 50)',
     scrim: 'rgba(40,30,20,0.35)',
     deltaPos: 'oklch(42% 0.14 155)',
     deltaNeg: 'oklch(48% 0.20 30)',
@@ -591,9 +593,11 @@ const Ic = {
 function SvgIcon({
   icon,
   size = 18,
-  color
+  color,
+  ariaHidden = true
 }) {
   return /*#__PURE__*/React.createElement("span", {
+    "aria-hidden": ariaHidden ? 'true' : undefined,
     style: {
       display: 'inline-flex',
       width: size,

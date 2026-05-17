@@ -567,7 +567,7 @@ function Fab({
       border: 'none',
       padding: 0,
       fontFamily: 'inherit',
-      boxShadow: `0 10px 26px ${withAlpha(T.accent, T.isDark ? 0.5 : 0.45)}, 0 0 0 1px ${withAlpha(T.accent, T.isDark ? 0.3 : 0.6)}`
+      boxShadow: `0 10px 26px ${withAlpha(T.accent, T.isDark ? 0.5 : 0.45)}, 0 0 0 1px ${withAlpha(T.accentRing, T.isDark ? 0.3 : 0.6)}`
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.plus,

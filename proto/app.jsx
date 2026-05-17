@@ -407,7 +407,7 @@ function Fab({ onClick }) {
       display: 'grid', placeItems: 'center',
       color: T.isDark ? T.bg : '#fff', cursor: 'pointer',
       border: 'none', padding: 0, fontFamily: 'inherit',
-      boxShadow: `0 10px 26px ${withAlpha(T.accent, T.isDark ? 0.5 : 0.45)}, 0 0 0 1px ${withAlpha(T.accent, T.isDark ? 0.3 : 0.6)}`,
+      boxShadow: `0 10px 26px ${withAlpha(T.accent, T.isDark ? 0.5 : 0.45)}, 0 0 0 1px ${withAlpha(T.accentRing, T.isDark ? 0.3 : 0.6)}`,
     }}>
       <SvgIcon icon={Ic.plus} size={26} />
     </button>
