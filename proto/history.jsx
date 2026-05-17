@@ -201,7 +201,7 @@ function EntryRow({ entry: e, onClick, onDirectAdd, onDelete, first, last }) {
       borderBottom: last ? 'none' : `1px solid ${T.rule}`,
     }}>
       <div style={{
-        position: 'absolute', inset: 0, background: 'oklch(45% 0.18 25)',
+        position: 'absolute', inset: 0, background: T.dangerBg,
         display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
         paddingRight: 18, color: '#fff', fontSize: 12, fontWeight: 500, gap: 8,
         cursor: 'pointer',

@@ -18,7 +18,14 @@ const THEMES = {
     shadow:   '0 60px 120px rgba(0,0,0,0.5)',
     accentSoft: 'oklch(30% 0.04 65)',
     accentSoftBorder: 'oklch(38% 0.05 65)',
+    accentRing: 'oklch(80% 0.12 65)',
     scrim:    'rgba(0,0,0,0.65)',
+    dangerBg: 'oklch(45% 0.18 25)',
+    dangerBtn: 'oklch(55% 0.20 25)',
+    deltaPos:    'oklch(78% 0.16 155)',
+    deltaNeg:    'oklch(74% 0.20 30)',
+    deltaPosBg:  'oklch(28% 0.05 155)',
+    deltaNegBg:  'oklch(28% 0.06 30)',
     isDark:   true,
   },
   light: {
@@ -36,7 +43,14 @@ const THEMES = {
     shadow:   '0 20px 60px rgba(60,40,20,0.12)',
     accentSoft: 'oklch(95% 0.04 65)',
     accentSoftBorder: 'oklch(85% 0.08 65)',
+    accentRing: 'oklch(60% 0.15 50)',
     scrim:    'rgba(40,30,20,0.35)',
+    dangerBg: 'oklch(45% 0.18 25)',
+    dangerBtn: 'oklch(55% 0.20 25)',
+    deltaPos:    'oklch(42% 0.14 155)',
+    deltaNeg:    'oklch(48% 0.20 30)',
+    deltaPosBg:  'oklch(95% 0.04 155)',
+    deltaNegBg:  'oklch(95% 0.04 30)',
     isDark:   false,
   },
 };
@@ -118,11 +132,14 @@ const Ic = {
   flame: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>,
   hourglass: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2h12v3a6 6 0 0 1-3.5 5.45L13 11l1.5.55A6 6 0 0 1 18 17v3H6v-3a6 6 0 0 1 3.5-5.45L11 11l-1.5-.55A6 6 0 0 1 6 5V2z"/></svg>,
   refresh: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 4 3 10 9 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L3 10"/></svg>,
+  grid:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>,
+  clockArrow: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/><polyline points="12 7 12 12 15 14"/></svg>,
+  bars:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
 };
 
-function SvgIcon({ icon, size = 18, color }) {
+function SvgIcon({ icon, size = 18, color, ariaHidden = true }) {
   return (
-    <span style={{
+    <span aria-hidden={ariaHidden ? 'true' : undefined} style={{
       display: 'inline-flex', width: size, height: size,
       color: color || 'currentColor',
     }}>
@@ -143,6 +160,8 @@ const CAT_DEFAULT = {
 // categories. We assign deterministic hues to unknown names by hashing.
 const CAT = { ...CAT_DEFAULT };
 
+// Deterministic hue per name so a custom category always gets the
+// same tint across reloads (no random palette flicker).
 function _hashHue(name) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
@@ -225,13 +244,6 @@ const FR_MONTHS_SHORT = ['jan', 'fév', 'mars', 'avr', 'mai', 'juin', 'jul', 'ao
 const FR_MONTHS_LONG = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const FR_MONTHS_DOTTED = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 
-function fmtDateShort(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '—';
-  return `${d.getDate()} ${FR_MONTHS_SHORT[d.getMonth()]}`;
-}
-
 function fmtDateMedium(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -252,9 +264,6 @@ function toCl(qty, unit) {
   return qty;
 }
 
-function gramsAlcohol(qty, unit, abv) {
-  return toCl(qty, unit) * 10 * ((abv || 0) / 100) * 0.789;
-}
 // ── Search input ──────────────────────────────────────────────────
 function SearchInput({ value, onChange, placeholder }) {
   return (
@@ -540,22 +549,16 @@ function ConfirmHost() {
           }}>{state.cancelText || 'Annuler'}</button>
           <button onClick={() => close(true)} autoFocus style={{
             flex: 1.4, padding: '12px', borderRadius: 12,
-            background: state.danger ? 'oklch(55% 0.20 25)' : T.accent,
+            background: state.danger ? T.dangerBtn : T.accent,
             color: state.danger ? '#fff' : (T.isDark ? T.bg : '#fff'),
             border: 'none', fontSize: 13, fontWeight: 600,
             fontFamily: fontSans, cursor: 'pointer', letterSpacing: 0.1,
-            boxShadow: `0 4px 18px ${state.danger ? 'oklch(55% 0.20 25 / 0.5)' : withAlpha(T.accent, 0.4)}`,
+            boxShadow: `0 4px 18px ${withAlpha(state.danger ? T.dangerBtn : T.accent, state.danger ? 0.5 : 0.4)}`,
           }}>{state.confirmText || 'Confirmer'}</button>
         </div>
       </div>
     </div>
   );
-}
-
-// ── Status bar (visible only on devices that don't show one natively) ──
-function StatusBar() {
-  // The actual device's status bar handles this on mobile. Skip rendering.
-  return null;
 }
 
 // ── Service-worker version probe ─────────────────────────────────
@@ -645,15 +648,15 @@ function niceMax(v, fallback = 1) {
 })();
 
 Object.assign(window, {
-  T, THEMES, setTheme, applyTheme, useTheme,
+  T, THEMES, applyTheme, useTheme,
   fontSans, fontSerif, fontNum,
   Ic, SvgIcon, CAT, catColor, catBg, withAlpha, CategoryIconsContext,
   Toast,
   FR_DAYS_LONG, FR_DAYS_SHORT, FR_MONTHS_SHORT, FR_MONTHS_LONG, FR_MONTHS_DOTTED,
-  fmtDateShort, fmtDateMedium, fmtDayHeader, localDate, localTime,
-  toCl, gramsAlcohol,
+  fmtDateMedium, fmtDayHeader, localDate, localTime,
+  toCl,
   SearchInput, SectionHead, Pill, Stars, CategoryGlyph, GLYPH_OPTIONS,
-  SheetOverlay, StatusBar, niceMax,
+  SheetOverlay, niceMax,
   Confirm, ConfirmHost,
   clickable, ghostButton,
   useSWVersion,
