@@ -2,3 +2,4 @@ node_modules/
 .netlify/
 .DS_Store
 *.log
+*.tar.gz

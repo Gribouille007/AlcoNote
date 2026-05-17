@@ -472,81 +472,15 @@ function BottomNav({
   const items = [{
     id: 'categories',
     label: 'Catégories',
-    icon: /*#__PURE__*/React.createElement("svg", {
-      viewBox: "0 0 24 24",
-      fill: "none",
-      stroke: "currentColor",
-      strokeWidth: "1.6",
-      strokeLinecap: "round",
-      strokeLinejoin: "round"
-    }, /*#__PURE__*/React.createElement("rect", {
-      x: "3",
-      y: "3",
-      width: "7",
-      height: "7",
-      rx: "1.5"
-    }), /*#__PURE__*/React.createElement("rect", {
-      x: "14",
-      y: "3",
-      width: "7",
-      height: "7",
-      rx: "1.5"
-    }), /*#__PURE__*/React.createElement("rect", {
-      x: "3",
-      y: "14",
-      width: "7",
-      height: "7",
-      rx: "1.5"
-    }), /*#__PURE__*/React.createElement("rect", {
-      x: "14",
-      y: "14",
-      width: "7",
-      height: "7",
-      rx: "1.5"
-    }))
+    icon: Ic.grid
   }, {
     id: 'history',
     label: 'Historique',
-    icon: /*#__PURE__*/React.createElement("svg", {
-      viewBox: "0 0 24 24",
-      fill: "none",
-      stroke: "currentColor",
-      strokeWidth: "1.6",
-      strokeLinecap: "round",
-      strokeLinejoin: "round"
-    }, /*#__PURE__*/React.createElement("path", {
-      d: "M3 12a9 9 0 1 0 3-6.7"
-    }), /*#__PURE__*/React.createElement("polyline", {
-      points: "3 4 3 10 9 10"
-    }), /*#__PURE__*/React.createElement("polyline", {
-      points: "12 7 12 12 15 14"
-    }))
+    icon: Ic.clockArrow
   }, {
     id: 'stats',
     label: 'Stats',
-    icon: /*#__PURE__*/React.createElement("svg", {
-      viewBox: "0 0 24 24",
-      fill: "none",
-      stroke: "currentColor",
-      strokeWidth: "1.6",
-      strokeLinecap: "round",
-      strokeLinejoin: "round"
-    }, /*#__PURE__*/React.createElement("line", {
-      x1: "18",
-      y1: "20",
-      x2: "18",
-      y2: "10"
-    }), /*#__PURE__*/React.createElement("line", {
-      x1: "12",
-      y1: "20",
-      x2: "12",
-      y2: "4"
-    }), /*#__PURE__*/React.createElement("line", {
-      x1: "6",
-      y1: "20",
-      x2: "6",
-      y2: "14"
-    }))
+    icon: Ic.bars
   }];
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -587,17 +521,10 @@ function BottomNav({
         border: 'none',
         fontFamily: 'inherit'
       }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        width: 22,
-        height: 22,
-        display: 'flex'
-      },
-      "aria-hidden": "true"
-    }, React.cloneElement(it.icon, {
-      width: 22,
-      height: 22
-    })), /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement(SvgIcon, {
+      icon: it.icon,
+      size: 22
+    }), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 10,
         letterSpacing: 0.2,
@@ -640,7 +567,7 @@ function Fab({
       border: 'none',
       padding: 0,
       fontFamily: 'inherit',
-      boxShadow: T.isDark ? `0 10px 26px oklch(72% 0.15 65 / 0.5), 0 0 0 1px oklch(80% 0.12 65 / 0.3)` : `0 10px 26px oklch(60% 0.15 50 / 0.45), 0 0 0 1px oklch(60% 0.15 50 / 0.6)`
+      boxShadow: `0 10px 26px ${withAlpha(T.accent, T.isDark ? 0.5 : 0.45)}, 0 0 0 1px ${withAlpha(T.accent, T.isDark ? 0.3 : 0.6)}`
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.plus,

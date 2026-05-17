@@ -308,9 +308,6 @@ class CameraScanner {
             if (this.isScanning && !this.hasDetected) {
                 console.log('No detection yet, widening decoder readers');
                 this._reconfigureReaders(this.broadReaders);
-                // Surface via the proto Toast when available; the legacy
-                // `Utils.showMessage` toast is unstyled in the proto build
-                // (its CSS is no longer loaded) and never reaches the user.
                 this._notify('Recherche de codes élargie pour une meilleure détection');
             }
         }, timeoutMs);
@@ -320,12 +317,6 @@ class CameraScanner {
         try {
             if (typeof window !== 'undefined' && window.Toast && typeof window.Toast.show === 'function') {
                 window.Toast.show(message);
-                return;
-            }
-        } catch {}
-        try {
-            if (typeof Utils !== 'undefined' && typeof Utils.showMessage === 'function') {
-                Utils.showMessage(message, 'info');
             }
         } catch {}
     }

@@ -278,7 +278,7 @@ function EntryRow({
     style: {
       position: 'absolute',
       inset: 0,
-      background: 'oklch(45% 0.18 25)',
+      background: T.accent2,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'flex-end',

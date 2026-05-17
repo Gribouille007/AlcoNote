@@ -551,28 +551,6 @@ async function deleteDrinkWithSnapshot(id) {
   return row;
 }
 
-// Single BAC record removal -- only the one record, never spreads.
-async function deleteBACRecord(id) {
-  const db = await waitForDb();
-  if (!db) throw new Error('DB indisponible');
-  const r = await db.deleteBACRecord(id);
-  dataBus.bump();
-  return r;
-}
-
-// Re-add a previously deleted BAC record (for undo). The auto-incremented
-// id will differ from the original; `relevantDrinkIds` round-trips
-// untouched, so if the underlying drinks were ALSO deleted the array
-// will hold dangling references — harmless (no current consumer
-// dereferences them) but worth noting for future readers.
-async function restoreBACRecord(record) {
-  const db = await waitForDb();
-  if (!db) throw new Error('DB indisponible');
-  const { id, createdAt, ...payload } = record;
-  await db.addBACRecord(payload);
-  dataBus.bump();
-}
-
 // Wipe entire database (drinks, categories, settings). Caller is
 // responsible for collecting an explicit user confirmation. The seed
 // memoization is reset so the next load re-seeds defaults exactly once
@@ -590,18 +568,18 @@ async function clearAllData() {
 }
 
 Object.assign(window, {
-  dataBus, useDataVersion,
+  dataBus,
   waitForDb,
   useCategories, useDrinks, useRatings, useSettings, useBacRecords,
   useCategoryIcons, useFamilies,
-  DrinksContext, RatingsContext, CategoriesContext, SettingsContext, FamiliesContext,
+  FamiliesContext,
   DrinksProvider, RatingsProvider, CategoriesProvider, SettingsProvider,
   CategoryIconsProvider,
   buildFamilies, computeCategoryStats, flattenEntries,
-  loadSettings, saveSetting,
+  saveSetting,
   addDrink, updateDrink, deleteDrink, deleteDrinkWithSnapshot, saveRating,
   addCategory, renameCategory, deleteCategory,
   updateFamily, deleteFamily, restoreDrinks,
-  deleteBACRecord, restoreBACRecord, clearAllData,
+  clearAllData,
   loadCategoryIcons, setCategoryIcon,
 });

@@ -137,6 +137,9 @@ function filterDrinksInRange(drinks, start, end) {
   return drinks.filter(d => d.date >= sIso && d.date <= eIso);
 }
 
+// Roll up totals (drink count, cL of liquid, grams of pure alcohol,
+// unique-name set) plus per-category / per-hour / per-day-of-week
+// histograms used by every section above the BAC block.
 function aggregateGeneral(drinks) {
   const stats = {
     count: drinks.length,
@@ -819,11 +822,9 @@ function DeltaBadge({ delta }) {
   const flat = Math.abs(delta) < 0.5;
   const positive = flat ? null : rising;
   const fg = positive == null ? T.muted
-           : positive ? (T.isDark ? 'oklch(78% 0.16 155)' : 'oklch(42% 0.14 155)')
-                      : (T.isDark ? 'oklch(74% 0.20 30)'  : 'oklch(48% 0.20 30)');
+           : positive ? T.deltaPos : T.deltaNeg;
   const bg = positive == null ? T.surface2
-           : positive ? (T.isDark ? 'oklch(28% 0.05 155)' : 'oklch(95% 0.04 155)')
-                      : (T.isDark ? 'oklch(28% 0.06 30)'  : 'oklch(95% 0.04 30)');
+           : positive ? T.deltaPosBg : T.deltaNegBg;
   const value = `${Math.abs(delta).toFixed(0)}%`;
   // Inline SVG arrows render identically across platforms (no font fallback).
   const arrow = flat ? (

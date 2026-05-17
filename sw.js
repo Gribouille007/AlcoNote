@@ -1,9 +1,9 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v3.9.0';
-const STATIC_CACHE = 'alconote-static-v3.9.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v3.9.0';
+const CACHE_NAME = 'alconote-v3.10.0';
+const STATIC_CACHE = 'alconote-static-v3.10.0';
+const DYNAMIC_CACHE = 'alconote-dynamic-v3.10.0';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -17,9 +17,8 @@ const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname
 const STATIC_FILES = [
     '/index.html',
     '/manifest.json',
-    // Backend logic (kept from legacy)
+    // Persistence + barcode scanner glue
     '/js/database.js',
-    '/js/utils.js',
     '/js/scanner/product-lookup.js',
     '/js/scanner/camera-scanner.js',
     // React UI (precompiled JSX)
@@ -46,8 +45,6 @@ const NETWORK_FIRST_URLS = [
 
 // URLs that should be cached first
 const CACHE_FIRST_URLS = [
-    '/css/',
-    '/js/',
     '/assets/',
     'https://cdn.jsdelivr.net/',
     'https://unpkg.com/'
@@ -360,90 +357,6 @@ function createOfflineResponse(request) {
     });
 }
 
-// Background sync for when connection is restored
-self.addEventListener('sync', (event) => {
-    console.log('Service Worker: Background sync triggered:', event.tag);
-    
-    if (event.tag === 'background-sync') {
-        event.waitUntil(doBackgroundSync());
-    }
-});
-
-// Perform background sync operations
-async function doBackgroundSync() {
-    try {
-        console.log('Service Worker: Performing background sync...');
-        
-        // Here you could sync any pending data when connection is restored
-        // For example, upload any offline-created drinks to a server
-        
-        // Send message to all clients about sync completion
-        const clients = await self.clients.matchAll();
-        clients.forEach(client => {
-            client.postMessage({
-                type: 'BACKGROUND_SYNC_COMPLETE'
-            });
-        });
-        
-    } catch (error) {
-        console.error('Service Worker: Background sync failed:', error);
-    }
-}
-
-// Push notification handling
-self.addEventListener('push', (event) => {
-    console.log('Service Worker: Push notification received');
-    
-    const options = {
-        body: 'Vous avez de nouvelles données à synchroniser',
-        icon: '/assets/icons/icon-192x192.png',
-        badge: '/assets/icons/icon-96x96.png',
-        vibrate: [100, 50, 100],
-        data: {
-            dateOfArrival: Date.now(),
-            primaryKey: 1
-        },
-        actions: [
-            {
-                action: 'explore',
-                title: 'Ouvrir AlcoNote',
-                icon: '/assets/icons/icon-96x96.png'
-            },
-            {
-                action: 'close',
-                title: 'Fermer',
-                icon: '/assets/icons/icon-96x96.png'
-            }
-        ]
-    };
-    
-    event.waitUntil(
-        self.registration.showNotification('AlcoNote', options)
-    );
-});
-
-// Notification click handling
-self.addEventListener('notificationclick', (event) => {
-    console.log('Service Worker: Notification clicked');
-    
-    event.notification.close();
-    
-    if (event.action === 'explore') {
-        // Open the app
-        event.waitUntil(
-            clients.openWindow('/')
-        );
-    } else if (event.action === 'close') {
-        // Just close the notification
-        return;
-    } else {
-        // Default action - open the app
-        event.waitUntil(
-            clients.openWindow('/')
-        );
-    }
-});
-
 // Message handling from main app
 self.addEventListener('message', (event) => {
     console.log('Service Worker: Message received:', event.data);
@@ -470,52 +383,6 @@ self.addEventListener('message', (event) => {
         );
     }
 });
-
-// Periodic background sync (if supported)
-self.addEventListener('periodicsync', (event) => {
-    console.log('Service Worker: Periodic sync triggered:', event.tag);
-    
-    if (event.tag === 'content-sync') {
-        event.waitUntil(doPeriodicSync());
-    }
-});
-
-// Perform periodic sync operations
-async function doPeriodicSync() {
-    try {
-        console.log('Service Worker: Performing periodic sync...');
-        
-        // Here you could perform periodic tasks like:
-        // - Cleaning up old cached data
-        // - Prefetching new content
-        // - Updating statistics
-        
-        // Clean up old dynamic cache entries
-        const cache = await caches.open(DYNAMIC_CACHE);
-        const requests = await cache.keys();
-        
-        // Remove entries older than 7 days
-        const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-        
-        for (const request of requests) {
-            const response = await cache.match(request);
-            if (response) {
-                const dateHeader = response.headers.get('date');
-                if (dateHeader) {
-                    const responseDate = new Date(dateHeader).getTime();
-                    if (responseDate < oneWeekAgo) {
-                        await cache.delete(request);
-                        console.log('Service Worker: Cleaned up old cache entry:', request.url);
-                    }
-                }
-            }
-        }
-        
-    } catch (error) {
-        console.error('Service Worker: Periodic sync failed:', error);
-    }
-}
-
 
 // Handle OpenFoodFacts API requests with offline fallback
 async function handleOpenFoodFactsRequest(request) {
