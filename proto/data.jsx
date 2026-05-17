@@ -108,6 +108,10 @@ const _CH_RATINGS = ['ratings'];
 // the drinks table — `drinkCount` per category is recomputed there.
 const _CH_CATEGORIES = ['categories', 'drinks'];
 const _CH_SETTINGS = ['settings'];
+// Dedicated channel for category icon overrides. Used by
+// CategoryIconsProvider — avoids re-fetching the entire settings table
+// on every theme toggle or unrelated setting write.
+const _CH_CAT_ICONS = ['cat-icons'];
 
 // Single DB fetch per relevant dataBus.bump. The four providers below
 // each own one async load + one state cell; their children read via
@@ -329,7 +333,7 @@ async function addCategory(name) {
 
 async function renameCategory(oldName, newName) {
   const db = await waitForDb();
-  if (!db) return;
+  if (!db) throw new Error('Base de données indisponible');
   // Capture any explicit icon override BEFORE the rename so we can move
   // it to the new key. If there's no explicit override but the old name
   // was a built-in glyph (Bière, Vin, …), we pin the new name to that
@@ -344,63 +348,72 @@ async function renameCategory(oldName, newName) {
 
   await db.renameCategory(oldName, newName);
 
+  // Settings writes are best-effort here — if the icon write fails the
+  // rename has already succeeded and we don't want to roll it back.
+  // The next CategoryIconsProvider re-fetch will see whatever made it
+  // to disk.
   try {
     if (existing) await db.setSetting(oldKey, null);
     if (toWrite) await db.setSetting(newKey, toWrite);
   } catch {}
 
-  if (typeof window !== 'undefined') {
-    const m = { ...(window.__alcoCatIcons || {}) };
-    delete m[oldName];
-    if (toWrite) m[newName] = toWrite;
-    window.__alcoCatIcons = m;
-  }
-
   // renameCategory cascades into the drinks table (every drink with
-  // that category gets rewritten), so bump both channels.
+  // that category gets rewritten), so bump both channels. Always bump
+  // cat-icons too because the rename always moves icon mappings (or
+  // creates a new built-in pin for renamed defaults).
   dataBus.bump('categories');
   dataBus.bump('drinks');
-  if (toWrite || existing) dataBus.bump('settings');
+  dataBus.bump('cat-icons');
 }
 
 async function deleteCategory(id, options = {}) {
   const db = await waitForDb();
-  if (!db) return;
-  // Native deleteCategory refuses to drop categories that still own
-  // drinks. Caller can pass `reassignTo` to move every drink to a
-  // different category before the deletion.
-  if (options.reassignTo) {
-    const cat = await db.getCategoryById(id);
-    if (cat) {
-      const all = await db.getAllDrinks();
-      const moved = all.filter(d => d.category === cat.name);
-      for (const d of moved) {
-        await db.updateDrink(d.id, { category: options.reassignTo });
-      }
+  if (!db) throw new Error('Base de données indisponible');
+  // Resolve the category first — without it we can't fetch its drinks
+  // or clean up its icon override. Refusing here surfaces stale ids
+  // (e.g. the row vanished between the user opening the sheet and
+  // tapping Delete) instead of pressing on with a half-broken delete.
+  const cat = await db.getCategoryById(id);
+  if (!cat) throw new Error('Catégorie introuvable');
+
+  // Use the real drinks count from the DB, not the cached drinkCount
+  // on the category row — that counter can drift out of sync if drinks
+  // were added through a legacy code path that skipped
+  // updateCategoryDrinkCount. The EditCategorySheet shows the user the
+  // count it read from the cache; we authoritatively re-check here so a
+  // stale 0 doesn't let us call db.deleteCategory on a non-empty
+  // category (which would throw "Impossible de supprimer une catégorie
+  // qui contient des boissons").
+  const drinksOfCat = await db.getDrinksByCategory(cat.name);
+  if (drinksOfCat.length > 0) {
+    if (!options.reassignTo) {
+      throw new Error('Cette catégorie contient des boissons. Veuillez d\'abord les déplacer.');
     }
+    for (const d of drinksOfCat) {
+      await db.updateDrink(d.id, { category: options.reassignTo });
+    }
+    // Re-sync the cached counter so the legacy delete path sees zero.
+    await db.updateCategoryDrinkCount(cat.name);
   }
+
   await db.deleteCategory(id);
-  // Also drop any persisted custom icon mapping and the matching
-  // runtime mirror entry so a future cat reusing the same name doesn't
-  // inherit a stale glyph.
-  const name = options.name || '';
-  if (name) {
-    try { await db.setSetting(`cat.icon.${name}`, null); } catch {}
-    if (typeof window !== 'undefined' && window.__alcoCatIcons && name in window.__alcoCatIcons) {
-      const m = { ...window.__alcoCatIcons };
-      delete m[name];
-      window.__alcoCatIcons = m;
-    }
-  }
+
+  // Drop any persisted custom icon mapping so a future cat reusing
+  // the same name doesn't inherit a stale glyph. Surface the error
+  // instead of swallowing — caller's try/catch will report it.
+  await db.setSetting(`cat.icon.${cat.name}`, null);
+
   dataBus.bump('categories');
-  if (options.reassignTo) dataBus.bump('drinks');
-  if (name) dataBus.bump('settings');
+  if (drinksOfCat.length > 0) dataBus.bump('drinks');
+  dataBus.bump('cat-icons');
 }
 
 // ── Category icon overrides ───────────────────────────────────────
-// Custom glyphs are persisted as `cat.icon.<name>` settings. We keep
-// a runtime mirror at `window.__alcoCatIcons` so CategoryGlyph can do
-// a synchronous lookup during render.
+// Custom glyphs are persisted as `cat.icon.<name>` settings. The
+// CategoryIconsProvider below owns the in-memory map and broadcasts
+// it via CategoryIconsContext — every <CategoryGlyph> reads from the
+// context, so a single dataBus subscription refreshes every glyph in
+// the tree without each instance owning its own subscription.
 async function loadCategoryIcons() {
   const db = await waitForDb();
   if (!db) return {};
@@ -409,42 +422,56 @@ async function loadCategoryIcons() {
   for (const [k, v] of Object.entries(settings)) {
     if (k.startsWith('cat.icon.') && v) out[k.slice('cat.icon.'.length)] = v;
   }
-  if (typeof window !== 'undefined') window.__alcoCatIcons = out;
   return out;
 }
 
+// Throws on any failure so the EditCategorySheet's catch block can
+// surface a real error message instead of silently displaying "mis à
+// jour" when the write never made it to disk. Three failure modes are
+// covered: DB never initialized, Dexie returning falsy from setSetting
+// (its current contract on quota / serialization errors), or anything
+// else thrown up the stack.
 async function setCategoryIcon(name, glyph) {
   const db = await waitForDb();
-  if (!db) return;
-  await db.setSetting(`cat.icon.${name}`, glyph || null);
-  if (typeof window !== 'undefined') {
-    window.__alcoCatIcons = { ...(window.__alcoCatIcons || {}) };
-    if (glyph) window.__alcoCatIcons[name] = glyph;
-    else delete window.__alcoCatIcons[name];
-  }
-  // Icon overrides live in the settings table; useCategoryIcons is
-  // subscribed to ['settings', 'categories'] so this single bump
-  // refreshes every glyph in the tree.
-  dataBus.bump('settings');
+  if (!db) throw new Error('Base de données indisponible');
+  const ok = await db.setSetting(`cat.icon.${name}`, glyph || null);
+  if (ok === false) throw new Error('Échec de la sauvegarde de l\'icône');
+  dataBus.bump('cat-icons');
 }
 
-// All mutating helpers (setCategoryIcon, renameCategory, deleteCategory)
-// keep `window.__alcoCatIcons` synchronously in lockstep with the DB
-// before bumping the bus, so reading it inside a useMemo gated on `v`
-// gives a consistent snapshot without a round-trip through IndexedDB.
-// Eliminates the 1-frame stale render that used to leave the old glyph
-// on screen right after the user saved a new icon.
-//
-// Subscribes to the same channels that touch the icon mirror:
-// `settings` covers `setCategoryIcon` writes, `categories` covers
-// rename/delete which also rewrite the mirror keys.
-const _CH_CAT_ICONS = ['settings', 'categories'];
-function useCategoryIcons() {
+// Reads the icon overrides map from CategoryIconsContext. The provider
+// is mounted in <App/> (proto/app.jsx) and re-fetches the persisted
+// settings on every dataBus.bump('cat-icons'), so any mutation
+// (setCategoryIcon, renameCategory, deleteCategory, clearAllData)
+// triggers a refresh of every glyph in the tree.
+function useCategoryIcons() { return React.useContext(CategoryIconsContext); }
+
+// Provider for category icon overrides. Seeds initial state from the
+// optional one-shot global `window.__alcoCatIconsInitial` (populated
+// by mountAlcoNote before the React mount, read exactly once at the
+// useState initializer) so the first paint already shows custom
+// glyphs — no flash of default icons. Subsequent updates come from
+// the DB on every bump('cat-icons').
+function CategoryIconsProvider({ children }) {
   const v = useDataVersion(_CH_CAT_ICONS);
-  return React.useMemo(
-    () => (typeof window !== 'undefined' && window.__alcoCatIcons) || {},
-    [v]
-  );
+  const [map, setMap] = React.useState(() => {
+    if (typeof window === 'undefined') return {};
+    const seed = window.__alcoCatIconsInitial;
+    return (seed && typeof seed === 'object') ? seed : {};
+  });
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const out = await loadCategoryIcons();
+        if (alive) setMap(out);
+      } catch {
+        if (alive) setMap({});
+      }
+    })();
+    return () => { alive = false; };
+  }, [v]);
+  return React.createElement(CategoryIconsContext.Provider, { value: map }, children);
 }
 
 // Apply same updates to every drink that shares (name + qty + unit + abv)
@@ -548,15 +575,16 @@ async function restoreBACRecord(record) {
 
 // Wipe entire database (drinks, categories, settings). Caller is
 // responsible for collecting an explicit user confirmation. The seed
-// memoization and runtime icon mirror are reset so the next load
-// re-seeds defaults exactly once on the empty DB.
+// memoization is reset so the next load re-seeds defaults exactly once
+// on the empty DB. The icon Provider re-reads the empty settings table
+// on the bump below.
 async function clearAllData() {
   const db = await waitForDb();
   if (!db) throw new Error('DB indisponible');
   const r = await db.clearAllData();
   _seedDone = false;
   _seedPromise = null;
-  if (typeof window !== 'undefined') window.__alcoCatIcons = {};
+  dataBus.bump('cat-icons');
   dataBus.bump();
   return r;
 }
@@ -568,6 +596,7 @@ Object.assign(window, {
   useCategoryIcons, useFamilies,
   DrinksContext, RatingsContext, CategoriesContext, SettingsContext, FamiliesContext,
   DrinksProvider, RatingsProvider, CategoriesProvider, SettingsProvider,
+  CategoryIconsProvider,
   buildFamilies, computeCategoryStats, flattenEntries,
   loadSettings, saveSetting,
   addDrink, updateDrink, deleteDrink, deleteDrinkWithSnapshot, saveRating,

@@ -87,11 +87,10 @@ function AppShell() {
   const { drinks } = useDrinks();
   const ratings = useRatings();
   const userSettings = useSettings();
-  // One subscription at the root for the category-icon overrides map.
-  // <CategoryGlyph> reads from CategoryIconsContext, so changing an
-  // icon refreshes every glyph in the tree without each instance
-  // needing its own dataBus subscription.
-  const catIcons = useCategoryIcons();
+  // Category-icon overrides are owned by <CategoryIconsProvider> which
+  // wraps <AppShell/> (see <App/> below) — every <CategoryGlyph>
+  // re-renders from the context when a single mutation bumps
+  // 'cat-icons'. AppShell no longer needs to subscribe directly.
   // Families: hoisted from the legacy "build per-tab" pattern to a
   // single memo here. HistoryTab / CategoriesTab / DrinkDetailSheet
   // all consume the same array, so a drinks bump rebuilds the grouping
@@ -170,7 +169,6 @@ function AppShell() {
   });
 
   return (
-    <CategoryIconsContext.Provider value={catIcons}>
     <FamiliesContext.Provider value={families}>
     <BacContext.Provider value={bacInfo}>
     <div className="alco-shell" style={{
@@ -271,7 +269,6 @@ function AppShell() {
     </div>
     </BacContext.Provider>
     </FamiliesContext.Provider>
-    </CategoryIconsContext.Provider>
   );
 }
 
@@ -283,7 +280,9 @@ function App() {
       <CategoriesProvider>
         <RatingsProvider>
           <DrinksProvider>
-            <AppShell />
+            <CategoryIconsProvider>
+              <AppShell />
+            </CategoryIconsProvider>
           </DrinksProvider>
         </RatingsProvider>
       </CategoriesProvider>
@@ -446,8 +445,11 @@ async function mountAlcoNote() {
     }
   } catch {}
 
-  // Preload custom category icon overrides so the first render uses them
-  try { await loadCategoryIcons(); } catch {}
+  // Preload custom category icon overrides so the first paint already
+  // shows them. The Provider reads this one-shot seed in its useState
+  // initializer (single read — not a long-lived global mutable), then
+  // refreshes from the DB on every dataBus.bump('cat-icons').
+  try { window.__alcoCatIconsInitial = await loadCategoryIcons(); } catch {}
 
   const root = document.getElementById('root');
   if (!root) {

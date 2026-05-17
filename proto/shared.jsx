@@ -389,12 +389,11 @@ const GLYPHS = {
 
 const GLYPH_OPTIONS = Object.keys(GLYPHS);
 
-// Provided at the App root with the current icon-overrides map. Every
-// <CategoryGlyph> reads from this context so a single dataBus
-// subscription (App-level) re-renders every glyph on the screen
-// instead of N per-instance subscriptions. Reading window.__alcoCatIcons
-// during render used to leave stale glyphs because the global mutation
-// was invisible to React's reconciler.
+// Provided at the App root by <CategoryIconsProvider> (proto/data.jsx)
+// with the current icon-overrides map. Every <CategoryGlyph> reads
+// from this context so a single dataBus subscription (provider-level)
+// re-renders every glyph on the screen instead of N per-instance
+// subscriptions.
 const CategoryIconsContext = React.createContext({});
 
 function CategoryGlyph({ name, glyph, size = 22 }) {
@@ -493,16 +492,23 @@ const Confirm = (() => {
 function ConfirmHost() {
   const [state, setState] = React.useState(null);
   React.useEffect(() => { Confirm._bind(setState); return () => Confirm._bind(null); }, []);
-  if (!state) return null;
-  const close = (ok) => { state._resolve(ok); setState(null); };
+  // All hooks must be called unconditionally on every render —
+  // putting `useCallback`/`useEffect` after the `if (!state) return null`
+  // early-return below changes the hook count when the dialog opens
+  // and triggers React error #310 (rendered fewer hooks than expected),
+  // which then bubbles up to AppErrorBoundary.
   const onKey = React.useCallback((e) => {
-    if (e.key === 'Escape') close(false);
-    if (e.key === 'Enter')  close(true);
+    if (!state) return;
+    if (e.key === 'Escape') { state._resolve(false); setState(null); }
+    if (e.key === 'Enter')  { state._resolve(true);  setState(null); }
   }, [state]);
   React.useEffect(() => {
+    if (!state) return;
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onKey]);
+  }, [onKey, state]);
+  if (!state) return null;
+  const close = (ok) => { state._resolve(ok); setState(null); };
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="alco-confirm-title"
       onClick={() => close(false)} style={{

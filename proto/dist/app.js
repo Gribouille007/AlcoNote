@@ -122,11 +122,10 @@ function AppShell() {
   } = useDrinks();
   const ratings = useRatings();
   const userSettings = useSettings();
-  // One subscription at the root for the category-icon overrides map.
-  // <CategoryGlyph> reads from CategoryIconsContext, so changing an
-  // icon refreshes every glyph in the tree without each instance
-  // needing its own dataBus subscription.
-  const catIcons = useCategoryIcons();
+  // Category-icon overrides are owned by <CategoryIconsProvider> which
+  // wraps <AppShell/> (see <App/> below) — every <CategoryGlyph>
+  // re-renders from the context when a single mutation bumps
+  // 'cat-icons'. AppShell no longer needs to subscribe directly.
   // Families: hoisted from the legacy "build per-tab" pattern to a
   // single memo here. HistoryTab / CategoriesTab / DrinkDetailSheet
   // all consume the same array, so a drinks bump rebuilds the grouping
@@ -205,9 +204,7 @@ function AppShell() {
     display: tab === id ? 'flex' : 'none',
     flexDirection: 'column'
   });
-  return /*#__PURE__*/React.createElement(CategoryIconsContext.Provider, {
-    value: catIcons
-  }, /*#__PURE__*/React.createElement(FamiliesContext.Provider, {
+  return /*#__PURE__*/React.createElement(FamiliesContext.Provider, {
     value: families
   }, /*#__PURE__*/React.createElement(BacContext.Provider, {
     value: bacInfo
@@ -347,13 +344,13 @@ function AppShell() {
       flexShrink: 0,
       letterSpacing: 0.1
     }
-  }, "Annuler"))))));
+  }, "Annuler")))));
 }
 
 // Outer App: hosts the data providers so AppShell's hooks read from
 // a single subscription rather than N parallel ones.
 function App() {
-  return /*#__PURE__*/React.createElement(SettingsProvider, null, /*#__PURE__*/React.createElement(CategoriesProvider, null, /*#__PURE__*/React.createElement(RatingsProvider, null, /*#__PURE__*/React.createElement(DrinksProvider, null, /*#__PURE__*/React.createElement(AppShell, null)))));
+  return /*#__PURE__*/React.createElement(SettingsProvider, null, /*#__PURE__*/React.createElement(CategoriesProvider, null, /*#__PURE__*/React.createElement(RatingsProvider, null, /*#__PURE__*/React.createElement(DrinksProvider, null, /*#__PURE__*/React.createElement(CategoryIconsProvider, null, /*#__PURE__*/React.createElement(AppShell, null))))));
 }
 function AppHeader({
   tab,
@@ -664,9 +661,12 @@ async function mountAlcoNote() {
     }
   } catch {}
 
-  // Preload custom category icon overrides so the first render uses them
+  // Preload custom category icon overrides so the first paint already
+  // shows them. The Provider reads this one-shot seed in its useState
+  // initializer (single read — not a long-lived global mutable), then
+  // refreshes from the DB on every dataBus.bump('cat-icons').
   try {
-    await loadCategoryIcons();
+    window.__alcoCatIconsInitial = await loadCategoryIcons();
   } catch {}
   const root = document.getElementById('root');
   if (!root) {
