@@ -278,7 +278,7 @@ function EntryRow({
     style: {
       position: 'absolute',
       inset: 0,
-      background: T.accent2,
+      background: T.dangerBg,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'flex-end',

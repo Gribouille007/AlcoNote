@@ -20,6 +20,8 @@ const THEMES = {
     accentSoftBorder: 'oklch(38% 0.05 65)',
     accentRing: 'oklch(80% 0.12 65)',
     scrim:    'rgba(0,0,0,0.65)',
+    dangerBg: 'oklch(45% 0.18 25)',
+    dangerBtn: 'oklch(55% 0.20 25)',
     deltaPos:    'oklch(78% 0.16 155)',
     deltaNeg:    'oklch(74% 0.20 30)',
     deltaPosBg:  'oklch(28% 0.05 155)',
@@ -43,6 +45,8 @@ const THEMES = {
     accentSoftBorder: 'oklch(85% 0.08 65)',
     accentRing: 'oklch(60% 0.15 50)',
     scrim:    'rgba(40,30,20,0.35)',
+    dangerBg: 'oklch(45% 0.18 25)',
+    dangerBtn: 'oklch(55% 0.20 25)',
     deltaPos:    'oklch(42% 0.14 155)',
     deltaNeg:    'oklch(48% 0.20 30)',
     deltaPosBg:  'oklch(95% 0.04 155)',
@@ -545,11 +549,11 @@ function ConfirmHost() {
           }}>{state.cancelText || 'Annuler'}</button>
           <button onClick={() => close(true)} autoFocus style={{
             flex: 1.4, padding: '12px', borderRadius: 12,
-            background: state.danger ? T.accent2 : T.accent,
+            background: state.danger ? T.dangerBtn : T.accent,
             color: state.danger ? '#fff' : (T.isDark ? T.bg : '#fff'),
             border: 'none', fontSize: 13, fontWeight: 600,
             fontFamily: fontSans, cursor: 'pointer', letterSpacing: 0.1,
-            boxShadow: `0 4px 18px ${withAlpha(state.danger ? T.accent2 : T.accent, state.danger ? 0.5 : 0.4)}`,
+            boxShadow: `0 4px 18px ${withAlpha(state.danger ? T.dangerBtn : T.accent, state.danger ? 0.5 : 0.4)}`,
           }}>{state.confirmText || 'Confirmer'}</button>
         </div>
       </div>
