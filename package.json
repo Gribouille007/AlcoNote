@@ -5,7 +5,9 @@
   "description": "AlcoNote — Suivi de consommation d'alcool (PWA)",
   "scripts": {
     "build": "node tools/build.js",
-    "watch": "node tools/build.js --watch"
+    "watch": "node tools/build.js --watch",
+    "pretest": "node tools/build.js",
+    "test": "node tools/test-icons.js"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

@@ -322,7 +322,7 @@ function EditCategorySheet({ category, onClose }) {
   // means "no explicit pick yet" (use whatever's currently persisted)
   // and a string means the user actively selected that tile — including
   // the `'__reset__'` sentinel which means "drop the override".
-  const [glyph, setGlyphState] = React.useState(() => icons[category] || null);
+  const [glyph, setGlyphState] = React.useState(() => icons[canonicalCat(category)] || null);
   const userTouchedRef = React.useRef(false);
   const setGlyph = (g) => { userTouchedRef.current = true; setGlyphState(g); };
   const [busy, setBusy] = React.useState(false);
@@ -346,14 +346,14 @@ function EditCategorySheet({ category, onClose }) {
   // Adopt the persisted override once it loads (or is updated elsewhere)
   // — but never overwrite a pick the user has already made in this sheet.
   React.useEffect(() => {
-    if (!userTouchedRef.current) setGlyphState(icons[category] || null);
+    if (!userTouchedRef.current) setGlyphState(icons[canonicalCat(category)] || null);
   }, [icons, category]);
 
   // Use the category row's maintained `drinkCount` instead of fetching
   // every drink and filtering — `useDrinks()` would re-run on every
   // dataBus bump and is overkill when all we need is one tally.
   const catObj = React.useMemo(
-    () => categories.find(c => c.name === category),
+    () => categories.find(c => canonicalCat(c.name) === canonicalCat(category)),
     [categories, category],
   );
   const drinksInCat = catObj?.drinkCount || 0;
@@ -363,10 +363,9 @@ function EditCategorySheet({ category, onClose }) {
     setErr('');
     const trimmed = (name || '').trim();
     if (!trimmed) { setErr('Le nom ne peut pas être vide'); return; }
-    // Capture the override existence BEFORE any mutation — once the
-    // rename below bumps the bus, `icons[category]` may already be
-    // stale (the old key no longer exists in the refreshed map).
-    const hadOverride = !!icons[category];
+    // Capture override existence BEFORE any mutation: a rename below bumps
+    // the bus and the refreshed `icons` map gets re-keyed by the new name.
+    const hadOverride = !!icons[canonicalCat(category)];
     const userTouched = userTouchedRef.current;
     const nameChanged = trimmed !== category;
     // If neither the name nor the icon was touched, this is a no-op
@@ -379,22 +378,38 @@ function EditCategorySheet({ category, onClose }) {
     savingRef.current = true;
     setBusy(true);
     try {
+      // Ensure a real DB row backs this category before mutating. A
+      // "synthetic" card (a drink referencing a category with no row) is
+      // materialized under its CURRENT name so a rename can cascade to its
+      // drinks and the icon has a stable id to hang on. Reached only when
+      // something actually changed (guarded by the early-return above), so
+      // we never create spurious empty categories.
+      let row = catObj || null;
+      if (!row) {
+        try { row = await addCategory(category); } catch {}
+        if (!row) {
+          const db = await waitForDb();
+          row = db ? await db.getCategoryByName((category || '').trim()) : null;
+        }
+      }
+
       let finalName = category;
       if (nameChanged) {
-        // renameCategory migrates any existing icon override to the
-        // new name. If it throws, we abort before touching the icon —
-        // the user will see the error and the sheet stays open.
-        await renameCategory(category, trimmed);
+        // renameCategory cascades to drinks. If it throws we abort before
+        // touching the icon; the sheet stays open with the error.
+        if (row) await renameCategory(row.name, trimmed);
         finalName = trimmed;
       }
+
       if (userTouched) {
-        // '__reset__' wipes the persisted override entirely so the
-        // category falls back to its name-based default glyph.
+        // '__reset__' wipes the override so the category falls back to its
+        // default glyph; otherwise persist the picked glyph by stable id.
         const next = glyph === '__reset__' ? null : glyph;
-        // Skip the write when the user picked Reset on a category
-        // that had no override to begin with — nothing to delete.
+        // Skip the write when the user picked Reset on a category that had
+        // no override to begin with — nothing to delete.
         if (next || (glyph === '__reset__' && hadOverride)) {
-          await setCategoryIcon(finalName, next);
+          if (!row) throw new Error('Catégorie introuvable pour enregistrer l\'icône');
+          await setCategoryIcon(row.id, next);
         }
       }
       Toast.show(`Catégorie « ${finalName} » mise à jour`);
@@ -475,7 +490,7 @@ function EditCategorySheet({ category, onClose }) {
     }
   };
 
-  const hasOverride = !!icons[category];
+  const hasOverride = !!icons[canonicalCat(category)];
   const showResetTile = hasOverride || glyph === '__reset__';
 
   return (

@@ -112,6 +112,8 @@ const _CH_SETTINGS = ['settings'];
 // CategoryIconsProvider — avoids re-fetching the entire settings table
 // on every theme toggle or unrelated setting write.
 const _CH_CAT_ICONS = ['cat-icons'];
+// Settings-key prefix for id-based icon overrides: `cat.icon.id.<id>`.
+const _ICON_ID_PREFIX = 'cat.icon.id.';
 
 // Single DB fetch per relevant dataBus.bump. The four providers below
 // each own one async load + one state cell; their children read via
@@ -162,6 +164,7 @@ function CategoriesProvider({ children }) {
       const db = await waitForDb();
       if (!db) return;
       await _ensureDefaultCategories();
+      await migrateCategoryIconsToId();
       const list = await db.getAllCategories();
       if (alive) setState({ categories: list, loading: false });
     })();
@@ -224,17 +227,24 @@ function buildFamilies(drinks, ratings = {}) {
 
 // Stats per category
 function computeCategoryStats(categories, families) {
-  const byName = new Map();
-  for (const c of categories) byName.set(c.name, { id: c.id, name: c.name, families: 0, entries: 0 });
+  // Index by canonical name so a drink whose category string differs only
+  // by whitespace/accent-normalization folds into its real category row
+  // instead of spawning a duplicate "synthetic" card. A genuinely unknown
+  // category (no matching row) still gets a synthetic entry.
+  const byKey = new Map();
+  for (const c of categories) {
+    byKey.set(canonicalCat(c.name), { id: c.id, name: c.name, families: 0, entries: 0 });
+  }
   for (const f of families) {
-    if (!byName.has(f.category)) {
-      byName.set(f.category, { id: 'cat-' + f.category, name: f.category, families: 0, entries: 0 });
+    const key = canonicalCat(f.category);
+    if (!byKey.has(key)) {
+      byKey.set(key, { id: 'cat-' + f.category, name: f.category, families: 0, entries: 0 });
     }
-    const e = byName.get(f.category);
+    const e = byKey.get(key);
     e.families += 1;
     e.entries += f.entries.length;
   }
-  return Array.from(byName.values()).sort((a, b) => b.entries - a.entries);
+  return Array.from(byKey.values()).sort((a, b) => b.entries - a.entries);
 }
 
 // Flat entries list for History tab
@@ -334,36 +344,13 @@ async function addCategory(name) {
 async function renameCategory(oldName, newName) {
   const db = await waitForDb();
   if (!db) throw new Error('Base de données indisponible');
-  // Capture any explicit icon override BEFORE the rename so we can move
-  // it to the new key. If there's no explicit override but the old name
-  // was a built-in glyph (Bière, Vin, …), we pin the new name to that
-  // glyph too — otherwise <CategoryGlyph> would silently fall back to
-  // the generic glass icon for the renamed category.
-  const oldKey = `cat.icon.${oldName}`;
-  const newKey = `cat.icon.${newName}`;
-  let existing = null;
-  try { existing = await db.getSetting(oldKey); } catch {}
-  const builtIn = ['Bière', 'Vin', 'Spiritueux', 'Cocktail'];
-  const toWrite = existing || (builtIn.includes(oldName) ? oldName : null);
-
   await db.renameCategory(oldName, newName);
-
-  // Settings writes are best-effort here — if the icon write fails the
-  // rename has already succeeded and we don't want to roll it back.
-  // The next CategoryIconsProvider re-fetch will see whatever made it
-  // to disk.
-  try {
-    if (existing) await db.setSetting(oldKey, null);
-    if (toWrite) await db.setSetting(newKey, toWrite);
-  } catch {}
-
-  // renameCategory cascades into the drinks table (every drink with
-  // that category gets rewritten), so bump both channels. Always bump
-  // cat-icons too because the rename always moves icon mappings (or
-  // creates a new built-in pin for renamed defaults).
+  // Icon overrides are keyed by the immutable category id, so a rename
+  // needs no icon migration: the id↔glyph mapping is untouched and the
+  // grid repaints from the refreshed categories list (the icon provider
+  // re-joins id→name on the 'categories' bump below).
   dataBus.bump('categories');
   dataBus.bump('drinks');
-  dataBus.bump('cat-icons');
 }
 
 async function deleteCategory(id, options = {}) {
@@ -398,10 +385,9 @@ async function deleteCategory(id, options = {}) {
 
   await db.deleteCategory(id);
 
-  // Drop any persisted custom icon mapping so a future cat reusing
-  // the same name doesn't inherit a stale glyph. Surface the error
-  // instead of swallowing — caller's try/catch will report it.
-  await db.setSetting(`cat.icon.${cat.name}`, null);
+  // Drop the id-keyed icon override. A future category reusing the same
+  // name gets a fresh id, so it correctly does NOT inherit this glyph.
+  await db.setSetting(`${_ICON_ID_PREFIX}${id}`, null);
 
   dataBus.bump('categories');
   if (drinksOfCat.length > 0) dataBus.bump('drinks');
@@ -420,9 +406,60 @@ async function loadCategoryIcons() {
   const settings = await db.getAllSettings();
   const out = {};
   for (const [k, v] of Object.entries(settings)) {
-    if (k.startsWith('cat.icon.') && v) out[k.slice('cat.icon.'.length)] = v;
+    if (k.startsWith(_ICON_ID_PREFIX) && v) {
+      const id = Number(k.slice(_ICON_ID_PREFIX.length));
+      if (!Number.isNaN(id)) out[id] = v;
+    }
   }
   return out;
+}
+
+// One-time migration of legacy name-keyed overrides (`cat.icon.<name>`)
+// to the id-keyed format (`cat.icon.id.<id>`). Idempotent: gated by both
+// a module flag and a persisted `cat._iconMigratedToId` setting, so it is
+// a cheap no-op after the first successful run. Orphan legacy keys (whose
+// name no longer matches any category) are dropped — they could never
+// resolve under the old scheme either.
+let _iconMigrateDone = false;
+let _iconMigratePromise = null;
+async function migrateCategoryIconsToId() {
+  if (_iconMigrateDone) return;
+  if (_iconMigratePromise) return _iconMigratePromise;
+  _iconMigratePromise = (async () => {
+    try {
+      const db = await waitForDb();
+      if (!db) return;
+      if (await db.getSetting('cat._iconMigratedToId')) { _iconMigrateDone = true; return; }
+      const settings = await db.getAllSettings();
+      const cats = await db.getAllCategories();
+      const byCanon = new Map();
+      for (const c of cats) byCanon.set(canonicalCat(c.name), c.id);
+      // First legacy key wins deterministically if two names collapse to
+      // the same id (e.g. "Bière" and "Bière ") — `claimed` guards against
+      // a later one overwriting it.
+      const claimed = new Set();
+      for (const k of Object.keys(settings)) {
+        if (!k.startsWith('cat.icon.') || k.startsWith(_ICON_ID_PREFIX)) continue;
+        const glyph = settings[k];
+        const id = byCanon.get(canonicalCat(k.slice('cat.icon.'.length)));
+        if (id != null && glyph) {
+          const idKey = `${_ICON_ID_PREFIX}${id}`;
+          if (settings[idKey] == null && !claimed.has(id)) {
+            await db.setSetting(idKey, glyph);
+            claimed.add(id);
+          }
+        }
+        await db.setSetting(k, null);
+      }
+      await db.setSetting('cat._iconMigratedToId', true);
+      _iconMigrateDone = true;
+    } catch (e) {
+      // best-effort; retry on next mount
+    } finally {
+      if (!_iconMigrateDone) _iconMigratePromise = null;
+    }
+  })();
+  return _iconMigratePromise;
 }
 
 // Throws on any failure so the EditCategorySheet's catch block can
@@ -431,10 +468,11 @@ async function loadCategoryIcons() {
 // covered: DB never initialized, Dexie returning falsy from setSetting
 // (its current contract on quota / serialization errors), or anything
 // else thrown up the stack.
-async function setCategoryIcon(name, glyph) {
+async function setCategoryIcon(id, glyph) {
   const db = await waitForDb();
   if (!db) throw new Error('Base de données indisponible');
-  const ok = await db.setSetting(`cat.icon.${name}`, glyph || null);
+  if (id == null || id === '') throw new Error('Catégorie invalide');
+  const ok = await db.setSetting(`${_ICON_ID_PREFIX}${id}`, glyph || null);
   if (ok === false) throw new Error('Échec de la sauvegarde de l\'icône');
   dataBus.bump('cat-icons');
 }
@@ -454,7 +492,11 @@ function useCategoryIcons() { return React.useContext(CategoryIconsContext); }
 // the DB on every bump('cat-icons').
 function CategoryIconsProvider({ children }) {
   const v = useDataVersion(_CH_CAT_ICONS);
-  const [map, setMap] = React.useState(() => {
+  const { categories } = useCategories();
+  // id → glyph, persisted as `cat.icon.id.<id>`. Seeded once from the boot
+  // preload (window.__alcoCatIconsInitial) to avoid a flash of default
+  // glyphs, then refreshed from the DB on every dataBus.bump('cat-icons').
+  const [idMap, setIdMap] = React.useState(() => {
     if (typeof window === 'undefined') return {};
     const seed = window.__alcoCatIconsInitial;
     return (seed && typeof seed === 'object') ? seed : {};
@@ -464,13 +506,25 @@ function CategoryIconsProvider({ children }) {
     (async () => {
       try {
         const out = await loadCategoryIcons();
-        if (alive) setMap(out);
+        if (alive) setIdMap(out);
       } catch {
-        if (alive) setMap({});
+        if (alive) setIdMap({});
       }
     })();
     return () => { alive = false; };
   }, [v]);
+  // Join id→glyph with the live id→name list so <CategoryGlyph> keeps its
+  // name-based API. Keyed by canonicalCat(name); recomputes whenever the
+  // categories list changes (e.g. after a rename) — so renames repaint with
+  // zero stored icon migration since the id↔glyph mapping never moves.
+  const map = React.useMemo(() => {
+    const out = {};
+    for (const c of categories) {
+      const g = idMap[c.id];
+      if (g) out[canonicalCat(c.name)] = g;
+    }
+    return out;
+  }, [idMap, categories]);
   return React.createElement(CategoryIconsContext.Provider, { value: map }, children);
 }
 
@@ -562,6 +616,8 @@ async function clearAllData() {
   const r = await db.clearAllData();
   _seedDone = false;
   _seedPromise = null;
+  _iconMigrateDone = false;
+  _iconMigratePromise = null;
   dataBus.bump('cat-icons');
   dataBus.bump();
   return r;
@@ -581,5 +637,5 @@ Object.assign(window, {
   addCategory, renameCategory, deleteCategory,
   updateFamily, deleteFamily, restoreDrinks,
   clearAllData,
-  loadCategoryIcons, setCategoryIcon,
+  loadCategoryIcons, setCategoryIcon, migrateCategoryIconsToId,
 });

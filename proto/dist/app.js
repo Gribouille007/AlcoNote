@@ -588,6 +588,13 @@ async function mountAlcoNote() {
     }
   } catch {}
 
+  // Migrate any legacy name-keyed icon overrides to the id-keyed format
+  // BEFORE seeding, so the preload below already reflects migrated glyphs
+  // (no flash). Idempotent — a cheap no-op once done.
+  try {
+    await migrateCategoryIconsToId();
+  } catch {}
+
   // Preload custom category icon overrides so the first paint already
   // shows them. The Provider reads this one-shot seed in its useState
   // initializer (single read — not a long-lived global mutable), then

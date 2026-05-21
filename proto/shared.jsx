@@ -405,9 +405,18 @@ const GLYPH_OPTIONS = Object.keys(GLYPHS);
 // subscriptions.
 const CategoryIconsContext = React.createContext({});
 
+// Canonical category key: trim + NFC-normalize so icon overrides survive
+// stray whitespace and accent-normalization differences (a drink saved as
+// "Bière " resolves to the same key as the "Bière" category row).
+function canonicalCat(name) {
+  return String(name == null ? '' : name).trim().normalize('NFC');
+}
+
 function CategoryGlyph({ name, glyph, size = 22 }) {
   const customIcons = React.useContext(CategoryIconsContext);
-  const key = glyph || customIcons[name] || name;
+  // Fall back to the canonical name (not the raw one) so a default glyph
+  // still resolves for a drink stored as e.g. "Bière " with no override.
+  const key = glyph || customIcons[canonicalCat(name)] || canonicalCat(name);
   const s = { width: size, height: size };
   const draw = GLYPHS[key] || GLYPHS['Autre'];
   return draw(s);
@@ -655,7 +664,7 @@ Object.assign(window, {
   FR_DAYS_LONG, FR_DAYS_SHORT, FR_MONTHS_SHORT, FR_MONTHS_LONG, FR_MONTHS_DOTTED,
   fmtDateMedium, fmtDayHeader, localDate, localTime,
   toCl,
-  SearchInput, SectionHead, Pill, Stars, CategoryGlyph, GLYPH_OPTIONS,
+  SearchInput, SectionHead, Pill, Stars, CategoryGlyph, GLYPH_OPTIONS, canonicalCat,
   SheetOverlay, niceMax,
   Confirm, ConfirmHost,
   clickable, ghostButton,
