@@ -466,19 +466,24 @@ async function canonicalizeRatings() {
           });
         }
       }
-      // Drop every row whose stored key isn't already canonical…
+      // Write the folded canonical rows FIRST, then drop the
+      // non-canonical stragglers. Doing it in this order means a partial
+      // failure (or the page closing mid-migration) can never lose a
+      // rating: the canonical row is already persisted before its source
+      // row is removed, and the flag stays unset so the next mount retries
+      // the leftover deletes. Freshly-written canonical rows also carry a
+      // newer updatedAt, so fold-on-read prefers them over any orphan.
+      for (const [k, val] of best) {
+        try {
+          await db.setRating(k, val.rating);
+        } catch (e) {}
+      }
       for (const r of all) {
         if (r.drinkName !== ratingKey(r.drinkName)) {
           try {
             await db.deleteRating(r.drinkName);
           } catch (e) {}
         }
-      }
-      // …then (re)write the folded canonical rows.
-      for (const [k, val] of best) {
-        try {
-          await db.setRating(k, val.rating);
-        } catch (e) {}
       }
       await db.setSetting('rating._canonicalized', true);
       _ratingCanonDone = true;
