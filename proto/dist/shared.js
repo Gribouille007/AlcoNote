@@ -1221,7 +1221,9 @@ function CategoryGlyph({
   size = 22
 }) {
   const customIcons = React.useContext(CategoryIconsContext);
-  const key = glyph || customIcons[canonicalCat(name)] || name;
+  // Fall back to the canonical name (not the raw one) so a default glyph
+  // still resolves for a drink stored as e.g. "Bière " with no override.
+  const key = glyph || customIcons[canonicalCat(name)] || canonicalCat(name);
   const s = {
     width: size,
     height: size

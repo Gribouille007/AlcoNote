@@ -554,9 +554,8 @@ function EditCategorySheet({
       setErr('Le nom ne peut pas être vide');
       return;
     }
-    // Capture the override existence BEFORE any mutation — once the
-    // rename below bumps the bus, `icons[category]` may already be
-    // stale (the old key no longer exists in the refreshed map).
+    // Capture override existence BEFORE any mutation: a rename below bumps
+    // the bus and the refreshed `icons` map gets re-keyed by the new name.
     const hadOverride = !!icons[canonicalCat(category)];
     const userTouched = userTouchedRef.current;
     const nameChanged = trimmed !== category;
