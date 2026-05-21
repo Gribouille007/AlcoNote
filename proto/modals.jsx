@@ -619,6 +619,13 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
             <FactCell label="cL" value={toCl(f.quantity, f.unit).toFixed(0)} />
             <FactCell label="Note" value={<Stars n={myRating} size={11} interactive onChange={rate}/>} last />
           </div>
+          {myRating > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>
+              <button type="button" onClick={() => rate(0)} style={{
+                ...ghostButton, color: T.muted, fontSize: 11, cursor: 'pointer',
+              }}>Effacer la note</button>
+            </div>
+          )}
         </div>
 
         <div style={{ overflow: 'auto', padding: '16px 22px 20px', flex: 1 }}>

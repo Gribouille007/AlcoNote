@@ -592,6 +592,29 @@ function GeneralSection({
         delta: pctChange(bourreMs, prevBourreMs),
         icon: Ic.hourglass },
     ];
+    // "Tout" only: share of life spent drunk since the very first drink.
+    // Counts BAC>0 time strictly up to "now" (not the projected
+    // elimination tail) over (now − first drink), so it reads as a true
+    // elapsed share. Pushed right after "Temps bourré" to pair the two.
+    if (period === 'all') {
+      const now = Date.now();
+      const firstTs = drinks.reduce((min, d) => {
+        const t = new Date(`${d.date}T${d.time || '00:00'}`).getTime();
+        if (!Number.isFinite(t)) return min;
+        return (min == null || t < min) ? t : min;
+      }, null);
+      let bourreToNow = 0;
+      if (firstTs != null) {
+        for (const s of sessions) {
+          const a = Math.max(s.startTs, firstTs);
+          const b = Math.min(s.endTs, now);
+          if (b > a) bourreToNow += b - a;
+        }
+      }
+      const span = firstTs != null ? now - firstTs : 0;
+      const pct = span > 0 ? Math.min(100, (bourreToNow / span) * 100) : 0;
+      out.push({ v: `${pct.toFixed(1)}%`, l: '% bourré', icon: Ic.hourglass });
+    }
     // 'all' joins week/month/year/school: the day/week denominators come
     // from `range` (first drink → today), so these rates are meaningful.
     if (period !== 'today') {
@@ -605,16 +628,6 @@ function GeneralSection({
       const prevWeeks = prevDays ? Math.max(1, prevDays / 7) : 0;
       out.push({ v: (agg.count / weeks).toFixed(1), l: 'Boissons/sem.',
         delta: pctChange(agg.count / weeks, prevWeeks && prevAgg ? prevAgg.count / prevWeeks : null) });
-    }
-    // "Tout" only: share of life spent drunk since the very first drink.
-    if (period === 'all') {
-      const firstTs = drinks.reduce((min, d) => {
-        const t = new Date(`${d.date}T${d.time || '00:00'}`).getTime();
-        return (min == null || t < min) ? t : min;
-      }, null);
-      const span = firstTs != null ? Date.now() - firstTs : 0;
-      const pct = span > 0 ? Math.min(100, (bourreMs / span) * 100) : 0;
-      out.push({ v: `${pct.toFixed(1)}%`, l: '% bourré', icon: Ic.hourglass });
     }
     return out;
   }, [agg, prevAgg, sessions, prevSessions, sober, prevSober, bourreMs, prevBourreMs, days, prevDays, period, drinks]);
@@ -636,7 +649,7 @@ function GeneralSection({
           value={streak}
           suffix={`jour${streak > 1 ? 's' : ''} d'affilée`} />
       )}
-      {period === 'all' && streakRecord > 0 && (
+      {period === 'all' && streakRecord > 0 && !(streak > 0 && streakRecord === streak) && (
         <HeroStatCard icon={Ic.flame} label="Record"
           value={streakRecord}
           suffix={`jour${streakRecord > 1 ? 's' : ''} d'affilée`} />

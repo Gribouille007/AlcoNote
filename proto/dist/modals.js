@@ -1007,7 +1007,22 @@ function DrinkDetailSheet({
       onChange: rate
     }),
     last: true
-  }))), /*#__PURE__*/React.createElement("div", {
+  })), myRating > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'center',
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => rate(0),
+    style: {
+      ...ghostButton,
+      color: T.muted,
+      fontSize: 11,
+      cursor: 'pointer'
+    }
+  }, "Effacer la note"))), /*#__PURE__*/React.createElement("div", {
     style: {
       overflow: 'auto',
       padding: '16px 22px 20px',

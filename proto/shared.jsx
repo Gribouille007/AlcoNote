@@ -463,12 +463,15 @@ const ghostButton = {
 const BackStack = (() => {
   const stack = [];
   let installed = false;
-  let suppress = false; // true while we programmatically history.back()
+  // Count (not bool) of programmatic history.back() calls awaiting their
+  // popstate, so N layers closing in the same tick each get their own
+  // entry consumed instead of one resetting the flag for all the others.
+  let suppress = 0;
   const install = () => {
     if (installed || typeof window === 'undefined') return;
     installed = true;
     window.addEventListener('popstate', () => {
-      if (suppress) { suppress = false; return; }
+      if (suppress > 0) { suppress--; return; }
       const top = stack[stack.length - 1];
       if (!top) return; // nothing open → let the browser do the default
       top.closedByPop = true;
@@ -478,9 +481,12 @@ const BackStack = (() => {
   return {
     push(close) {
       install();
-      const entry = { close };
+      const entry = { close, pushed: false };
       stack.push(entry);
-      try { history.pushState({ __alcoBack: true }, ''); } catch {}
+      // `pushed` records whether we actually added a history entry, so a
+      // swallowed pushState (e.g. sandboxed iframe) doesn't make remove()
+      // fire an unmatched history.back() and desync the counter.
+      try { history.pushState({ __alcoBack: true }, ''); entry.pushed = true; } catch {}
       return entry;
     },
     remove(entry) {
@@ -488,8 +494,9 @@ const BackStack = (() => {
       if (i < 0) return;
       stack.splice(i, 1);
       if (entry.closedByPop) return; // Back already consumed the trap entry
-      suppress = true;
-      try { history.back(); } catch { suppress = false; }
+      if (!entry.pushed) return;     // never added an entry → nothing to undo
+      suppress++;
+      try { history.back(); } catch { suppress--; }
     },
   };
 })();
