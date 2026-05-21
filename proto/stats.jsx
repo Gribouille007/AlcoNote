@@ -284,6 +284,22 @@ function computeStreak(drinks) {
   return streak;
 }
 
+// All-time best: the longest run of consecutive calendar days that each
+// had at least one drink, anywhere in the history.
+function computeStreakRecord(drinks) {
+  if (!drinks || drinks.length === 0) return 0;
+  const days = [...new Set(drinks.map(d => d.date).filter(Boolean))].sort();
+  if (days.length === 0) return 0;
+  let best = 1, run = 1;
+  for (let i = 1; i < days.length; i++) {
+    const prev = new Date(days[i - 1] + 'T00:00');
+    const expected = _fmtIso(_addDays(prev, 1));
+    run = days[i] === expected ? run + 1 : 1;
+    if (run > best) best = run;
+  }
+  return best;
+}
+
 // Render a duration in ms as "Xj Yh", "Xh Ymm", "Xm" — picks the
 // largest unit that gives a non-trivial number. Returns "—" for ≤ 0.
 function fmtBourreTime(ms) {
@@ -371,6 +387,7 @@ function StatsTab() {
     [drinks, weight, gender]
   );
   const streak = React.useMemo(() => computeStreak(drinks), [drinks]);
+  const streakRecord = React.useMemo(() => computeStreakRecord(drinks), [drinks]);
   const bourreMs = React.useMemo(() => computeBourreTime(sessions, allRange), [sessions, allRange]);
   const prevBourreMs = React.useMemo(
     () => prevSessions && prevRange ? computeBourreTime(prevSessions, prevRange) : null,
@@ -382,7 +399,7 @@ function StatsTab() {
     prevDrinks: inPrevRange, prevRange,
     settings, range: allRange, anchor,
     agg, prevAgg, sessions, prevSessions, allSessions,
-    streak, bourreMs, prevBourreMs,
+    streak, streakRecord, bourreMs, prevBourreMs,
     weight, gender,
   };
 
@@ -520,7 +537,7 @@ function Card({ children, style, ...rest }) {
 // ── 1. Général ────────────────────────────────────────────────────
 function GeneralSection({
   drinks, prevDrinks, prevRange, period, range, collapsed, toggleSection,
-  agg, prevAgg, sessions, prevSessions, streak, bourreMs, prevBourreMs,
+  agg, prevAgg, sessions, prevSessions, streak, streakRecord, bourreMs, prevBourreMs,
 }) {
   const hasPrev = prevDrinks != null && prevRange != null;
   const days = Math.max(1, Math.round((range.end - range.start) / 86400000) + 1);
@@ -575,20 +592,32 @@ function GeneralSection({
         delta: pctChange(bourreMs, prevBourreMs),
         icon: Ic.hourglass },
     ];
-    if (period === 'week' || period === 'month' || period === 'year' || period === 'school') {
+    // 'all' joins week/month/year/school: the day/week denominators come
+    // from `range` (first drink → today), so these rates are meaningful.
+    if (period !== 'today') {
       out.push({ v: sober, l: 'Jours sobres',
         delta: pctChange(sober, prevSober) });
       out.push({ v: (agg.count / days).toFixed(1), l: 'Boissons/jour',
         delta: pctChange(agg.count / days, prevDays && prevAgg ? prevAgg.count / prevDays : null) });
     }
-    if (period === 'month' || period === 'year' || period === 'school') {
+    if (period === 'month' || period === 'year' || period === 'school' || period === 'all') {
       const weeks = Math.max(1, days / 7);
       const prevWeeks = prevDays ? Math.max(1, prevDays / 7) : 0;
       out.push({ v: (agg.count / weeks).toFixed(1), l: 'Boissons/sem.',
         delta: pctChange(agg.count / weeks, prevWeeks && prevAgg ? prevAgg.count / prevWeeks : null) });
     }
+    // "Tout" only: share of life spent drunk since the very first drink.
+    if (period === 'all') {
+      const firstTs = drinks.reduce((min, d) => {
+        const t = new Date(`${d.date}T${d.time || '00:00'}`).getTime();
+        return (min == null || t < min) ? t : min;
+      }, null);
+      const span = firstTs != null ? Date.now() - firstTs : 0;
+      const pct = span > 0 ? Math.min(100, (bourreMs / span) * 100) : 0;
+      out.push({ v: `${pct.toFixed(1)}%`, l: '% bourré', icon: Ic.hourglass });
+    }
     return out;
-  }, [agg, prevAgg, sessions, prevSessions, sober, prevSober, bourreMs, prevBourreMs, days, prevDays, period]);
+  }, [agg, prevAgg, sessions, prevSessions, sober, prevSober, bourreMs, prevBourreMs, days, prevDays, period, drinks]);
 
   // Donut: sort categories by descending count so both the arc order
   // and the legend list match the user's mental "biggest first" model.
@@ -606,6 +635,11 @@ function GeneralSection({
         <HeroStatCard icon={Ic.flame} label="Streak"
           value={streak}
           suffix={`jour${streak > 1 ? 's' : ''} d'affilée`} />
+      )}
+      {period === 'all' && streakRecord > 0 && (
+        <HeroStatCard icon={Ic.flame} label="Record"
+          value={streakRecord}
+          suffix={`jour${streakRecord > 1 ? 's' : ''} d'affilée`} />
       )}
 
       <div style={{
@@ -1012,7 +1046,7 @@ function TopDrinksSection({ drinks, collapsed, toggleSection }) {
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   flex: 1, minWidth: 0,
                 }}>{d.name}</div>
-                <Stars n={ratings[d.name] || 0} size={10} />
+                <Stars n={ratings[ratingKey(d.name)] || 0} size={10} />
               </div>
               <div style={{
                 color: T.muted, fontSize: 10.5, letterSpacing: 0.1, fontFamily: fontNum,

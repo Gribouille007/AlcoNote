@@ -867,8 +867,10 @@ function Pill({
 
 // ── Stars (rating) ────────────────────────────────────────────────
 // `value` reads `n` first (explicit prop wins over the named alias `rating`)
-// so a 0 is preserved (?? not ||).  Interactive mode: clicking star i sets
-// the rating to i; clicking star 1 when already at 1 clears the rating.
+// so a 0 is preserved (?? not ||).  Interactive mode: clicking star i always
+// sets the rating to i (including 1). Clearing is done via an explicit
+// "Effacer" control next to the stars, never by re-tapping star 1 — the old
+// toggle made a 1-star rating impossible to set right after clearing it.
 function Stars({
   rating,
   n,
@@ -883,8 +885,7 @@ function Stars({
     if (!interactive) return;
     e.preventDefault();
     e.stopPropagation();
-    const next = i === 1 && value === 1 ? 0 : i;
-    onChange && onChange(next);
+    onChange && onChange(i);
   };
   // Pad each cell so the touch target is large enough on small icons
   const pad = Math.max(0, Math.ceil((22 - size) / 2));
@@ -1262,6 +1263,81 @@ const ghostButton = {
   textAlign: 'inherit'
 };
 
+// ── Back button / overlay back-stack ─────────────────────────────
+// Makes the Android system Back button (and browser back) close the
+// top-most open overlay instead of leaving the app. Each open layer
+// pushes one synthetic history entry; a Back press pops it and closes
+// that layer. When nothing is registered, Back falls through to the
+// default (exit the PWA / TWA), which is the expected root behaviour.
+//
+// The `closedByPop` flag — set *synchronously* in the popstate handler,
+// read later in the React effect cleanup — is what keeps the history
+// depth correct whether a layer is dismissed by Back or by a button /
+// backdrop / Escape, including nested layers.
+const BackStack = (() => {
+  const stack = [];
+  let installed = false;
+  let suppress = false; // true while we programmatically history.back()
+  const install = () => {
+    if (installed || typeof window === 'undefined') return;
+    installed = true;
+    window.addEventListener('popstate', () => {
+      if (suppress) {
+        suppress = false;
+        return;
+      }
+      const top = stack[stack.length - 1];
+      if (!top) return; // nothing open → let the browser do the default
+      top.closedByPop = true;
+      try {
+        top.close();
+      } catch {}
+    });
+  };
+  return {
+    push(close) {
+      install();
+      const entry = {
+        close
+      };
+      stack.push(entry);
+      try {
+        history.pushState({
+          __alcoBack: true
+        }, '');
+      } catch {}
+      return entry;
+    },
+    remove(entry) {
+      const i = stack.lastIndexOf(entry);
+      if (i < 0) return;
+      stack.splice(i, 1);
+      if (entry.closedByPop) return; // Back already consumed the trap entry
+      suppress = true;
+      try {
+        history.back();
+      } catch {
+        suppress = false;
+      }
+    }
+  };
+})();
+
+// Register `onClose` as the back-button handler while `active` is true.
+// `onClose` is read through a ref so a changing handler identity doesn't
+// re-push history entries.
+function useBackButton(active, onClose) {
+  const ref = React.useRef(onClose);
+  ref.current = onClose;
+  React.useEffect(() => {
+    if (!active) return;
+    const entry = BackStack.push(() => {
+      if (ref.current) ref.current();
+    });
+    return () => BackStack.remove(entry);
+  }, [active]);
+}
+
 // ── Sheet overlay (bottom sheet / left or right drawer) ──────────
 function SheetOverlay({
   children,
@@ -1275,6 +1351,10 @@ function SheetOverlay({
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+  // A sheet is only mounted while it's open, so register unconditionally:
+  // mount = push a back-trap, unmount = remove it. Covers every sheet
+  // (Add / Detail / EditEntry / EditFamily / Settings / EditCategory).
+  useBackButton(true, onClose);
   const isSide = side === 'left' || side === 'right';
   return /*#__PURE__*/React.createElement("div", {
     role: "presentation",
@@ -1369,6 +1449,13 @@ function ConfirmHost() {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onKey, state]);
+  // Android Back cancels the dialog (same as Escape / backdrop).
+  useBackButton(!!state, React.useCallback(() => {
+    if (state) {
+      state._resolve(false);
+      setState(null);
+    }
+  }, [state]));
   if (!state) return null;
   const close = ok => {
     state._resolve(ok);
@@ -1576,6 +1663,7 @@ Object.assign(window, {
   canonicalCat,
   SheetOverlay,
   niceMax,
+  useBackButton,
   Confirm,
   ConfirmHost,
   clickable,

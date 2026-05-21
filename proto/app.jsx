@@ -124,6 +124,11 @@ function AppShell() {
 
   React.useEffect(() => { localStorage.setItem('alconote.tab', tab); }, [tab]);
 
+  // Android Back exits the category drill-down (FamilyList) back to the
+  // category grid instead of leaving the app. Sheets/dialogs register
+  // their own back handlers via SheetOverlay / ConfirmHost.
+  useBackButton(!!catOpen, React.useCallback(() => setCatOpen(null), []));
+
   const directAdd = React.useCallback(async (family) => {
     try {
       const n = new Date();

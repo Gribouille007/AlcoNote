@@ -588,6 +588,16 @@ class DatabaseManager {
         }
     }
 
+    async deleteRating(drinkName) {
+        try {
+            await this.db.drinkRatings.delete(drinkName);
+            return true;
+        } catch (error) {
+            console.error('Error deleting rating:', error);
+            return false;
+        }
+    }
+
     async getAllRatings() {
         try {
             return await this.db.drinkRatings.toArray();
