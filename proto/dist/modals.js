@@ -565,6 +565,9 @@ function ScannerSheet({
   const [foundProduct, setFoundProduct] = React.useState(null);
   const viewportRef = React.useRef(null);
   const startedRef = React.useRef(false);
+  // Scanner doesn't use SheetOverlay, so register its own back handler
+  // (it layers on top of AddDrinkSheet → Back closes the scanner first).
+  useBackButton(true, onClose);
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -874,7 +877,7 @@ function DrinkDetailSheet({
   const f = liveFamily || family || entry && entry.family;
   if (!f) return null;
   const color = catColor(f.category, 70);
-  const myRating = ratings[f.name] ?? f.rating ?? 0;
+  const myRating = ratings[ratingKey(f.name)] ?? f.rating ?? 0;
   const rate = async n => {
     try {
       await saveRating(f.name, n);
@@ -1004,7 +1007,22 @@ function DrinkDetailSheet({
       onChange: rate
     }),
     last: true
-  }))), /*#__PURE__*/React.createElement("div", {
+  })), myRating > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'center',
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => rate(0),
+    style: {
+      ...ghostButton,
+      color: T.muted,
+      fontSize: 11,
+      cursor: 'pointer'
+    }
+  }, "Effacer la note"))), /*#__PURE__*/React.createElement("div", {
     style: {
       overflow: 'auto',
       padding: '16px 22px 20px',
@@ -1182,9 +1200,9 @@ function EditEntrySheet({
   const [cat, setCat] = React.useState(raw.category || '');
   const [date, setDate] = React.useState(raw.date || _now().date);
   const [time, setTime] = React.useState(raw.time || _now().time);
-  // Ratings are keyed by drink name; editing an entry's rating moves
-  // the value to whatever name the user saves under.
-  const [rating, setRating] = React.useState(ratings[raw.name] != null ? ratings[raw.name] : 0);
+  // Ratings are keyed by the canonical drink name; editing an entry's
+  // rating moves the value to whatever name the user saves under.
+  const [rating, setRating] = React.useState(ratings[ratingKey(raw.name)] != null ? ratings[ratingKey(raw.name)] : 0);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   const save = async () => {
@@ -1213,7 +1231,7 @@ function EditEntrySheet({
       // Renaming the entry only changes this row's name; siblings in
       // the family keep theirs. The old-name rating stays valid as
       // long as ANY drink keeps that name, so we never wipe it here.
-      if (rating !== (ratings[finalName] || 0)) {
+      if (rating !== (ratings[ratingKey(finalName)] || 0)) {
         await saveRating(finalName, rating);
       }
       Toast.show('Boisson modifiée');
@@ -1567,11 +1585,11 @@ function EditFamilySheet({
   const [unit, setUnit] = React.useState(family.unit);
   const [alc, setAlc] = React.useState(family.alcohol);
   const [cat, setCat] = React.useState(family.category);
-  // Ratings are keyed by drink name (not per family / per entry), so
-  // we seed from the current name's value and persist under whatever
-  // name the user ends up saving. Renaming the family migrates the
-  // rating to the new key.
-  const [rating, setRating] = React.useState(ratings[family.name] != null ? ratings[family.name] : family.rating || 0);
+  // Ratings are keyed by the canonical drink name (not per family / per
+  // entry), so we seed from the current name's value and persist under
+  // whatever name the user ends up saving. Renaming the family migrates
+  // the rating to the new key.
+  const [rating, setRating] = React.useState(ratings[ratingKey(family.name)] != null ? ratings[ratingKey(family.name)] : family.rating || 0);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   const save = async () => {
@@ -1603,18 +1621,18 @@ function EditFamilySheet({
       // the old name (e.g. "Pilsner" 25 cL vs "Pilsner" 50 cL). Now we
       // re-fetch the drinks list and only drop the orphan when no
       // sibling family keeps the old name.
-      if (rating !== (ratings[finalName] || 0)) {
+      if (rating !== (ratings[ratingKey(finalName)] || 0)) {
         await saveRating(finalName, rating);
       }
-      if (renamed && ratings[family.name] != null) {
+      if (renamed && ratings[ratingKey(family.name)] != null) {
         // Default to "still used" so a transient DB error doesn't
         // clobber the rating that a sibling family may still own. We
         // only wipe when we've positively confirmed no drink keeps
-        // the old name.
+        // the old (canonical) name.
         let stillUsed = true;
         try {
           const all = await window.dbManager.getAllDrinks();
-          stillUsed = all.some(d => d.name === family.name);
+          stillUsed = all.some(d => ratingKey(d.name) === ratingKey(family.name));
         } catch (e) {
           console.warn('AlcoNote: orphan-rating check failed, keeping rating', e);
         }

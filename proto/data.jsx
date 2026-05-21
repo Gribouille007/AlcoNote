@@ -5,6 +5,16 @@
 
 const DEFAULT_CATEGORY_NAMES = ['Bière', 'Vin', 'Spiritueux', 'Cocktail', 'Autre'];
 
+// Canonical rating key — the single source of truth for associating a
+// rating with a drink. Ratings live in the `drinkRatings` table keyed by
+// name; normalizing (trim + lowercase) matches the name component of the
+// `buildFamilies` grouping key so a family and its rating always align,
+// and "Pilsner" / "pilsner" / "Pilsner " can never drift into separate,
+// out-of-sync ratings. EVERY read and write of a rating goes through this.
+function ratingKey(name) {
+  return String(name == null ? '' : name).trim().toLowerCase();
+}
+
 // Bus -- listeners are notified when DB writes happen so any component can
 // re-fetch. Each `bump(channel)` carries an optional channel name
 // (`drinks` / `ratings` / `categories` / `settings`); subscribers may
@@ -144,10 +154,24 @@ function RatingsProvider({ children }) {
     (async () => {
       const db = await waitForDb();
       if (!db) return;
+      // Clean up any legacy non-canonical rows once, then read. The fold
+      // below also guarantees a consistent map even before the migration
+      // has run (or if it failed) — readers never see drifted keys.
+      await canonicalizeRatings();
       const all = await db.getAllRatings();
       if (!alive) return;
-      const out = {};
-      for (const r of all) out[r.drinkName] = r.rating;
+      const out = {};   // canonical key → rating
+      const at = {};    // canonical key → updatedAt (ms) for tie-breaks
+      for (const r of all) {
+        const k = ratingKey(r.drinkName);
+        const t = +r.updatedAt || 0;
+        // Newest write wins; if timestamps are absent/equal keep the
+        // larger rating so a real score never loses to a stray 0.
+        if (out[k] == null || t > at[k] || (t === at[k] && (r.rating || 0) > (out[k] || 0))) {
+          out[k] = r.rating;
+          at[k] = t;
+        }
+      }
       setMap(out);
     })();
     return () => { alive = false; };
@@ -207,7 +231,7 @@ function buildFamilies(drinks, ratings = {}) {
         quantity: d.quantity,
         unit: d.unit,
         alcohol: d.alcoholContent || 0,
-        rating: ratings[d.name] || 0,
+        rating: ratings[ratingKey(d.name)] || 0,
         entries: [],
       });
     }
@@ -326,11 +350,67 @@ async function deleteDrink(id) {
   return r;
 }
 
+// Always writes under the canonical key so a rating set from any view
+// (add / detail / edit-entry / edit-family) lands on the same row and
+// stays in sync everywhere.
 async function saveRating(drinkName, rating) {
   const db = await waitForDb();
   if (!db) return;
-  await db.setRating(drinkName, rating);
+  await db.setRating(ratingKey(drinkName), rating);
   dataBus.bump('ratings');
+}
+
+// One-time cleanup of legacy rating rows stored under non-canonical
+// names ("Pilsner" vs "pilsner " …). Folds duplicates to a single
+// canonical row (freshest updatedAt wins, else the higher score), then
+// drops the stragglers. Idempotent and best-effort — gated by both a
+// module flag and a persisted setting, mirroring migrateCategoryIconsToId.
+// Correctness does not depend on it (RatingsProvider folds on read); it
+// just keeps the table clean.
+let _ratingCanonDone = false;
+let _ratingCanonPromise = null;
+async function canonicalizeRatings() {
+  if (_ratingCanonDone) return;
+  if (_ratingCanonPromise) return _ratingCanonPromise;
+  _ratingCanonPromise = (async () => {
+    try {
+      const db = await waitForDb();
+      if (!db) return;
+      if (await db.getSetting('rating._canonicalized')) { _ratingCanonDone = true; return; }
+      const all = await db.getAllRatings();
+      const best = new Map(); // canonical key → { rating, at }
+      for (const r of all) {
+        const k = ratingKey(r.drinkName);
+        const at = +r.updatedAt || 0;
+        const cur = best.get(k);
+        if (!cur || at > cur.at || (at === cur.at && (r.rating || 0) > cur.rating)) {
+          best.set(k, { rating: r.rating, at });
+        }
+      }
+      // Write the folded canonical rows FIRST, then drop the
+      // non-canonical stragglers. Doing it in this order means a partial
+      // failure (or the page closing mid-migration) can never lose a
+      // rating: the canonical row is already persisted before its source
+      // row is removed, and the flag stays unset so the next mount retries
+      // the leftover deletes. Freshly-written canonical rows also carry a
+      // newer updatedAt, so fold-on-read prefers them over any orphan.
+      for (const [k, val] of best) {
+        try { await db.setRating(k, val.rating); } catch (e) {}
+      }
+      for (const r of all) {
+        if (r.drinkName !== ratingKey(r.drinkName)) {
+          try { await db.deleteRating(r.drinkName); } catch (e) {}
+        }
+      }
+      await db.setSetting('rating._canonicalized', true);
+      _ratingCanonDone = true;
+    } catch (e) {
+      // best-effort; retry on next mount
+    } finally {
+      if (!_ratingCanonDone) _ratingCanonPromise = null;
+    }
+  })();
+  return _ratingCanonPromise;
 }
 
 async function addCategory(name) {
@@ -618,6 +698,8 @@ async function clearAllData() {
   _seedPromise = null;
   _iconMigrateDone = false;
   _iconMigratePromise = null;
+  _ratingCanonDone = false;
+  _ratingCanonPromise = null;
   dataBus.bump('cat-icons');
   dataBus.bump();
   return r;
@@ -632,6 +714,7 @@ Object.assign(window, {
   DrinksProvider, RatingsProvider, CategoriesProvider, SettingsProvider,
   CategoryIconsProvider,
   buildFamilies, computeCategoryStats, flattenEntries,
+  ratingKey,
   saveSetting,
   addDrink, updateDrink, deleteDrink, deleteDrinkWithSnapshot, saveRating,
   addCategory, renameCategory, deleteCategory,
