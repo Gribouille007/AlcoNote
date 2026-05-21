@@ -132,6 +132,8 @@ const _CH_SETTINGS = ['settings'];
 // CategoryIconsProvider — avoids re-fetching the entire settings table
 // on every theme toggle or unrelated setting write.
 const _CH_CAT_ICONS = ['cat-icons'];
+// Settings-key prefix for id-based icon overrides: `cat.icon.id.<id>`.
+const _ICON_ID_PREFIX = 'cat.icon.id.';
 
 // Single DB fetch per relevant dataBus.bump. The four providers below
 // each own one async load + one state cell; their children read via
@@ -469,7 +471,6 @@ async function deleteCategory(id, options = {}) {
 // it via CategoryIconsContext — every <CategoryGlyph> reads from the
 // context, so a single dataBus subscription refreshes every glyph in
 // the tree without each instance owning its own subscription.
-const _ICON_ID_PREFIX = 'cat.icon.id.';
 async function loadCategoryIcons() {
   const db = await waitForDb();
   if (!db) return {};
@@ -507,13 +508,20 @@ async function migrateCategoryIconsToId() {
       const cats = await db.getAllCategories();
       const byCanon = new Map();
       for (const c of cats) byCanon.set(canonicalCat(c.name), c.id);
+      // First legacy key wins deterministically if two names collapse to
+      // the same id (e.g. "Bière" and "Bière ") — `claimed` guards against
+      // a later one overwriting it.
+      const claimed = new Set();
       for (const k of Object.keys(settings)) {
         if (!k.startsWith('cat.icon.') || k.startsWith(_ICON_ID_PREFIX)) continue;
         const glyph = settings[k];
         const id = byCanon.get(canonicalCat(k.slice('cat.icon.'.length)));
         if (id != null && glyph) {
           const idKey = `${_ICON_ID_PREFIX}${id}`;
-          if (settings[idKey] == null) await db.setSetting(idKey, glyph);
+          if (settings[idKey] == null && !claimed.has(id)) {
+            await db.setSetting(idKey, glyph);
+            claimed.add(id);
+          }
         }
         await db.setSetting(k, null);
       }

@@ -378,43 +378,38 @@ function EditCategorySheet({ category, onClose }) {
     savingRef.current = true;
     setBusy(true);
     try {
+      // Ensure a real DB row backs this category before mutating. A
+      // "synthetic" card (a drink referencing a category with no row) is
+      // materialized under its CURRENT name so a rename can cascade to its
+      // drinks and the icon has a stable id to hang on. Reached only when
+      // something actually changed (guarded by the early-return above), so
+      // we never create spurious empty categories.
+      let row = catObj || null;
+      if (!row) {
+        try { row = await addCategory(category); } catch {}
+        if (!row) {
+          const db = await waitForDb();
+          row = db ? await db.getCategoryByName((category || '').trim()) : null;
+        }
+      }
+
       let finalName = category;
       if (nameChanged) {
-        // Only a real DB row can be renamed. A "synthetic" card (a drink
-        // referencing a category with no row) has no catObj — we just
-        // adopt the new name and materialize a row below if needed.
-        if (catObj) {
-          // renameCategory cascades to drinks. If it throws we abort
-          // before touching the icon; the sheet stays open with the error.
-          await renameCategory(category, trimmed);
-        }
+        // renameCategory cascades to drinks. If it throws we abort before
+        // touching the icon; the sheet stays open with the error.
+        if (row) await renameCategory(row.name, trimmed);
         finalName = trimmed;
       }
+
       if (userTouched) {
-        // '__reset__' wipes the persisted override so the category falls
-        // back to its default glyph.
+        // '__reset__' wipes the override so the category falls back to its
+        // default glyph; otherwise persist the picked glyph by stable id.
         const next = glyph === '__reset__' ? null : glyph;
-        // Skip the write when the user picked Reset on a category that
-        // had no override to begin with — nothing to delete.
+        // Skip the write when the user picked Reset on a category that had
+        // no override to begin with — nothing to delete.
         if (next || (glyph === '__reset__' && hadOverride)) {
-          // Icons are keyed by the immutable category id. catObj.id is
-          // stable across the rename above. For an orphan/synthetic card
-          // there's no row yet, so materialize one to give the glyph a
-          // stable home (drinks then fold into it via canonical name).
-          let catId = catObj ? catObj.id : null;
-          if (catId == null) {
-            let created = null;
-            try { created = await addCategory(finalName); } catch {}
-            if (created && created.id != null) {
-              catId = created.id;
-            } else {
-              const db = await waitForDb();
-              const row = db ? await db.getCategoryByName((finalName || '').trim()) : null;
-              catId = row ? row.id : null;
-            }
-          }
-          if (catId == null) throw new Error('Catégorie introuvable pour enregistrer l\'icône');
-          await setCategoryIcon(catId, next);
+          if (!row) throw new Error('Catégorie introuvable pour enregistrer l\'icône');
+          await setCategoryIcon(row.id, next);
         }
       }
       Toast.show(`Catégorie « ${finalName} » mise à jour`);
