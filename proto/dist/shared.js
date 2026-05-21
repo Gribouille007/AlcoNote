@@ -1208,13 +1208,20 @@ const GLYPH_OPTIONS = Object.keys(GLYPHS);
 // re-renders every glyph on the screen instead of N per-instance
 // subscriptions.
 const CategoryIconsContext = React.createContext({});
+
+// Canonical category key: trim + NFC-normalize so icon overrides survive
+// stray whitespace and accent-normalization differences (a drink saved as
+// "Bière " resolves to the same key as the "Bière" category row).
+function canonicalCat(name) {
+  return String(name == null ? '' : name).trim().normalize('NFC');
+}
 function CategoryGlyph({
   name,
   glyph,
   size = 22
 }) {
   const customIcons = React.useContext(CategoryIconsContext);
-  const key = glyph || customIcons[name] || name;
+  const key = glyph || customIcons[canonicalCat(name)] || name;
   const s = {
     width: size,
     height: size
@@ -1564,6 +1571,7 @@ Object.assign(window, {
   Stars,
   CategoryGlyph,
   GLYPH_OPTIONS,
+  canonicalCat,
   SheetOverlay,
   niceMax,
   Confirm,
