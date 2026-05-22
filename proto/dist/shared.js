@@ -20,6 +20,7 @@ const THEMES = {
     shadow: '0 60px 120px rgba(0,0,0,0.5)',
     accentSoft: 'oklch(30% 0.04 65)',
     accentSoftBorder: 'oklch(38% 0.05 65)',
+    accentInk: 'oklch(16% 0.008 50)',
     accentRing: 'oklch(80% 0.12 65)',
     scrim: 'rgba(0,0,0,0.65)',
     dangerBg: 'oklch(45% 0.18 25)',
@@ -45,6 +46,7 @@ const THEMES = {
     shadow: '0 20px 60px rgba(60,40,20,0.12)',
     accentSoft: 'oklch(95% 0.04 65)',
     accentSoftBorder: 'oklch(85% 0.08 65)',
+    accentInk: 'oklch(100% 0 0)',
     accentRing: 'oklch(60% 0.15 50)',
     scrim: 'rgba(40,30,20,0.35)',
     dangerBg: 'oklch(45% 0.18 25)',
@@ -592,6 +594,51 @@ const Ic = {
     y1: "20",
     x2: "6",
     y2: "14"
+  })),
+  trendUp: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 12 12",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: "6",
+    y1: "10",
+    x2: "6",
+    y2: "2"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "3 5 6 2 9 5"
+  })),
+  trendDown: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 12 12",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: "6",
+    y1: "2",
+    x2: "6",
+    y2: "10"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "3 7 6 10 9 7"
+  })),
+  trendFlat: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 12 12",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: "2",
+    y1: "6",
+    x2: "10",
+    y2: "6"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "7 3 10 6 7 9"
   }))
 };
 function SvgIcon({
