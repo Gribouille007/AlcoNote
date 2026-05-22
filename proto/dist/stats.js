@@ -25,6 +25,12 @@ function saveCollapsedSections(set) {
     localStorage.setItem(STATS_COLLAPSED_KEY, JSON.stringify([...set]));
   } catch {}
 }
+
+// One-time cleanup: the BAC-records masking feature was removed (records
+// are now read-only), so drop its orphaned localStorage key.
+try {
+  localStorage.removeItem('alconote.stats.hiddenBacRecords');
+} catch {}
 const PERIODS = [{
   id: 'today',
   label: 'Jour'
@@ -688,6 +694,10 @@ function GeneralSection({
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
+  // The current streak is a "right now" metric (consecutive days up to
+  // today), so it's only meaningful when the viewed period contains
+  // today — hide it when navigating to a past/future period.
+  const periodIncludesToday = today >= range.start && today <= range.end;
   const sober = React.useMemo(() => {
     const drinkDays = new Set(drinks.map(d => d.date));
     const lastInclusive = range.end < today ? range.end : today;
@@ -809,7 +819,7 @@ function GeneralSection({
     sub: "Vue d'ensemble de votre consommation",
     collapsed: collapsed,
     toggleSection: toggleSection
-  }, streak > 0 && /*#__PURE__*/React.createElement(HeroStatCard, {
+  }, streak > 0 && periodIncludesToday && /*#__PURE__*/React.createElement(HeroStatCard, {
     icon: Ic.flame,
     label: "Streak",
     value: streak,
@@ -2450,7 +2460,7 @@ function MapSection({
       const size = n < 10 ? 32 : n < 100 ? 38 : 46;
       const html = `<div style="
           width:${size}px;height:${size}px;border-radius:50%;
-          background:${accent};color:#fff;
+          background:${accent};color:${T.accentInk};
           display:flex;align-items:center;justify-content:center;
           font:600 12px/1 'Geist Mono', monospace;
           border:2px solid rgba(255,255,255,0.85);

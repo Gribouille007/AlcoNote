@@ -515,15 +515,15 @@ function SvgDonut({
     stroke: T.rule,
     strokeWidth: thickness
   }), segments.map((s, i) => {
-    // A segment spanning the whole circle has identical start/end
-    // points, which renders as an empty arc — draw a full ring
-    // instead so a single-category period isn't blank.
+    // A lone segment spans the whole circle: its arc start/end points
+    // coincide and render as nothing, so draw a full ring instead.
+    // (A 99.9% slice alongside others still draws fine as an arc.)
     const common = {
       stroke: catColor(s.d.name, 65),
       strokeWidth: thickness * (hover === i ? 1.12 : 1),
       opacity: hover != null && hover !== i ? 0.45 : 1
     };
-    return s.d.v / total >= 0.9999 ? /*#__PURE__*/React.createElement("circle", _extends({
+    return segments.length === 1 ? /*#__PURE__*/React.createElement("circle", _extends({
       key: i,
       cx: cx,
       cy: cy,

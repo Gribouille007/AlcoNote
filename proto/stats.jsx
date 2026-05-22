@@ -21,6 +21,10 @@ function saveCollapsedSections(set) {
   try { localStorage.setItem(STATS_COLLAPSED_KEY, JSON.stringify([...set])); } catch {}
 }
 
+// One-time cleanup: the BAC-records masking feature was removed (records
+// are now read-only), so drop its orphaned localStorage key.
+try { localStorage.removeItem('alconote.stats.hiddenBacRecords'); } catch {}
+
 const PERIODS = [
   { id: 'today', label: 'Jour'    },
   { id: 'week',  label: 'Semaine' },
@@ -547,6 +551,10 @@ function GeneralSection({
   // Sober-day count: only consider days from `range.start` up to `min(today, range.end)`,
   // so future days within the period don't inflate the count.
   const today = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+  // The current streak is a "right now" metric (consecutive days up to
+  // today), so it's only meaningful when the viewed period contains
+  // today — hide it when navigating to a past/future period.
+  const periodIncludesToday = today >= range.start && today <= range.end;
   const sober = React.useMemo(() => {
     const drinkDays = new Set(drinks.map(d => d.date));
     const lastInclusive = range.end < today ? range.end : today;
@@ -644,7 +652,7 @@ function GeneralSection({
 
   return (
     <StatSection id="general" title="Statistiques générales" sub="Vue d'ensemble de votre consommation" collapsed={collapsed} toggleSection={toggleSection}>
-      {streak > 0 && (
+      {streak > 0 && periodIncludesToday && (
         <HeroStatCard icon={Ic.flame} label="Streak"
           value={streak}
           suffix={`jour${streak > 1 ? 's' : ''} d'affilée`} />
@@ -1765,7 +1773,7 @@ function MapSection({ drinks, collapsed, toggleSection }) {
       const size = n < 10 ? 32 : n < 100 ? 38 : 46;
       const html = `<div style="
           width:${size}px;height:${size}px;border-radius:50%;
-          background:${accent};color:#fff;
+          background:${accent};color:${T.accentInk};
           display:flex;align-items:center;justify-content:center;
           font:600 12px/1 'Geist Mono', monospace;
           border:2px solid rgba(255,255,255,0.85);
