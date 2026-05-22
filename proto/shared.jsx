@@ -18,6 +18,7 @@ const THEMES = {
     shadow:   '0 60px 120px rgba(0,0,0,0.5)',
     accentSoft: 'oklch(30% 0.04 65)',
     accentSoftBorder: 'oklch(38% 0.05 65)',
+    accentInk: 'oklch(16% 0.008 50)',
     accentRing: 'oklch(80% 0.12 65)',
     scrim:    'rgba(0,0,0,0.65)',
     dangerBg: 'oklch(45% 0.18 25)',
@@ -43,6 +44,7 @@ const THEMES = {
     shadow:   '0 20px 60px rgba(60,40,20,0.12)',
     accentSoft: 'oklch(95% 0.04 65)',
     accentSoftBorder: 'oklch(85% 0.08 65)',
+    accentInk: 'oklch(100% 0 0)',
     accentRing: 'oklch(60% 0.15 50)',
     scrim:    'rgba(40,30,20,0.35)',
     dangerBg: 'oklch(45% 0.18 25)',
@@ -135,6 +137,9 @@ const Ic = {
   grid:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>,
   clockArrow: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/><polyline points="12 7 12 12 15 14"/></svg>,
   bars:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
+  trendUp:   <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="10" x2="6" y2="2"/><polyline points="3 5 6 2 9 5"/></svg>,
+  trendDown: <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="2" x2="6" y2="10"/><polyline points="3 7 6 10 9 7"/></svg>,
+  trendFlat: <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="6" x2="10" y2="6"/><polyline points="7 3 10 6 7 9"/></svg>,
 };
 
 function SvgIcon({ icon, size = 18, color, ariaHidden = true }) {

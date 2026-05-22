@@ -270,7 +270,9 @@ function SvgBarChart({
     const x = pad.l + i * bw + bw * 0.18;
     const y = pad.t + h - bh;
     const lbl = formatX ? formatX(d, i) : d.label;
-    const showLbl = lbl && i % Math.ceil(data.length / 8) === 0;
+    // When a custom formatX is supplied it already decides which
+    // labels to show (returns '' to hide); don't double-thin it.
+    const showLbl = formatX ? !!lbl : lbl && i % Math.ceil(data.length / 8) === 0;
     const isHover = hover === i;
     return /*#__PURE__*/React.createElement("g", {
       key: i
@@ -512,15 +514,28 @@ function SvgDonut({
     fill: "none",
     stroke: T.rule,
     strokeWidth: thickness
-  }), segments.map((s, i) => /*#__PURE__*/React.createElement("path", {
-    key: i,
-    d: s.path,
-    fill: "none",
-    stroke: catColor(s.d.name, 65),
-    strokeWidth: thickness * (hover === i ? 1.12 : 1),
-    strokeLinecap: "butt",
-    opacity: hover != null && hover !== i ? 0.45 : 1
-  })), /*#__PURE__*/React.createElement("text", {
+  }), segments.map((s, i) => {
+    // A lone segment spans the whole circle: its arc start/end points
+    // coincide and render as nothing, so draw a full ring instead.
+    // (A 99.9% slice alongside others still draws fine as an arc.)
+    const common = {
+      stroke: catColor(s.d.name, 65),
+      strokeWidth: thickness * (hover === i ? 1.12 : 1),
+      opacity: hover != null && hover !== i ? 0.45 : 1
+    };
+    return segments.length === 1 ? /*#__PURE__*/React.createElement("circle", _extends({
+      key: i,
+      cx: cx,
+      cy: cy,
+      r: r,
+      fill: "none"
+    }, common)) : /*#__PURE__*/React.createElement("path", _extends({
+      key: i,
+      d: s.path,
+      fill: "none",
+      strokeLinecap: "butt"
+    }, common));
+  }), /*#__PURE__*/React.createElement("text", {
     x: cx,
     y: cy - 4,
     fontSize: 11,

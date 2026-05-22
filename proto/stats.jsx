@@ -21,6 +21,10 @@ function saveCollapsedSections(set) {
   try { localStorage.setItem(STATS_COLLAPSED_KEY, JSON.stringify([...set])); } catch {}
 }
 
+// One-time cleanup: the BAC-records masking feature was removed (records
+// are now read-only), so drop its orphaned localStorage key.
+try { localStorage.removeItem('alconote.stats.hiddenBacRecords'); } catch {}
+
 const PERIODS = [
   { id: 'today', label: 'Jour'    },
   { id: 'week',  label: 'Semaine' },
@@ -436,7 +440,7 @@ function PeriodSwitcher({ period, onChange }) {
             onClick={() => onChange(p.id)} style={{
               padding: '6px 12px', borderRadius: 9, cursor: 'pointer',
               background: period === p.id ? T.accent : 'transparent',
-              color: period === p.id ? (T.isDark ? T.bg : '#fff') : T.ink2,
+              color: period === p.id ? T.accentInk : T.ink2,
               fontSize: 12, fontWeight: period === p.id ? 600 : 400,
               letterSpacing: -0.1, whiteSpace: 'nowrap',
               border: 'none', fontFamily: 'inherit',
@@ -547,6 +551,10 @@ function GeneralSection({
   // Sober-day count: only consider days from `range.start` up to `min(today, range.end)`,
   // so future days within the period don't inflate the count.
   const today = React.useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+  // The current streak is a "right now" metric (consecutive days up to
+  // today), so it's only meaningful when the viewed period contains
+  // today — hide it when navigating to a past/future period.
+  const periodIncludesToday = today >= range.start && today <= range.end;
   const sober = React.useMemo(() => {
     const drinkDays = new Set(drinks.map(d => d.date));
     const lastInclusive = range.end < today ? range.end : today;
@@ -644,7 +652,7 @@ function GeneralSection({
 
   return (
     <StatSection id="general" title="Statistiques générales" sub="Vue d'ensemble de votre consommation" collapsed={collapsed} toggleSection={toggleSection}>
-      {streak > 0 && (
+      {streak > 0 && periodIncludesToday && (
         <HeroStatCard icon={Ic.flame} label="Streak"
           value={streak}
           suffix={`jour${streak > 1 ? 's' : ''} d'affilée`} />
@@ -655,14 +663,16 @@ function GeneralSection({
           suffix={`jour${streakRecord > 1 ? 's' : ''} d'affilée`} />
       )}
 
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12,
-      }}>
-        {cards.map((c, i) => (
-          <StatCell key={c.l} value={c.v} label={c.l} icon={c.icon}
-            delta={c.delta} period={period} />
-        ))}
-      </div>
+      {drinks.length > 0 && (
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12,
+        }}>
+          {cards.map((c, i) => (
+            <StatCell key={c.l} value={c.v} label={c.l} icon={c.icon}
+              delta={c.delta} period={period} />
+          ))}
+        </div>
+      )}
 
       {catDist.length > 0 && (
         <Card>
@@ -828,6 +838,17 @@ function TemporalSection({ drinks, collapsed, toggleSection, agg, sessions }) {
     [agg.byHour]
   );
 
+  if (drinks.length === 0) {
+    return (
+      <StatSection id="temporal" title="Analyse temporelle" collapsed={collapsed} toggleSection={toggleSection} sub="Répartition par heures et jours">
+        <Card><div style={{
+          color: T.muted, fontSize: 12, padding: '8px 0', textAlign: 'center',
+          fontStyle: 'italic', fontFamily: fontSerif,
+        }}>Aucune donnée pour cette période</div></Card>
+      </StatSection>
+    );
+  }
+
   return (
     <StatSection id="temporal" title="Analyse temporelle" collapsed={collapsed} toggleSection={toggleSection} sub="Répartition par heures et jours">
       <div style={{
@@ -873,23 +894,7 @@ function DeltaBadge({ delta }) {
   const bg = positive == null ? T.surface2
            : positive ? T.deltaPosBg : T.deltaNegBg;
   const value = `${Math.abs(delta).toFixed(0)}%`;
-  // Inline SVG arrows render identically across platforms (no font fallback).
-  const arrow = flat ? (
-    <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <line x1="2" y1="6" x2="10" y2="6"/><polyline points="7 3 10 6 7 9"/>
-    </svg>
-  ) : rising ? (
-    <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <line x1="6" y1="10" x2="6" y2="2"/><polyline points="3 5 6 2 9 5"/>
-    </svg>
-  ) : (
-    <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <line x1="6" y1="2" x2="6" y2="10"/><polyline points="3 7 6 10 9 7"/>
-    </svg>
-  );
+  const arrowIcon = flat ? Ic.trendFlat : rising ? Ic.trendUp : Ic.trendDown;
   const ariaDir = flat ? 'stable' : (rising ? 'hausse' : 'baisse');
   return (
     <div style={{
@@ -900,7 +905,7 @@ function DeltaBadge({ delta }) {
       border: `1px solid ${withAlpha(fg, 0.18)}`,
       letterSpacing: 0, lineHeight: 1,
     }} aria-label={`${ariaDir} de ${value} vs période précédente`}>
-      {arrow}{value}
+      <SvgIcon icon={arrowIcon} size={9} />{value}
     </div>
   );
 }
@@ -1046,7 +1051,7 @@ function TopDrinksSection({ drinks, collapsed, toggleSection }) {
             <div style={{
               width: 24, height: 24, borderRadius: 8,
               background: i < 3 ? T.accent : T.surface3,
-              color: i < 3 ? (T.isDark ? T.bg : '#fff') : T.ink2,
+              color: i < 3 ? T.accentInk : T.ink2,
               display: 'grid', placeItems: 'center', flexShrink: 0,
               fontSize: 11, fontWeight: 600, fontFamily: fontNum,
             }}>{i + 1}</div>
@@ -1303,19 +1308,6 @@ function BACForecastResponsive({ realPoints, projectedPoints, meanPeakBac, etaPe
   );
 }
 
-// Persistent set of session ids the user has hidden from the BAC
-// records list. Sessions are derived from drinks, so "deleting" a
-// record means masking — the record reappears on undo without
-// touching the underlying drinks.
-const HIDDEN_BAC_RECORDS_KEY = 'alconote.stats.hiddenBacRecords';
-function loadHiddenBacRecords() {
-  try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_BAC_RECORDS_KEY) || '[]')); }
-  catch { return new Set(); }
-}
-function saveHiddenBacRecords(set) {
-  try { localStorage.setItem(HIDDEN_BAC_RECORDS_KEY, JSON.stringify([...set])); } catch {}
-}
-
 // Records below this BAC aren't surfaced as "records" — a single
 // pint shouldn't sit alongside actual milestones. Mirrors the legacy
 // `recordBACIfPeak` 200 mg/L threshold.
@@ -1330,7 +1322,7 @@ function ForecastToggle({ enabled, onChange }) {
     <button type="button" onClick={onClick} aria-pressed={active} style={{
       ...ghostButton, padding: '4px 9px', borderRadius: 7,
       background: active ? T.accent : 'transparent',
-      color: active ? (T.isDark ? T.bg : '#fff') : T.muted,
+      color: active ? T.accentInk : T.muted,
       fontSize: 9.5, letterSpacing: 0.3, textTransform: 'uppercase',
       fontWeight: active ? 600 : 500, transition: 'background 0.18s ease, color 0.18s ease',
     }}>{label}</button>
@@ -1397,7 +1389,6 @@ function BACSection({ collapsed, toggleSection, allSessions, weight, gender }) {
   const bacInfo = useBacInfo();
   const currentBAC = bacInfo.current || 0;
   const level = bacLevel(currentBAC);
-  const [hidden, setHidden] = React.useState(loadHiddenBacRecords);
   const [forecastEnabled, setForecastEnabledState] = React.useState(loadForecastEnabled);
   const setForecastEnabled = (v) => {
     setForecastEnabledState(v);
@@ -1415,20 +1406,6 @@ function BACSection({ collapsed, toggleSection, allSessions, weight, gender }) {
     () => (bacInfo.points || []).filter(p => p.t <= 0),
     [bacInfo.points]
   );
-
-  // Prune orphan ids: sessions disappear when their drinks are
-  // deleted, so the hidden set should follow. Otherwise localStorage
-  // grows unbounded over years of usage.
-  React.useEffect(() => {
-    if (!allSessions || hidden.size === 0) return;
-    const live = new Set(allSessions.map(s => s.id));
-    let changed = false;
-    const next = new Set();
-    for (const id of hidden) {
-      if (live.has(id)) next.add(id); else changed = true;
-    }
-    if (changed) { saveHiddenBacRecords(next); setHidden(next); }
-  }, [allSessions, hidden]);
 
   const hoursToSober = currentBAC / 150;
   const hoursToLegal = Math.max(0, (currentBAC - 500) / 150);
@@ -1451,10 +1428,12 @@ function BACSection({ collapsed, toggleSection, allSessions, weight, gender }) {
 
   // One record per drinking session above the 200 mg/L threshold:
   // peak BAC of that session, timestamped at the moment of the peak.
+  // Records are derived from drinks (no DB writes) and stay read-only —
+  // they update automatically when the underlying drinks change.
   // Cap to the top 3 so the list reads as milestones, not a log.
   const sortedRecords = React.useMemo(() => {
     return (allSessions || [])
-      .filter(s => s.peakBac >= BAC_RECORD_MIN && !hidden.has(s.id))
+      .filter(s => s.peakBac >= BAC_RECORD_MIN)
       .map(s => ({
         id: s.id,
         bacValue: Math.round(s.peakBac),
@@ -1464,31 +1443,13 @@ function BACSection({ collapsed, toggleSection, allSessions, weight, gender }) {
       }))
       .sort((a, b) => b.bacValue - a.bacValue)
       .slice(0, 3);
-  }, [allSessions, hidden]);
+  }, [allSessions]);
   const totalRecords = React.useMemo(
-    () => (allSessions || []).filter(s => s.peakBac >= BAC_RECORD_MIN && !hidden.has(s.id)).length,
-    [allSessions, hidden]
+    () => (allSessions || []).filter(s => s.peakBac >= BAC_RECORD_MIN).length,
+    [allSessions]
   );
   const highest = sortedRecords[0];
   const others = sortedRecords.slice(1);
-
-  // Immediate delete + undo, mirroring the drink-delete pattern.
-  // Records are derived from drinks so we mask the session id locally
-  // — undo just removes it from the hidden set; nothing touches the DB.
-  const onDelete = (record) => {
-    const id = record.id;
-    setHidden(prev => {
-      const next = new Set(prev); next.add(id); saveHiddenBacRecords(next); return next;
-    });
-    Toast.show('Record masqué', {
-      undo: () => {
-        setHidden(prev => {
-          const next = new Set(prev); next.delete(id); saveHiddenBacRecords(next); return next;
-        });
-        Toast.show('Record restauré');
-      },
-    });
-  };
 
   return (
     <StatSection id="bac" title="Alcoolémie" collapsed={collapsed} toggleSection={toggleSection} sub="Estimation BAC · Formule de Widmark">
@@ -1622,8 +1583,8 @@ function BACSection({ collapsed, toggleSection, allSessions, weight, gender }) {
             }}>{totalRecords}</div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {highest && <BACRecordRow record={highest} isHighest onDelete={onDelete} />}
-            {others.map(r => <BACRecordRow key={r.id} record={r} onDelete={onDelete} />)}
+            {highest && <BACRecordRow record={highest} isHighest />}
+            {others.map(r => <BACRecordRow key={r.id} record={r} />)}
           </div>
         </div>
       )}
@@ -1661,8 +1622,10 @@ function BACGauge({ bac, level }) {
   );
 }
 
-function BACRecordRow({ record, isHighest, onDelete }) {
-  const swipe = useSwipeToDelete(() => onDelete && onDelete(record));
+// Read-only record row. Records are derived automatically from the
+// Widmark sessions, so there's no manual delete — to remove a record
+// the user deletes the underlying drink in the Historique tab.
+function BACRecordRow({ record, isHighest }) {
   const level = bacLevel(record.bacValue);
   const d = new Date(record.timestamp || record.date);
   const today = new Date();
@@ -1673,53 +1636,36 @@ function BACRecordRow({ record, isHighest, onDelete }) {
                                   : `${d.getDate()} ${FR_MONTHS_DOTTED[d.getMonth()]} · ${d.getHours()}h${String(d.getMinutes()).padStart(2, '0')}`;
 
   return (
-    <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 14 }}>
+    <div style={{
+      background: T.surface2, borderRadius: 14,
+      border: `1px solid ${isHighest ? level.color : T.rule}`,
+      padding: '10px 12px',
+      display: 'flex', alignItems: 'center', gap: 12,
+      boxShadow: isHighest ? `0 0 0 1px ${withAlpha(level.color, 0.25)}, 0 4px 12px ${withAlpha(level.color, 0.12)}` : 'none',
+    }}>
       <div style={{
-        position: 'absolute', inset: 0, background: 'oklch(45% 0.18 25)',
-        display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-        paddingRight: 20, color: '#fff', fontSize: 12, fontWeight: 500, gap: 8,
-        cursor: 'pointer',
-      }}
-        onClick={() => onDelete && onDelete(record)}>
-        <SvgIcon icon={Ic.trash} size={16} />
-        <span>Supprimer</span>
-      </div>
-      <div
-        {...swipe.handlers}
-        style={{
-          position: 'relative', background: T.surface2, borderRadius: 14,
-          border: `1px solid ${isHighest ? level.color : T.rule}`,
-          padding: '10px 12px',
-          display: 'flex', alignItems: 'center', gap: 12,
-          transform: `translateX(${swipe.offset}px)`,
-          transition: swipe.dragging ? 'none' : 'transform 0.22s ease',
-          touchAction: 'pan-y',
-          boxShadow: isHighest ? `0 0 0 1px ${withAlpha(level.color, 0.25)}, 0 4px 12px ${withAlpha(level.color, 0.12)}` : 'none',
-        }}>
+        width: 10, height: 10, borderRadius: 99, background: level.color, flexShrink: 0,
+        boxShadow: `0 0 8px ${withAlpha(level.color, 0.5)}`,
+      }}/>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
-          width: 10, height: 10, borderRadius: 99, background: level.color, flexShrink: 0,
-          boxShadow: `0 0 8px ${withAlpha(level.color, 0.5)}`,
-        }}/>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2,
-          }}>
+          display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2,
+        }}>
+          <span style={{
+            fontFamily: fontSerif, fontSize: 17, color: T.ink,
+            letterSpacing: -0.3, fontStyle: isHighest ? 'italic' : 'normal',
+          }}>{record.bacValue}<span style={{ fontSize: 10, color: T.muted, fontStyle: 'normal', fontFamily: fontSans, marginLeft: 2 }}>mg/L</span></span>
+          {isHighest && (
             <span style={{
-              fontFamily: fontSerif, fontSize: 17, color: T.ink,
-              letterSpacing: -0.3, fontStyle: isHighest ? 'italic' : 'normal',
-            }}>{record.bacValue}<span style={{ fontSize: 10, color: T.muted, fontStyle: 'normal', fontFamily: fontSans, marginLeft: 2 }}>mg/L</span></span>
-            {isHighest && (
-              <span style={{
-                fontSize: 8.5, color: T.accent, background: 'oklch(28% 0.04 65)',
-                padding: '1px 6px', borderRadius: 99, border: `1px solid oklch(38% 0.05 65)`,
-                letterSpacing: 0.8, textTransform: 'uppercase', fontWeight: 600,
-              }}>Record</span>
-            )}
-          </div>
-          <div style={{
-            color: T.muted, fontSize: 10.5, letterSpacing: 0.1, fontFamily: fontNum,
-          }}>{dateLabel} · {record.drinkCount || 0} conso{(record.drinkCount || 0) > 1 ? 's' : ''}</div>
+              fontSize: 8.5, color: T.accent, background: T.accentSoft,
+              padding: '2px 6px', borderRadius: 99, border: `1px solid ${T.accentSoftBorder}`,
+              letterSpacing: 0.8, textTransform: 'uppercase', fontWeight: 600,
+            }}>Record</span>
+          )}
         </div>
+        <div style={{
+          color: T.muted, fontSize: 10.5, letterSpacing: 0.1, fontFamily: fontNum,
+        }}>{dateLabel} · {record.drinkCount || 0} conso{(record.drinkCount || 0) > 1 ? 's' : ''}</div>
       </div>
     </div>
   );
@@ -1816,15 +1762,18 @@ function MapSection({ drinks, collapsed, toggleSection }) {
     }).addTo(m);
     L.control.attribution({ position: 'bottomright', prefix: false })
       .addAttribution('© OSM').addTo(m);
-    // Cluster styling: count badge inside a warm-toned circle, sized
-    // up with the cluster's drink count for instant readability.
-    const accent = T._name === 'light' ? 'rgba(180,90,40,0.92)' : 'rgba(220,140,70,0.92)';
+    // Cluster styling: count badge inside an accent circle, sized up
+    // with the cluster's drink count for instant readability. Uses the
+    // theme accent token (the effect re-runs on theme change via the
+    // `T._name` dependency); the white halo/shadow are conventional
+    // map-marker chrome, not palette colours.
+    const accent = T.accent;
     const clusterIcon = (cluster) => {
       const n = cluster.getChildCount();
       const size = n < 10 ? 32 : n < 100 ? 38 : 46;
       const html = `<div style="
           width:${size}px;height:${size}px;border-radius:50%;
-          background:${accent};color:#fff;
+          background:${accent};color:${T.accentInk};
           display:flex;align-items:center;justify-content:center;
           font:600 12px/1 'Geist Mono', monospace;
           border:2px solid rgba(255,255,255,0.85);
