@@ -226,10 +226,10 @@ function aggregateGeneral(drinks) {
 
 // BAC-driven sessions: a session begins at the first drink that pushes
 // BAC from 0 to >0 and ends exactly when BAC returns to 0 (Widmark
-// model, instantaneous absorption, linear elimination at `elimRate`).
-// Replaces the legacy 4-hour gap heuristic so a "session" reflects a
-// real drinking episode (matches the BAC projection curve and the
-// "Temps bourré" / records-per-session features).
+// model, linear absorption over BAC_ABSORPTION_H, linear elimination at
+// `elimRate`). Replaces the legacy 4-hour gap heuristic so a "session"
+// reflects a real drinking episode (matches the BAC projection curve and
+// the "Temps bourré" / records-per-session features).
 //
 // Each session carries its own deterministic id (`sess::<startTs>`) so
 // the user can mask individual records from the BAC list and the
@@ -1598,8 +1598,8 @@ function computeBacOverTime(drinks, weight, gender) {
     nowT: 0
   };
 
-  // Per-drink peak contribution in mg/L. With instantaneous absorption,
-  // each drink jumps the BAC by `peak_i` at its consumption time.
+  // Per-drink peak contribution in mg/L — the full BAC each drink adds once
+  // absorbed; bacAt() ramps it in linearly over BAC_ABSORPTION_H.
   const grams = recent.map(d => toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789);
   const peaks = grams.map(g => g * 1000 / (w * r));
   const tStart = recent.map(d => (d._ts - now) / 3600_000); // negative hours
