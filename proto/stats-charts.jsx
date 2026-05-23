@@ -729,7 +729,7 @@ function SvgBACProjection({ points, width = 320, height = 200, nowMs = Date.now(
 
   return (
     <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" height={height}
-      style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
+      style={{ display: 'block', touchAction: 'none' }} {...scr.handlers}>
       <rect x="0" y="0" width={width} height={height} fill="transparent" />
       <defs>
         <linearGradient id={gradStrokeId} x1="0" x2="0" y1="0" y2="1">
@@ -971,7 +971,7 @@ function SvgBACForecast({
 
   return (
     <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" height={height}
-      style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
+      style={{ display: 'block', touchAction: 'none' }} {...scr.handlers}>
       <rect x="0" y="0" width={width} height={height} fill="transparent" />
       <defs>
         <linearGradient id={gradStrokeId} x1="0" x2="0" y1="0" y2="1">

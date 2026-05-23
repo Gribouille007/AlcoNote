@@ -1066,7 +1066,7 @@ function SvgBACProjection({
     height: height,
     style: {
       display: 'block',
-      touchAction: 'pan-y'
+      touchAction: 'none'
     }
   }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
     x: "0",
@@ -1394,7 +1394,7 @@ function SvgBACForecast({
     height: height,
     style: {
       display: 'block',
-      touchAction: 'pan-y'
+      touchAction: 'none'
     }
   }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
     x: "0",

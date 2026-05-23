@@ -271,6 +271,8 @@ function computeBACSessions(drinks, weight = 70, gender = 'male') {
         startTs: d._ts,
         endTs: d._ts,
         // provisional, overwritten when session closes
+        lastDrinkTs: d._ts,
+        // ts of the last drink (drinking span = lastDrinkTs - startTs)
         drinks: [d],
         grams,
         peakBac: peak,
@@ -280,6 +282,7 @@ function computeBACSessions(drinks, weight = 70, gender = 'male') {
       bac = peak;
     } else {
       cur.drinks.push(d);
+      cur.lastDrinkTs = d._ts;
       cur.grams += grams;
       bac += peak;
       if (bac > cur.peakBac) {
@@ -1592,12 +1595,12 @@ function computeBacOverTime(drinks, weight, gender) {
 }
 
 // Forecast: extrapolate the *current* session forward by assuming the
-// user keeps drinking at the same g/h pace until the mean historical
-// session duration is reached, then declines at the standard Widmark
-// elimination rate down to 0.
+// user keeps drinking at the same g/h pace until their mean historical
+// drinking span (first → last drink) is reached, then declines at the
+// standard Widmark elimination rate down to 0.
 //
 //   currentRateGph  = grams_so_far / max(5min, elapsed_in_session)
-//   estStopMs       = sessionStart + mean(past_session_durations)
+//   estStopMs       = sessionStart + mean(past drinking spans)
 //   bac(t≤tStop)    = currentBac + (consumptionSlope − elimRate) · t
 //   bac(t>tStop)    = bacAtStop − elimRate · (t − tStop)
 //
@@ -1605,24 +1608,33 @@ function computeBacOverTime(drinks, weight, gender) {
 // which the projected curve first reaches that peak — `null` if the
 // projection never gets there (which the chart renders as an "∞" marker
 // pinned to the right edge).
-function computeBacForecast(currentDrinks, currentBac, allSessions, weight, gender, nowMs) {
+function computeBacForecast(currentBac, allSessions, weight, gender, nowMs) {
   const r = gender === 'female' ? 0.55 : 0.68;
   const w = weight || 70;
   const elimRate = 150; // mg/L/h, must match computeBacOverTime
 
-  const valid = (currentDrinks || []).filter(d => d.date && d.time).map(d => ({
-    ...d,
-    _ts: new Date(`${d.date}T${d.time}`).getTime()
-  })).filter(d => Number.isFinite(d._ts) && d._ts <= nowMs).sort((a, b) => a._ts - b._ts);
-  const hasCurrentSession = valid.length > 0 && currentBac > 0;
-  const past = (allSessions || []).filter(s => s.endTs <= nowMs && s.drinks && s.drinks.length > 0);
+  const sessions = (allSessions || []).filter(s => s && s.drinks && s.drinks.length > 0);
+  // The ongoing session is the one whose BAC window contains "now"
+  // (first drink ≤ now ≤ sober-up end). Sessions are chronological and
+  // never overlap, so there is at most one. Deriving it from the same
+  // gap-based model as the records keeps the forecast consistent with
+  // the rest of the BAC tab: a stray drink earlier in the 24 h window no
+  // longer drags the session start hours into the past and tanks the rate.
+  const ongoing = sessions.find(s => s.startTs <= nowMs && s.endTs >= nowMs) || null;
+  const past = sessions.filter(s => s !== ongoing && s.endTs <= nowMs);
   const hasHistory = past.length >= 1;
+  const hasCurrentSession = !!ongoing && currentBac > 0;
   const meanPeakBac = hasHistory ? past.reduce((s, x) => s + (x.peakBac || 0), 0) / past.length : null;
-  const meanDurationMs = hasHistory ? past.reduce((s, x) => s + Math.max(0, x.endTs - x.startTs), 0) / past.length : null;
+  // "Drinking span" = first drink → last drink, WITHOUT the sober-up
+  // tail. Averaging `endTs − startTs` would bake the elimination tail
+  // (peak / elimRate hours) into the duration and make the projection
+  // assume the user keeps drinking long after they normally stop —
+  // inflating the projected peak by hundreds of mg/L.
+  const meanDrinkingMs = hasHistory ? past.reduce((s, x) => s + Math.max(0, (x.lastDrinkTs || x.startTs) - x.startTs), 0) / past.length : null;
   if (!hasCurrentSession) {
     return {
       currentRateGph: 0,
-      meanDurationMs,
+      meanDrinkingMs,
       estStopMs: null,
       meanPeakBac,
       projectedPoints: [],
@@ -1632,17 +1644,19 @@ function computeBacForecast(currentDrinks, currentBac, allSessions, weight, gend
       sessionStartMs: nowMs
     };
   }
-  const sessionStartMs = valid[0]._ts;
-  // Minimum window of 5 min so a single just-poured drink doesn't blow
-  // the rate up to several hundred g/h.
+  const sessionStartMs = ongoing.startTs;
+  // Pace = pure alcohol consumed so far this session / time since the
+  // first drink. Only count drinks already poured (≤ now) so a
+  // future-dated entry can't inflate the rate. 5-min floor so a single
+  // just-logged drink doesn't blow the rate up to several hundred g/h.
+  const totalGrams = ongoing.drinks.reduce((s, d) => d._ts <= nowMs ? s + toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789 : s, 0);
   const elapsedH = Math.max(5 / 60, (nowMs - sessionStartMs) / 3600_000);
-  const totalGrams = valid.reduce((s, d) => s + toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789, 0);
   const currentRateGph = totalGrams / elapsedH;
 
-  // No history → assume consumption stops now (only the elimination
-  // tail is projected). Otherwise project until the historical mean
-  // session duration is exhausted.
-  const estStopMs = meanDurationMs != null ? Math.max(nowMs, sessionStartMs + meanDurationMs) : nowMs;
+  // Project drinking at the current pace until the user would normally
+  // stop (current session start + mean historical drinking span). No
+  // history → assume they stop now and only the elimination tail shows.
+  const estStopMs = meanDrinkingMs != null ? Math.max(nowMs, sessionStartMs + meanDrinkingMs) : nowMs;
   const consumptionSlope = currentRateGph * 1000 / (w * r); // mg/L/h injected by drinking
   const netSlope = consumptionSlope - elimRate;
   const tStopH = (estStopMs - nowMs) / 3600_000;
@@ -1680,7 +1694,7 @@ function computeBacForecast(currentDrinks, currentBac, allSessions, weight, gend
   }
   return {
     currentRateGph,
-    meanDurationMs,
+    meanDrinkingMs,
     estStopMs,
     meanPeakBac,
     projectedPoints,
@@ -1830,7 +1844,7 @@ function ForecastMiniStats({
   fmtTime
 }) {
   const rate = forecast.hasCurrentSession ? `${forecast.currentRateGph.toFixed(1)} g/h` : '—';
-  const duration = forecast.meanDurationMs != null ? fmtTime(forecast.meanDurationMs / 3600_000) : '—';
+  const duration = forecast.meanDrinkingMs != null ? fmtTime(forecast.meanDrinkingMs / 3600_000) : '—';
   const peak = forecast.meanPeakBac != null ? `${Math.round(forecast.meanPeakBac)}` : '—';
   const eta = forecast.etaPeakHours != null ? fmtTime(forecast.etaPeakHours) : forecast.meanPeakBac != null && forecast.hasCurrentSession ? '∞' : '—';
   const item = (icon, label, value, unit) => /*#__PURE__*/React.createElement("div", {
@@ -1907,8 +1921,14 @@ function BACSection({
   // Forecast is always computed (the toggle only governs visibility),
   // so other panels could reuse the same memo without forcing the user
   // to enable display.
-  const forecast = React.useMemo(() => computeBacForecast(bacInfo.drinks, currentBAC, allSessions, weight, gender, Date.now()), [bacInfo.drinks, currentBAC, allSessions, weight, gender]);
-  const realPastPoints = React.useMemo(() => (bacInfo.points || []).filter(p => p.t <= 0), [bacInfo.points]);
+  const forecast = React.useMemo(() => computeBacForecast(currentBAC, allSessions, weight, gender, Date.now()), [currentBAC, allSessions, weight, gender]);
+  // Clip the realized curve to the ongoing session so "Prévision de
+  // session" shows only the current episode + its projection, not the
+  // last 24 h of unrelated (already-sober) sessions.
+  const realPastPoints = React.useMemo(() => {
+    const startRelH = (forecast.sessionStartMs - Date.now()) / 3600_000;
+    return (bacInfo.points || []).filter(p => p.t <= 0 && p.t >= startRelH - 1e-6);
+  }, [bacInfo.points, forecast.sessionStartMs]);
   const hoursToSober = currentBAC / 150;
   const hoursToLegal = Math.max(0, (currentBAC - 500) / 150);
   const fmtTime = h => {
