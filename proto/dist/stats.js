@@ -226,75 +226,121 @@ function aggregateGeneral(drinks) {
 
 // BAC-driven sessions: a session begins at the first drink that pushes
 // BAC from 0 to >0 and ends exactly when BAC returns to 0 (Widmark
-// model, instantaneous absorption, linear elimination at `elimRate`).
-// Replaces the legacy 4-hour gap heuristic so a "session" reflects a
-// real drinking episode (matches the BAC projection curve and the
-// "Temps bourré" / records-per-session features).
+// model, linear absorption over BAC_ABSORPTION_H, linear elimination at
+// `elimRate`). Replaces the legacy 4-hour gap heuristic so a "session"
+// reflects a real drinking episode (matches the BAC projection curve and
+// the "Temps bourré" / records-per-session features).
 //
 // Each session carries its own deterministic id (`sess::<startTs>`) so
 // the user can mask individual records from the BAC list and the
 // masking persists across renders without a DB write.
 const BAC_ELIM_RATE = 150; // mg/L/h, standard Widmark β
+const BAC_ABSORPTION_H = 0.5; // h, linear absorption window (alcohol fully absorbed 30 min after a drink)
 
 function computeBACSessions(drinks, weight = 70, gender = 'male') {
   const r = gender === 'female' ? 0.55 : 0.68;
   const w = weight || 70;
   const hour = 3600_000;
+  const T = BAC_ABSORPTION_H; // absorption window, hours
+  const elim = BAC_ELIM_RATE; // mg/L per hour
+
   const valid = drinks.filter(d => d.date && d.time).map(d => ({
     ...d,
     _ts: new Date(`${d.date}T${d.time}`).getTime()
   })).filter(d => Number.isFinite(d._ts)).sort((a, b) => a._ts - b._ts);
   if (valid.length === 0) return [];
+
+  // Per-drink total contribution (mg/L), absorbed linearly over [_ts, _ts+T·h].
+  for (const d of valid) {
+    d._grams = toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789;
+    d._peak = d._grams * 1000 / (w * r);
+  }
+
+  // With linear absorption the BAC curve is piecewise-linear: its slope only
+  // changes when a drink starts absorbing (+peak/T per hour) or finishes one
+  // window later (−peak/T). Walk these breakpoints, integrating each segment
+  // exactly so a session closes at the precise instant BAC returns to 0, and
+  // the peak (always on a breakpoint) is captured exactly.
+  const bps = [];
+  for (const d of valid) {
+    bps.push({
+      t: d._ts,
+      dr: d._peak / T,
+      d
+    }); // absorption begins
+    bps.push({
+      t: d._ts + T * hour,
+      dr: -d._peak / T
+    }); // absorption ends
+  }
+  bps.sort((a, b) => a.t - b.t);
   const sessions = [];
   let cur = null;
-  let bac = 0;
-  let lastTs = 0;
-  for (const d of valid) {
-    if (cur) {
-      // Eliminate from lastTs to d._ts. If BAC would hit 0 in that
-      // interval, close the session at the exact moment it hits 0.
-      const dh = (d._ts - lastTs) / hour;
-      const drop = BAC_ELIM_RATE * dh;
-      if (drop >= bac) {
-        cur.endTs = lastTs + bac / BAC_ELIM_RATE * hour;
-        cur = null;
-        bac = 0;
+  let bac = 0; // mg/L
+  let rate = 0; // active absorption rate, mg/L per hour
+  let t = bps[0].t;
+  for (const bp of bps) {
+    // Integrate from t up to this breakpoint at the current net slope.
+    while (t < bp.t) {
+      const net = rate - elim; // mg/L per hour
+      const dh = (bp.t - t) / hour;
+      if (bac <= 1e-9) {
+        // At zero: stays zero unless absorption now outpaces elimination.
+        bac = net > 0 ? net * dh : 0;
+        t = bp.t;
+        break;
+      }
+      if (net < 0) {
+        const hZero = bac / -net; // hours until BAC reaches 0
+        if (hZero <= dh) {
+          if (cur) {
+            cur.endTs = t + hZero * hour;
+            cur = null;
+          }
+          bac = 0;
+          t += hZero * hour;
+          continue; // finish the rest of the segment at zero
+        }
+      }
+      bac = Math.max(0, bac + net * dh);
+      t = bp.t;
+    }
+
+    // Apply this breakpoint's slope change.
+    rate += bp.dr;
+    if (rate < 1e-9) rate = 0;
+
+    // A drink-start breakpoint opens or extends a session.
+    if (bp.d) {
+      if (!cur) {
+        cur = {
+          id: 'sess::' + bp.d._ts,
+          startTs: bp.d._ts,
+          endTs: bp.d._ts,
+          // provisional, set when the session closes
+          lastDrinkTs: bp.d._ts,
+          drinks: [bp.d],
+          grams: bp.d._grams,
+          peakBac: bac,
+          peakTs: bp.d._ts
+        };
+        sessions.push(cur);
       } else {
-        bac -= drop;
+        cur.drinks.push(bp.d);
+        cur.lastDrinkTs = bp.d._ts;
+        cur.grams += bp.d._grams;
       }
     }
-    const grams = toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789;
-    const peak = grams * 1000 / (w * r);
-    if (!cur) {
-      cur = {
-        id: 'sess::' + d._ts,
-        startTs: d._ts,
-        endTs: d._ts,
-        // provisional, overwritten when session closes
-        lastDrinkTs: d._ts,
-        // ts of the last drink (drinking span = lastDrinkTs - startTs)
-        drinks: [d],
-        grams,
-        peakBac: peak,
-        peakTs: d._ts
-      };
-      sessions.push(cur);
-      bac = peak;
-    } else {
-      cur.drinks.push(d);
-      cur.lastDrinkTs = d._ts;
-      cur.grams += grams;
-      bac += peak;
-      if (bac > cur.peakBac) {
-        cur.peakBac = bac;
-        cur.peakTs = d._ts;
-      }
+
+    // The session peak always sits on a breakpoint, so re-check after each.
+    if (cur && bac > cur.peakBac) {
+      cur.peakBac = bac;
+      cur.peakTs = bp.t;
     }
-    lastTs = d._ts;
   }
-  if (cur) {
-    cur.endTs = lastTs + bac / BAC_ELIM_RATE * hour;
-  }
+
+  // Past the final breakpoint no absorption remains: decay straight to 0.
+  if (cur) cur.endTs = t + bac / elim * hour;
   return sessions;
 }
 
@@ -1526,11 +1572,12 @@ function TopDrinksSection({
   }, d.count)))));
 }
 // ── 5. Alcoolémie (BAC + records) ────────────────────────────────
-// Widmark BAC computation with instantaneous absorption — each drink jumps
-// straight to its peak contribution at consumption time, then the running
-// total decays at a constant elimination rate (mg/L/h). This matches the
-// legacy bac-chart.js behaviour: at t = first drink, BAC ≠ 0.
-//   bac(t) = max(0, Σ_{i:t≥t_i} [10·grams_i / (weight·r)] − elimRate·(t − t_first))
+// Widmark BAC computation with linear absorption over BAC_ABSORPTION_H (30 min):
+// each drink ramps from 0 up to its full peak contribution across the
+// absorption window after consumption, then the running total decays at a
+// constant elimination rate (mg/L/h). At t = first drink, BAC = 0 and rises.
+//   contrib_i(t) = peak_i · clamp((t − t_i) / T_abs, 0, 1)
+//   bac(t)       = max(0, Σ_i contrib_i(t) − elimRate·(t − t_first))
 // `r` is Widmark's distribution factor (male 0.68, female 0.55), `0.789`
 // is ethanol density g/mL.
 function computeBacOverTime(drinks, weight, gender) {
@@ -1551,8 +1598,8 @@ function computeBacOverTime(drinks, weight, gender) {
     nowT: 0
   };
 
-  // Per-drink peak contribution in mg/L. With instantaneous absorption,
-  // each drink jumps the BAC by `peak_i` at its consumption time.
+  // Per-drink peak contribution in mg/L — the full BAC each drink adds once
+  // absorbed; bacAt() ramps it in linearly over BAC_ABSORPTION_H.
   const grams = recent.map(d => toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789);
   const peaks = grams.map(g => g * 1000 / (w * r));
   const tStart = recent.map(d => (d._ts - now) / 3600_000); // negative hours
@@ -1560,7 +1607,9 @@ function computeBacOverTime(drinks, weight, gender) {
   function bacAt(h) {
     let absorbed = 0;
     for (let i = 0; i < recent.length; i++) {
-      if (h >= tStart[i]) absorbed += peaks[i];
+      const dt = h - tStart[i];
+      if (dt <= 0) continue;
+      absorbed += peaks[i] * Math.min(1, dt / BAC_ABSORPTION_H);
     }
     if (absorbed <= 0) return 0;
     const eliminated = Math.max(0, h - firstT) * elimRate;

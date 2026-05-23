@@ -370,25 +370,6 @@ function useSettings() {
   return React.useContext(SettingsContext);
 }
 
-// ── BAC records ───────────────────────────────────────────────────
-function useBacRecords(limit = 50) {
-  const v = useDataVersion();
-  const [records, setRecords] = React.useState([]);
-  React.useEffect(() => {
-    let alive = true;
-    (async () => {
-      const db = await waitForDb();
-      if (!db) return;
-      const list = await db.getBACRecords(limit);
-      if (alive) setRecords(list);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [v, limit]);
-  return records;
-}
-
 // ── Mutations ─────────────────────────────────────────────────────
 // Each mutation bumps only the channels its write actually touches —
 // providers subscribed to other channels won't refetch. updateDrink
@@ -642,15 +623,6 @@ async function setCategoryIcon(id, glyph) {
   dataBus.bump('cat-icons');
 }
 
-// Reads the icon overrides map from CategoryIconsContext. The provider
-// is mounted in <App/> (proto/app.jsx) and re-fetches the persisted
-// settings on every dataBus.bump('cat-icons'), so any mutation
-// (setCategoryIcon, renameCategory, deleteCategory, clearAllData)
-// triggers a refresh of every glyph in the tree.
-function useCategoryIcons() {
-  return React.useContext(CategoryIconsContext);
-}
-
 // Provider for category icon overrides. Seeds initial state from the
 // optional one-shot global `window.__alcoCatIconsInitial` (populated
 // by mountAlcoNote before the React mount, read exactly once at the
@@ -807,8 +779,6 @@ Object.assign(window, {
   useDrinks,
   useRatings,
   useSettings,
-  useBacRecords,
-  useCategoryIcons,
   useFamilies,
   FamiliesContext,
   DrinksProvider,

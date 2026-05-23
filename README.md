@@ -24,7 +24,7 @@ serveur tiers.
 - Glisser vers la gauche pour supprimer (historique, records BAC).
 
 ### Statistiques
-Sept sections, toutes pliables, avec navigation par période
+Huit sections, toutes pliables, avec navigation par période
 (Jour · Semaine · Mois · Année · A. scol. · Tout) :
 - **Général** — boissons, sessions, volume, alcool pur, jours sobres
   (calculés du début de la période jusqu'à aujourd'hui), avec un
@@ -70,8 +70,7 @@ AlcoNote/
 │   ├── app.jsx             # Shell, navigation, header, FAB
 │   └── dist/               # Sortie Babel (chargée par index.html)
 ├── js/                     # Backend hérité (DB, scanner, lookups)
-│   ├── database.js         # Wrapper Dexie (version 3 du schema)
-│   ├── utils.js
+│   ├── database.js         # Wrapper Dexie (version 4 du schema)
 │   └── scanner/
 │       ├── camera-scanner.js
 │       └── product-lookup.js
@@ -95,12 +94,11 @@ modals → app`.
 
 ### Données
 
-IndexedDB via Dexie 3, schéma v3 (`AlcoNoteDB`) :
+IndexedDB via Dexie 3, schéma v4 (`AlcoNoteDB`) :
 - `categories` (id, name, drinkCount)
 - `drinks` (id, name, category, quantity, unit, alcoholContent,
   date, time, location, barcode)
 - `settings` (key, value)
-- `bacRecords` (id, bacValue, timestamp, drinkCount)
 - `drinkRatings` (drinkName, rating)
 
 Les overrides d'icônes de catégorie sont stockés comme settings de

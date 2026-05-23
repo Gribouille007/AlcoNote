@@ -24,7 +24,7 @@ function useMeasuredWidth(ref, fallback = 320) {
   return width;
 }
 
-// Local niceMax (different signature from shared.jsx -- ticks-based)
+// Rounds an axis maximum up to a "nice" value, given a target tick count.
 function chartNiceMax(v, ticks = 4) {
   if (!v) return 1;
   const raw = v / ticks;
