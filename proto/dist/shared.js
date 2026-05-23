@@ -1659,16 +1659,6 @@ function useSWVersion() {
   return version;
 }
 
-// ── niceMax ──────────────────────────────────────────────────────
-function niceMax(v, fallback = 1) {
-  if (!isFinite(v) || v <= 0) return fallback;
-  const exp = Math.floor(Math.log10(v));
-  const base = Math.pow(10, exp);
-  const m = v / base;
-  let nice;
-  if (m <= 1) nice = 1;else if (m <= 2) nice = 2;else if (m <= 5) nice = 5;else nice = 10;
-  return nice * base;
-}
 // ── Inject base animations once ────────────────────────────────────
 (function injectBaseStyles() {
   if (document.getElementById('alco-base-anim')) return;
@@ -1718,7 +1708,6 @@ Object.assign(window, {
   GLYPH_OPTIONS,
   canonicalCat,
   SheetOverlay,
-  niceMax,
   useBackButton,
   Confirm,
   ConfirmHost,

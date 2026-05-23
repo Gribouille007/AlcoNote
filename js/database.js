@@ -29,6 +29,15 @@ class AlcoNoteDB extends Dexie {
             drinkRatings: 'drinkName, rating, updatedAt'
         });
 
+        // Version 4 - Drop the orphaned bacRecords store. It was never
+        // written (no addBACRecord call path), and BAC "records" are derived
+        // client-side from drinks in the Stats tab. Only this empty store is
+        // deleted; all other tables are carried forward unchanged, so no
+        // user data is lost.
+        this.version(4).stores({
+            bacRecords: null
+        });
+
         // Add hooks for automatic timestamps
         this.categories.hook('creating', function (primKey, obj, trans) {
             obj.createdAt = new Date();
@@ -54,10 +63,6 @@ class AlcoNoteDB extends Dexie {
 
         this.settings.hook('updating', function (modifications, primKey, obj, trans) {
             modifications.updatedAt = new Date();
-        });
-
-        this.bacRecords.hook('creating', function (primKey, obj, trans) {
-            obj.createdAt = new Date();
         });
 
         this.drinkRatings.hook('creating', function (primKey, obj, trans) {
@@ -279,53 +284,6 @@ class DatabaseManager {
         }
     }
 
-    async getDrinksByDateRange(startDate, endDate) {
-        try {
-            return await this.db.drinks
-                .where('date')
-                .between(startDate, endDate, true, true)
-                .toArray();
-        } catch (error) {
-            console.error('Error getting drinks by date range:', error);
-            return [];
-        }
-    }
-
-    async getGroupedDrinks() {
-        try {
-            const drinks = await this.getAllDrinks();
-            const grouped = {};
-
-            drinks.forEach(drink => {
-                const key = `${drink.name} - ${drink.quantity}${drink.unit}`;
-                if (!grouped[key]) {
-                    grouped[key] = {
-                        name: drink.name,
-                        quantity: drink.quantity,
-                        unit: drink.unit,
-                        category: drink.category,
-                        alcoholContent: drink.alcoholContent,
-                        count: 0,
-                        drinks: []
-                    };
-                }
-                grouped[key].count++;
-                grouped[key].drinks.push(drink);
-            });
-
-            // Sort by count (descending) then by name (ascending)
-            return Object.values(grouped).sort((a, b) => {
-                if (b.count !== a.count) {
-                    return b.count - a.count;
-                }
-                return a.name.localeCompare(b.name);
-            });
-        } catch (error) {
-            console.error('Error getting grouped drinks:', error);
-            return [];
-        }
-    }
-
     async addDrink(drinkData) {
         try {
             // Convert quantity based on unit
@@ -416,40 +374,6 @@ class DatabaseManager {
         }
     }
 
-    async getDrinkSuggestions(query) {
-        try {
-            const drinks = await this.db.drinks
-                .where('name')
-                .startsWithIgnoreCase(query)
-                .limit(5)
-                .toArray();
-
-            // Remove duplicates and return unique names with their most common quantity/unit
-            const suggestions = {};
-            drinks.forEach(drink => {
-                const key = drink.name;
-                if (!suggestions[key]) {
-                    suggestions[key] = {
-                        name: drink.name,
-                        quantity: drink.quantity,
-                        unit: drink.unit,
-                        category: drink.category,
-                        alcoholContent: drink.alcoholContent,
-                        count: 0
-                    };
-                }
-                suggestions[key].count++;
-            });
-
-            return Object.values(suggestions)
-                .sort((a, b) => b.count - a.count)
-                .slice(0, 5);
-        } catch (error) {
-            console.error('Error getting drink suggestions:', error);
-            return [];
-        }
-    }
-
     // Settings operations
     async getSetting(key) {
         try {
@@ -489,95 +413,7 @@ class DatabaseManager {
         }
     }
 
-    // BAC Records operations
-    async addBACRecord(recordData) {
-        try {
-            const recordToAdd = {
-                bacValue: recordData.bacValue,
-                timestamp: recordData.timestamp || new Date(),
-                date: recordData.date,
-                drinkCount: recordData.drinkCount || 0,
-                relevantDrinkIds: recordData.relevantDrinkIds || []
-            };
-
-            const id = await this.db.bacRecords.add(recordToAdd);
-            return await this.db.bacRecords.get(id);
-        } catch (error) {
-            console.error('Error adding BAC record:', error);
-            throw error;
-        }
-    }
-
-    async getBACRecords(limit = 10) {
-        try {
-            return await this.db.bacRecords
-                .orderBy('timestamp')
-                .reverse()
-                .limit(limit)
-                .toArray();
-        } catch (error) {
-            console.error('Error getting BAC records:', error);
-            return [];
-        }
-    }
-
-    async getBACRecordsByDateRange(startDate, endDate) {
-        try {
-            return await this.db.bacRecords
-                .where('date')
-                .between(startDate, endDate, true, true)
-                .reverse()
-                .toArray();
-        } catch (error) {
-            console.error('Error getting BAC records by date range:', error);
-            return [];
-        }
-    }
-
-    async getHighestBACRecord() {
-        try {
-            const records = await this.db.bacRecords
-                .orderBy('bacValue')
-                .reverse()
-                .limit(1)
-                .toArray();
-            return records.length > 0 ? records[0] : null;
-        } catch (error) {
-            console.error('Error getting highest BAC record:', error);
-            return null;
-        }
-    }
-
-    async deleteBACRecord(id) {
-        try {
-            await this.db.bacRecords.delete(id);
-            return true;
-        } catch (error) {
-            console.error('Error deleting BAC record:', error);
-            throw error;
-        }
-    }
-
-    async updateBACRecord(id, changes) {
-        try {
-            await this.db.bacRecords.update(id, changes);
-            return await this.db.bacRecords.get(id);
-        } catch (error) {
-            console.error('Error updating BAC record:', error);
-            throw error;
-        }
-    }
-
     // Drink ratings operations
-    async getRating(drinkName) {
-        try {
-            return await this.db.drinkRatings.get(drinkName);
-        } catch (error) {
-            console.error('Error getting rating:', error);
-            return null;
-        }
-    }
-
     async setRating(drinkName, rating) {
         try {
             await this.db.drinkRatings.put({ drinkName, rating });
@@ -604,72 +440,6 @@ class DatabaseManager {
         } catch (error) {
             console.error('Error getting all ratings:', error);
             return [];
-        }
-    }
-
-    // Statistics operations
-    async getStatistics(startDate, endDate) {
-        try {
-            const drinks = await this.getDrinksByDateRange(startDate, endDate);
-
-            const stats = {
-                totalDrinks: drinks.length,
-                totalVolume: 0,
-                totalAlcohol: 0,
-                categories: {},
-                hours: {},
-                days: {},
-                uniqueDrinks: new Set(),
-                sessions: []
-            };
-
-            drinks.forEach(drink => {
-                // Total volume in cL
-                let volumeInCL = drink.quantity;
-                if (drink.unit === 'EcoCup') {
-                    volumeInCL = drink.quantity * 25;
-                } else if (drink.unit === 'L') {
-                    volumeInCL = drink.quantity * 100;
-                }
-
-                stats.totalVolume += volumeInCL;
-
-                // Total alcohol in grams: volume(cL) × degree(%) × density(0.8) / 10
-                if (drink.alcoholContent) {
-                    stats.totalAlcohol += (volumeInCL * drink.alcoholContent * 0.8) / 10;
-                }
-
-                // Categories
-                if (!stats.categories[drink.category]) {
-                    stats.categories[drink.category] = { count: 0, volume: 0 };
-                }
-                stats.categories[drink.category].count++;
-                stats.categories[drink.category].volume += volumeInCL;
-
-                // Hours
-                const hour = parseInt(drink.time.split(':')[0]);
-                if (!stats.hours[hour]) {
-                    stats.hours[hour] = 0;
-                }
-                stats.hours[hour]++;
-
-                // Days of week
-                const dayOfWeek = new Date(drink.date + 'T00:00:00').getDay();
-                if (!stats.days[dayOfWeek]) {
-                    stats.days[dayOfWeek] = 0;
-                }
-                stats.days[dayOfWeek]++;
-
-                // Unique drinks
-                stats.uniqueDrinks.add(drink.name);
-            });
-
-            stats.uniqueDrinks = stats.uniqueDrinks.size;
-
-            return stats;
-        } catch (error) {
-            console.error('Error getting statistics:', error);
-            return null;
         }
     }
 
