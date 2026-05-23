@@ -147,8 +147,9 @@ function AddDrinkSheet({
     }
     setBusy(true);
     try {
-      await addDrink({
-        name: name.trim(),
+      const drinkName = name.trim();
+      const created = await addDrink({
+        name: drinkName,
         category: cat,
         quantity: qtyNum,
         unit,
@@ -156,9 +157,20 @@ function AddDrinkSheet({
         date,
         time
       });
-      if (rating > 0) await saveRating(name.trim(), rating);
-      Toast.show(`« ${name.trim()} » ajoutée`);
+      if (rating > 0) await saveRating(drinkName, rating);
+      Toast.show(`« ${drinkName} » ajoutée`);
       onClose && onClose();
+      // Géolocalisation non bloquante : on n'attend pas l'acquisition
+      // GPS pour valider l'ajout. Une fois la position obtenue, on
+      // l'attache à la boisson — elle apparaît alors sur la carte des
+      // lieux (StatsTab › MapSection).
+      if (created && created.id != null) {
+        captureLocationForDrink().then(loc => {
+          if (loc) updateDrink(created.id, {
+            location: loc
+          });
+        });
+      }
     } catch (e) {
       setErr(e && e.message ? e.message : 'Erreur lors de l\'ajout');
     } finally {
