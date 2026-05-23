@@ -681,6 +681,106 @@ async function clearAllData() {
   return r;
 }
 
+// ── Géolocalisation ───────────────────────────────────────────────
+// Capture optionnelle de la position au moment de l'ajout d'une
+// boisson, pour alimenter la carte des lieux (StatsTab › MapSection).
+// L'objet renvoyé ({ latitude, longitude, accuracy, address }) est
+// stocké tel quel dans `drink.location` ; la carte lit lat/lng et
+// `address`, `buildFamilies` lit `address` pour le libellé de lieu.
+const GEO_CONSENT_KEY = 'alconote.geoConsent';
+
+function getGeoConsent() {
+  try { return localStorage.getItem(GEO_CONSENT_KEY) || null; }
+  catch { return null; }
+}
+
+function setGeoConsent(state) {
+  try {
+    if (state) localStorage.setItem(GEO_CONSENT_KEY, state);
+    else localStorage.removeItem(GEO_CONSENT_KEY);
+  } catch {}
+}
+
+// Consentement applicatif demandé une seule fois (puis mémorisé), pour
+// ne pas reposer la question à chaque ajout. La permission définitive
+// reste gérée par l'invite native du navigateur, à l'acquisition.
+// `_geoConsentPromise` déduplique deux ajouts rapprochés pour éviter
+// d'empiler deux dialogues.
+let _geoConsentPromise = null;
+async function ensureGeoConsent() {
+  if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return false;
+  const stored = getGeoConsent();
+  if (stored === 'granted') return true;
+  if (stored === 'denied') return false;
+  if (_geoConsentPromise) return _geoConsentPromise;
+  _geoConsentPromise = (async () => {
+    const ok = await Confirm.ask({
+      title: 'Géolocaliser vos consommations ?',
+      message: 'AlcoNote peut enregistrer le lieu de chaque consommation pour les afficher sur une carte. La position ne quitte pas votre appareil. Demandé une seule fois.',
+      confirmText: 'Autoriser',
+      cancelText: 'Non merci',
+    });
+    if (!ok) { setGeoConsent('denied'); return false; }
+    return true;
+  })();
+  try { return await _geoConsentPromise; }
+  finally { _geoConsentPromise = null; }
+}
+
+function getPosition(timeout = 10000) {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true, timeout, maximumAge: 60000,
+    });
+  });
+}
+
+// Reverse-geocoding Nominatim → libellé lisible (rue, ville). Les
+// requêtes sont mises en cache par le service worker
+// (cf. sw.js › handleNominatimRequest).
+async function reverseGeocode(lat, lng) {
+  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error('reverse geocode failed');
+  const data = await res.json();
+  const a = data.address || {};
+  const parts = [];
+  if (a.house_number && a.road) parts.push(`${a.house_number} ${a.road}`);
+  else if (a.road) parts.push(a.road);
+  const city = a.city || a.town || a.village || a.municipality;
+  if (city) parts.push(city);
+  return parts.join(', ') || data.display_name || null;
+}
+
+// Acquiert la position courante pour l'attacher à une boisson. Retourne
+// { latitude, longitude, accuracy, address } ou null (refus, indispo,
+// timeout). Le reverse-geocoding est borné dans le temps : on garde
+// toujours les coordonnées même si le libellé n'arrive pas.
+async function captureLocationForDrink() {
+  try {
+    if (!(await ensureGeoConsent())) return null;
+    let pos;
+    try {
+      pos = await getPosition();
+    } catch (e) {
+      if (e && e.code === 1 /* PERMISSION_DENIED */) setGeoConsent('denied');
+      return null;
+    }
+    setGeoConsent('granted');
+    const { latitude, longitude, accuracy } = pos.coords;
+    let address = null;
+    try {
+      address = await Promise.race([
+        reverseGeocode(latitude, longitude),
+        new Promise(resolve => setTimeout(() => resolve(null), 4000)),
+      ]);
+    } catch {}
+    return { latitude, longitude, accuracy: accuracy ?? null, address };
+  } catch {
+    return null;
+  }
+}
+
 Object.assign(window, {
   dataBus,
   waitForDb,
@@ -696,5 +796,6 @@ Object.assign(window, {
   addCategory, renameCategory, deleteCategory,
   updateFamily, deleteFamily, restoreDrinks,
   clearAllData,
+  captureLocationForDrink,
   loadCategoryIcons, setCategoryIcon, migrateCategoryIconsToId,
 });

@@ -132,7 +132,7 @@ function AppShell() {
   const directAdd = React.useCallback(async (family) => {
     try {
       const n = new Date();
-      await addDrink({
+      const created = await addDrink({
         name: family.name,
         category: family.category,
         quantity: family.quantity,
@@ -145,6 +145,13 @@ function AppShell() {
         time: localTime(n),
       });
       Toast.show(`« ${family.name} » ajoutée`);
+      // Même capture de lieu non bloquante que l'ajout via la feuille,
+      // pour que les ajouts rapides apparaissent aussi sur la carte.
+      if (created && created.id != null) {
+        captureLocationForDrink().then(loc => {
+          if (loc) updateDrink(created.id, { location: loc });
+        });
+      }
     } catch (e) {
       Toast.show('Erreur lors de l\'ajout');
     }
