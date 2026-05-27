@@ -36,6 +36,52 @@ function chartNiceMax(v, ticks = 4) {
   return step * ticks;
 }
 
+// Adaptive framing for the two BAC curves so they always fill the view
+// ("meilleure vue possible"), shared by SvgBACProjection and SvgBACForecast.
+//   points        : [{ t (hours rel. now), bac (mg/L) }]
+//   extras        : values that MUST stay on-screen (e.g. the mean peak line)
+//   keepRiseFocus : trim the X window to [start .. peak + 1.5 h] so a long
+//                   elimination tail can't squeeze the rise into a sliver
+//                   (forecast only; the projection chart shows to sobriety)
+//   capRunaway    : clamp a pathological projected peak so it can't flatten
+//                   the rest of the curve — never below the `extras`
+// Returns { minT, maxT, maxB } with a true-zero baseline (BAC is absolute).
+function bacChartRange(points, {
+  extras = [],
+  keepRiseFocus = false,
+  capRunaway = false
+} = {}) {
+  const pts = points && points.length ? points : [];
+  const safeExtras = extras.filter(v => v != null && v > 0);
+  const RUNAWAY_CAP = 1500; // mg/L — ceiling for a pathological projected peak
+
+  // Y: peak of the data + any forced extras, with anti-runaway clamp.
+  const dataPeak = pts.length ? Math.max(...pts.map(p => p.bac)) : 0;
+  let peak = Math.max(0, dataPeak, ...safeExtras);
+  if (capRunaway) peak = Math.min(peak, Math.max(RUNAWAY_CAP, ...safeExtras));
+  // 15 % headroom; 80 mg/L floor so a tiny curve fills the height instead
+  // of sitting as a flat line at the bottom.
+  const maxB = chartNiceMax(Math.max(80, peak * 1.15), 4);
+
+  // X: full span, or [start .. peak + 1.5 h] when focusing the rise.
+  let minT = pts.length ? pts[0].t : 0;
+  let maxT = pts.length ? pts[pts.length - 1].t : 1;
+  if (keepRiseFocus && pts.length) {
+    let peakT = pts[0].t,
+      peakV = -Infinity;
+    for (const p of pts) if (p.bac > peakV) {
+      peakV = p.bac;
+      peakT = p.t;
+    }
+    maxT = Math.min(maxT, Math.max(peakT + 1.5, 1.5));
+  }
+  return {
+    minT,
+    maxT,
+    maxB
+  };
+}
+
 // Shared scrubber for charts. Tracks the pointer, projects it from
 // client-coordinates back to the SVG's viewBox, and exposes the closest
 // data index along with the active flag (only true while the user is
@@ -916,8 +962,13 @@ function SvgBACProjection({
     l: 36
   };
   const w = width - pad.l - pad.r;
-  const minT = safePoints ? safePoints[0].t : 0;
-  const maxT = safePoints ? safePoints[safePoints.length - 1].t : 1;
+  // Adaptive framing — full span to sobriety; a small curve still fills the
+  // height. Computed before the scrubber, which closes over minT/maxT.
+  const {
+    minT,
+    maxT,
+    maxB
+  } = bacChartRange(safePoints);
 
   // The scrubber is a hook (uses useState internally), so it must be
   // called every render — even when `safePoints` is null. We close over
@@ -948,13 +999,6 @@ function SvgBACProjection({
     }, "Aucune donn\xE9e d'alcool\xE9mie");
   }
   const h = height - pad.t - pad.b;
-  const peakBac = Math.max(...safePoints.map(p => p.bac));
-  // Adapt the y-axis to the actual peak. Previously a hard 500 mg/L
-  // floor squashed every modest curve down to a flat line at the
-  // bottom of the chart. Now small peaks fill the height while large
-  // peaks still get a 5 % headroom; the 200/500 thresholds are drawn
-  // only when they fall inside the visible range.
-  const maxB = chartNiceMax(Math.max(80, peakBac * 1.15), 4);
   const xs = t => pad.l + (t - minT) / Math.max(0.001, maxT - minT) * w;
   const ys = b => pad.t + h * (1 - b / maxB);
   const baseY = pad.t + h;
@@ -1248,8 +1292,18 @@ function SvgBACForecast({
     l: 36
   };
   const w = width - pad.l - pad.r;
-  const minT = merged.length ? merged[0].t : 0;
-  const maxT = merged.length ? merged[merged.length - 1].t : 1;
+  // Adaptive framing — focus the rise + peak (trim the long decay tail),
+  // keep the mean-peak line on-screen, and clamp a runaway projected peak.
+  // Computed before the scrubber, which closes over minT/maxT.
+  const {
+    minT,
+    maxT,
+    maxB
+  } = bacChartRange(merged, {
+    extras: [meanPeakBac],
+    keepRiseFocus: true,
+    capRunaway: true
+  });
   const scr = useChartScrubber(svgRef, null, p => {
     if (!p) {
       setScrubT(null);
@@ -1270,10 +1324,6 @@ function SvgBACForecast({
     }, "Aucune donn\xE9e pour la pr\xE9vision");
   }
   const h = height - pad.t - pad.b;
-  const peakBac = Math.max(...merged.map(p => p.bac), meanPeakBac || 0);
-  // Same headroom logic as SvgBACProjection; ensure the mean peak line
-  // is comfortably inside the viewport so its label doesn't clip the top.
-  const maxB = chartNiceMax(Math.max(80, peakBac * 1.15), 4);
   const xs = t => pad.l + (t - minT) / Math.max(0.001, maxT - minT) * w;
   const ys = b => pad.t + h * (1 - b / maxB);
   const baseY = pad.t + h;
@@ -1306,7 +1356,16 @@ function SvgBACForecast({
     stopColor: safe,
     stopOpacity: alpha
   }));
-  const pathOf = pts => pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${xs(p.t)},${ys(p.bac)}`).join(' ');
+
+  // Clamp rendered Y to maxB so a runaway projected peak rides the top edge
+  // instead of shooting past the title (the tooltip still shows the true
+  // value). clipT trims each series to the framed window so the dashed
+  // projection ends cleanly at the right edge with no overflow tail.
+  const yc = b => ys(Math.min(b, maxB));
+  const clipT = pts => pts ? pts.filter(p => p.t >= minT - 1e-6 && p.t <= maxT + 1e-6) : pts;
+  const realR = clipT(safeReal);
+  const projR = clipT(safeProj);
+  const pathOf = pts => pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${xs(p.t)},${yc(p.bac)}`).join(' ');
   const areaOf = pts => pathOf(pts) + ` L${xs(pts[pts.length - 1].t)},${baseY} L${xs(pts[0].t)},${baseY} Z`;
   const thresh = [{
     y: 200,
@@ -1368,20 +1427,23 @@ function SvgBACForecast({
   };
   const fmtStatus = b => b > 500 ? 'Au-delà' : b > 200 ? 'Léger' : 'Sobre';
 
-  // ETA marker: positioned on the projected curve when reachable, or
-  // anchored at the right edge when the projection never crosses the
-  // mean peak (so the contract "marker shown even if never reached" holds).
-  const etaReachable = etaPeakHours != null && etaPeakHours >= minT && etaPeakHours <= maxT;
-  const etaX = etaReachable ? xs(etaPeakHours) : xs(maxT);
+  // ETA marker, three states (contract: shown even if never reached):
+  //   • etaKnown=false (eta == null) → peak never reached → "∞", pinned right.
+  //   • reached within the framed window → marker at its true x.
+  //   • reached but past the trimmed window → pinned right, but keep the real
+  //     time label (don't lie with "∞").
+  const etaKnown = etaPeakHours != null;
+  const etaWithin = etaKnown && etaPeakHours >= minT && etaPeakHours <= maxT;
+  const etaX = etaWithin ? xs(etaPeakHours) : xs(maxT);
   // Round to whole minutes FIRST so values like 1.999h don't render as
   // "1h60" (floor=1, frac×60≈60 → "1h60"). Carry overflow into hours.
-  const etaLabelText = etaReachable ? Math.abs(etaPeakHours) < 1e-3 ? 'peak · maintenant' : (() => {
+  const etaLabelText = !etaKnown ? 'peak · ∞' : Math.abs(etaPeakHours) < 1e-3 ? 'peak · maintenant' : (() => {
     const totalMin = Math.round(etaPeakHours * 60);
     if (totalMin < 60) return `peak · ${totalMin}min`;
     const hh = Math.floor(totalMin / 60);
     const mm = totalMin - hh * 60;
     return `peak · ${hh}h${String(mm).padStart(2, '0')}`;
-  })() : 'peak · ∞';
+  })();
   // Anchor the label on the side of the marker that has room — flips
   // to "end" once the marker enters the right half of the plot area so
   // the text never clips the SVG edge.
@@ -1454,34 +1516,34 @@ function SvgBACForecast({
     fill: l.color,
     textAnchor: "end",
     fontFamily: fontNum
-  }, l.label))), meanPeakBac != null && meanPeakBac > 0 && meanPeakBac <= maxB && /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("line", {
+  }, l.label))), meanPeakBac != null && meanPeakBac > 0 && /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("line", {
     x1: pad.l,
     x2: pad.l + w,
-    y1: ys(meanPeakBac),
-    y2: ys(meanPeakBac),
+    y1: ys(Math.min(meanPeakBac, maxB)),
+    y2: ys(Math.min(meanPeakBac, maxB)),
     stroke: T.ink2,
     strokeDasharray: "4 4",
     strokeWidth: 1,
     opacity: 0.65
   }), /*#__PURE__*/React.createElement("text", {
     x: pad.l + 4,
-    y: ys(meanPeakBac) - 3,
+    y: ys(Math.min(meanPeakBac, maxB)) - 3,
     fontSize: 8.5,
     fill: T.ink2,
     textAnchor: "start",
     fontFamily: fontNum
-  }, "peak moyen \xB7 ", Math.round(meanPeakBac))), safeReal && safeReal.length > 1 && /*#__PURE__*/React.createElement("path", {
-    d: areaOf(safeReal),
+  }, "peak moyen \xB7 ", Math.round(meanPeakBac))), realR && realR.length > 1 && /*#__PURE__*/React.createElement("path", {
+    d: areaOf(realR),
     fill: `url(#${gradAreaId})`
-  }), safeReal && safeReal.length > 1 && /*#__PURE__*/React.createElement("path", {
-    d: pathOf(safeReal),
+  }), realR && realR.length > 1 && /*#__PURE__*/React.createElement("path", {
+    d: pathOf(realR),
     fill: "none",
     stroke: `url(#${gradStrokeId})`,
     strokeWidth: 2.4,
     strokeLinejoin: "round",
     strokeLinecap: "round"
-  }), safeProj && safeProj.length > 1 && /*#__PURE__*/React.createElement("path", {
-    d: pathOf(safeProj),
+  }), projR && projR.length > 1 && /*#__PURE__*/React.createElement("path", {
+    d: pathOf(projR),
     fill: "none",
     stroke: `url(#${gradStrokeId})`,
     strokeWidth: 1.8,
@@ -1506,12 +1568,12 @@ function SvgBACForecast({
     stroke: T.ink,
     strokeWidth: 1,
     strokeDasharray: "1 3",
-    opacity: etaReachable ? 0.55 : 0.3
+    opacity: etaWithin ? 0.55 : 0.3
   }), /*#__PURE__*/React.createElement("text", {
     x: etaTextX,
     y: pad.t + 9,
     fontSize: 8.5,
-    fill: etaReachable ? T.ink2 : T.muted,
+    fill: etaKnown ? T.ink2 : T.muted,
     textAnchor: etaAnchor,
     fontFamily: fontNum
   }, etaLabelText)), ticksX.map((t, i) => /*#__PURE__*/React.createElement("text", {
@@ -1532,32 +1594,32 @@ function SvgBACForecast({
   }, "maintenant"), focus && merged.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("line", {
     x1: xs(focus.t),
     x2: xs(focus.t),
-    y1: ys(focus.bac),
+    y1: yc(focus.bac),
     y2: baseY,
     stroke: focusColor,
     strokeWidth: 1,
     opacity: 0.35
   }), /*#__PURE__*/React.createElement("circle", {
     cx: xs(focus.t),
-    cy: ys(focus.bac),
+    cy: yc(focus.bac),
     r: 11,
     fill: focusColor,
     fillOpacity: 0.2
   }), /*#__PURE__*/React.createElement("circle", {
     cx: xs(focus.t),
-    cy: ys(focus.bac),
+    cy: yc(focus.bac),
     r: 6,
     fill: T.bg,
     stroke: focusColor,
     strokeWidth: 1.5
   }), /*#__PURE__*/React.createElement("circle", {
     cx: xs(focus.t),
-    cy: ys(focus.bac),
+    cy: yc(focus.bac),
     r: 3.5,
     fill: focusColor
   }), /*#__PURE__*/React.createElement(ChartTooltip, {
     x: xs(focus.t),
-    y: ys(focus.bac),
+    y: yc(focus.bac),
     width: width,
     lines: [`${Math.round(focus.bac)} mg/L`, fmtStatus(focus.bac), fmtRel(focus.t)]
   })));
