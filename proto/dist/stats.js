@@ -2284,11 +2284,10 @@ function BACGauge({
     cy = size / 2;
   const r = size / 2 - thickness / 2 - 2;
   const circ = 2 * Math.PI * r;
-  // Adapt the ring's full-scale to the current level so a normal evening
-  // fills a visible arc instead of a 6 % sliver. Uses the current level's
-  // upper bound (centralised in BAC_LEVELS), floored at 500 with a 3000
-  // fallback for the open-ended top bucket.
-  const cap = Math.max(500, level.max === Infinity ? 3000 : level.max);
+  // Fixed full-scale: a level-relative cap makes the ring shrink when BAC
+  // crosses a band boundary upward (e.g. 480→96 %, 520→52 %), which reads
+  // as "drinking more empties the gauge". 1500 keeps the arc monotonic.
+  const cap = 1500;
   const frac = Math.min(1, bac / cap);
   return /*#__PURE__*/React.createElement("div", {
     style: {
