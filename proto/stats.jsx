@@ -1195,7 +1195,7 @@ function computeBacOverTime(drinks, weight, gender) {
 function computeBacForecast(currentBac, allSessions, weight, gender, nowMs) {
   const r = gender === 'female' ? 0.55 : 0.68;
   const w = weight || 70;
-  const elimRate = 150; // mg/L/h, must match computeBacOverTime
+  const elimRate = BAC_ELIM_RATE; // mg/L/h, shared with the rest of the BAC engine
 
   const sessions = (allSessions || []).filter(s => s && s.drinks && s.drinks.length > 0);
   // The ongoing session is the one whose BAC window contains "now"
@@ -1231,18 +1231,21 @@ function computeBacForecast(currentBac, allSessions, weight, gender, nowMs) {
   }
 
   const sessionStartMs = ongoing.startTs;
-  // Pace = pure alcohol consumed so far this session / time since the
-  // first drink. Only count drinks already poured (≤ now) so a
-  // future-dated entry can't inflate the rate. 5-min floor so a single
-  // just-logged drink doesn't blow the rate up to several hundred g/h.
-  const totalGrams = ongoing.drinks.reduce(
-    (s, d) => d._ts <= nowMs
-      ? s + toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789
-      : s,
-    0
-  );
-  const elapsedH = Math.max(5 / 60, (nowMs - sessionStartMs) / 3600_000);
-  const currentRateGph = totalGrams / elapsedH;
+  // Pace = pure alcohol consumed so far this session / the span across the
+  // drinks actually poured (first → last poured drink). We reuse the grams
+  // computeBACSessions already attached (`_grams`) so the unit formula
+  // lives in exactly one place. Only count drinks already poured (≤ now) so
+  // a future-dated entry can't inflate the rate. The span is floored at the
+  // absorption window so a single just-logged drink (span 0) doesn't divide
+  // by ~0 and blow the rate up to hundreds of g/h, and the result is capped
+  // at a physically extreme 60 g/h (~6 standard drinks/hour) as a backstop.
+  const poured = ongoing.drinks.filter(d => d._ts <= nowMs);
+  const totalGrams = poured.reduce((s, d) => s + (d._grams || 0), 0);
+  const firstPouredTs = poured.length ? poured[0]._ts : sessionStartMs;
+  const lastPouredTs = poured.length ? poured[poured.length - 1]._ts : sessionStartMs;
+  const spanH = (lastPouredTs - firstPouredTs) / 3600_000;
+  const elapsedH = Math.max(BAC_ABSORPTION_H, spanH);
+  const currentRateGph = Math.min(totalGrams / elapsedH, 60);
 
   // Project drinking at the current pace until the user would normally
   // stop (current session start + mean historical drinking span). No
@@ -1253,19 +1256,19 @@ function computeBacForecast(currentBac, allSessions, weight, gender, nowMs) {
 
   const consumptionSlope = (currentRateGph * 1000) / (w * r); // mg/L/h injected by drinking
   const netSlope = consumptionSlope - elimRate;
-  const tStopH = (estStopMs - nowMs) / 3600_000;
+  const tStopH = Math.max(0, (estStopMs - nowMs) / 3600_000);
   const bacAtStop = Math.max(0, currentBac + netSlope * tStopH);
-  const tEndH = tStopH + bacAtStop / elimRate;
+  const tEndH = tStopH + bacAtStop / elimRate; // projected curve reaches 0 here
+  // Cap the rendered horizon so a tall projected peak can't trail a
+  // multi-hour flat tail that compresses the interesting part of the curve.
+  const tLastH = Math.min(tEndH, 12);
 
   const projectedPoints = [];
   const step = 1 / 60; // 1-min resolution, matches SvgBACForecast scrub granularity
-  for (let t = 0; t <= tEndH + 1e-6; t += step) {
-    let bac;
-    if (t <= tStopH) {
-      bac = currentBac + netSlope * t;
-    } else {
-      bac = bacAtStop - elimRate * (t - tStopH);
-    }
+  for (let t = 0; t <= tLastH + 1e-6; t += step) {
+    const bac = t <= tStopH
+      ? currentBac + netSlope * t              // phase 1: drinking at current pace
+      : bacAtStop - elimRate * (t - tStopH);   // phase 2: elimination only
     projectedPoints.push({ t: +t.toFixed(4), bac: Math.max(0, bac) });
   }
 
@@ -1399,7 +1402,9 @@ function ForecastMiniStats({ forecast, fmtTime }) {
   const peak = forecast.meanPeakBac != null
     ? `${Math.round(forecast.meanPeakBac)}`
     : '—';
-  const eta = forecast.etaPeakHours != null
+  const eta = forecast.etaPeakHours === 0
+    ? 'maintenant'
+    : forecast.etaPeakHours != null
     ? fmtTime(forecast.etaPeakHours)
     : (forecast.meanPeakBac != null && forecast.hasCurrentSession ? '∞' : '—');
   const item = (icon, label, value, unit) => (
@@ -1647,7 +1652,11 @@ function BACGauge({ bac, level }) {
   const cx = size / 2, cy = size / 2;
   const r = size / 2 - thickness / 2 - 2;
   const circ = 2 * Math.PI * r;
-  const cap = 1500;
+  // Adapt the ring's full-scale to the current level so a normal evening
+  // fills a visible arc instead of a 6 % sliver. Uses the current level's
+  // upper bound (centralised in BAC_LEVELS), floored at 500 with a 3000
+  // fallback for the open-ended top bucket.
+  const cap = Math.max(500, level.max === Infinity ? 3000 : level.max);
   const frac = Math.min(1, bac / cap);
   return (
     <div style={{ position: 'relative', width: size, height: size }}>
