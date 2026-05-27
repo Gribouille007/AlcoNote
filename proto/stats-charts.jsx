@@ -47,11 +47,12 @@ function chartNiceMax(v, ticks = 4) {
 function bacChartRange(points, { extras = [], keepRiseFocus = false, capRunaway = false } = {}) {
   const pts = points && points.length ? points : [];
   const safeExtras = extras.filter(v => v != null && v > 0);
+  const RUNAWAY_CAP = 1500; // mg/L — ceiling for a pathological projected peak
 
   // Y: peak of the data + any forced extras, with anti-runaway clamp.
   const dataPeak = pts.length ? Math.max(...pts.map(p => p.bac)) : 0;
   let peak = Math.max(0, dataPeak, ...safeExtras);
-  if (capRunaway) peak = Math.min(peak, Math.max(1500, ...safeExtras));
+  if (capRunaway) peak = Math.min(peak, Math.max(RUNAWAY_CAP, ...safeExtras));
   // 15 % headroom; 80 mg/L floor so a tiny curve fills the height instead
   // of sitting as a flat line at the bottom.
   const maxB = chartNiceMax(Math.max(80, peak * 1.15), 4);
