@@ -148,7 +148,7 @@ function DayGroup({
   today.setHours(0, 0, 0, 0);
   const diff = Math.round((today - d) / 86400000);
   let rel = null;
-  if (diff === 0) rel = "Aujourd'hui";else if (diff === 1) rel = 'Hier';else if (diff < 7) rel = `il y a ${diff} jours`;
+  if (diff === 0) rel = "Aujourd'hui";else if (diff === 1) rel = 'Hier';else if (diff >= 2 && diff < 7) rel = `il y a ${diff} jours`;
 
   // Total cL (mirror the real-app summary)
   const totalCl = entries.reduce((s, e) => s + toCl(e.family.quantity, e.family.unit), 0);
@@ -409,13 +409,13 @@ function EntryRow({
 // `onClickCapture` swallows the synthetic click that some browsers
 // generate after a meaningful pointer drag, so swiping never
 // accidentally opens the edit sheet sitting underneath the row.
-function useSwipeToDelete(onAction, actionThreshold = 64) {
+function useSwipeToDelete(onAction, actionThreshold = 64, tapSlop = 10) {
   const [offset, setOffset] = React.useState(0);
   const [dragging, setDragging] = React.useState(false);
   const offsetRef = React.useRef(0);
   const startRef = React.useRef(null);
   const lockRef = React.useRef(null); // 'h' | 'v' once direction decided
-  const swipedRef = React.useRef(false); // true if last gesture moved horizontally
+  const swipedRef = React.useRef(false); // true once the finger travels past tapSlop (a real swipe, not a tap)
 
   const setOff = v => {
     offsetRef.current = v;
@@ -429,12 +429,10 @@ function useSwipeToDelete(onAction, actionThreshold = 64) {
     lockRef.current = null;
     swipedRef.current = false;
     setDragging(true);
-    // Capture so we keep getting move/up even when the finger leaves
-    // the row (otherwise a fast swipe past the edge would strand the
-    // row at mid-translate forever).
-    try {
-      e.currentTarget.setPointerCapture && e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {}
+    // Pointer capture is deferred until a horizontal swipe is actually
+    // committed (see onPointerMove). Capturing eagerly here would make
+    // every tap — including taps on the inner "+"/edit buttons — capture
+    // the pointer, which on touch can interfere with the trailing click.
   };
   const onPointerMove = e => {
     if (!startRef.current) return;
@@ -443,9 +441,21 @@ function useSwipeToDelete(onAction, actionThreshold = 64) {
     if (!lockRef.current) {
       if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
       lockRef.current = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+      // Capture only once we've committed to a horizontal swipe so move/up
+      // keep coming even if the finger leaves the row. A plain tap never
+      // locks horizontal, so it never captures and its click flows through.
+      if (lockRef.current === 'h') {
+        try {
+          e.currentTarget.setPointerCapture && e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {}
+      }
     }
     if (lockRef.current !== 'h') return;
-    swipedRef.current = true;
+    // Only mark this as a real swipe (and thus swallow the trailing click
+    // in onClickCapture) once the finger has travelled past the tap slop.
+    // Below it the gesture stays a tap, so the row's "+" / edit button
+    // fire reliably despite a few px of finger jitter.
+    if (Math.abs(dx) > tapSlop) swipedRef.current = true;
     const next = Math.max(-actionThreshold * 1.6, Math.min(0, dx));
     setOff(next);
   };
