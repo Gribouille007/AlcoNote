@@ -497,32 +497,10 @@ function FamilyRow({
       marginRight: 6,
       flexShrink: 0
     }
-  }, "\xD7", totalEntries), /*#__PURE__*/React.createElement("button", {
-    type: "button",
-    onClick: ev => {
-      ev.stopPropagation();
-      onDirectAdd && onDirectAdd(f);
-    },
-    style: {
-      width: 32,
-      height: 32,
-      borderRadius: 10,
-      background: T.accentSoft,
-      border: `1px solid ${T.accentSoftBorder}`,
-      display: 'grid',
-      placeItems: 'center',
-      color: T.accent,
-      cursor: 'pointer',
-      flexShrink: 0,
-      padding: 0,
-      fontFamily: 'inherit'
-    },
-    title: "Ajouter \xE0 nouveau",
-    "aria-label": `Ajouter ${f.name} (${f.quantity} ${f.unit}, ${f.alcohol}°) à nouveau`
-  }, /*#__PURE__*/React.createElement(SvgIcon, {
-    icon: Ic.plus,
-    size: 14
-  })));
+  }, "\xD7", totalEntries), /*#__PURE__*/React.createElement(QuickAddButton, {
+    onAdd: () => onDirectAdd && onDirectAdd(f),
+    label: `Ajouter ${f.name} (${f.quantity} ${f.unit}, ${f.alcohol}°) à nouveau`
+  }));
 }
 function EditCategorySheet({
   category,
