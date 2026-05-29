@@ -248,7 +248,6 @@ function AppShell() {
     style: tabContainer('categories')
   }, /*#__PURE__*/React.createElement(CategoriesTab, {
     onOpenFamily: setOpenFamily,
-    onAdd: () => setAdding(true),
     onDirectAdd: directAdd,
     onEditFamily: onEdit,
     query: catQuery,
@@ -281,16 +280,19 @@ function AppShell() {
     open: settings,
     onClose: () => setSettings(false)
   }), openFamily && /*#__PURE__*/React.createElement(DrinkDetailSheet, {
+    key: openFamily.id,
     family: openFamily,
     onClose: () => setOpenFamily(null),
     onAddAgain: onAddAgain,
     onEdit: onEdit
   }), openEntry && /*#__PURE__*/React.createElement(DrinkDetailSheet, {
+    key: openEntry.id || openEntry.family && openEntry.family.id,
     entry: openEntry,
     onClose: () => setOpenEntry(null),
     onAddAgain: onAddAgain,
     onEdit: onEdit
   }), editFamily && /*#__PURE__*/React.createElement(EditFamilySheet, {
+    key: editFamily.id,
     family: editFamily,
     onClose: () => setEditFamily(null)
   }), /*#__PURE__*/React.createElement(ConfirmHost, null), toast && /*#__PURE__*/React.createElement("div", {

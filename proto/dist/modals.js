@@ -9,40 +9,11 @@ function _now() {
     time: localTime(d)
   };
 }
-function inputS() {
-  return {
-    width: '100%',
-    background: T.surface2,
-    border: `1px solid ${T.rule}`,
-    borderRadius: 12,
-    padding: '11px 14px',
-    color: T.ink,
-    fontSize: 14,
-    fontFamily: fontSans,
-    outline: 'none',
-    letterSpacing: -0.1,
-    boxSizing: 'border-box'
-  };
-}
-function FieldGroup({
-  label,
-  children
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginBottom: 14
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      letterSpacing: 1.4,
-      textTransform: 'uppercase',
-      color: T.muted,
-      fontWeight: 500,
-      marginBottom: 7
-    }
-  }, label), children);
-}
+
+// `inputS` (input base style), `FieldGroup`, `NumberField`, `CategoryChips`,
+// `UnitToggle` and `RatingField` now live in shared.jsx (loaded first) and are
+// available as globals here — see CLAUDE.md › Form primitives.
+
 function ImpactStat({
   big,
   unit,
@@ -99,11 +70,13 @@ function AddDrinkSheet({
     setErr('');
     setBusy(false);
     if (prefill) {
+      // NumberField state stays a string — coerce prefilled numbers so the
+      // controlled input never flips number↔string mid-edit.
       setName(prefill.name || '');
       setCat(prefill.category || '');
-      setQty(prefill.quantity != null ? prefill.quantity : '');
+      setQty(prefill.quantity != null ? String(prefill.quantity) : '');
       setUnit(prefill.unit || 'cL');
-      setAlc(prefill.alcohol != null ? prefill.alcohol : prefill.alcoholContent != null ? prefill.alcoholContent : '');
+      setAlc(prefill.alcohol != null ? String(prefill.alcohol) : prefill.alcoholContent != null ? String(prefill.alcoholContent) : '');
       setRating(prefill.rating || 0);
     } else {
       setName('');
@@ -124,8 +97,11 @@ function AddDrinkSheet({
     if (!cat && categories.length > 0) setCat(categories[0].name);
   }, [open, prefill, categories, cat]);
   if (!open) return null;
-  const qtyNum = Number(qty) || 0;
-  const alcNum = Number(alc) || 0;
+
+  // parseDecimal accepts a comma OR a dot (see shared.jsx) — `Number()`
+  // returned NaN on "5,5" typed with a French keypad.
+  const qtyNum = parseDecimal(qty) || 0;
+  const alcNum = parseDecimal(alc) || 0;
   // Use the shared toCl so non-canonical units (e.g. "ml" coming from
   // a scanner result) are converted correctly instead of being treated
   // as cL by a local case-sensitive ternary.
@@ -317,26 +293,11 @@ function AddDrinkSheet({
     style: inputS()
   })), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Cat\xE9gorie"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 6,
-      flexWrap: 'wrap'
-    }
-  }, categories.map(c => /*#__PURE__*/React.createElement("div", {
-    key: c.id,
-    onClick: () => setCat(c.name),
-    style: {
-      padding: '7px 12px',
-      borderRadius: 10,
-      fontSize: 12,
-      border: `1px solid ${cat === c.name ? T.accent : T.rule}`,
-      background: cat === c.name ? T.accentSoft : 'transparent',
-      color: cat === c.name ? T.accent : T.ink2,
-      cursor: 'pointer',
-      letterSpacing: -0.1
-    }
-  }, c.name)))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(CategoryChips, {
+    categories: categories,
+    value: cat,
+    onChange: setCat
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: '1.2fr 1fr',
@@ -348,79 +309,28 @@ function AddDrinkSheet({
     }
   }, /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Quantit\xE9"
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "number",
+  }, /*#__PURE__*/React.createElement(NumberField, {
     value: qty,
-    onChange: e => setQty(e.target.value),
-    inputMode: "decimal",
-    placeholder: "\u2014",
-    style: inputS()
+    onChange: setQty,
+    ariaLabel: "Quantit\xE9"
   }))), /*#__PURE__*/React.createElement("div", {
     style: {
       minWidth: 0
     }
   }, /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Unit\xE9"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 4,
-      padding: 3,
-      background: T.surface2,
-      borderRadius: 10,
-      border: `1px solid ${T.rule}`
-    }
-  }, ['cL', 'L', 'EcoCup'].map(u2 => /*#__PURE__*/React.createElement("div", {
-    key: u2,
-    onClick: () => setUnit(u2),
-    style: {
-      flex: 1,
-      padding: '8px 0',
-      borderRadius: 7,
-      textAlign: 'center',
-      fontSize: 11.5,
-      cursor: 'pointer',
-      letterSpacing: -0.1,
-      background: unit === u2 ? T.ink : 'transparent',
-      color: unit === u2 ? T.bg : T.ink2,
-      fontWeight: unit === u2 ? 600 : 400,
-      minWidth: 0
-    }
-  }, u2)))))), /*#__PURE__*/React.createElement(FieldGroup, {
+  }, /*#__PURE__*/React.createElement(UnitToggle, {
+    value: unit,
+    onChange: setUnit
+  })))), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Degr\xE9 d'alcool"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 12,
-      background: T.surface2,
-      border: `1px solid ${T.rule}`,
-      borderRadius: 12,
-      padding: '10px 14px'
-    }
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "number",
+  }, /*#__PURE__*/React.createElement(NumberField, {
     value: alc,
+    onChange: setAlc,
     step: "0.1",
-    inputMode: "decimal",
-    placeholder: "\u2014",
-    onChange: e => setAlc(e.target.value),
-    style: {
-      flex: 1,
-      background: 'transparent',
-      border: 'none',
-      outline: 'none',
-      color: T.ink,
-      fontSize: 15,
-      fontFamily: fontSans,
-      minWidth: 0
-    }
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: T.muted,
-      fontSize: 13
-    }
-  }, "%"))), /*#__PURE__*/React.createElement("div", {
+    suffix: "%",
+    ariaLabel: "Degr\xE9 d'alcool"
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
@@ -459,31 +369,10 @@ function AddDrinkSheet({
     }
   }))), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Note (optionnelle)"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: T.surface2,
-      border: `1px solid ${T.rule}`,
-      borderRadius: 12,
-      padding: '10px 14px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between'
-    }
-  }, /*#__PURE__*/React.createElement(Stars, {
-    n: rating,
-    interactive: true,
-    size: 18,
+  }, /*#__PURE__*/React.createElement(RatingField, {
+    value: rating,
     onChange: setRating
-  }), rating > 0 && /*#__PURE__*/React.createElement("button", {
-    type: "button",
-    onClick: () => setRating(0),
-    style: {
-      ...ghostButton,
-      color: T.muted,
-      fontSize: 11,
-      cursor: 'pointer'
-    }
-  }, "Effacer"))), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
       padding: 14,
@@ -559,8 +448,8 @@ function AddDrinkSheet({
       if (p) {
         if (p.name) setName(p.name);
         if (p.category) setCat(p.category);
-        if (p.alcoholContent !== undefined) setAlc(p.alcoholContent);
-        if (p.quantity) setQty(p.quantity);
+        if (p.alcoholContent !== undefined) setAlc(String(p.alcoholContent));
+        if (p.quantity) setQty(String(p.quantity));
         if (p.unit) setUnit(p.unit);
         Toast.show(`« ${p.name || 'Produit'} » détecté`);
       }
@@ -843,8 +732,14 @@ function DrinkDetailSheet({
 }) {
   const ratings = useRatings();
   const {
+    categories
+  } = useCategories();
+  const {
     loading
   } = useDrinks();
+  // Inline "move to another category" affordance (applies to the whole
+  // family via updateFamily).
+  const [moving, setMoving] = React.useState(false);
   // Read the shared families memo from FamiliesContext instead of
   // rebuilding the grouping locally — `buildFamilies(drinks, ratings)`
   // ran on every bump and produced a brand-new array each time, which
@@ -1137,7 +1032,58 @@ function DrinkDetailSheet({
       icon: Ic.trash,
       size: 14
     })));
-  }))), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setMoving(v => !v),
+    "aria-expanded": moving,
+    style: {
+      ...ghostButton,
+      width: '100%',
+      padding: '10px 0',
+      cursor: 'pointer',
+      color: T.ink2,
+      fontSize: 12.5,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.grid,
+    size: 13
+  }), " D\xE9placer vers une autre cat\xE9gorie"), moving && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      padding: 12,
+      background: T.surface,
+      border: `1px solid ${T.rule}`,
+      borderRadius: 14
+    }
+  }, /*#__PURE__*/React.createElement(CategoryChips, {
+    categories: categories,
+    value: f.category,
+    ariaLabel: "D\xE9placer vers la cat\xE9gorie",
+    onChange: async nextCat => {
+      if (!nextCat || nextCat === f.category) {
+        setMoving(false);
+        return;
+      }
+      try {
+        await updateFamily(f, {
+          category: nextCat
+        });
+        Toast.show(`Déplacé vers « ${nextCat} »`);
+        setMoving(false);
+      } catch (err) {
+        console.warn('AlcoNote: move family failed', err);
+        Toast.show('Erreur lors du déplacement');
+      }
+    }
+  })))), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: '12px 22px calc(22px + env(safe-area-inset-bottom))',
       borderTop: `1px solid ${T.rule}`,
@@ -1206,9 +1152,9 @@ function EditEntrySheet({
   const ratings = useRatings();
   const raw = entry.raw || entry;
   const [name, setName] = React.useState(raw.name || '');
-  const [qty, setQty] = React.useState(raw.quantity != null ? raw.quantity : '');
+  const [qty, setQty] = React.useState(raw.quantity != null ? String(raw.quantity) : '');
   const [unit, setUnit] = React.useState(raw.unit || 'cL');
-  const [alc, setAlc] = React.useState(raw.alcoholContent != null ? raw.alcoholContent : '');
+  const [alc, setAlc] = React.useState(raw.alcoholContent != null ? String(raw.alcoholContent) : '');
   const [cat, setCat] = React.useState(raw.category || '');
   const [date, setDate] = React.useState(raw.date || _now().date);
   const [time, setTime] = React.useState(raw.time || _now().time);
@@ -1223,9 +1169,13 @@ function EditEntrySheet({
       setErr('Le nom est requis');
       return;
     }
-    const qtyNum = Number(qty) || 0;
+    const qtyNum = parseDecimal(qty) || 0;
     if (qtyNum <= 0) {
       setErr('Quantité invalide');
+      return;
+    }
+    if (!cat) {
+      setErr('Choisissez une catégorie');
       return;
     }
     setBusy(true);
@@ -1236,7 +1186,7 @@ function EditEntrySheet({
         category: cat,
         quantity: qtyNum,
         unit,
-        alcoholContent: Number(alc) || 0,
+        alcoholContent: parseDecimal(alc) || 0,
         date,
         time
       });
@@ -1362,26 +1312,11 @@ function EditEntrySheet({
     style: inputS()
   })), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Cat\xE9gorie"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 6,
-      flexWrap: 'wrap'
-    }
-  }, categories.map(c => /*#__PURE__*/React.createElement("div", {
-    key: c.id,
-    onClick: () => setCat(c.name),
-    style: {
-      padding: '7px 12px',
-      borderRadius: 10,
-      fontSize: 12,
-      border: `1px solid ${cat === c.name ? T.accent : T.rule}`,
-      background: cat === c.name ? T.accentSoft : 'transparent',
-      color: cat === c.name ? T.accent : T.ink2,
-      cursor: 'pointer',
-      letterSpacing: -0.1
-    }
-  }, c.name)))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(CategoryChips, {
+    categories: categories,
+    value: cat,
+    onChange: setCat
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: '1.2fr 1fr',
@@ -1393,54 +1328,26 @@ function EditEntrySheet({
     }
   }, /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Quantit\xE9"
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "number",
+  }, /*#__PURE__*/React.createElement(NumberField, {
     value: qty,
-    onChange: e => setQty(e.target.value),
-    inputMode: "decimal",
-    placeholder: "\u2014",
-    style: inputS()
+    onChange: setQty,
+    ariaLabel: "Quantit\xE9"
   }))), /*#__PURE__*/React.createElement("div", {
     style: {
       minWidth: 0
     }
   }, /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Unit\xE9"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 4,
-      padding: 3,
-      background: T.surface2,
-      borderRadius: 10,
-      border: `1px solid ${T.rule}`
-    }
-  }, ['cL', 'L', 'EcoCup'].map(u2 => /*#__PURE__*/React.createElement("div", {
-    key: u2,
-    onClick: () => setUnit(u2),
-    style: {
-      flex: 1,
-      padding: '8px 0',
-      borderRadius: 7,
-      textAlign: 'center',
-      fontSize: 11.5,
-      cursor: 'pointer',
-      letterSpacing: -0.1,
-      background: unit === u2 ? T.ink : 'transparent',
-      color: unit === u2 ? T.bg : T.ink2,
-      fontWeight: unit === u2 ? 600 : 400,
-      minWidth: 0
-    }
-  }, u2)))))), /*#__PURE__*/React.createElement(FieldGroup, {
+  }, /*#__PURE__*/React.createElement(UnitToggle, {
+    value: unit,
+    onChange: setUnit
+  })))), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Degr\xE9 d'alcool (%)"
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "number",
+  }, /*#__PURE__*/React.createElement(NumberField, {
     value: alc,
+    onChange: setAlc,
     step: "0.1",
-    inputMode: "decimal",
-    placeholder: "\u2014",
-    onChange: e => setAlc(e.target.value),
-    style: inputS()
+    ariaLabel: "Degr\xE9 d'alcool"
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
@@ -1480,31 +1387,10 @@ function EditEntrySheet({
     }
   }))), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Note"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: T.surface2,
-      border: `1px solid ${T.rule}`,
-      borderRadius: 12,
-      padding: '10px 14px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between'
-    }
-  }, /*#__PURE__*/React.createElement(Stars, {
-    n: rating,
-    interactive: true,
-    size: 18,
+  }, /*#__PURE__*/React.createElement(RatingField, {
+    value: rating,
     onChange: setRating
-  }), rating > 0 && /*#__PURE__*/React.createElement("button", {
-    type: "button",
-    onClick: () => setRating(0),
-    style: {
-      ...ghostButton,
-      color: T.muted,
-      fontSize: 11,
-      cursor: 'pointer'
-    }
-  }, "Effacer"))), err && /*#__PURE__*/React.createElement("div", {
+  })), err && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.accent2,
       background: 'oklch(35% 0.10 25 / 0.15)',
@@ -1593,9 +1479,9 @@ function EditFamilySheet({
   } = useCategories();
   const ratings = useRatings();
   const [name, setName] = React.useState(family.name);
-  const [qty, setQty] = React.useState(family.quantity);
+  const [qty, setQty] = React.useState(family.quantity != null ? String(family.quantity) : '');
   const [unit, setUnit] = React.useState(family.unit);
-  const [alc, setAlc] = React.useState(family.alcohol);
+  const [alc, setAlc] = React.useState(family.alcohol != null ? String(family.alcohol) : '');
   const [cat, setCat] = React.useState(family.category);
   // Ratings are keyed by the canonical drink name (not per family / per
   // entry), so we seed from the current name's value and persist under
@@ -1610,9 +1496,13 @@ function EditFamilySheet({
       setErr('Le nom est requis');
       return;
     }
-    const qtyNum = Number(qty) || 0;
+    const qtyNum = parseDecimal(qty) || 0;
     if (qtyNum <= 0) {
       setErr('Quantité invalide');
+      return;
+    }
+    if (!cat) {
+      setErr('Choisissez une catégorie');
       return;
     }
     setBusy(true);
@@ -1623,7 +1513,7 @@ function EditFamilySheet({
         name: finalName,
         quantity: qtyNum,
         unit,
-        alcoholContent: Number(alc) || 0,
+        alcoholContent: parseDecimal(alc) || 0,
         category: cat
       });
       // Migrate the rating to the new key when the family is renamed.
@@ -1769,26 +1659,11 @@ function EditFamilySheet({
     style: inputS()
   })), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Cat\xE9gorie"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 6,
-      flexWrap: 'wrap'
-    }
-  }, categories.map(c => /*#__PURE__*/React.createElement("div", {
-    key: c.id,
-    onClick: () => setCat(c.name),
-    style: {
-      padding: '7px 12px',
-      borderRadius: 10,
-      fontSize: 12,
-      border: `1px solid ${cat === c.name ? T.accent : T.rule}`,
-      background: cat === c.name ? T.accentSoft : 'transparent',
-      color: cat === c.name ? T.accent : T.ink2,
-      cursor: 'pointer',
-      letterSpacing: -0.1
-    }
-  }, c.name)))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(CategoryChips, {
+    categories: categories,
+    value: cat,
+    onChange: setCat
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: '1.2fr 1fr',
@@ -1796,72 +1671,28 @@ function EditFamilySheet({
     }
   }, /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Quantit\xE9"
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "number",
+  }, /*#__PURE__*/React.createElement(NumberField, {
     value: qty,
-    onChange: e => setQty(+e.target.value || 0),
-    style: inputS()
+    onChange: setQty,
+    ariaLabel: "Quantit\xE9"
   })), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Unit\xE9"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 4,
-      padding: 3,
-      background: T.surface2,
-      borderRadius: 10,
-      border: `1px solid ${T.rule}`
-    }
-  }, ['cL', 'L', 'EcoCup'].map(u2 => /*#__PURE__*/React.createElement("div", {
-    key: u2,
-    onClick: () => setUnit(u2),
-    style: {
-      flex: 1,
-      padding: '8px 0',
-      borderRadius: 7,
-      textAlign: 'center',
-      fontSize: 11.5,
-      cursor: 'pointer',
-      letterSpacing: -0.1,
-      background: unit === u2 ? T.ink : 'transparent',
-      color: unit === u2 ? T.bg : T.ink2,
-      fontWeight: unit === u2 ? 600 : 400
-    }
-  }, u2))))), /*#__PURE__*/React.createElement(FieldGroup, {
+  }, /*#__PURE__*/React.createElement(UnitToggle, {
+    value: unit,
+    onChange: setUnit
+  }))), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Degr\xE9 d'alcool (%)"
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "number",
+  }, /*#__PURE__*/React.createElement(NumberField, {
     value: alc,
+    onChange: setAlc,
     step: "0.1",
-    onChange: e => setAlc(+e.target.value || 0),
-    style: inputS()
+    ariaLabel: "Degr\xE9 d'alcool"
   })), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Note"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: T.surface2,
-      border: `1px solid ${T.rule}`,
-      borderRadius: 12,
-      padding: '10px 14px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between'
-    }
-  }, /*#__PURE__*/React.createElement(Stars, {
-    n: rating,
-    interactive: true,
-    size: 18,
+  }, /*#__PURE__*/React.createElement(RatingField, {
+    value: rating,
     onChange: setRating
-  }), rating > 0 && /*#__PURE__*/React.createElement("button", {
-    type: "button",
-    onClick: () => setRating(0),
-    style: {
-      ...ghostButton,
-      color: T.muted,
-      fontSize: 11,
-      cursor: 'pointer'
-    }
-  }, "Effacer"))), err && /*#__PURE__*/React.createElement("div", {
+  })), err && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.accent2,
       background: 'oklch(35% 0.10 25 / 0.15)',
@@ -2060,12 +1891,15 @@ function SettingsDrawer({
     label: "Profil"
   }, /*#__PURE__*/React.createElement(ProfileRow, {
     label: "Poids (kg)",
-    type: "number",
+    numeric: true,
     min: 30,
     max: 200,
     step: 0.5,
-    value: settings.userWeight || '',
-    onSave: v => saveSetting('userWeight', v ? Number(v) : null)
+    value: settings.userWeight != null ? String(settings.userWeight) : '',
+    onSave: v => {
+      const n = parseDecimal(v);
+      saveSetting('userWeight', v && !isNaN(n) ? n : null);
+    }
   }), /*#__PURE__*/React.createElement(GenderPicker, {
     value: settings.userGender || '',
     onChange: v => saveSetting('userGender', v || null),
@@ -2149,6 +1983,10 @@ function ProfileRow({
   value,
   onSave,
   last,
+  numeric,
+  step,
+  min,
+  max,
   ...inputProps
 }) {
   const [v, setV] = React.useState(value);
@@ -2168,7 +2006,27 @@ function ProfileRow({
       fontSize: 13.5,
       letterSpacing: -0.1
     }
-  }, label), /*#__PURE__*/React.createElement("input", _extends({
+  }, label), numeric ?
+  /*#__PURE__*/
+  // Numeric profile fields (e.g. weight) get the decimal keypad and
+  // accept a comma or a dot. Save on blur (the input's blur bubbles).
+  React.createElement(NumberField, {
+    value: v,
+    onChange: setV,
+    onBlur: () => onSave(v),
+    ariaLabel: label,
+    step: step,
+    min: min,
+    max: max,
+    placeholder: "",
+    style: {
+      width: 80,
+      padding: '6px 10px',
+      fontSize: 13,
+      textAlign: 'right',
+      borderRadius: 8
+    }
+  }) : /*#__PURE__*/React.createElement("input", _extends({
     value: v,
     onChange: e => setV(e.target.value),
     onBlur: () => onSave(v)
@@ -2329,7 +2187,6 @@ Object.assign(window, {
   EditFamilySheet,
   EditEntrySheet,
   SettingsDrawer,
-  FieldGroup,
   ImpactStat,
   FactCell,
   ThemePicker,

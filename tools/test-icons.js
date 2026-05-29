@@ -33,7 +33,7 @@ global.React = {
 require(path.join(ROOT, 'proto/dist/shared.js'));
 require(path.join(ROOT, 'proto/dist/data.js'));
 
-const { canonicalCat, computeCategoryStats } = global;
+const { canonicalCat, computeCategoryStats, parseDecimal } = global;
 let fails = 0;
 function eq(actual, expected, msg) {
   const pass = JSON.stringify(actual) === JSON.stringify(expected);
@@ -64,6 +64,16 @@ console.log('computeCategoryStats dedupe');
   eq(biere && biere.families, 2, 'Bière families folded across spellings');
   eq(!!rhum && String(rhum.id).startsWith('cat-'), true, 'unknown category stays synthetic');
 }
+
+console.log('parseDecimal');
+eq(typeof parseDecimal, 'function', 'exported from shared bundle');
+eq(parseDecimal('5.5'), 5.5, 'dot decimal -> 5.5');
+eq(parseDecimal('5,5'), 5.5, 'comma decimal -> 5.5');
+eq(parseDecimal('0,789'), 0.789, 'leading-zero comma -> 0.789');
+eq(parseDecimal(' 33 '), 33, 'trims surrounding whitespace');
+eq(Number.isNaN(parseDecimal('')), true, 'empty string -> NaN');
+eq(Number.isNaN(parseDecimal(null)), true, 'null -> NaN');
+eq(Number.isNaN(parseDecimal('abc')), true, 'non-numeric -> NaN');
 
 console.log(fails ? `\n${fails} assertion(s) FAILED` : '\nAll assertions passed');
 process.exit(fails ? 1 : 0);

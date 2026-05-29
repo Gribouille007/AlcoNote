@@ -3,7 +3,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 // categories.jsx — Tab 1: Catégories (grid + drill-down to family detail)
 
 function CategoriesTab({
-  onAdd,
   onOpenFamily,
   onDirectAdd,
   onEditFamily,
@@ -13,6 +12,7 @@ function CategoriesTab({
   setOpenCat
 }) {
   const [editCat, setEditCat] = React.useState(null);
+  const [creatingCat, setCreatingCat] = React.useState(false);
   const {
     categories
   } = useCategories();
@@ -25,7 +25,7 @@ function CategoriesTab({
   // If the open category was just deleted, drop back to the grid so the
   // user isn't stranded inside an empty FamilyList for a missing cat.
   React.useEffect(() => {
-    if (openCat && categories.length > 0 && !categories.some(c => c.name === openCat)) {
+    if (openCat && categories.length > 0 && !categories.some(c => canonicalCat(c.name) === canonicalCat(openCat))) {
       setOpenCat(null);
     }
   }, [openCat, categories, setOpenCat]);
@@ -33,7 +33,7 @@ function CategoriesTab({
   // Same idea for the edit sheet — close it if the underlying category
   // vanished (deleted from elsewhere) so it doesn't operate on stale data.
   React.useEffect(() => {
-    if (editCat && categories.length > 0 && !categories.some(c => c.name === editCat)) {
+    if (editCat && categories.length > 0 && !categories.some(c => canonicalCat(c.name) === canonicalCat(editCat))) {
       setEditCat(null);
     }
   }, [editCat, categories]);
@@ -41,7 +41,8 @@ function CategoriesTab({
   const filtered = React.useMemo(() => {
     if (!openCat) return [];
     const q = (query || '').toLowerCase();
-    return families.filter(f => f.category === openCat && (!q || f.name.toLowerCase().includes(q)));
+    const openKey = canonicalCat(openCat);
+    return families.filter(f => canonicalCat(f.category) === openKey && (!q || f.name.toLowerCase().includes(q)));
   }, [openCat, families, query]);
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -65,7 +66,7 @@ function CategoriesTab({
     onOpenFamily: onOpenFamily,
     onEditCat: setEditCat,
     onDirectAdd: onDirectAdd,
-    onAdd: onAdd
+    onAddCategory: () => setCreatingCat(true)
   }) : /*#__PURE__*/React.createElement(FamilyList, {
     category: openCat,
     families: filtered,
@@ -77,6 +78,9 @@ function CategoriesTab({
   }), editCat && /*#__PURE__*/React.createElement(EditCategorySheet, {
     category: editCat,
     onClose: () => setEditCat(null)
+  }), creatingCat && /*#__PURE__*/React.createElement(EditCategorySheet, {
+    mode: "create",
+    onClose: () => setCreatingCat(false)
   }));
 }
 function CategoryGrid({
@@ -87,7 +91,7 @@ function CategoryGrid({
   onOpenFamily,
   onEditCat,
   onDirectAdd,
-  onAdd
+  onAddCategory
 }) {
   const q = (query || '').toLowerCase();
   const matchedFams = React.useMemo(() => {
@@ -116,17 +120,42 @@ function CategoryGrid({
     style: {
       color: T.muted,
       fontSize: 13,
-      padding: '60px 0',
+      padding: '40px 0 16px',
       textAlign: 'center'
     }
-  }, "Aucune cat\xE9gorie pour le moment.")), q && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(SectionHead, null, matchedFams.length, " r\xE9sultat", matchedFams.length > 1 ? 's' : ''), /*#__PURE__*/React.createElement("div", {
+  }, "Aucune cat\xE9gorie pour le moment."), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: onAddCategory,
+    "aria-label": "Cr\xE9er une nouvelle cat\xE9gorie",
+    style: {
+      width: '100%',
+      marginTop: 12,
+      padding: '13px',
+      borderRadius: 14,
+      background: T.surface,
+      border: `1px dashed ${T.rule}`,
+      color: T.ink2,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      cursor: 'pointer',
+      fontFamily: 'inherit',
+      fontSize: 13,
+      letterSpacing: -0.1
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.plus,
+    size: 15
+  }), " Nouvelle cat\xE9gorie")), q && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(SectionHead, null, matchedFams.length, " r\xE9sultat", matchedFams.length > 1 ? 's' : ''), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 10
     }
   }, matchedFams.map(f => /*#__PURE__*/React.createElement(FamilyRow, {
     key: f.id,
     family: f,
-    onClick: () => onOpenFamily(f)
+    onClick: () => onOpenFamily(f),
+    onDirectAdd: onDirectAdd
   })), matchedFams.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
@@ -497,8 +526,10 @@ function FamilyRow({
 }
 function EditCategorySheet({
   category,
-  onClose
+  onClose,
+  mode = 'edit'
 }) {
+  const isCreate = mode === 'create';
   const {
     categories
   } = useCategories();
@@ -506,12 +537,12 @@ function EditCategorySheet({
   // re-subscribing locally — keeps the sheet in sync with whatever the
   // grid is painting without a second DB round-trip on every bump.
   const icons = React.useContext(CategoryIconsContext);
-  const [name, setName] = React.useState(category);
+  const [name, setName] = React.useState(isCreate ? '' : category);
   // `glyph` holds the user's *explicit* choice in this sheet. `null`
   // means "no explicit pick yet" (use whatever's currently persisted)
   // and a string means the user actively selected that tile — including
   // the `'__reset__'` sentinel which means "drop the override".
-  const [glyph, setGlyphState] = React.useState(() => icons[canonicalCat(category)] || null);
+  const [glyph, setGlyphState] = React.useState(() => isCreate ? null : icons[canonicalCat(category)] || null);
   const userTouchedRef = React.useRef(false);
   const setGlyph = g => {
     userTouchedRef.current = true;
@@ -531,15 +562,17 @@ function EditCategorySheet({
 
   // Keep the form in sync if the sheet is reused for a different
   // category (rare in current routing, but cheap to guard against).
+  // Skipped in create mode — there is no source category to mirror.
   React.useEffect(() => {
-    setName(category);
-  }, [category]);
+    if (!isCreate) setName(category);
+  }, [category, isCreate]);
 
   // Adopt the persisted override once it loads (or is updated elsewhere)
   // — but never overwrite a pick the user has already made in this sheet.
   React.useEffect(() => {
+    if (isCreate) return;
     if (!userTouchedRef.current) setGlyphState(icons[canonicalCat(category)] || null);
-  }, [icons, category]);
+  }, [icons, category, isCreate]);
 
   // Use the category row's maintained `drinkCount` instead of fetching
   // every drink and filtering — `useDrinks()` would re-run on every
@@ -554,6 +587,32 @@ function EditCategorySheet({
       setErr('Le nom ne peut pas être vide');
       return;
     }
+
+    // ── Create mode: add a brand-new category (+ optional icon) ──────
+    if (isCreate) {
+      const dup = categories.some(c => canonicalCat(c.name).toLowerCase() === canonicalCat(trimmed).toLowerCase());
+      if (dup) {
+        setErr('Une catégorie avec ce nom existe déjà');
+        return;
+      }
+      savingRef.current = true;
+      setBusy(true);
+      try {
+        const row = await addCategory(trimmed);
+        const pick = glyph && glyph !== '__reset__' ? glyph : null;
+        if (row && row.id != null && pick) await setCategoryIcon(row.id, pick);
+        Toast.show(`Catégorie « ${trimmed} » créée`);
+        onClose && onClose();
+      } catch (e) {
+        setErr(e && e.message ? e.message : 'Erreur lors de la création');
+      } finally {
+        setBusy(false);
+        savingRef.current = false;
+      }
+      return;
+    }
+
+    // ── Edit mode ────────────────────────────────────────────────────
     // Capture override existence BEFORE any mutation: a rename below bumps
     // the bus and the refreshed `icons` map gets re-keyed by the new name.
     const hadOverride = !!icons[canonicalCat(category)];
@@ -565,6 +624,16 @@ function EditCategorySheet({
     if (!nameChanged && !userTouched) {
       onClose && onClose();
       return;
+    }
+    // Pre-validate a rename against existing names (NFC + case-insensitive)
+    // BEFORE mutating, so a collision surfaces a clean message instead of a
+    // raw DB throw mid-flight.
+    if (nameChanged) {
+      const dup = categories.some(c => canonicalCat(c.name).toLowerCase() === canonicalCat(trimmed).toLowerCase() && canonicalCat(c.name) !== canonicalCat(category));
+      if (dup) {
+        setErr('Une catégorie avec ce nom existe déjà');
+        return;
+      }
     }
     savingRef.current = true;
     setBusy(true);
@@ -620,7 +689,7 @@ function EditCategorySheet({
     // delete elsewhere), the row id we'd otherwise hand to the DB might
     // already be stale. If the cat really is gone, bail visibly instead
     // of silently no-op'ing.
-    const fresh = categories.find(c => c.name === category);
+    const fresh = categories.find(c => canonicalCat(c.name) === canonicalCat(category));
     if (!fresh) {
       setErr('Catégorie introuvable — elle a peut-être déjà été supprimée.');
       return;
@@ -643,8 +712,8 @@ function EditCategorySheet({
     }
     let reassignTo = null;
     if (realCount > 0) {
-      const others = categories.filter(c => c.name !== category);
-      const fallback = others.find(c => c.name === 'Autre') || others[0];
+      const others = categories.filter(c => canonicalCat(c.name) !== canonicalCat(category));
+      const fallback = others.find(c => canonicalCat(c.name) === canonicalCat('Autre')) || others[0];
       if (!fallback) {
         setErr('Impossible : créez d\'abord une autre catégorie pour y déplacer les boissons.');
         return;
@@ -722,7 +791,7 @@ function EditCategorySheet({
       marginBottom: 18,
       textAlign: 'center'
     }
-  }, "Modifier la cat\xE9gorie"), /*#__PURE__*/React.createElement("div", {
+  }, isCreate ? 'Nouvelle catégorie' : 'Modifier la catégorie'), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
       fontSize: 10,
@@ -844,7 +913,7 @@ function EditCategorySheet({
       fontFamily: 'inherit',
       boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`
     }
-  }, busy ? 'Enregistrement…' : 'Enregistrer'), /*#__PURE__*/React.createElement("button", {
+  }, busy ? isCreate ? 'Création…' : 'Enregistrement…' : isCreate ? 'Créer la catégorie' : 'Enregistrer'), !isCreate && /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: busy ? undefined : remove,
     disabled: busy,
