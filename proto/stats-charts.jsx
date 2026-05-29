@@ -25,12 +25,16 @@ function useMeasuredWidth(ref, fallback = 320) {
 }
 
 // Rounds an axis maximum up to a "nice" value, given a target tick count.
+// The mantissa thresholds round *up* (smallest of 1/2/5/10 ≥ n) so the
+// returned max is always ≥ v — otherwise a tall bar/curve overflows the
+// top gridline (e.g. the old `n < 1.5 ? 1 …` rounded to nearest and
+// returned 30 for v=40, ticks=3).
 function chartNiceMax(v, ticks = 4) {
   if (!v) return 1;
   const raw = v / ticks;
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
   const n = raw / mag;
-  const step = (n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10) * mag;
+  const step = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
   return step * ticks;
 }
 
@@ -209,6 +213,9 @@ function ChartTooltip({ x, y, lines, width = 320, pad = 8 }) {
   let tx = x + 8;
   let ty = Math.max(0, y - h - 6);
   if (tx + w > width - pad) tx = x - w - 8;
+  // Flipping left near the left edge can push tx negative (tooltip clips
+  // the SVG edge); clamp it back inside the viewBox.
+  tx = Math.max(pad, Math.min(tx, width - w - pad));
   return (
     <g pointerEvents="none">
       <rect x={tx} y={ty} width={w} height={h} rx={6}
