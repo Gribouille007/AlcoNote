@@ -239,7 +239,7 @@ function buildFamilies(drinks, ratings = {}) {
     f.entries.push({
       id: d.id,
       ts: `${d.date}T${(d.time || '00:00')}`,
-      place: d.location && (d.location.name || d.location.address) ? (d.location.name || d.location.address) : null,
+      place: drinkPlaceLabel(d),
       raw: d,
     });
   }
@@ -682,11 +682,32 @@ async function clearAllData() {
 }
 
 // ── Géolocalisation ───────────────────────────────────────────────
-// Capture optionnelle de la position au moment de l'ajout d'une
+// Capture optionnelle de la position au moment de l'ajout/édition d'une
 // boisson, pour alimenter la carte des lieux (StatsTab › MapSection).
-// L'objet renvoyé ({ latitude, longitude, accuracy, address }) est
-// stocké tel quel dans `drink.location` ; la carte lit lat/lng et
-// `address`, `buildFamilies` lit `address` pour le libellé de lieu.
+// L'objet renvoyé ({ latitude, longitude, accuracy, address, capturedAt })
+// est stocké tel quel dans `drink.location`. Toute lecture de coordonnées
+// ou de libellé passe par `getDrinkCoords` / `drinkPlaceLabel` ci-dessous —
+// source unique, qui gère aussi l'ancien format à plat (drink.latitude/…).
+
+// Coordonnées normalisées d'une boisson → { lat, lng } finis ou null.
+// Gère le format imbriqué (drink.location.latitude/longitude) ET l'ancien
+// format à plat (drink.latitude/longitude) sans accès non sûr.
+function getDrinkCoords(d) {
+  if (!d) return null;
+  const loc = d.location || null;
+  const lat = parseFloat(d.latitude != null ? d.latitude : (loc ? loc.latitude : undefined));
+  const lng = parseFloat(d.longitude != null ? d.longitude : (loc ? loc.longitude : undefined));
+  return (Number.isFinite(lat) && Number.isFinite(lng)) ? { lat, lng } : null;
+}
+
+// Libellé de lieu lisible : libellé saisi (label/name) prioritaire, sinon
+// l'adresse géocodée. null si la boisson n'a pas de lieu lisible.
+function drinkPlaceLabel(d) {
+  const loc = d && d.location;
+  if (!loc) return null;
+  return loc.label || loc.name || loc.address || null;
+}
+
 const GEO_CONSENT_KEY = 'alconote.geoConsent';
 
 function getGeoConsent() {
@@ -775,7 +796,7 @@ async function captureLocationForDrink() {
         new Promise(resolve => setTimeout(() => resolve(null), 4000)),
       ]);
     } catch {}
-    return { latitude, longitude, accuracy: accuracy ?? null, address };
+    return { latitude, longitude, accuracy: accuracy ?? null, address, capturedAt: Date.now() };
   } catch {
     return null;
   }
@@ -796,6 +817,6 @@ Object.assign(window, {
   addCategory, renameCategory, deleteCategory,
   updateFamily, deleteFamily, restoreDrinks,
   clearAllData,
-  captureLocationForDrink,
+  captureLocationForDrink, getPosition, getDrinkCoords, drinkPlaceLabel,
   loadCategoryIcons, setCategoryIcon, migrateCategoryIconsToId,
 });

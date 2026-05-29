@@ -131,6 +131,9 @@ const Ic = {
   auto:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M12 12a9 9 0 0 0 0-9"/></svg>,
   home:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
   map:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 6 9 4 15 6 21 4 21 18 15 20 9 18 3 20 3 6"/><line x1="9" y1="4" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="20"/></svg>,
+  crosshair: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="7"/><line x1="12" y1="1.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22.5" y2="12"/></svg>,
+  expand: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>,
+  layers: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>,
   flame: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>,
   hourglass: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2h12v3a6 6 0 0 1-3.5 5.45L13 11l1.5.55A6 6 0 0 1 18 17v3H6v-3a6 6 0 0 1 3.5-5.45L11 11l-1.5-.55A6 6 0 0 1 6 5V2z"/></svg>,
   refresh: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 4 3 10 9 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L3 10"/></svg>,
@@ -776,6 +779,69 @@ function useSWVersion() {
     @keyframes slideLeft { from { transform: translateX(16px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
     @keyframes scaleIn { from { transform: scale(.96); opacity: 0 } to { transform: scale(1); opacity: 1 } }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* Carte (StatsTab › MapSection). Les couleurs sont pilotées par des
+       variables CSS posées sur le conteneur, ce qui permet de rethémer la
+       carte sans reconstruire le DOM Leaflet. Le halo blanc et les ombres
+       sont du chrome de marqueur conventionnel, pas des couleurs de palette. */
+    .alco-pin {
+      width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box;
+      background: var(--alco-accent, #c98a3a);
+      border: 2px solid rgba(255,255,255,0.85);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    }
+    .alco-cluster {
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 50%; box-sizing: border-box;
+      background: var(--alco-accent, #c98a3a);
+      color: var(--alco-accent-ink, #1a1a1a);
+      border: 2px solid rgba(255,255,255,0.85);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.28);
+      font: 600 12px/1 "Geist Mono", ui-monospace, monospace;
+    }
+    .alco-me {
+      width: 16px; height: 16px; border-radius: 50%; box-sizing: border-box;
+      background: var(--alco-accent, #c98a3a);
+      border: 3px solid #fff;
+      box-shadow: 0 0 0 2px var(--alco-accent, #c98a3a), 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .alco-map-ctrl {
+      display: flex; align-items: center; justify-content: center;
+      width: 34px; height: 34px; padding: 0; cursor: pointer;
+      background: var(--alco-surface, #fff);
+      color: var(--alco-ink, #222);
+      border: 1px solid var(--alco-rule, #ddd);
+      border-radius: 9px; margin-bottom: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+      font-family: inherit;
+    }
+    .alco-map-ctrl:hover { background: var(--alco-surface2, #f0f0f0); }
+    .alco-map-ctrl[aria-pressed="true"] {
+      background: var(--alco-accent, #c98a3a);
+      color: var(--alco-accent-ink, #1a1a1a);
+      border-color: var(--alco-accent, #c98a3a);
+    }
+    .alco-popup .leaflet-popup-content-wrapper {
+      background: var(--alco-popup-bg, #fff);
+      color: var(--alco-popup-ink, #222);
+      border: 1px solid var(--alco-rule, #ddd);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+    }
+    .alco-popup .leaflet-popup-tip { background: var(--alco-popup-bg, #fff); }
+    .alco-popup .leaflet-popup-content {
+      margin: 10px 12px; color: var(--alco-popup-ink, #222);
+      font: 12px/1.45 "Geist", ui-sans-serif, system-ui, sans-serif;
+    }
+    .alco-popup .leaflet-popup-content .alco-pop-title {
+      font-family: "Instrument Serif", "Times New Roman", serif;
+      font-style: italic; font-size: 16px; letter-spacing: -0.2px;
+    }
+    .alco-popup .leaflet-popup-content .alco-pop-meta {
+      font-family: "Geist Mono", ui-monospace, monospace;
+      color: var(--alco-muted, #888); font-size: 11px;
+    }
+    .alco-popup a.leaflet-popup-close-button { color: var(--alco-muted, #888); }
   `;
   document.head.appendChild(s);
 })();
@@ -936,6 +1002,74 @@ function RatingField({ value, onChange, size = 18 }) {
   );
 }
 
+// Champ « Lieu » : capture / affiche / retire la position d'une boisson.
+// Réutilisé par AddDrinkSheet et EditEntrySheet — c'est ce qui rend la
+// géolocalisation éditable depuis l'Historique. La capture vit dans data.jsx
+// (`captureLocationForDrink`, global au runtime). `value` = objet location
+// | null ; `onChange` reçoit le nouvel objet, ou null si le lieu est retiré.
+function LocationField({ value, onChange, ariaLabel = 'Lieu' }) {
+  const [busy, setBusy] = React.useState(false);
+  const label = value && (value.label || value.name || value.address);
+  const acc = value && Number.isFinite(value.accuracy) ? Math.round(value.accuracy) : null;
+
+  const locate = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const loc = await captureLocationForDrink();
+      if (loc) onChange(loc);
+      else Toast.show('Position indisponible');
+    } catch {
+      Toast.show('Position indisponible');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div aria-label={ariaLabel} style={{
+      background: T.surface2, border: `1px solid ${T.rule}`, borderRadius: 12,
+      padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10,
+    }}>
+      <span style={{ color: value ? T.accent : T.muted, display: 'flex', flexShrink: 0 }}>
+        <SvgIcon icon={Ic.pin} size={16} />
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize: 13, color: value ? T.ink : T.muted, letterSpacing: -0.1,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>
+          {busy ? 'Localisation…' : (label || (value ? 'Position enregistrée' : 'Non localisé'))}
+        </div>
+        {acc != null && !busy && (
+          <div style={{ fontFamily: fontNum, fontSize: 10.5, color: T.muted, marginTop: 2 }}>
+            ±{acc} m
+          </div>
+        )}
+      </div>
+      {value && !busy && (
+        <button type="button" onClick={() => onChange(null)} aria-label="Retirer le lieu" style={{
+          ...ghostButton, color: T.muted, cursor: 'pointer', display: 'flex', padding: 4,
+        }}>
+          <SvgIcon icon={Ic.close} size={14} />
+        </button>
+      )}
+      <button type="button" onClick={locate} disabled={busy}
+        aria-label={value ? 'Mettre à jour le lieu' : 'Localiser'} style={{
+          display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+          padding: '8px 12px', borderRadius: 9, cursor: busy ? 'wait' : 'pointer',
+          background: T.accentSoft, color: T.accent,
+          border: `1px solid ${T.accentSoftBorder}`,
+          fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+          animation: busy ? 'pulse 1s ease-in-out infinite' : 'none',
+        }}>
+        <SvgIcon icon={Ic.crosshair} size={14} />
+        {value ? 'Réessayer' : 'Localiser'}
+      </button>
+    </div>
+  );
+}
+
 Object.assign(window, {
   T, THEMES, applyTheme, useTheme,
   fontSans, fontSerif, fontNum,
@@ -951,5 +1085,5 @@ Object.assign(window, {
   clickable, ghostButton, QuickAddButton,
   useSWVersion,
   inputBaseStyle, inputS: inputBaseStyle, FieldGroup, parseDecimal,
-  NumberField, CategoryChips, UnitToggle, RatingField,
+  NumberField, CategoryChips, UnitToggle, RatingField, LocationField,
 });

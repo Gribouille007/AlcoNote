@@ -1738,27 +1738,96 @@ function BACRecordRow({ record, isHighest }) {
   );
 }
 // ── 6. Carte des lieux ────────────────────────────────────────────
-// Renders a Leaflet map with one marker per geolocated drink. Markers
-// at the same / nearby locations are clustered via leaflet.markercluster
-// — each cluster shows the count of drinks it contains. Leaflet and the
-// markercluster plugin are lazy-loaded on first open of this section.
-function MapSection({ drinks, collapsed, toggleSection }) {
+// Carte Leaflet des consommations géolocalisées (free : OSM via CARTO).
+// Refonte : la carte est construite UNE fois à l'ouverture de la section
+// puis mise à jour en place (clearLayers), ses couleurs étant pilotées par
+// des variables CSS — aucune reconstruction au changement de données ni de
+// thème. Tuiles claires/sombres suivant le thème, recentrage, « Ma position »,
+// bascule points/heatmap et bascule Période/Tout. Leaflet, markercluster et
+// leaflet.heat sont chargés à la demande au premier affichage.
+const CARTO_TILES = {
+  dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+};
+const CARTO_ATTR = '© OpenStreetMap, © CARTO';
+const tileUrlForTheme = () => (T.isDark ? CARTO_TILES.dark : CARTO_TILES.light);
+
+// Pose les variables CSS de thème sur le conteneur de carte. Lues par les
+// règles .alco-* (shared.jsx), elles rethèment marqueurs, clusters, contrôles
+// et popups sans toucher au DOM Leaflet.
+function applyMapThemeVars(el) {
+  if (!el) return;
+  const set = (k, v) => el.style.setProperty(k, v);
+  set('--alco-accent', T.accent);
+  set('--alco-accent-ink', T.accentInk);
+  set('--alco-surface', T.surface);
+  set('--alco-surface2', T.surface2);
+  set('--alco-ink', T.ink);
+  set('--alco-rule', T.rule);
+  set('--alco-muted', T.muted);
+  set('--alco-popup-bg', T.surface);
+  set('--alco-popup-ink', T.ink);
+}
+
+// SVG bruts (chaîne) pour les boutons de contrôle Leaflet, qui sont des
+// nœuds DOM et non du JSX — mêmes tracés que Ic.expand / Ic.crosshair.
+const _mapSvg = (inner) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+const MAP_ICON_RECENTER = _mapSvg('<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>');
+const MAP_ICON_LOCATE = _mapSvg('<circle cx="12" cy="12" r="7"/><line x1="12" y1="1.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22.5" y2="12"/>');
+
+// Contenu de popup en nœuds DOM (les champs utilisateur passent par
+// textContent → pas d'injection HTML possible).
+function mapPopupNode(d) {
+  const wrap = document.createElement('div');
+  const title = document.createElement('div');
+  title.className = 'alco-pop-title';
+  title.textContent = d.name || 'Boisson';
+  wrap.appendChild(title);
+  const meta = document.createElement('div');
+  meta.className = 'alco-pop-meta';
+  meta.textContent = `${d.date || ''}${d.time ? ' · ' + d.time : ''}`;
+  wrap.appendChild(meta);
+  const where = drinkPlaceLabel(d);
+  if (where) {
+    const place = document.createElement('div');
+    place.style.marginTop = '3px';
+    place.textContent = where;
+    wrap.appendChild(place);
+  }
+  return wrap;
+}
+
+function MapSection({ drinks, allDrinks, collapsed, toggleSection }) {
   const isOpen = !collapsed.has('map');
   const containerRef = React.useRef(null);
   const mapRef = React.useRef(null);
+  const clusterRef = React.useRef(null);
+  const heatRef = React.useRef(null);
+  const tileRef = React.useRef(null);
+  const meRef = React.useRef(null);       // marqueur « ma position » temporaire
+  const boundsRef = React.useRef(null);   // bounds du jeu courant (recentrage)
   const [ready, setReady] = React.useState(
     typeof window !== 'undefined' && !!window.L && !!(window.L && window.L.markerClusterGroup)
   );
   const [error, setError] = React.useState(null);
+  const [scope, setScope] = React.useState('period'); // 'period' | 'all'
+  const [mode, setMode] = React.useState('points');   // 'points' | 'heat'
 
-  // Drinks with valid coordinates (top-level or nested in `location`).
-  const geoDrinks = React.useMemo(() => drinks.filter(d => {
-    const lat = d.latitude ?? d.location?.latitude;
-    const lng = d.longitude ?? d.location?.longitude;
-    return Number.isFinite(parseFloat(lat)) && Number.isFinite(parseFloat(lng));
-  }), [drinks]);
+  const source = scope === 'all' ? (allDrinks || drinks) : drinks;
+  const heatReady = ready && typeof window !== 'undefined'
+    && !!window.L && typeof window.L.heatLayer === 'function';
 
-  // Lazy-load Leaflet + markercluster plugin on first open.
+  // Boissons géolocalisées (coordonnées normalisées via getDrinkCoords).
+  const geoPoints = React.useMemo(() => {
+    const out = [];
+    for (const d of (source || [])) {
+      const c = getDrinkCoords(d);
+      if (c) out.push({ lat: c.lat, lng: c.lng, d });
+    }
+    return out;
+  }, [source]);
+
+  // ── Lazy-load Leaflet + markercluster (+ leaflet.heat, optionnel) ──
   React.useEffect(() => {
     if (!isOpen || ready) return;
     let cancelled = false;
@@ -1769,22 +1838,31 @@ function MapSection({ drinks, collapsed, toggleSection }) {
       document.head.appendChild(css);
     };
     const loadScript = (id, src) => new Promise((resolve, reject) => {
-      if (document.getElementById(id)) { resolve(); return; }
+      const existing = document.getElementById(id);
+      if (existing) {
+        if (existing.dataset.loaded) resolve();
+        else { existing.addEventListener('load', resolve); existing.addEventListener('error', reject); }
+        return;
+      }
       const s = document.createElement('script');
       s.id = id; s.src = src; s.crossOrigin = '';
-      s.onload = resolve; s.onerror = reject;
+      s.onload = () => { s.dataset.loaded = '1'; resolve(); };
+      s.onerror = reject;
       document.head.appendChild(s);
     });
     const load = async () => {
       try {
         loadCss('alco-leaflet-css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
         loadCss('alco-cluster-css', 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css');
-        loadCss('alco-cluster-default-css', 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css');
         if (!window.L) {
           await loadScript('alco-leaflet-js', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js');
         }
         if (!window.L.markerClusterGroup) {
           await loadScript('alco-cluster-js', 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js');
+        }
+        if (!window.L.heatLayer) {
+          // Heatmap optionnelle : un échec ne doit pas casser la carte.
+          try { await loadScript('alco-heat-js', 'https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js'); } catch {}
         }
         if (!cancelled) setReady(true);
       } catch (e) {
@@ -1795,146 +1873,171 @@ function MapSection({ drinks, collapsed, toggleSection }) {
     return () => { cancelled = true; };
   }, [isOpen, ready]);
 
-  // Build / refresh the map whenever data or readiness changes.
+  // ── Construction de la carte (une fois par ouverture de section) ──
+  // StatSection démonte ses enfants quand replié, donc on (re)construit à
+  // l'ouverture et on détruit proprement au repli ; pendant qu'elle reste
+  // ouverte, les données/le thème ne reconstruisent JAMAIS la carte.
   React.useEffect(() => {
-    if (!isOpen || !ready || !containerRef.current) return;
+    if (!isOpen || !ready || !containerRef.current || mapRef.current) return;
     const L = window.L;
     if (!L || typeof L.map !== 'function' || typeof L.markerClusterGroup !== 'function') return;
-    // Always reset the container so React re-mounts (e.g. switching
-    // tabs) doesn't end up with a "Map container is already
-    // initialized" error from Leaflet.
-    if (mapRef.current) {
-      try { mapRef.current.remove(); } catch {}
-      mapRef.current = null;
-    }
-    if (geoDrinks.length === 0) return;
-    const points = geoDrinks.map(d => ({
-      lat: parseFloat(d.latitude ?? d.location.latitude),
-      lng: parseFloat(d.longitude ?? d.location.longitude),
-      d,
-    }));
-    const bounds = points.reduce(
-      (b, p) => [
-        [Math.min(b[0][0], p.lat), Math.min(b[0][1], p.lng)],
-        [Math.max(b[1][0], p.lat), Math.max(b[1][1], p.lng)],
-      ],
-      [[points[0].lat, points[0].lng], [points[0].lat, points[0].lng]]
-    );
-    const m = L.map(containerRef.current, {
-      attributionControl: false,
-      zoomControl: true,
-    });
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19, attribution: '© OpenStreetMap',
+
+    applyMapThemeVars(containerRef.current);
+    const m = L.map(containerRef.current, { attributionControl: true, zoomControl: true });
+    m.setView([46.6, 2.4], 5); // vue par défaut (France) avant le 1er cadrage
+    tileRef.current = L.tileLayer(tileUrlForTheme(), {
+      maxZoom: 20, subdomains: 'abcd', attribution: CARTO_ATTR,
     }).addTo(m);
-    L.control.attribution({ position: 'bottomright', prefix: false })
-      .addAttribution('© OSM').addTo(m);
-    // Cluster styling: count badge inside an accent circle, sized up
-    // with the cluster's drink count for instant readability. Uses the
-    // theme accent token (the effect re-runs on theme change via the
-    // `T._name` dependency); the white halo/shadow are conventional
-    // map-marker chrome, not palette colours.
-    const accent = T.accent;
-    const clusterIcon = (cluster) => {
-      const n = cluster.getChildCount();
-      const size = n < 10 ? 32 : n < 100 ? 38 : 46;
-      const html = `<div style="
-          width:${size}px;height:${size}px;border-radius:50%;
-          background:${accent};color:${T.accentInk};
-          display:flex;align-items:center;justify-content:center;
-          font:600 12px/1 'Geist Mono', monospace;
-          border:2px solid rgba(255,255,255,0.85);
-          box-shadow:0 2px 8px rgba(0,0,0,0.28);
-        "><span>${n}</span></div>`;
-      return L.divIcon({ html, className: 'alco-cluster', iconSize: L.point(size, size) });
-    };
+
     const cluster = L.markerClusterGroup({
       showCoverageOnHover: false,
       spiderfyOnMaxZoom: true,
-      maxClusterRadius: 40,
-      iconCreateFunction: clusterIcon,
+      maxClusterRadius: 44,
+      iconCreateFunction: (c) => {
+        const n = c.getChildCount();
+        const size = n < 10 ? 32 : n < 100 ? 38 : 46;
+        return L.divIcon({ html: `<span>${n}</span>`, className: 'alco-cluster', iconSize: L.point(size, size) });
+      },
     });
-    // Build popup content as DOM nodes so user-controlled fields
-    // (drink name, location label) cannot inject HTML.
-    const popupNode = (p) => {
-      const wrap = document.createElement('div');
-      const title = document.createElement('strong');
-      title.textContent = p.d.name || '';
-      wrap.appendChild(title);
-      wrap.appendChild(document.createElement('br'));
-      const meta = document.createElement('span');
-      meta.textContent = `${p.d.date || ''} · ${p.d.time || ''}`;
-      wrap.appendChild(meta);
-      const where = p.d.location?.name || p.d.location?.address || '';
-      if (where) {
-        wrap.appendChild(document.createElement('br'));
-        const place = document.createElement('span');
-        place.textContent = where;
-        wrap.appendChild(place);
-      }
-      return wrap;
-    };
-    const dotIcon = L.divIcon({
-      html: `<div style="
-        width:14px;height:14px;border-radius:50%;
-        background:${accent};
-        border:2px solid rgba(255,255,255,0.85);
-        box-shadow:0 2px 6px rgba(0,0,0,0.25);
-      "></div>`,
-      className: 'alco-pin',
-      iconSize: L.point(14, 14),
-      iconAnchor: L.point(7, 7),
-    });
-    for (const p of points) {
-      L.marker([p.lat, p.lng], { icon: dotIcon })
-        .bindPopup(popupNode(p))
-        .addTo(cluster);
-    }
     cluster.addTo(m);
-    if (points.length === 1) {
-      m.setView([points[0].lat, points[0].lng], 14);
-    } else {
-      m.fitBounds(bounds, { padding: [20, 20], maxZoom: 15 });
-    }
-    mapRef.current = m;
-    // Leaflet sometimes lays out before the container has its final
-    // height (when the section was just expanded); kick it once.
-    const id = setTimeout(() => { try { m.invalidateSize(); } catch {} }, 60);
-    return () => {
-      clearTimeout(id);
-      try { m.remove(); } catch {}
-      mapRef.current = null;
+    clusterRef.current = cluster;
+
+    // Actions des contrôles : lisent les refs → toujours à jour.
+    const recenter = () => {
+      const b = boundsRef.current;
+      if (b && b.isValid && b.isValid()) m.fitBounds(b, { padding: [28, 28], maxZoom: 15 });
     };
-  }, [isOpen, ready, geoDrinks, T._name]);
+    const locateMe = async (btn) => {
+      btn && btn.setAttribute('aria-pressed', 'true');
+      try {
+        const pos = await getPosition(8000);
+        const { latitude, longitude } = pos.coords;
+        if (meRef.current) { try { m.removeLayer(meRef.current); } catch {} }
+        meRef.current = L.marker([latitude, longitude], {
+          icon: L.divIcon({ className: 'alco-me', iconSize: L.point(16, 16), iconAnchor: L.point(8, 8) }),
+          interactive: false, keyboard: false,
+        }).addTo(m);
+        m.setView([latitude, longitude], 15);
+      } catch (e) {
+        Toast.show('Position indisponible');
+      } finally {
+        btn && btn.setAttribute('aria-pressed', 'false');
+      }
+    };
+    const mkBtn = (svg, title, onClick) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'alco-map-ctrl';
+      b.title = title; b.setAttribute('aria-label', title);
+      b.innerHTML = svg;
+      L.DomEvent.disableClickPropagation(b);
+      L.DomEvent.on(b, 'click', (e) => { L.DomEvent.stop(e); onClick(b); });
+      return b;
+    };
+    const Ctrls = L.Control.extend({
+      options: { position: 'topright' },
+      onAdd() {
+        const wrap = L.DomUtil.create('div', 'alco-map-ctrls');
+        wrap.appendChild(mkBtn(MAP_ICON_RECENTER, 'Recentrer', () => recenter()));
+        wrap.appendChild(mkBtn(MAP_ICON_LOCATE, 'Ma position', (b) => locateMe(b)));
+        return wrap;
+      },
+    });
+    m.addControl(new Ctrls());
+    mapRef.current = m;
+
+    // Leaflet calcule parfois sa taille avant que le conteneur ait sa
+    // hauteur finale (section juste dépliée) : on le relance, puis on
+    // recadre avec les bounds posés par l'effet « marqueurs ».
+    const kick = setTimeout(() => {
+      try { m.invalidateSize(); if (boundsRef.current) recenter(); } catch {}
+    }, 80);
+    let ro = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => { try { m.invalidateSize(); } catch {} });
+      ro.observe(containerRef.current);
+    }
+
+    return () => {
+      clearTimeout(kick);
+      if (ro) { try { ro.disconnect(); } catch {} }
+      try { m.remove(); } catch {}
+      mapRef.current = null; clusterRef.current = null; heatRef.current = null;
+      tileRef.current = null; meRef.current = null; boundsRef.current = null;
+    };
+  }, [isOpen, ready]);
+
+  // ── Thème : variables CSS + URL des tuiles, sans reconstruction ──
+  React.useEffect(() => {
+    if (!mapRef.current) return;
+    applyMapThemeVars(containerRef.current);
+    if (tileRef.current) { try { tileRef.current.setUrl(tileUrlForTheme()); } catch {} }
+  }, [T._name]);
+
+  // ── Marqueurs / heatmap : mise à jour EN PLACE (pas de rebuild) ──
+  React.useEffect(() => {
+    const m = mapRef.current, L = window.L;
+    if (!m || !L || !clusterRef.current) return;
+    clusterRef.current.clearLayers();
+    if (heatRef.current) { try { m.removeLayer(heatRef.current); } catch {} heatRef.current = null; }
+    if (geoPoints.length === 0) { boundsRef.current = null; return; }
+
+    const latlngs = geoPoints.map(p => [p.lat, p.lng]);
+    boundsRef.current = L.latLngBounds(latlngs);
+
+    if (mode === 'heat' && typeof L.heatLayer === 'function') {
+      heatRef.current = L.heatLayer(geoPoints.map(p => [p.lat, p.lng, 0.6]), {
+        radius: 25, blur: 18, maxZoom: 16, minOpacity: 0.35,
+      }).addTo(m);
+    } else {
+      const dotIcon = L.divIcon({ className: 'alco-pin', iconSize: L.point(14, 14), iconAnchor: L.point(7, 7) });
+      for (const p of geoPoints) {
+        L.marker([p.lat, p.lng], { icon: dotIcon })
+          .bindPopup(mapPopupNode(p.d), { className: 'alco-popup' })
+          .addTo(clusterRef.current);
+      }
+    }
+    if (geoPoints.length === 1) m.setView([geoPoints[0].lat, geoPoints[0].lng], 14);
+    else m.fitBounds(boundsRef.current, { padding: [28, 28], maxZoom: 15 });
+  }, [geoPoints, mode, ready, isOpen]);
+
+  const overlay = (txt, serif) => (
+    <div style={{
+      position: 'absolute', inset: 0, display: 'grid', placeItems: 'center',
+      background: T.surface2, color: T.muted, fontSize: 11, padding: 24,
+      textAlign: 'center', zIndex: 1200,
+      fontFamily: serif ? fontSerif : fontSans, fontStyle: serif ? 'italic' : 'normal',
+    }}>{txt}</div>
+  );
 
   return (
     <StatSection id="map" title="Carte des consommations"
-      sub={`${geoDrinks.length} consommation${geoDrinks.length !== 1 ? 's' : ''} géolocalisée${geoDrinks.length !== 1 ? 's' : ''}`}
+      sub={`${geoPoints.length} consommation${geoPoints.length !== 1 ? 's' : ''} géolocalisée${geoPoints.length !== 1 ? 's' : ''}${scope === 'all' ? ' · tout l’historique' : ''}`}
       collapsed={collapsed} toggleSection={toggleSection}>
-      <div ref={containerRef} style={{
-          width: '100%', height: 260, borderRadius: 12, overflow: 'hidden',
-          background: T.surface2, border: `1px solid ${T.rule}`, position: 'relative',
-        }}>
-          {!ready && !error && (
-            <div style={{
-              position: 'absolute', inset: 0, display: 'grid', placeItems: 'center',
-              color: T.muted, fontSize: 11, fontFamily: fontSerif, fontStyle: 'italic',
-            }}>Chargement de la carte…</div>
-          )}
-          {error && (
-            <div style={{
-              position: 'absolute', inset: 0, display: 'grid', placeItems: 'center',
-              color: T.muted, fontSize: 11, padding: 16, textAlign: 'center',
-            }}>{error}</div>
-          )}
-          {ready && geoDrinks.length === 0 && (
-            <div style={{
-              position: 'absolute', inset: 0, display: 'grid', placeItems: 'center',
-              color: T.muted, fontSize: 11, fontFamily: fontSerif, fontStyle: 'italic',
-              textAlign: 'center', padding: 24,
-            }}>Aucune consommation géolocalisée pour cette période</div>
-          )}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Pill active={scope === 'period'} onClick={() => setScope('period')}>Période</Pill>
+          <Pill active={scope === 'all'} onClick={() => setScope('all')}>Tout</Pill>
         </div>
+        <div style={{ flex: 1 }} />
+        {heatReady && (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Pill active={mode === 'points'} onClick={() => setMode('points')}>Points</Pill>
+            <Pill active={mode === 'heat'} onClick={() => setMode('heat')}>Chaleur</Pill>
+          </div>
+        )}
+      </div>
+      <div ref={containerRef} style={{
+        width: '100%', height: 'min(60vh, 440px)', borderRadius: 12, overflow: 'hidden',
+        background: T.surface2, border: `1px solid ${T.rule}`, position: 'relative',
+      }}>
+        {!ready && !error && overlay('Chargement de la carte…', true)}
+        {error && overlay(error, false)}
+        {ready && geoPoints.length === 0 && overlay(
+          scope === 'all'
+            ? 'Aucune consommation géolocalisée'
+            : 'Aucune consommation géolocalisée sur cette période — essayez « Tout »',
+          true)}
+      </div>
     </StatSection>
   );
 }
