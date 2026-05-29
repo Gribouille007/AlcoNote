@@ -414,8 +414,10 @@ function fmtBourreTime(ms) {
     const m = totalMin - h * 60;
     return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, '0')}`;
   }
-  const days = Math.floor(totalH / 24);
-  const h = Math.round(totalH - days * 24);
+  const days = Math.floor(totalMin / 1440);
+  const h = Math.round((totalMin - days * 1440) / 60);
+  // The rounded hour can hit 24 (e.g. 1j 23h45 → "1j 24h"); carry it.
+  if (h === 24) return `${days + 1}j`;
   return h === 0 ? `${days}j` : `${days}j ${h}h`;
 }
 // ── Main StatsTab ─────────────────────────────────────────────────
@@ -1130,8 +1132,10 @@ function TemporalSection({
   })();
   const fmtH = h => {
     if (!h) return '—';
-    const hh = Math.floor(h);
-    const mm = Math.round((h - hh) * 60);
+    // Round to whole minutes first so e.g. 0.999h → "1h", not "0h 60".
+    const totalMin = Math.round(h * 60);
+    const hh = Math.floor(totalMin / 60);
+    const mm = totalMin % 60;
     return mm === 0 ? `${hh}h` : `${hh}h ${String(mm).padStart(2, '0')}`;
   };
   const dailyData = React.useMemo(() => {
@@ -1989,8 +1993,10 @@ function BACSection({
   const hoursToLegal = Math.max(0, (currentBAC - 500) / 150);
   const fmtTime = h => {
     if (h <= 0) return '—';
-    const hh = Math.floor(h),
-      mm = Math.round((h - hh) * 60);
+    // Round to whole minutes first so e.g. 3.999h → "4h00", not "3h60".
+    const totalMin = Math.round(h * 60);
+    const hh = Math.floor(totalMin / 60),
+      mm = totalMin % 60;
     return `${hh}h${String(mm).padStart(2, '0')}`;
   };
   const relevantDrinks = React.useMemo(() => {
@@ -2352,8 +2358,13 @@ function BACRecordRow({
 }) {
   const level = bacLevel(record.bacValue);
   const d = new Date(record.timestamp || record.date);
-  const today = new Date();
-  const daysAgo = Math.floor((today - d) / 86400_000);
+  // Compare calendar days (midnight to midnight) so a peak logged late
+  // last night isn't labelled "Aujourd'hui" just after midnight.
+  const dMid = new Date(d);
+  dMid.setHours(0, 0, 0, 0);
+  const todayMid = new Date();
+  todayMid.setHours(0, 0, 0, 0);
+  const daysAgo = Math.round((todayMid - dMid) / 86400_000);
   const dateLabel = daysAgo === 0 ? `Aujourd'hui à ${d.getHours()}h${String(d.getMinutes()).padStart(2, '0')}` : daysAgo === 1 ? `Hier à ${d.getHours()}h${String(d.getMinutes()).padStart(2, '0')}` : daysAgo < 7 ? `${daysAgo} jours · ${d.getHours()}h${String(d.getMinutes()).padStart(2, '0')}` : `${d.getDate()} ${FR_MONTHS_DOTTED[d.getMonth()]} · ${d.getHours()}h${String(d.getMinutes()).padStart(2, '0')}`;
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2691,11 +2702,41 @@ function TrendsSection({
       buckets[k].drinks++;
       buckets[k].alcohol += toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789;
     }
-    const keys = Object.keys(buckets).sort().slice(-6);
+    const dataMonths = Object.keys(buckets).sort();
+    if (dataMonths.length < 2) return {
+      labels: [],
+      drinks: [],
+      alcoholG: []
+    };
+    // Contiguous window of up to 6 calendar months ending at the most
+    // recent month with data; empty months are filled with 0 so the line
+    // reflects real month-to-month evolution instead of connecting
+    // non-adjacent months as if they were consecutive.
+    const parse = k => {
+      const [y, m] = k.split('-').map(Number);
+      return new Date(y, m - 1, 1);
+    };
+    const endD = parse(dataMonths[dataMonths.length - 1]);
+    const firstD = parse(dataMonths[0]);
+    const startD = new Date(endD);
+    startD.setMonth(startD.getMonth() - 5);
+    if (startD < firstD) startD.setTime(firstD.getTime());
+    const keys = [];
+    for (let d = new Date(startD); d <= endD; d.setMonth(d.getMonth() + 1)) {
+      keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+    // Append a 2-digit year only when the window straddles two calendar
+    // years, so "Déc 24" / "Janv 25" don't read as the same month.
+    const multiYear = new Set(keys.map(k => k.slice(0, 4))).size > 1;
+    const label = k => {
+      const [y, m] = k.split('-').map(Number);
+      const base = FR_MONTHS_SHORT[m - 1].replace(/^[a-zà]/, c => c.toUpperCase());
+      return multiYear ? `${base} ${String(y).slice(2)}` : base;
+    };
     return {
-      labels: keys.map(k => FR_MONTHS_SHORT[parseInt(k.slice(5, 7), 10) - 1].replace(/^[a-zà]/, c => c.toUpperCase())),
-      drinks: keys.map(k => buckets[k].drinks),
-      alcoholG: keys.map(k => Math.round(buckets[k].alcohol))
+      labels: keys.map(label),
+      drinks: keys.map(k => buckets[k] ? buckets[k].drinks : 0),
+      alcoholG: keys.map(k => buckets[k] ? Math.round(buckets[k].alcohol) : 0)
     };
   }, [allDrinks]);
   if (trends.labels.length < 2) {
