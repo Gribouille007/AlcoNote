@@ -368,32 +368,11 @@ function EntryRow({
       fontSize: 11,
       color: T.ink2
     }
-  }, t), /*#__PURE__*/React.createElement("button", {
-    type: "button",
-    onClick: ev => {
-      ev.stopPropagation();
-      onDirectAdd && onDirectAdd(e.family);
-    },
-    style: {
-      width: 30,
-      height: 30,
-      borderRadius: 10,
-      background: T.accentSoft,
-      border: `1px solid ${T.accentSoftBorder}`,
-      display: 'grid',
-      placeItems: 'center',
-      color: T.accent,
-      cursor: 'pointer',
-      flexShrink: 0,
-      padding: 0,
-      fontFamily: 'inherit'
-    },
-    title: "Ajouter \xE0 nouveau",
-    "aria-label": `Ajouter ${e.family.name} à nouveau`
-  }, /*#__PURE__*/React.createElement(SvgIcon, {
-    icon: Ic.plus,
-    size: 14
-  }))));
+  }, t), /*#__PURE__*/React.createElement(QuickAddButton, {
+    size: 30,
+    onAdd: () => onDirectAdd && onDirectAdd(e.family),
+    label: `Ajouter ${e.family.name} à nouveau`
+  })));
 }
 
 // Tiny pointer-driven swipe controller. Returns translate offset, a

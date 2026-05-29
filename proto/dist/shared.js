@@ -1310,6 +1310,83 @@ const ghostButton = {
   textAlign: 'inherit'
 };
 
+// ── Quick-add ("+") button ────────────────────────────────────────
+// Re-adds a family in one tap from the Catégories / Historique lists.
+// It fires on `pointerup`, NOT `click`: when the soft keyboard is open
+// (the user just typed in a search field), the first tap blurs the
+// input, the keyboard collapses and the list reflows — the trailing
+// synthetic `click` then misses this small target and the add never
+// happens. A touch pointer is *implicitly captured* by its pointerdown
+// target, so `pointerup` always lands here regardless of any layout
+// shift. `click` stays wired purely as the keyboard-activation path
+// (Enter/Space on a focused button emits a click but no pointer events);
+// the ghost click that browsers synthesize right after a pointer gesture
+// is swallowed by the recency check so the add never double-fires.
+// A few px of finger travel is treated as a scroll, not a tap.
+function QuickAddButton({
+  onAdd,
+  label,
+  size = 32
+}) {
+  const start = React.useRef(null);
+  const lastPointerTs = React.useRef(0);
+  return /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onPointerDown: e => {
+      e.stopPropagation();
+      start.current = {
+        x: e.clientX,
+        y: e.clientY,
+        moved: false
+      };
+    },
+    onPointerMove: e => {
+      const s = start.current;
+      if (s && (Math.abs(e.clientX - s.x) > 10 || Math.abs(e.clientY - s.y) > 10)) {
+        s.moved = true;
+      }
+    },
+    onPointerUp: e => {
+      e.stopPropagation();
+      const s = start.current;
+      start.current = null;
+      lastPointerTs.current = e.timeStamp;
+      if (s && !s.moved) onAdd && onAdd();
+    },
+    onPointerCancel: () => {
+      start.current = null;
+    },
+    onClick: e => {
+      e.stopPropagation();
+      // Swallow the ghost click that follows a real pointer gesture
+      // (already handled in pointerup); only a keyboard-driven click,
+      // which has no recent pointer, falls through to fire the add.
+      if (e.timeStamp - lastPointerTs.current < 700) return;
+      onAdd && onAdd();
+    },
+    style: {
+      width: size,
+      height: size,
+      borderRadius: 10,
+      background: T.accentSoft,
+      border: `1px solid ${T.accentSoftBorder}`,
+      display: 'grid',
+      placeItems: 'center',
+      color: T.accent,
+      cursor: 'pointer',
+      flexShrink: 0,
+      padding: 0,
+      fontFamily: 'inherit',
+      touchAction: 'manipulation'
+    },
+    title: "Ajouter \xE0 nouveau",
+    "aria-label": label
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.plus,
+    size: 14
+  }));
+}
+
 // ── Back button / overlay back-stack ─────────────────────────────
 // Makes the Android system Back button (and browser back) close the
 // top-most open overlay instead of leaving the app. Each open layer
@@ -1962,6 +2039,7 @@ Object.assign(window, {
   ConfirmHost,
   clickable,
   ghostButton,
+  QuickAddButton,
   useSWVersion,
   inputBaseStyle,
   inputS: inputBaseStyle,

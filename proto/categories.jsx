@@ -311,20 +311,10 @@ function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onClick, onD
         color: T.ink2, letterSpacing: 0.2, lineHeight: 1,
         fontVariantNumeric: 'tabular-nums', marginRight: 6, flexShrink: 0,
       }}>×{totalEntries}</div>
-      <button type="button"
-        onClick={(ev) => { ev.stopPropagation(); onDirectAdd && onDirectAdd(f); }}
-        style={{
-          width: 32, height: 32, borderRadius: 10,
-          background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
-          display: 'grid', placeItems: 'center', color: T.accent,
-          cursor: 'pointer', flexShrink: 0,
-          padding: 0, fontFamily: 'inherit',
-        }}
-        title="Ajouter à nouveau"
-        aria-label={`Ajouter ${f.name} (${f.quantity} ${f.unit}, ${f.alcohol}°) à nouveau`}
-      >
-        <SvgIcon icon={Ic.plus} size={14} />
-      </button>
+      <QuickAddButton
+        onAdd={() => onDirectAdd && onDirectAdd(f)}
+        label={`Ajouter ${f.name} (${f.quantity} ${f.unit}, ${f.alcohol}°) à nouveau`}
+      />
     </div>
   );
 }

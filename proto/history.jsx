@@ -252,20 +252,11 @@ function EntryRow({ entry: e, onClick, onDirectAdd, onDelete, first, last }) {
         <div style={{
           fontFamily: fontNum, fontSize: 11, color: T.ink2,
         }}>{t}</div>
-        <button type="button"
-          onClick={(ev) => { ev.stopPropagation(); onDirectAdd && onDirectAdd(e.family); }}
-          style={{
-            width: 30, height: 30, borderRadius: 10,
-            background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
-            display: 'grid', placeItems: 'center', color: T.accent,
-            cursor: 'pointer', flexShrink: 0,
-            padding: 0, fontFamily: 'inherit',
-          }}
-          title="Ajouter à nouveau"
-          aria-label={`Ajouter ${e.family.name} à nouveau`}
-        >
-          <SvgIcon icon={Ic.plus} size={14} />
-        </button>
+        <QuickAddButton
+          size={30}
+          onAdd={() => onDirectAdd && onDirectAdd(e.family)}
+          label={`Ajouter ${e.family.name} à nouveau`}
+        />
       </div>
     </div>
   );
