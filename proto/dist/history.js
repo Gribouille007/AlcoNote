@@ -129,6 +129,7 @@ function HistoryTab({
     onDelete: onDeleteEntry,
     first: i === 0
   }))), editEntry && /*#__PURE__*/React.createElement(EditEntrySheet, {
+    key: editEntry.id,
     entry: editEntry,
     onClose: () => setEditEntry(null)
   }));

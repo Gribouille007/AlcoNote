@@ -722,6 +722,162 @@ function useSWVersion() {
   document.head.appendChild(s);
 })();
 
+// ── Form primitives (shared by every add/edit sheet) ──────────────
+// Centralised so the add-drink / edit-entry / edit-family / settings
+// sheets stop duplicating the same input markup. Anything here MUST stay
+// token-only (T.*) and reuse the existing fonts — see CLAUDE.md › DA.
+
+// Base style for text inputs. Was duplicated as `inputS()` in modals.jsx.
+function inputBaseStyle() {
+  return {
+    width: '100%', background: T.surface2, border: `1px solid ${T.rule}`,
+    borderRadius: 12, padding: '11px 14px', color: T.ink, fontSize: 14,
+    fontFamily: fontSans, outline: 'none', letterSpacing: -0.1,
+    boxSizing: 'border-box',
+  };
+}
+
+// Labelled field wrapper (uppercase micro-label + control).
+function FieldGroup({ label, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{
+        fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase',
+        color: T.muted, fontWeight: 500, marginBottom: 7,
+      }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
+// Parse a user-typed number accepting BOTH '.' and ',' as the decimal
+// separator. Returns a Number, or NaN when empty/unparseable. The single
+// source of truth for turning a NumberField string into a value.
+function parseDecimal(str) {
+  if (str == null) return NaN;
+  const s = String(str).trim().replace(',', '.');
+  if (s === '') return NaN;
+  return parseFloat(s);
+}
+
+// Numeric text field that always surfaces the numeric keypad on mobile
+// (inputMode) and accepts a comma OR a dot as the decimal separator —
+// `type="number"` silently rejects commas in many locales, so we use a
+// sanitised `type="text"`. State stays a string; callers parse with
+// `parseDecimal` at submit time. Pass `suffix` (e.g. "%") to render the
+// bordered container with a trailing unit; otherwise a plain input.
+function NumberField({
+  value, onChange, placeholder = '—', step, allowDecimal = true,
+  style, ariaLabel, suffix, onBlur, min, max,
+}) {
+  const sanitize = (raw) => {
+    const s = String(raw == null ? '' : raw);
+    if (!allowDecimal) return s.replace(/[^0-9]/g, '');
+    let out = '', sepSeen = false;
+    for (const ch of s) {
+      if (ch >= '0' && ch <= '9') out += ch;
+      else if ((ch === '.' || ch === ',') && !sepSeen) { out += ch; sepSeen = true; }
+    }
+    return out;
+  };
+  const inputEl = (
+    <input
+      type="text"
+      inputMode={allowDecimal ? 'decimal' : 'numeric'}
+      pattern={allowDecimal ? '[0-9]*[.,]?[0-9]*' : '[0-9]*'}
+      value={value == null ? '' : value}
+      onChange={(e) => onChange(sanitize(e.target.value))}
+      onBlur={onBlur}
+      placeholder={placeholder}
+      aria-label={ariaLabel}
+      aria-valuemin={min} aria-valuemax={max}
+      autoComplete="off" enterKeyHint="done"
+      style={suffix ? {
+        flex: 1, background: 'transparent', border: 'none', outline: 'none',
+        color: T.ink, fontSize: 15, fontFamily: fontSans, minWidth: 0,
+      } : { ...inputBaseStyle(), ...(style || {}) }}
+    />
+  );
+  if (!suffix) return inputEl;
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12,
+      background: T.surface2, border: `1px solid ${T.rule}`, borderRadius: 12,
+      padding: '10px 14px', ...(style || {}),
+    }}>
+      {inputEl}
+      <span style={{ color: T.muted, fontSize: 13 }}>{suffix}</span>
+    </div>
+  );
+}
+
+// Category picker rendered as a wrap of selectable chips. Replaces the
+// markup duplicated across AddDrink / EditEntry / EditFamily / the move
+// action. Uses real <button role="radio"> for keyboard accessibility.
+function CategoryChips({ categories, value, onChange, ariaLabel = 'Catégorie' }) {
+  return (
+    <div role="radiogroup" aria-label={ariaLabel}
+      style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {(categories || []).map(c => {
+        const on = value === c.name;
+        return (
+          <button key={c.id || c.name} type="button" role="radio" aria-checked={on}
+            onClick={() => onChange(c.name)} style={{
+              padding: '7px 12px', borderRadius: 10, fontSize: 12,
+              border: `1px solid ${on ? T.accent : T.rule}`,
+              background: on ? T.accentSoft : 'transparent',
+              color: on ? T.accent : T.ink2,
+              cursor: 'pointer', letterSpacing: -0.1, fontFamily: 'inherit',
+            }}>{c.name}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Segmented unit toggle (cL / L / EcoCup …).
+function UnitToggle({ value, onChange, units = ['cL', 'L', 'EcoCup'] }) {
+  return (
+    <div role="radiogroup" aria-label="Unité" style={{
+      display: 'flex', gap: 4, padding: 3,
+      background: T.surface2, borderRadius: 10, border: `1px solid ${T.rule}`,
+    }}>
+      {units.map(u => {
+        const on = value === u;
+        return (
+          <button key={u} type="button" role="radio" aria-checked={on}
+            onClick={() => onChange(u)} style={{
+              flex: 1, padding: '8px 0', borderRadius: 7, textAlign: 'center',
+              fontSize: 11.5, cursor: 'pointer', letterSpacing: -0.1,
+              background: on ? T.ink : 'transparent',
+              color: on ? T.bg : T.ink2,
+              fontWeight: on ? 600 : 400, minWidth: 0,
+              border: 'none', fontFamily: 'inherit',
+            }}>{u}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Rating field: interactive stars + an "Effacer" affordance when set.
+function RatingField({ value, onChange, size = 18 }) {
+  return (
+    <div style={{
+      background: T.surface2, border: `1px solid ${T.rule}`, borderRadius: 12,
+      padding: '10px 14px', display: 'flex', alignItems: 'center',
+      justifyContent: 'space-between',
+    }}>
+      <Stars n={value} interactive size={size} onChange={onChange} />
+      {value > 0 && (
+        <button type="button" onClick={() => onChange(0)} style={{
+          ...ghostButton, color: T.muted, fontSize: 11, cursor: 'pointer',
+        }}>Effacer</button>
+      )}
+    </div>
+  );
+}
+
 Object.assign(window, {
   T, THEMES, applyTheme, useTheme,
   fontSans, fontSerif, fontNum,
@@ -736,4 +892,6 @@ Object.assign(window, {
   Confirm, ConfirmHost,
   clickable, ghostButton,
   useSWVersion,
+  inputBaseStyle, inputS: inputBaseStyle, FieldGroup, parseDecimal,
+  NumberField, CategoryChips, UnitToggle, RatingField,
 });

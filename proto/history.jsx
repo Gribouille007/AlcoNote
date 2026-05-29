@@ -106,7 +106,7 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
       </div>
 
       {editEntry && (
-        <EditEntrySheet entry={editEntry} onClose={() => setEditEntry(null)} />
+        <EditEntrySheet key={editEntry.id} entry={editEntry} onClose={() => setEditEntry(null)} />
       )}
     </div>
   );

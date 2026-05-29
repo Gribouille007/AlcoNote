@@ -48,6 +48,17 @@ valeur en dur.
   `StatRow`, `DeltaBadge`, `Stars`, `Pill`, `SvgIcon` plutôt que
   recréer un conteneur. Pour une stat card "iconifiée", étendre
   `MiniStat` (props `icon`/`accent`) au lieu de dupliquer.
+- **Formulaires** : réutiliser les primitives partagées de `shared.jsx`
+  au lieu de réinventer le markup : `FieldGroup` (label + champ),
+  `inputBaseStyle()` / `inputS()` (style d'input texte), `NumberField`
+  (champ numérique), `CategoryChips` (sélecteur de catégorie en chips),
+  `UnitToggle` (cL/L/EcoCup), `RatingField` (note + « Effacer »).
+- **Champs numériques** : TOUT champ attendant un nombre passe par
+  `<NumberField>` — jamais un `<input type="number">` (qui rejette la
+  virgule sur de nombreux claviers). `NumberField` force le pavé
+  numérique mobile (`inputMode="decimal"`) et accepte le point **ou** la
+  virgule. Son state reste une *string* ; convertir avec
+  `parseDecimal(str)` (virgule→point, `NaN` si vide/invalide) au submit.
 - **Animations** : utiliser celles déjà injectées dans `shared.jsx`
   (`fade`, `slideUp`, `slideRight`, `slideLeft`, `scaleIn`, `pulse`).
   Transitions : `0.18–0.22s ease`.
@@ -89,6 +100,26 @@ sous `proto/dist/` — ils sont régénérés à chaque build.
 - Pas de fonts, pas de styles externes (sauf `Leaflet` chargé à la
   demande depuis `MapSection`).
 
+### Formulaires (primitives partagées)
+
+Définies dans `shared.jsx` (chargé en premier, donc disponibles partout) :
+
+- `NumberField({ value, onChange, placeholder='—', step, allowDecimal=true,
+  style, ariaLabel, suffix, onBlur })` : input numérique
+  (`type="text"` + `inputMode`) acceptant `,` ou `.`. State = string ;
+  `onChange` reçoit la string sanitisée. `suffix` (ex. `'%'`) rend le
+  conteneur bordé avec unité. Parser avec `parseDecimal` au submit.
+- `parseDecimal(str)` : `→ Number | NaN` (trim, virgule→point).
+- `CategoryChips({ categories, value, onChange })`,
+  `UnitToggle({ value, onChange, units })`,
+  `RatingField({ value, onChange, size })`, `FieldGroup({ label, children })`.
+
+Les sheets d'add/édition (`AddDrinkSheet`, `EditEntrySheet`,
+`EditFamilySheet`) et le poids (Paramètres › `ProfileRow numeric`)
+composent uniquement avec ces primitives. Les sheets montées dans
+`app.jsx` / `history.jsx` portent un `key={…id}` pour un remount propre
+quand la cible change (évite des champs figés sur l'ancienne cible).
+
 ### Style
 
 - Thèmes dans `proto/shared.jsx` (`THEMES.dark` / `THEMES.light`),
@@ -108,9 +139,14 @@ sous `proto/dist/` — ils sont régénérés à chaque build.
   `updateFamily`, `deleteFamily`, `setCategoryIcon`. Toutes appellent
   `dataBus.bump()` après écriture.
 - Une "famille" est un groupe de boissons partageant
-  `(name, quantity, unit, alcoholContent)`. La modification d'une
-  *entrée* (un drink unique) ne propage pas, alors que `updateFamily`
-  cascade sur tous les drinks de la même famille.
+  `(name, quantity, unit, alcoholContent)` — la **catégorie n'entre pas**
+  dans la clé (cf. `buildFamilies`), donc l'`id` de famille est stable
+  même quand on change sa catégorie. La modification d'une *entrée* (un
+  drink unique) ne propage pas, alors que `updateFamily` cascade sur tous
+  les drinks de la même famille.
+- **Déplacer une famille** : `updateFamily(family, { category })` réassigne
+  toutes ses entrées. Exposé via l'action « Déplacer vers… » de
+  `DrinkDetailSheet` et via le sélecteur de catégorie d'`EditFamilySheet`.
 
 ### Charts
 
@@ -181,12 +217,20 @@ SVG dedans, la consommer via `<SvgIcon icon={Ic.xxx} size={N} />`.
 
 `CAT_DEFAULT` dans `shared.jsx` mappe les 5 catégories par défaut
 (Bière, Vin, Spiritueux, Cocktail, Autre) à leur teinte. Les noms
-inconnus reçoivent une teinte hashée déterministe.
+inconnus reçoivent une teinte hashée déterministe. Comparer les noms
+de catégorie via `canonicalCat()` (trim + NFC), jamais par `===` brut.
 
-Les **icônes personnalisées** sont stockées dans `settings` sous la
-clé `cat.icon.<nom>`. `loadCategoryIcons()` (appelée au mount par
-`app.jsx`) miroite ces overrides dans `window.__alcoCatIcons`, que
-`<CategoryGlyph>` consulte synchroniquement.
+**Créer / modifier / supprimer** : `EditCategorySheet` gère les deux
+modes — `mode="create"` (titre « Nouvelle catégorie », nom + icône, pas
+de bouton Supprimer ; `addCategory` + `setCategoryIcon`) et le mode édition
+par défaut (renommer / changer l'icône / supprimer, avec pré-validation
+du doublon). Le bouton « + Nouvelle catégorie » vit dans `CategoryGrid`.
+
+Les **icônes personnalisées** sont stockées dans `settings` par **id**
+sous la clé `cat.icon.id.<id>` (les anciennes clés `cat.icon.<nom>` sont
+migrées une fois par `migrateCategoryIconsToId`). `loadCategoryIcons()`
+charge la map `id→glyph`, que `CategoryIconsProvider` rejoint avec
+`id→nom` et expose via `CategoryIconsContext` ; `<CategoryGlyph>` la lit.
 
 ## Service worker
 
@@ -235,6 +279,16 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
 ## Tests manuels avant push
 
 - Add drink avec / sans prefill, chaque unité, chaque catégorie.
+- **Recherche Catégories** : taper le « + » sur un résultat de recherche
+  ajoute bien la boisson (régression historique).
+- **Champs numériques** : qty, degré et poids ouvrent le pavé numérique ;
+  la virgule **et** le point sont acceptés ; vider le champ ne laisse pas
+  un « 0 » fantôme.
+- **Créer une catégorie** (nom + icône) ; renommer ; doublon (casse /
+  accent) refusé avec message avant mutation.
+- **Déplacer une famille** via « Déplacer vers… » (fiche détail) et via
+  « Modifier la boisson » : elle quitte l'ancienne catégorie et apparaît
+  dans la nouvelle ; la fiche reste ouverte avec la nouvelle couleur.
 - Edit d'une entrée : la famille doit rester (autres entrées
   intactes).
 - Edit d'une famille : toutes les entrées migrées d'un coup.

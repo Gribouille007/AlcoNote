@@ -5,26 +5,9 @@ function _now() {
   return { date: localDate(d), time: localTime(d) };
 }
 
-function inputS() {
-  return {
-    width: '100%', background: T.surface2, border: `1px solid ${T.rule}`,
-    borderRadius: 12, padding: '11px 14px', color: T.ink, fontSize: 14,
-    fontFamily: fontSans, outline: 'none', letterSpacing: -0.1,
-    boxSizing: 'border-box',
-  };
-}
-
-function FieldGroup({ label, children }) {
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{
-        fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase',
-        color: T.muted, fontWeight: 500, marginBottom: 7,
-      }}>{label}</div>
-      {children}
-    </div>
-  );
-}
+// `inputS` (input base style), `FieldGroup`, `NumberField`, `CategoryChips`,
+// `UnitToggle` and `RatingField` now live in shared.jsx (loaded first) and are
+// available as globals here — see CLAUDE.md › Form primitives.
 
 function ImpactStat({ big, unit, accent }) {
   return (
@@ -61,12 +44,14 @@ function AddDrinkSheet({ open, prefill, onClose }) {
     const n = _now();
     setDate(n.date); setTime(n.time); setErr(''); setBusy(false);
     if (prefill) {
+      // NumberField state stays a string — coerce prefilled numbers so the
+      // controlled input never flips number↔string mid-edit.
       setName(prefill.name || '');
       setCat(prefill.category || '');
-      setQty(prefill.quantity != null ? prefill.quantity : '');
+      setQty(prefill.quantity != null ? String(prefill.quantity) : '');
       setUnit(prefill.unit || 'cL');
-      setAlc(prefill.alcohol != null ? prefill.alcohol
-            : prefill.alcoholContent != null ? prefill.alcoholContent : '');
+      setAlc(prefill.alcohol != null ? String(prefill.alcohol)
+            : prefill.alcoholContent != null ? String(prefill.alcoholContent) : '');
       setRating(prefill.rating || 0);
     } else {
       setName(''); setQty(''); setUnit('cL'); setAlc(''); setRating(0); setCat('');
@@ -84,8 +69,10 @@ function AddDrinkSheet({ open, prefill, onClose }) {
 
   if (!open) return null;
 
-  const qtyNum = Number(qty) || 0;
-  const alcNum = Number(alc) || 0;
+  // parseDecimal accepts a comma OR a dot (see shared.jsx) — `Number()`
+  // returned NaN on "5,5" typed with a French keypad.
+  const qtyNum = parseDecimal(qty) || 0;
+  const alcNum = parseDecimal(alc) || 0;
   // Use the shared toCl so non-canonical units (e.g. "ml" coming from
   // a scanner result) are converted correctly instead of being treated
   // as cL by a local case-sensitive ternary.
@@ -187,63 +174,25 @@ function AddDrinkSheet({ open, prefill, onClose }) {
           </FieldGroup>
 
           <FieldGroup label="Catégorie">
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {categories.map(c => (
-                <div key={c.id} onClick={() => setCat(c.name)} style={{
-                  padding: '7px 12px', borderRadius: 10, fontSize: 12,
-                  border: `1px solid ${cat === c.name ? T.accent : T.rule}`,
-                  background: cat === c.name ? T.accentSoft : 'transparent',
-                  color: cat === c.name ? T.accent : T.ink2,
-                  cursor: 'pointer', letterSpacing: -0.1,
-                }}>{c.name}</div>
-              ))}
-            </div>
+            <CategoryChips categories={categories} value={cat} onChange={setCat} />
           </FieldGroup>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
             <div style={{ minWidth: 0 }}>
               <FieldGroup label="Quantité">
-                <input type="number" value={qty}
-                  onChange={e => setQty(e.target.value)}
-                  inputMode="decimal" placeholder="—" style={inputS()} />
+                <NumberField value={qty} onChange={setQty} ariaLabel="Quantité" />
               </FieldGroup>
             </div>
             <div style={{ minWidth: 0 }}>
               <FieldGroup label="Unité">
-                <div style={{
-                  display: 'flex', gap: 4, padding: 3,
-                  background: T.surface2, borderRadius: 10, border: `1px solid ${T.rule}`,
-                }}>
-                  {['cL', 'L', 'EcoCup'].map(u2 => (
-                    <div key={u2} onClick={() => setUnit(u2)} style={{
-                      flex: 1, padding: '8px 0', borderRadius: 7, textAlign: 'center',
-                      fontSize: 11.5, cursor: 'pointer', letterSpacing: -0.1,
-                      background: unit === u2 ? T.ink : 'transparent',
-                      color: unit === u2 ? T.bg : T.ink2,
-                      fontWeight: unit === u2 ? 600 : 400,
-                      minWidth: 0,
-                    }}>{u2}</div>
-                  ))}
-                </div>
+                <UnitToggle value={unit} onChange={setUnit} />
               </FieldGroup>
             </div>
           </div>
 
           <FieldGroup label="Degré d'alcool">
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              background: T.surface2, border: `1px solid ${T.rule}`, borderRadius: 12,
-              padding: '10px 14px',
-            }}>
-              <input type="number" value={alc} step="0.1" inputMode="decimal"
-                placeholder="—"
-                onChange={e => setAlc(e.target.value)}
-                style={{
-                  flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                  color: T.ink, fontSize: 15, fontFamily: fontSans, minWidth: 0,
-                }}/>
-              <span style={{ color: T.muted, fontSize: 13 }}>%</span>
-            </div>
+            <NumberField value={alc} onChange={setAlc} step="0.1" suffix="%"
+              ariaLabel="Degré d'alcool" />
           </FieldGroup>
 
           <div style={{
@@ -267,18 +216,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
           </div>
 
           <FieldGroup label="Note (optionnelle)">
-            <div style={{
-              background: T.surface2, border: `1px solid ${T.rule}`, borderRadius: 12,
-              padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            }}>
-              <Stars n={rating} interactive size={18} onChange={setRating}/>
-              {rating > 0 && (
-                <button type="button" onClick={() => setRating(0)} style={{
-                  ...ghostButton,
-                  color: T.muted, fontSize: 11, cursor: 'pointer',
-                }}>Effacer</button>
-              )}
-            </div>
+            <RatingField value={rating} onChange={setRating} />
           </FieldGroup>
 
           <div style={{
@@ -323,8 +261,8 @@ function AddDrinkSheet({ open, prefill, onClose }) {
         if (p) {
           if (p.name) setName(p.name);
           if (p.category) setCat(p.category);
-          if (p.alcoholContent !== undefined) setAlc(p.alcoholContent);
-          if (p.quantity) setQty(p.quantity);
+          if (p.alcoholContent !== undefined) setAlc(String(p.alcoholContent));
+          if (p.quantity) setQty(String(p.quantity));
           if (p.unit) setUnit(p.unit);
           Toast.show(`« ${p.name || 'Produit'} » détecté`);
         }
@@ -523,7 +461,11 @@ function FactCell({ label, value, last }) {
 // Drink detail sheet - shows family info and entries timeline
 function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
   const ratings = useRatings();
+  const { categories } = useCategories();
   const { loading } = useDrinks();
+  // Inline "move to another category" affordance (applies to the whole
+  // family via updateFamily).
+  const [moving, setMoving] = React.useState(false);
   // Read the shared families memo from FamiliesContext instead of
   // rebuilding the grouping locally — `buildFamilies(drinks, ratings)`
   // ran on every bump and produced a brand-new array each time, which
@@ -701,6 +643,37 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
               );
             })}
           </div>
+
+          <div style={{ marginTop: 16 }}>
+            <button type="button" onClick={() => setMoving(v => !v)} aria-expanded={moving}
+              style={{
+                ...ghostButton, width: '100%', padding: '10px 0', cursor: 'pointer',
+                color: T.ink2, fontSize: 12.5, display: 'flex', alignItems: 'center',
+                justifyContent: 'center', gap: 6,
+              }}>
+              <SvgIcon icon={Ic.grid} size={13} /> Déplacer vers une autre catégorie
+            </button>
+            {moving && (
+              <div style={{
+                marginTop: 10, padding: 12, background: T.surface,
+                border: `1px solid ${T.rule}`, borderRadius: 14,
+              }}>
+                <CategoryChips categories={categories} value={f.category}
+                  ariaLabel="Déplacer vers la catégorie"
+                  onChange={async (nextCat) => {
+                    if (!nextCat || nextCat === f.category) { setMoving(false); return; }
+                    try {
+                      await updateFamily(f, { category: nextCat });
+                      Toast.show(`Déplacé vers « ${nextCat} »`);
+                      setMoving(false);
+                    } catch (err) {
+                      console.warn('AlcoNote: move family failed', err);
+                      Toast.show('Erreur lors du déplacement');
+                    }
+                  }} />
+              </div>
+            )}
+          </div>
         </div>
 
         <div style={{
@@ -740,9 +713,9 @@ function EditEntrySheet({ entry, onClose }) {
   const ratings = useRatings();
   const raw = entry.raw || entry;
   const [name, setName] = React.useState(raw.name || '');
-  const [qty, setQty] = React.useState(raw.quantity != null ? raw.quantity : '');
+  const [qty, setQty] = React.useState(raw.quantity != null ? String(raw.quantity) : '');
   const [unit, setUnit] = React.useState(raw.unit || 'cL');
-  const [alc, setAlc] = React.useState(raw.alcoholContent != null ? raw.alcoholContent : '');
+  const [alc, setAlc] = React.useState(raw.alcoholContent != null ? String(raw.alcoholContent) : '');
   const [cat, setCat] = React.useState(raw.category || '');
   const [date, setDate] = React.useState(raw.date || _now().date);
   const [time, setTime] = React.useState(raw.time || _now().time);
@@ -757,8 +730,9 @@ function EditEntrySheet({ entry, onClose }) {
   const save = async () => {
     setErr('');
     if (!name.trim()) { setErr('Le nom est requis'); return; }
-    const qtyNum = Number(qty) || 0;
+    const qtyNum = parseDecimal(qty) || 0;
     if (qtyNum <= 0) { setErr('Quantité invalide'); return; }
+    if (!cat) { setErr('Choisissez une catégorie'); return; }
     setBusy(true);
     try {
       const finalName = name.trim();
@@ -767,7 +741,7 @@ function EditEntrySheet({ entry, onClose }) {
         category: cat,
         quantity: qtyNum,
         unit,
-        alcoholContent: Number(alc) || 0,
+        alcoholContent: parseDecimal(alc) || 0,
         date,
         time,
       });
@@ -840,48 +814,22 @@ function EditEntrySheet({ entry, onClose }) {
         <div style={{ overflowY: 'auto', overflowX: 'hidden', padding: '0 18px 20px', flex: 1 }}>
           <FieldGroup label="Nom"><input value={name} onChange={e => setName(e.target.value)} style={inputS()} /></FieldGroup>
           <FieldGroup label="Catégorie">
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {categories.map(c => (
-                <div key={c.id} onClick={() => setCat(c.name)} style={{
-                  padding: '7px 12px', borderRadius: 10, fontSize: 12,
-                  border: `1px solid ${cat === c.name ? T.accent : T.rule}`,
-                  background: cat === c.name ? T.accentSoft : 'transparent',
-                  color: cat === c.name ? T.accent : T.ink2,
-                  cursor: 'pointer', letterSpacing: -0.1,
-                }}>{c.name}</div>
-              ))}
-            </div>
+            <CategoryChips categories={categories} value={cat} onChange={setCat} />
           </FieldGroup>
           <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
             <div style={{ minWidth: 0 }}>
               <FieldGroup label="Quantité">
-                <input type="number" value={qty} onChange={e => setQty(e.target.value)}
-                  inputMode="decimal" placeholder="—" style={inputS()} />
+                <NumberField value={qty} onChange={setQty} ariaLabel="Quantité" />
               </FieldGroup>
             </div>
             <div style={{ minWidth: 0 }}>
               <FieldGroup label="Unité">
-                <div style={{
-                  display: 'flex', gap: 4, padding: 3,
-                  background: T.surface2, borderRadius: 10, border: `1px solid ${T.rule}`,
-                }}>
-                  {['cL', 'L', 'EcoCup'].map(u2 => (
-                    <div key={u2} onClick={() => setUnit(u2)} style={{
-                      flex: 1, padding: '8px 0', borderRadius: 7, textAlign: 'center',
-                      fontSize: 11.5, cursor: 'pointer', letterSpacing: -0.1,
-                      background: unit === u2 ? T.ink : 'transparent',
-                      color: unit === u2 ? T.bg : T.ink2,
-                      fontWeight: unit === u2 ? 600 : 400, minWidth: 0,
-                    }}>{u2}</div>
-                  ))}
-                </div>
+                <UnitToggle value={unit} onChange={setUnit} />
               </FieldGroup>
             </div>
           </div>
           <FieldGroup label="Degré d'alcool (%)">
-            <input type="number" value={alc} step="0.1" inputMode="decimal"
-              placeholder="—"
-              onChange={e => setAlc(e.target.value)} style={inputS()} />
+            <NumberField value={alc} onChange={setAlc} step="0.1" ariaLabel="Degré d'alcool" />
           </FieldGroup>
           <div style={{
             display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
@@ -904,17 +852,7 @@ function EditEntrySheet({ entry, onClose }) {
           </div>
 
           <FieldGroup label="Note">
-            <div style={{
-              background: T.surface2, border: `1px solid ${T.rule}`, borderRadius: 12,
-              padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            }}>
-              <Stars n={rating} interactive size={18} onChange={setRating}/>
-              {rating > 0 && (
-                <button type="button" onClick={() => setRating(0)} style={{
-                  ...ghostButton, color: T.muted, fontSize: 11, cursor: 'pointer',
-                }}>Effacer</button>
-              )}
-            </div>
+            <RatingField value={rating} onChange={setRating} />
           </FieldGroup>
 
           {err && (
@@ -967,9 +905,9 @@ function EditFamilySheet({ family, onClose }) {
   const { categories } = useCategories();
   const ratings = useRatings();
   const [name, setName] = React.useState(family.name);
-  const [qty, setQty] = React.useState(family.quantity);
+  const [qty, setQty] = React.useState(family.quantity != null ? String(family.quantity) : '');
   const [unit, setUnit] = React.useState(family.unit);
-  const [alc, setAlc] = React.useState(family.alcohol);
+  const [alc, setAlc] = React.useState(family.alcohol != null ? String(family.alcohol) : '');
   const [cat, setCat] = React.useState(family.category);
   // Ratings are keyed by the canonical drink name (not per family / per
   // entry), so we seed from the current name's value and persist under
@@ -984,8 +922,9 @@ function EditFamilySheet({ family, onClose }) {
   const save = async () => {
     setErr('');
     if (!name.trim()) { setErr('Le nom est requis'); return; }
-    const qtyNum = Number(qty) || 0;
+    const qtyNum = parseDecimal(qty) || 0;
     if (qtyNum <= 0) { setErr('Quantité invalide'); return; }
+    if (!cat) { setErr('Choisissez une catégorie'); return; }
     setBusy(true);
     try {
       const finalName = name.trim();
@@ -994,7 +933,7 @@ function EditFamilySheet({ family, onClose }) {
         name: finalName,
         quantity: qtyNum,
         unit,
-        alcoholContent: Number(alc) || 0,
+        alcoholContent: parseDecimal(alc) || 0,
         category: cat,
       });
       // Migrate the rating to the new key when the family is renamed.
@@ -1086,55 +1025,22 @@ function EditFamilySheet({ family, onClose }) {
         <div style={{ overflow: 'auto', padding: '0 18px 20px', flex: 1 }}>
           <FieldGroup label="Nom"><input value={name} onChange={e => setName(e.target.value)} style={inputS()} /></FieldGroup>
           <FieldGroup label="Catégorie">
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {categories.map(c => (
-                <div key={c.id} onClick={() => setCat(c.name)} style={{
-                  padding: '7px 12px', borderRadius: 10, fontSize: 12,
-                  border: `1px solid ${cat === c.name ? T.accent : T.rule}`,
-                  background: cat === c.name ? T.accentSoft : 'transparent',
-                  color: cat === c.name ? T.accent : T.ink2,
-                  cursor: 'pointer', letterSpacing: -0.1,
-                }}>{c.name}</div>
-              ))}
-            </div>
+            <CategoryChips categories={categories} value={cat} onChange={setCat} />
           </FieldGroup>
           <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
             <FieldGroup label="Quantité">
-              <input type="number" value={qty} onChange={e => setQty(+e.target.value || 0)} style={inputS()} />
+              <NumberField value={qty} onChange={setQty} ariaLabel="Quantité" />
             </FieldGroup>
             <FieldGroup label="Unité">
-              <div style={{
-                display: 'flex', gap: 4, padding: 3,
-                background: T.surface2, borderRadius: 10, border: `1px solid ${T.rule}`,
-              }}>
-                {['cL', 'L', 'EcoCup'].map(u2 => (
-                  <div key={u2} onClick={() => setUnit(u2)} style={{
-                    flex: 1, padding: '8px 0', borderRadius: 7, textAlign: 'center',
-                    fontSize: 11.5, cursor: 'pointer', letterSpacing: -0.1,
-                    background: unit === u2 ? T.ink : 'transparent',
-                    color: unit === u2 ? T.bg : T.ink2,
-                    fontWeight: unit === u2 ? 600 : 400,
-                  }}>{u2}</div>
-                ))}
-              </div>
+              <UnitToggle value={unit} onChange={setUnit} />
             </FieldGroup>
           </div>
           <FieldGroup label="Degré d'alcool (%)">
-            <input type="number" value={alc} step="0.1" onChange={e => setAlc(+e.target.value || 0)} style={inputS()} />
+            <NumberField value={alc} onChange={setAlc} step="0.1" ariaLabel="Degré d'alcool" />
           </FieldGroup>
 
           <FieldGroup label="Note">
-            <div style={{
-              background: T.surface2, border: `1px solid ${T.rule}`, borderRadius: 12,
-              padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            }}>
-              <Stars n={rating} interactive size={18} onChange={setRating}/>
-              {rating > 0 && (
-                <button type="button" onClick={() => setRating(0)} style={{
-                  ...ghostButton, color: T.muted, fontSize: 11, cursor: 'pointer',
-                }}>Effacer</button>
-              )}
-            </div>
+            <RatingField value={rating} onChange={setRating} />
           </FieldGroup>
 
           {err && (
@@ -1265,8 +1171,9 @@ function SettingsDrawer({ open, onClose }) {
           </SettingsGroup>
 
           <SettingsGroup label="Profil">
-            <ProfileRow label="Poids (kg)" type="number" min={30} max={200} step={0.5}
-              value={settings.userWeight || ''} onSave={(v) => saveSetting('userWeight', v ? Number(v) : null)} />
+            <ProfileRow label="Poids (kg)" numeric min={30} max={200} step={0.5}
+              value={settings.userWeight != null ? String(settings.userWeight) : ''}
+              onSave={(v) => { const n = parseDecimal(v); saveSetting('userWeight', (v && !isNaN(n)) ? n : null); }} />
             <GenderPicker value={settings.userGender || ''} onChange={(v) => saveSetting('userGender', v || null)} last />
           </SettingsGroup>
 
@@ -1315,7 +1222,7 @@ function ThemePicker() {
   );
 }
 
-function ProfileRow({ label, value, onSave, last, ...inputProps }) {
+function ProfileRow({ label, value, onSave, last, numeric, step, min, max, ...inputProps }) {
   const [v, setV] = React.useState(value);
   React.useEffect(() => setV(value), [value]);
   return (
@@ -1325,13 +1232,21 @@ function ProfileRow({ label, value, onSave, last, ...inputProps }) {
       gap: 10,
     }}>
       <span style={{ color: T.ink, fontSize: 13.5, letterSpacing: -0.1 }}>{label}</span>
-      <input value={v} onChange={(e) => setV(e.target.value)} onBlur={() => onSave(v)}
-        {...inputProps}
-        style={{
-          width: 80, background: T.surface2, border: `1px solid ${T.rule}`,
-          borderRadius: 8, padding: '6px 10px', color: T.ink, fontSize: 13,
-          fontFamily: fontSans, outline: 'none', textAlign: 'right',
-        }}/>
+      {numeric ? (
+        // Numeric profile fields (e.g. weight) get the decimal keypad and
+        // accept a comma or a dot. Save on blur (the input's blur bubbles).
+        <NumberField value={v} onChange={setV} onBlur={() => onSave(v)}
+          ariaLabel={label} step={step} min={min} max={max} placeholder=""
+          style={{ width: 80, padding: '6px 10px', fontSize: 13, textAlign: 'right', borderRadius: 8 }} />
+      ) : (
+        <input value={v} onChange={(e) => setV(e.target.value)} onBlur={() => onSave(v)}
+          {...inputProps}
+          style={{
+            width: 80, background: T.surface2, border: `1px solid ${T.rule}`,
+            borderRadius: 8, padding: '6px 10px', color: T.ink, fontSize: 13,
+            fontFamily: fontSans, outline: 'none', textAlign: 'right',
+          }}/>
+      )}
     </div>
   );
 }
@@ -1407,6 +1322,6 @@ function SettingRow({ label, value, icon, danger, last, onClick }) {
 }
 Object.assign(window, {
   AddDrinkSheet, ScannerSheet, DrinkDetailSheet, EditFamilySheet, EditEntrySheet,
-  SettingsDrawer, FieldGroup, ImpactStat, FactCell,
+  SettingsDrawer, ImpactStat, FactCell,
   ThemePicker, ProfileRow, GenderPicker, SettingsGroup, SettingRow,
 });

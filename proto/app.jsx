@@ -194,7 +194,6 @@ function AppShell() {
           <div style={tabContainer('categories')}>
             <CategoriesTab
               onOpenFamily={setOpenFamily}
-              onAdd={() => setAdding(true)}
               onDirectAdd={directAdd}
               onEditFamily={onEdit}
               query={catQuery} setQuery={setCatQuery}
@@ -221,21 +220,21 @@ function AppShell() {
         onClose={() => { setAdding(false); setPrefill(null); }} />
       <SettingsDrawer open={settings} onClose={() => setSettings(false)} />
       {openFamily && (
-        <DrinkDetailSheet family={openFamily}
+        <DrinkDetailSheet key={openFamily.id} family={openFamily}
           onClose={() => setOpenFamily(null)}
           onAddAgain={onAddAgain}
           onEdit={onEdit}
         />
       )}
       {openEntry && (
-        <DrinkDetailSheet entry={openEntry}
+        <DrinkDetailSheet key={openEntry.id || (openEntry.family && openEntry.family.id)} entry={openEntry}
           onClose={() => setOpenEntry(null)}
           onAddAgain={onAddAgain}
           onEdit={onEdit}
         />
       )}
       {editFamily && (
-        <EditFamilySheet family={editFamily} onClose={() => setEditFamily(null)} />
+        <EditFamilySheet key={editFamily.id} family={editFamily} onClose={() => setEditFamily(null)} />
       )}
 
       <ConfirmHost />
