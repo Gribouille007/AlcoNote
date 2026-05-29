@@ -162,7 +162,7 @@ function aggregateGeneral(drinks) {
     const cat = d.category || 'Autre';
     stats.byCategory[cat] = (stats.byCategory[cat] || 0) + 1;
     const hour = parseInt((d.time || '00:00').split(':')[0], 10);
-    if (!isNaN(hour)) stats.byHour[hour] = (stats.byHour[hour] || 0) + 1;
+    if (!isNaN(hour) && hour >= 0 && hour < 24) stats.byHour[hour] = (stats.byHour[hour] || 0) + 1;
     const dow = new Date((d.date || '') + 'T00:00:00').getDay();
     if (!isNaN(dow)) stats.byDow[dow] += 1;
   }

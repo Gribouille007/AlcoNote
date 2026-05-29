@@ -241,7 +241,7 @@ function SvgBarChart({ data, width = 320, height = 140, color, formatX, formatTo
   const svgRef = React.useRef(null);
   const [hover, setHover] = React.useState(null);
   const scr = useChartScrubber(svgRef, null, (p) => {
-    if (!p) { setHover(null); return; }
+    if (!p || !data.length) { setHover(null); return; }
     const i = Math.max(0, Math.min(data.length - 1, Math.floor((p.x - pad.l) / bw)));
     setHover(i);
   });

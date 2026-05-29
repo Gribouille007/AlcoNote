@@ -279,7 +279,7 @@ function SvgBarChart({
   const svgRef = React.useRef(null);
   const [hover, setHover] = React.useState(null);
   const scr = useChartScrubber(svgRef, null, p => {
-    if (!p) {
+    if (!p || !data.length) {
       setHover(null);
       return;
     }
