@@ -494,6 +494,74 @@ const Ic = {
     x2: "15",
     y2: "20"
   })),
+  crosshair: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "12",
+    cy: "12",
+    r: "7"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "1.5",
+    x2: "12",
+    y2: "5"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "19",
+    x2: "12",
+    y2: "22.5"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "1.5",
+    y1: "12",
+    x2: "5",
+    y2: "12"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "19",
+    y1: "12",
+    x2: "22.5",
+    y2: "12"
+  })),
+  expand: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("polyline", {
+    points: "15 3 21 3 21 9"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "9 21 3 21 3 15"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "21",
+    y1: "3",
+    x2: "14",
+    y2: "10"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "3",
+    y1: "21",
+    x2: "10",
+    y2: "14"
+  })),
+  layers: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("polygon", {
+    points: "12 2 2 7 12 12 22 7 12 2"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "2 17 12 22 22 17"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "2 12 12 17 22 12"
+  })),
   flame: /*#__PURE__*/React.createElement("svg", {
     viewBox: "0 0 24 24",
     fill: "none",
@@ -1748,6 +1816,69 @@ function useSWVersion() {
     @keyframes slideLeft { from { transform: translateX(16px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
     @keyframes scaleIn { from { transform: scale(.96); opacity: 0 } to { transform: scale(1); opacity: 1 } }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* Carte (StatsTab › MapSection). Les couleurs sont pilotées par des
+       variables CSS posées sur le conteneur, ce qui permet de rethémer la
+       carte sans reconstruire le DOM Leaflet. Le halo blanc et les ombres
+       sont du chrome de marqueur conventionnel, pas des couleurs de palette. */
+    .alco-pin {
+      width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box;
+      background: var(--alco-accent, #c98a3a);
+      border: 2px solid rgba(255,255,255,0.85);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    }
+    .alco-cluster {
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 50%; box-sizing: border-box;
+      background: var(--alco-accent, #c98a3a);
+      color: var(--alco-accent-ink, #1a1a1a);
+      border: 2px solid rgba(255,255,255,0.85);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.28);
+      font: 600 12px/1 "Geist Mono", ui-monospace, monospace;
+    }
+    .alco-me {
+      width: 16px; height: 16px; border-radius: 50%; box-sizing: border-box;
+      background: var(--alco-accent, #c98a3a);
+      border: 3px solid #fff;
+      box-shadow: 0 0 0 2px var(--alco-accent, #c98a3a), 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .alco-map-ctrl {
+      display: flex; align-items: center; justify-content: center;
+      width: 34px; height: 34px; padding: 0; cursor: pointer;
+      background: var(--alco-surface, #fff);
+      color: var(--alco-ink, #222);
+      border: 1px solid var(--alco-rule, #ddd);
+      border-radius: 9px; margin-bottom: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+      font-family: inherit;
+    }
+    .alco-map-ctrl:hover { background: var(--alco-surface2, #f0f0f0); }
+    .alco-map-ctrl[aria-pressed="true"] {
+      background: var(--alco-accent, #c98a3a);
+      color: var(--alco-accent-ink, #1a1a1a);
+      border-color: var(--alco-accent, #c98a3a);
+    }
+    .alco-popup .leaflet-popup-content-wrapper {
+      background: var(--alco-popup-bg, #fff);
+      color: var(--alco-popup-ink, #222);
+      border: 1px solid var(--alco-rule, #ddd);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+    }
+    .alco-popup .leaflet-popup-tip { background: var(--alco-popup-bg, #fff); }
+    .alco-popup .leaflet-popup-content {
+      margin: 10px 12px; color: var(--alco-popup-ink, #222);
+      font: 12px/1.45 "Geist", ui-sans-serif, system-ui, sans-serif;
+    }
+    .alco-popup .leaflet-popup-content .alco-pop-title {
+      font-family: "Instrument Serif", "Times New Roman", serif;
+      font-style: italic; font-size: 16px; letter-spacing: -0.2px;
+    }
+    .alco-popup .leaflet-popup-content .alco-pop-meta {
+      font-family: "Geist Mono", ui-monospace, monospace;
+      color: var(--alco-muted, #888); font-size: 11px;
+    }
+    .alco-popup a.leaflet-popup-close-button { color: var(--alco-muted, #888); }
   `;
   document.head.appendChild(s);
 })();
@@ -2000,6 +2131,113 @@ function RatingField({
     }
   }, "Effacer"));
 }
+
+// Champ « Lieu » : capture / affiche / retire la position d'une boisson.
+// Réutilisé par AddDrinkSheet et EditEntrySheet — c'est ce qui rend la
+// géolocalisation éditable depuis l'Historique. La capture vit dans data.jsx
+// (`captureLocationForDrink`, global au runtime). `value` = objet location
+// | null ; `onChange` reçoit le nouvel objet, ou null si le lieu est retiré.
+function LocationField({
+  value,
+  onChange,
+  ariaLabel = 'Lieu'
+}) {
+  const [busy, setBusy] = React.useState(false);
+  const label = value && (value.label || value.name || value.address);
+  const acc = value && Number.isFinite(value.accuracy) ? Math.round(value.accuracy) : null;
+  const locate = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const loc = await captureLocationForDrink();
+      if (loc) onChange(loc);else Toast.show('Position indisponible');
+    } catch {
+      Toast.show('Position indisponible');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    "aria-label": ariaLabel,
+    style: {
+      background: T.surface2,
+      border: `1px solid ${T.rule}`,
+      borderRadius: 12,
+      padding: '10px 14px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: value ? T.accent : T.muted,
+      display: 'flex',
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.pin,
+    size: 16
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: value ? T.ink : T.muted,
+      letterSpacing: -0.1,
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis'
+    }
+  }, busy ? 'Localisation…' : label || (value ? 'Position enregistrée' : 'Non localisé')), acc != null && !busy && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: fontNum,
+      fontSize: 10.5,
+      color: T.muted,
+      marginTop: 2
+    }
+  }, "\xB1", acc, " m")), value && !busy && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => onChange(null),
+    "aria-label": "Retirer le lieu",
+    style: {
+      ...ghostButton,
+      color: T.muted,
+      cursor: 'pointer',
+      display: 'flex',
+      padding: 4
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.close,
+    size: 14
+  })), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: locate,
+    disabled: busy,
+    "aria-label": value ? 'Mettre à jour le lieu' : 'Localiser',
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+      flexShrink: 0,
+      padding: '8px 12px',
+      borderRadius: 9,
+      cursor: busy ? 'wait' : 'pointer',
+      background: T.accentSoft,
+      color: T.accent,
+      border: `1px solid ${T.accentSoftBorder}`,
+      fontSize: 12,
+      fontWeight: 500,
+      fontFamily: 'inherit',
+      animation: busy ? 'pulse 1s ease-in-out infinite' : 'none'
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.crosshair,
+    size: 14
+  }), value ? 'Réessayer' : 'Localiser'));
+}
 Object.assign(window, {
   T,
   THEMES,
@@ -2048,5 +2286,6 @@ Object.assign(window, {
   NumberField,
   CategoryChips,
   UnitToggle,
-  RatingField
+  RatingField,
+  LocationField
 });

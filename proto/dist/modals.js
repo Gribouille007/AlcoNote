@@ -58,6 +58,12 @@ function AddDrinkSheet({
   const [date, setDate] = React.useState(() => _now().date);
   const [time, setTime] = React.useState(() => _now().time);
   const [rating, setRating] = React.useState(0);
+  // `loc` = position attachée à la boisson (objet location | null). `locTouched`
+  // distingue « non touché » (→ auto-capture non bloquante à l'ajout, comme
+  // avant) de « choisi/retiré explicitement via le champ Lieu » (→ on respecte
+  // ce choix et on saute l'auto-capture).
+  const [loc, setLoc] = React.useState(null);
+  const [locTouched, setLocTouched] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
 
@@ -69,6 +75,8 @@ function AddDrinkSheet({
     setTime(n.time);
     setErr('');
     setBusy(false);
+    setLoc(null);
+    setLocTouched(false);
     if (prefill) {
       // NumberField state stays a string — coerce prefilled numbers so the
       // controlled input never flips number↔string mid-edit.
@@ -131,19 +139,21 @@ function AddDrinkSheet({
         unit,
         alcoholContent: alcNum,
         date,
-        time
+        time,
+        location: locTouched ? loc : null
       });
       if (rating > 0) await saveRating(drinkName, rating);
       Toast.show(`« ${drinkName} » ajoutée`);
       onClose && onClose();
-      // Géolocalisation non bloquante : on n'attend pas l'acquisition
-      // GPS pour valider l'ajout. Une fois la position obtenue, on
-      // l'attache à la boisson — elle apparaît alors sur la carte des
-      // lieux (StatsTab › MapSection).
-      if (created && created.id != null) {
-        captureLocationForDrink().then(loc => {
-          if (loc) updateDrink(created.id, {
-            location: loc
+      // Géolocalisation non bloquante : si l'utilisateur n'a pas défini de
+      // lieu manuellement (champ Lieu), on tente une capture GPS après coup
+      // sans bloquer l'ajout. Une fois obtenue, on l'attache — elle apparaît
+      // alors sur la carte (StatsTab › MapSection). Un lieu choisi/retiré
+      // explicitement (`locTouched`) est respecté : on saute l'auto-capture.
+      if (!locTouched && created && created.id != null) {
+        captureLocationForDrink().then(captured => {
+          if (captured) updateDrink(created.id, {
+            location: captured
           });
         });
       }
@@ -372,6 +382,14 @@ function AddDrinkSheet({
   }, /*#__PURE__*/React.createElement(RatingField, {
     value: rating,
     onChange: setRating
+  })), /*#__PURE__*/React.createElement(FieldGroup, {
+    label: "Lieu (optionnel)"
+  }, /*#__PURE__*/React.createElement(LocationField, {
+    value: loc,
+    onChange: v => {
+      setLoc(v);
+      setLocTouched(true);
+    }
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
@@ -1161,6 +1179,9 @@ function EditEntrySheet({
   // Ratings are keyed by the canonical drink name; editing an entry's
   // rating moves the value to whatever name the user saves under.
   const [rating, setRating] = React.useState(ratings[ratingKey(raw.name)] != null ? ratings[ratingKey(raw.name)] : 0);
+  // Lieu de CETTE entrée (par entrée, pas par famille). Rend la position
+  // éditable depuis l'Historique : définir / re-localiser / retirer.
+  const [loc, setLoc] = React.useState(raw.location || null);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   const save = async () => {
@@ -1188,7 +1209,8 @@ function EditEntrySheet({
         unit,
         alcoholContent: parseDecimal(alc) || 0,
         date,
-        time
+        time,
+        location: loc
       });
       // Renaming the entry only changes this row's name; siblings in
       // the family keep theirs. The old-name rating stays valid as
@@ -1390,6 +1412,11 @@ function EditEntrySheet({
   }, /*#__PURE__*/React.createElement(RatingField, {
     value: rating,
     onChange: setRating
+  })), /*#__PURE__*/React.createElement(FieldGroup, {
+    label: "Lieu"
+  }, /*#__PURE__*/React.createElement(LocationField, {
+    value: loc,
+    onChange: setLoc
   })), err && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.accent2,
@@ -1469,7 +1496,9 @@ function EditEntrySheet({
 }
 
 // Edit drink family sheet (rename, change qty/unit/abv across all entries,
-// change category, delete all entries)
+// change category, delete all entries). NOTE: no location field here — a
+// location is per ENTRY (a family groups entries logged at different places),
+// so the place is edited from EditEntrySheet, not at the family level.
 function EditFamilySheet({
   family,
   onClose
