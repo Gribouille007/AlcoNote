@@ -2440,10 +2440,11 @@ function BACRecordRow({
 // Refonte : la carte est construite UNE fois à l'ouverture de la section
 // puis mise à jour en place (clearLayers), ses couleurs étant pilotées par
 // des variables CSS — aucune reconstruction au changement de données ni de
-// thème. Tuiles claires/sombres suivant le thème, recentrage, taper un rond
-// (point ou cluster) ouvre la liste regroupée de ses boissons, bascule
-// points/heatmap et bascule Période/Tout. Leaflet, markercluster et
-// leaflet.heat sont chargés à la demande au premier affichage.
+// thème. Tuiles claires/sombres suivant le thème, recentrage sur les
+// données ou sur la position GPS (sans marqueur), taper un rond (point ou
+// cluster) ouvre la liste regroupée de ses boissons, bascule points/heatmap
+// et bascule Période/Tout. Leaflet, markercluster et leaflet.heat sont
+// chargés à la demande au premier affichage.
 const CARTO_TILES = {
   dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
   light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
@@ -2466,10 +2467,11 @@ function applyMapThemeVars(el) {
   set('--alco-muted', T.muted);
 }
 
-// SVG brut (chaîne) pour le bouton de contrôle « Recentrer », qui est un
-// nœud DOM Leaflet et non du JSX — même tracé que Ic.expand.
+// SVG bruts (chaîne) pour les boutons de contrôle Leaflet, qui sont des
+// nœuds DOM et non du JSX — mêmes tracés que Ic.expand / Ic.crosshair.
 const _mapSvg = inner => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
 const MAP_ICON_RECENTER = _mapSvg('<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>');
+const MAP_ICON_LOCATE = _mapSvg('<circle cx="12" cy="12" r="7"/><line x1="12" y1="1.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22.5" y2="12"/>');
 
 // Regroupe une liste de boissons (les feuilles d'un cluster, ou un point
 // isolé) par famille — même clé que buildFamilies, catégorie exclue — et
@@ -2798,11 +2800,16 @@ function MapSection({
         // l'ancre explicite (size/2) garantit le centrage sur la coordonnée.
         const size = n < 10 ? 34 : n < 100 ? 40 : 48;
         const fs = n >= 100 ? 14 : 15;
+        const r = size / 2 - 1.5; // place pour le halo (stroke 2px, centré)
+        // Cercle + chiffre entièrement en SVG : le chiffre est centré par
+        // text-anchor:middle + dominant-baseline:central, donc parfaitement
+        // au milieu du rond, sans dépendre de la ligne de base de la police.
+        const cx = size / 2;
         return L.divIcon({
-          html: `<span style="font-size:${fs}px">${n}</span>`,
+          html: `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">` + `<circle cx="${cx}" cy="${cx}" r="${r}"/>` + `<text x="${cx}" y="${cx}" text-anchor="middle" dominant-baseline="central" font-size="${fs}">${n}</text>` + `</svg>`,
           className: 'alco-cluster',
           iconSize: L.point(size, size),
-          iconAnchor: L.point(size / 2, size / 2)
+          iconAnchor: L.point(cx, cx)
         });
       }
     });
@@ -2814,13 +2821,31 @@ function MapSection({
       setListDrinks(ds);
     });
 
-    // Action du contrôle : lit la ref → toujours à jour.
+    // Actions des contrôles : lisent les refs → toujours à jour.
     const recenter = () => {
       const b = boundsRef.current;
       if (b && b.isValid && b.isValid()) m.fitBounds(b, {
         padding: [28, 28],
         maxZoom: 15
       });
+    };
+    // Recentre la vue sur la position GPS de l'utilisateur, sans la
+    // matérialiser : aucun marqueur n'est posé (recadrage seul, à la
+    // demande explicite via le bouton).
+    const locateMe = async btn => {
+      btn && btn.setAttribute('aria-pressed', 'true');
+      try {
+        const pos = await getPosition(8000);
+        const {
+          latitude,
+          longitude
+        } = pos.coords;
+        m.setView([latitude, longitude], 15);
+      } catch (e) {
+        Toast.show('Position indisponible');
+      } finally {
+        btn && btn.setAttribute('aria-pressed', 'false');
+      }
     };
     const mkBtn = (svg, title, onClick) => {
       const b = document.createElement('button');
@@ -2843,6 +2868,7 @@ function MapSection({
       onAdd() {
         const wrap = L.DomUtil.create('div', 'alco-map-ctrls');
         wrap.appendChild(mkBtn(MAP_ICON_RECENTER, 'Recentrer', () => recenter()));
+        wrap.appendChild(mkBtn(MAP_ICON_LOCATE, 'Ma position', b => locateMe(b)));
         return wrap;
       }
     });
