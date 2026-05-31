@@ -1744,8 +1744,9 @@ function BACRecordRow({ record, isHighest }) {
 // Refonte : la carte est construite UNE fois à l'ouverture de la section
 // puis mise à jour en place (clearLayers), ses couleurs étant pilotées par
 // des variables CSS — aucune reconstruction au changement de données ni de
-// thème. Tuiles claires/sombres suivant le thème, recentrage, « Ma position »,
-// bascule points/heatmap et bascule Période/Tout. Leaflet, markercluster et
+// thème. Tuiles claires/sombres suivant le thème, recentrage, taper un rond
+// (point ou cluster) ouvre la liste regroupée de ses boissons, bascule
+// points/heatmap et bascule Période/Tout. Leaflet, markercluster et
 // leaflet.heat sont chargés à la demande au premier affichage.
 const CARTO_TILES = {
   dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -1755,8 +1756,8 @@ const CARTO_ATTR = '© OpenStreetMap, © CARTO';
 const tileUrlForTheme = () => (T.isDark ? CARTO_TILES.dark : CARTO_TILES.light);
 
 // Pose les variables CSS de thème sur le conteneur de carte. Lues par les
-// règles .alco-* (shared.jsx), elles rethèment marqueurs, clusters, contrôles
-// et popups sans toucher au DOM Leaflet.
+// règles .alco-* (shared.jsx), elles rethèment marqueurs, clusters et
+// contrôles sans toucher au DOM Leaflet.
 function applyMapThemeVars(el) {
   if (!el) return;
   const set = (k, v) => el.style.setProperty(k, v);
@@ -1767,36 +1768,116 @@ function applyMapThemeVars(el) {
   set('--alco-ink', T.ink);
   set('--alco-rule', T.rule);
   set('--alco-muted', T.muted);
-  set('--alco-popup-bg', T.surface);
-  set('--alco-popup-ink', T.ink);
 }
 
-// SVG bruts (chaîne) pour les boutons de contrôle Leaflet, qui sont des
-// nœuds DOM et non du JSX — mêmes tracés que Ic.expand / Ic.crosshair.
+// SVG brut (chaîne) pour le bouton de contrôle « Recentrer », qui est un
+// nœud DOM Leaflet et non du JSX — même tracé que Ic.expand.
 const _mapSvg = (inner) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
 const MAP_ICON_RECENTER = _mapSvg('<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>');
-const MAP_ICON_LOCATE = _mapSvg('<circle cx="12" cy="12" r="7"/><line x1="12" y1="1.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22.5" y2="12"/>');
 
-// Contenu de popup en nœuds DOM (les champs utilisateur passent par
-// textContent → pas d'injection HTML possible).
-function mapPopupNode(d) {
-  const wrap = document.createElement('div');
-  const title = document.createElement('div');
-  title.className = 'alco-pop-title';
-  title.textContent = d.name || 'Boisson';
-  wrap.appendChild(title);
-  const meta = document.createElement('div');
-  meta.className = 'alco-pop-meta';
-  meta.textContent = `${d.date || ''}${d.time ? ' · ' + d.time : ''}`;
-  wrap.appendChild(meta);
-  const where = drinkPlaceLabel(d);
-  if (where) {
-    const place = document.createElement('div');
-    place.style.marginTop = '3px';
-    place.textContent = where;
-    wrap.appendChild(place);
+// Regroupe une liste de boissons (les feuilles d'un cluster, ou un point
+// isolé) par famille — même clé que buildFamilies, catégorie exclue — et
+// compte les occurrences. Trié par fréquence décroissante puis par nom.
+function groupDrinksForMap(drinks) {
+  const map = new Map();
+  for (const d of (drinks || [])) {
+    const key = `${(d.name || '').trim().toLowerCase()}::${d.quantity}::${(d.unit || '').toLowerCase()}::${d.alcoholContent || 0}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        key, name: d.name || 'Boisson', category: d.category || 'Autre',
+        quantity: d.quantity, unit: d.unit, alcohol: d.alcoholContent || 0, count: 0,
+      });
+    }
+    map.get(key).count++;
   }
-  return wrap;
+  return Array.from(map.values())
+    .sort((a, b) => b.count - a.count || String(a.name).localeCompare(String(b.name)));
+}
+
+// Liste déroulante (bottom sheet) des boissons d'un rond de la carte,
+// regroupées par famille avec leur nombre. Remplace les anciennes popups
+// Leaflet : un même geste — taper un rond — ouvre toujours cette liste,
+// qu'il y ait une ou cinquante boissons dessous.
+function MapDrinksSheet({ drinks, onClose }) {
+  const groups = React.useMemo(() => groupDrinksForMap(drinks), [drinks]);
+  const total = drinks ? drinks.length : 0;
+  // Si toutes les boissons partagent un même libellé de lieu, on le met en
+  // titre ; sinon un titre générique (le rond couvre plusieurs endroits).
+  const sharedPlace = React.useMemo(() => {
+    const places = new Set((drinks || []).map(d => drinkPlaceLabel(d)).filter(Boolean));
+    return places.size === 1 ? Array.from(places)[0] : null;
+  }, [drinks]);
+
+  return (
+    <SheetOverlay onClose={onClose}>
+      <div style={{
+        background: T.bg, borderRadius: '22px 22px 0 0', maxHeight: '85dvh',
+        display: 'flex', flexDirection: 'column',
+        borderTop: `1px solid ${T.rule}`, borderLeft: `1px solid ${T.rule}`,
+        borderRight: `1px solid ${T.rule}`, overflow: 'hidden',
+        animation: 'slideUp 0.25s ease',
+      }}>
+        <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
+          <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }} />
+        </div>
+
+        <div style={{
+          padding: '14px 22px 16px', borderBottom: `1px solid ${T.rule}`,
+          display: 'flex', alignItems: 'flex-start', gap: 12,
+        }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontFamily: fontSerif, fontStyle: 'italic', fontSize: 22,
+              color: T.ink, letterSpacing: -0.4, lineHeight: 1.15, wordBreak: 'break-word',
+            }}>{sharedPlace || 'Consommations ici'}</div>
+            <div style={{
+              color: T.muted, fontSize: 9.5, letterSpacing: 0.3,
+              textTransform: 'uppercase', marginTop: 6,
+            }}>{total} boisson{total !== 1 ? 's' : ''} · {groups.length} type{groups.length !== 1 ? 's' : ''}</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Fermer" style={{
+            width: 32, height: 32, borderRadius: 99, background: T.surface2,
+            display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
+            border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit', flexShrink: 0,
+          }}><SvgIcon icon={Ic.close} size={14} /></button>
+        </div>
+
+        <div style={{ overflow: 'auto', padding: '14px 22px 20px' }}>
+          <div style={{
+            background: T.surface, borderRadius: 14, border: `1px solid ${T.rule}`, overflow: 'hidden',
+          }}>
+            {groups.map((g, i) => (
+              <div key={g.key} style={{
+                display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+                borderBottom: i === groups.length - 1 ? 'none' : `1px solid ${T.rule}`,
+              }}>
+                <div style={{
+                  width: 38, height: 38, borderRadius: 12, flexShrink: 0,
+                  background: catBg(g.category), color: catColor(g.category, 70),
+                  display: 'grid', placeItems: 'center', border: `1px solid ${T.rule}`,
+                }}>
+                  <CategoryGlyph name={g.category} size={20} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: fontSans, fontSize: 14, color: T.ink, fontWeight: 500,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>{g.name}</div>
+                  <div style={{
+                    fontFamily: fontNum, fontSize: 11, color: T.muted, marginTop: 2,
+                  }}>{g.quantity} {g.unit} · {g.alcohol}°</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, flexShrink: 0 }}>
+                  <span style={{ color: T.muted, fontFamily: fontNum, fontSize: 12 }}>×</span>
+                  <span style={{ color: T.ink, fontFamily: fontNum, fontSize: 17, letterSpacing: -0.3 }}>{g.count}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </SheetOverlay>
+  );
 }
 
 function MapSection({ drinks, allDrinks, collapsed, toggleSection }) {
@@ -1806,7 +1887,6 @@ function MapSection({ drinks, allDrinks, collapsed, toggleSection }) {
   const clusterRef = React.useRef(null);
   const heatRef = React.useRef(null);
   const tileRef = React.useRef(null);
-  const meRef = React.useRef(null);       // marqueur « ma position » temporaire
   const boundsRef = React.useRef(null);   // bounds du jeu courant (recentrage)
   const [ready, setReady] = React.useState(
     typeof window !== 'undefined' && !!window.L && !!(window.L && window.L.markerClusterGroup)
@@ -1814,6 +1894,8 @@ function MapSection({ drinks, allDrinks, collapsed, toggleSection }) {
   const [error, setError] = React.useState(null);
   const [scope, setScope] = React.useState('period'); // 'period' | 'all'
   const [mode, setMode] = React.useState('points');   // 'points' | 'heat'
+  // Boissons du rond tapé (cluster ou point isolé) → liste déroulante.
+  const [listDrinks, setListDrinks] = React.useState(null);
 
   const source = scope === 'all' ? (allDrinks || drinks) : drinks;
   const heatReady = ready && typeof window !== 'undefined'
@@ -1893,38 +1975,35 @@ function MapSection({ drinks, allDrinks, collapsed, toggleSection }) {
 
     const cluster = L.markerClusterGroup({
       showCoverageOnHover: false,
-      spiderfyOnMaxZoom: true,
+      spiderfyOnMaxZoom: false,    // taper un rond ouvre la liste, pas d'éclatement
+      zoomToBoundsOnClick: false,  // … et ne zoome pas non plus dessus
       maxClusterRadius: 44,
       iconCreateFunction: (c) => {
         const n = c.getChildCount();
-        const size = n < 10 ? 32 : n < 100 ? 38 : 46;
-        return L.divIcon({ html: `<span>${n}</span>`, className: 'alco-cluster', iconSize: L.point(size, size) });
+        // Cercle dimensionné par paliers, chiffre dimensionné en conséquence ;
+        // l'ancre explicite (size/2) garantit le centrage sur la coordonnée.
+        const size = n < 10 ? 34 : n < 100 ? 40 : 48;
+        const fs = n >= 100 ? 14 : 15;
+        return L.divIcon({
+          html: `<span style="font-size:${fs}px">${n}</span>`,
+          className: 'alco-cluster',
+          iconSize: L.point(size, size),
+          iconAnchor: L.point(size / 2, size / 2),
+        });
       },
     });
     cluster.addTo(m);
     clusterRef.current = cluster;
+    // Taper un cluster : ouvrir la liste regroupée de ses boissons.
+    cluster.on('clusterclick', (e) => {
+      const ds = e.layer.getAllChildMarkers().map(mk => mk.options.drink).filter(Boolean);
+      setListDrinks(ds);
+    });
 
-    // Actions des contrôles : lisent les refs → toujours à jour.
+    // Action du contrôle : lit la ref → toujours à jour.
     const recenter = () => {
       const b = boundsRef.current;
       if (b && b.isValid && b.isValid()) m.fitBounds(b, { padding: [28, 28], maxZoom: 15 });
-    };
-    const locateMe = async (btn) => {
-      btn && btn.setAttribute('aria-pressed', 'true');
-      try {
-        const pos = await getPosition(8000);
-        const { latitude, longitude } = pos.coords;
-        if (meRef.current) { try { m.removeLayer(meRef.current); } catch {} }
-        meRef.current = L.marker([latitude, longitude], {
-          icon: L.divIcon({ className: 'alco-me', iconSize: L.point(16, 16), iconAnchor: L.point(8, 8) }),
-          interactive: false, keyboard: false,
-        }).addTo(m);
-        m.setView([latitude, longitude], 15);
-      } catch (e) {
-        Toast.show('Position indisponible');
-      } finally {
-        btn && btn.setAttribute('aria-pressed', 'false');
-      }
     };
     const mkBtn = (svg, title, onClick) => {
       const b = document.createElement('button');
@@ -1940,7 +2019,6 @@ function MapSection({ drinks, allDrinks, collapsed, toggleSection }) {
       onAdd() {
         const wrap = L.DomUtil.create('div', 'alco-map-ctrls');
         wrap.appendChild(mkBtn(MAP_ICON_RECENTER, 'Recentrer', () => recenter()));
-        wrap.appendChild(mkBtn(MAP_ICON_LOCATE, 'Ma position', (b) => locateMe(b)));
         return wrap;
       },
     });
@@ -1964,7 +2042,7 @@ function MapSection({ drinks, allDrinks, collapsed, toggleSection }) {
       if (ro) { try { ro.disconnect(); } catch {} }
       try { m.remove(); } catch {}
       mapRef.current = null; clusterRef.current = null; heatRef.current = null;
-      tileRef.current = null; meRef.current = null; boundsRef.current = null;
+      tileRef.current = null; boundsRef.current = null;
     };
   }, [isOpen, ready]);
 
@@ -1993,9 +2071,11 @@ function MapSection({ drinks, allDrinks, collapsed, toggleSection }) {
     } else {
       const dotIcon = L.divIcon({ className: 'alco-pin', iconSize: L.point(14, 14), iconAnchor: L.point(7, 7) });
       for (const p of geoPoints) {
-        L.marker([p.lat, p.lng], { icon: dotIcon })
-          .bindPopup(mapPopupNode(p.d), { className: 'alco-popup' })
-          .addTo(clusterRef.current);
+        // `drink` est relu via marker.options.drink à l'agrégation d'un cluster ;
+        // taper un point isolé ouvre la même liste avec une seule boisson.
+        const mk = L.marker([p.lat, p.lng], { icon: dotIcon, drink: p.d });
+        mk.on('click', () => setListDrinks([p.d]));
+        mk.addTo(clusterRef.current);
       }
     }
     if (geoPoints.length === 1) m.setView([geoPoints[0].lat, geoPoints[0].lng], 14);
@@ -2012,6 +2092,7 @@ function MapSection({ drinks, allDrinks, collapsed, toggleSection }) {
   );
 
   return (
+    <>
     <StatSection id="map" title="Carte des consommations"
       sub={`${geoPoints.length} consommation${geoPoints.length !== 1 ? 's' : ''} géolocalisée${geoPoints.length !== 1 ? 's' : ''}${scope === 'all' ? ' · tout l’historique' : ''}`}
       collapsed={collapsed} toggleSection={toggleSection}>
@@ -2031,6 +2112,10 @@ function MapSection({ drinks, allDrinks, collapsed, toggleSection }) {
       <div ref={containerRef} style={{
         width: '100%', height: 'min(60vh, 440px)', borderRadius: 12, overflow: 'hidden',
         background: T.surface2, border: `1px solid ${T.rule}`, position: 'relative',
+        // Confine la pile z-index de Leaflet (contrôles jusqu'à z-index 1000)
+        // pour que la liste déroulante (SheetOverlay, z-index 100) passe bien
+        // au-dessus de la carte au lieu d'être masquée par ses contrôles.
+        isolation: 'isolate',
       }}>
         {!ready && !error && overlay('Chargement de la carte…', true)}
         {error && overlay(error, false)}
@@ -2041,6 +2126,10 @@ function MapSection({ drinks, allDrinks, collapsed, toggleSection }) {
           true)}
       </div>
     </StatSection>
+    {listDrinks && (
+      <MapDrinksSheet drinks={listDrinks} onClose={() => setListDrinks(null)} />
+    )}
+    </>
   );
 }
 

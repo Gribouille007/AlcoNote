@@ -811,13 +811,13 @@ function useSWVersion() {
       color: var(--alco-accent-ink, #1a1a1a);
       border: 2px solid rgba(255,255,255,0.85);
       box-shadow: 0 2px 8px rgba(0,0,0,0.28);
-      font: 600 12px/1 "Geist Mono", ui-monospace, monospace;
+      font-family: "Geist Mono", ui-monospace, monospace; font-weight: 600;
     }
-    .alco-me {
-      width: 16px; height: 16px; border-radius: 50%; box-sizing: border-box;
-      background: var(--alco-accent, #c98a3a);
-      border: 3px solid #fff;
-      box-shadow: 0 0 0 2px var(--alco-accent, #c98a3a), 0 2px 8px rgba(0,0,0,0.3);
+    /* Le chiffre est centré par le flex du parent ; line-height:1 + display
+       block suppriment tout décalage de ligne de base dans le rond. */
+    .alco-cluster span {
+      display: block; line-height: 1; text-align: center;
+      font-variant-numeric: tabular-nums;
     }
     .alco-map-ctrl {
       display: flex; align-items: center; justify-content: center;
@@ -835,27 +835,6 @@ function useSWVersion() {
       color: var(--alco-accent-ink, #1a1a1a);
       border-color: var(--alco-accent, #c98a3a);
     }
-    .alco-popup .leaflet-popup-content-wrapper {
-      background: var(--alco-popup-bg, #fff);
-      color: var(--alco-popup-ink, #222);
-      border: 1px solid var(--alco-rule, #ddd);
-      border-radius: 12px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.22);
-    }
-    .alco-popup .leaflet-popup-tip { background: var(--alco-popup-bg, #fff); }
-    .alco-popup .leaflet-popup-content {
-      margin: 10px 12px; color: var(--alco-popup-ink, #222);
-      font: 12px/1.45 "Geist", ui-sans-serif, system-ui, sans-serif;
-    }
-    .alco-popup .leaflet-popup-content .alco-pop-title {
-      font-family: "Instrument Serif", "Times New Roman", serif;
-      font-style: italic; font-size: 16px; letter-spacing: -0.2px;
-    }
-    .alco-popup .leaflet-popup-content .alco-pop-meta {
-      font-family: "Geist Mono", ui-monospace, monospace;
-      color: var(--alco-muted, #888); font-size: 11px;
-    }
-    .alco-popup a.leaflet-popup-close-button { color: var(--alco-muted, #888); }
   `;
   document.head.appendChild(s);
 })();
