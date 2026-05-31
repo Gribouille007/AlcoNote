@@ -1,9 +1,9 @@
 // Service Worker for AlcoNote PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'alconote-v3.15.0';
-const STATIC_CACHE = 'alconote-static-v3.15.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v3.15.0';
+const CACHE_NAME = 'alconote-v3.16.0';
+const STATIC_CACHE = 'alconote-static-v3.16.0';
+const DYNAMIC_CACHE = 'alconote-dynamic-v3.16.0';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -56,9 +56,18 @@ self.addEventListener('install', (event) => {
     
     event.waitUntil(
         caches.open(STATIC_CACHE)
-            .then((cache) => {
+            .then(async (cache) => {
                 console.log('Service Worker: Caching static files');
-                return cache.addAll(STATIC_FILES);
+                // Same-origin assets are mandatory for an offline boot —
+                // addAll them atomically. CDN assets are best-effort: a
+                // transient unpkg/jsdelivr outage at install time must not
+                // reject the whole atomic addAll and leave the app with no
+                // offline cache at all. Cache them individually, tolerating
+                // failures (they fall back to cacheFirst's network path).
+                const local = STATIC_FILES.filter(f => !f.startsWith('http'));
+                const cdn = STATIC_FILES.filter(f => f.startsWith('http'));
+                await cache.addAll(local);
+                await Promise.allSettled(cdn.map(u => cache.add(u)));
             })
             .then(() => {
                 console.log('Service Worker: Static files cached successfully');
@@ -195,7 +204,20 @@ async function networkFirst(request) {
         if (cachedResponse) {
             return cachedResponse;
         }
-        
+
+        // Navigation fallback: the installed PWA opens `start_url: "/"`, but
+        // only `/index.html` is precached (the bare `/` is never cached and
+        // caches.match does an exact-URL lookup). Without this, launching
+        // offline from the home screen fell through to the generic offline
+        // page instead of the real app shell. Serve the cached shell for any
+        // navigation we couldn't match directly.
+        const isNavigation = request.mode === 'navigate' ||
+            (request.headers.get('accept') || '').includes('text/html');
+        if (isNavigation) {
+            const shell = await caches.match('/index.html');
+            if (shell) return shell;
+        }
+
         // If no cache, return offline page or error
         return createOfflineResponse(request);
     }
@@ -389,9 +411,19 @@ async function handleOpenFoodFactsRequest(request) {
     try {
         const response = await fetch(request);
         if (response.ok) {
-            // Cache successful responses
-            const cache = await caches.open(DYNAMIC_CACHE);
-            cache.put(request, response.clone());
+            // OpenFoodFacts answers HTTP 200 with {"status":0} for unknown
+            // barcodes. Caching those pollutes the dynamic cache with one
+            // dead entry per failed scan and pins a "not found" answer
+            // offline even after the product is later added. Only cache real
+            // hits; on any parse error, skip caching but still return the
+            // live response.
+            try {
+                const data = await response.clone().json();
+                if (data && data.status !== 0) {
+                    const cache = await caches.open(DYNAMIC_CACHE);
+                    cache.put(request, response.clone());
+                }
+            } catch (_) { /* non-JSON / parse error → don't cache */ }
         }
         return response;
     } catch (error) {

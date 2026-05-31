@@ -1424,6 +1424,13 @@ function QuickAddButton({
     onPointerCancel: () => {
       start.current = null;
     },
+    onKeyDown: e => {
+      // Keep Enter/Space from bubbling to a parent `clickable` row
+      // (FamilyRow), whose onKeyDown would otherwise open the detail
+      // sheet — and preventDefault the button's own activation. The
+      // button still fires its native click → onClick → onAdd.
+      if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+    },
     onClick: e => {
       e.stopPropagation();
       // Swallow the ghost click that follows a real pointer gesture
@@ -1636,19 +1643,28 @@ function ConfirmHost() {
   // which then bubbles up to AppErrorBoundary.
   const onKey = React.useCallback(e => {
     if (!state) return;
+    // The dialog owns the keyboard while open. Stop propagation so a single
+    // Escape/Enter doesn't ALSO reach the SheetOverlay sitting underneath
+    // (both listen on `document`): cancelling a delete-confirmation used to
+    // close the edit sheet behind it too.
     if (e.key === 'Escape') {
+      e.stopPropagation();
       state._resolve(false);
       setState(null);
     }
     if (e.key === 'Enter') {
+      e.stopPropagation();
       state._resolve(true);
       setState(null);
     }
   }, [state]);
   React.useEffect(() => {
     if (!state) return;
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    // Capture phase: `document` is first in the capture path, so this runs
+    // before any sheet's bubble-phase Escape handler regardless of mount
+    // order, letting stopPropagation above actually pre-empt it.
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
   }, [onKey, state]);
   // Android Back cancels the dialog (same as Escape / backdrop).
   useBackButton(!!state, React.useCallback(() => {

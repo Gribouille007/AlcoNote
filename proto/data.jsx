@@ -471,7 +471,10 @@ async function loadCategoryIcons() {
   for (const [k, v] of Object.entries(settings)) {
     if (k.startsWith(_ICON_ID_PREFIX) && v) {
       const id = Number(k.slice(_ICON_ID_PREFIX.length));
-      if (!Number.isNaN(id)) out[id] = v;
+      // `Number('')` is 0 (not NaN), so an empty/whitespace suffix would
+      // otherwise claim category id 0. Dexie `++id` starts at 1, so only
+      // accept a positive integer id.
+      if (Number.isInteger(id) && id > 0) out[id] = v;
     }
   }
   return out;

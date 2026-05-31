@@ -1606,7 +1606,9 @@ function BACSection({ collapsed, toggleSection, allSessions, weight, gender }) {
         <Card style={{ marginBottom: 10 }}>
           <div style={{
             color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 10, letterSpacing: -0.1,
-          }}>Consommations prises en compte ({relevantDrinks.length})</div>
+          }}>Consommations prises en compte ({bacInfo.drinks.length})
+            {bacInfo.drinks.length > relevantDrinks.length
+              ? ` · ${relevantDrinks.length} plus récentes` : ''}</div>
           {relevantDrinks.map((d, i) => (
             <div key={i} style={{
               display: 'flex', alignItems: 'center', gap: 10,

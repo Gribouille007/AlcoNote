@@ -66,6 +66,10 @@ function AddDrinkSheet({
   const [locTouched, setLocTouched] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
+  // Synchronous re-entry guard: `busy` is applied a render later, so a fast
+  // double-tap on Enregistrer would fire `submit` twice and create the same
+  // drink twice before the button disables. Mirrors EditCategorySheet.
+  const submittingRef = React.useRef(false);
 
   // Reset on open / prefill changes.
   React.useEffect(() => {
@@ -75,6 +79,7 @@ function AddDrinkSheet({
     setTime(n.time);
     setErr('');
     setBusy(false);
+    submittingRef.current = false;
     setLoc(null);
     setLocTouched(false);
     if (prefill) {
@@ -116,6 +121,7 @@ function AddDrinkSheet({
   const volCl = toCl(qtyNum, unit);
   const g = +(volCl * 10 * (alcNum / 100) * 0.789).toFixed(1);
   const submit = async () => {
+    if (submittingRef.current) return;
     setErr('');
     if (!name.trim()) {
       setErr('Le nom de la boisson est requis');
@@ -129,6 +135,11 @@ function AddDrinkSheet({
       setErr('Quantité invalide');
       return;
     }
+    if (alcNum > 100) {
+      setErr('Degré d\'alcool invalide (0–100 %)');
+      return;
+    }
+    submittingRef.current = true;
     setBusy(true);
     try {
       const drinkName = name.trim();
@@ -161,6 +172,7 @@ function AddDrinkSheet({
       setErr(e && e.message ? e.message : 'Erreur lors de l\'ajout');
     } finally {
       setBusy(false);
+      submittingRef.current = false;
     }
   };
   return /*#__PURE__*/React.createElement(SheetOverlay, {
@@ -758,6 +770,9 @@ function DrinkDetailSheet({
   // Inline "move to another category" affordance (applies to the whole
   // family via updateFamily).
   const [moving, setMoving] = React.useState(false);
+  // Guards the per-entry trash buttons against a double-tap deleting the
+  // same row twice (the second call would throw "Boisson introuvable").
+  const deletingRef = React.useRef(false);
   // Read the shared families memo from FamiliesContext instead of
   // rebuilding the grouping locally — `buildFamilies(drinks, ratings)`
   // ran on every bump and produced a brand-new array each time, which
@@ -1020,6 +1035,8 @@ function DrinkDetailSheet({
       type: "button",
       "aria-label": "Supprimer cette entr\xE9e",
       onClick: async () => {
+        if (deletingRef.current) return;
+        deletingRef.current = true;
         try {
           const row = await deleteDrinkWithSnapshot(e.id);
           Toast.show('Boisson supprimée', {
@@ -1036,6 +1053,8 @@ function DrinkDetailSheet({
         } catch (err) {
           console.warn('AlcoNote: deleteDrinkWithSnapshot failed', err);
           Toast.show('Erreur lors de la suppression');
+        } finally {
+          deletingRef.current = false;
         }
       },
       style: {
@@ -1184,7 +1203,13 @@ function EditEntrySheet({
   const [loc, setLoc] = React.useState(raw.location || null);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
+  // Synchronous re-entry guards (save / delete) — `busy` disables the
+  // buttons only a render later, so a fast double-tap would otherwise run
+  // the mutation twice (e.g. delete → second call throws "introuvable").
+  const savingRef = React.useRef(false);
+  const removingRef = React.useRef(false);
   const save = async () => {
+    if (savingRef.current || removingRef.current) return;
     setErr('');
     if (!name.trim()) {
       setErr('Le nom est requis');
@@ -1199,6 +1224,11 @@ function EditEntrySheet({
       setErr('Choisissez une catégorie');
       return;
     }
+    if ((parseDecimal(alc) || 0) > 100) {
+      setErr('Degré d\'alcool invalide (0–100 %)');
+      return;
+    }
+    savingRef.current = true;
     setBusy(true);
     try {
       const finalName = name.trim();
@@ -1224,12 +1254,15 @@ function EditEntrySheet({
       setErr(e && e.message ? e.message : 'Erreur');
     } finally {
       setBusy(false);
+      savingRef.current = false;
     }
   };
 
   // Immediate delete + undo toast. Closing the sheet right away keeps
   // the user on the page they came from instead of navigating elsewhere.
   const remove = async () => {
+    if (removingRef.current || savingRef.current) return;
+    removingRef.current = true;
     setBusy(true);
     try {
       const row = await deleteDrinkWithSnapshot(raw.id);
@@ -1250,6 +1283,7 @@ function EditEntrySheet({
       setErr(e && e.message ? e.message : 'Erreur');
     } finally {
       setBusy(false);
+      removingRef.current = false;
     }
   };
   return /*#__PURE__*/React.createElement(SheetOverlay, {
@@ -1429,7 +1463,8 @@ function EditEntrySheet({
     }
   }, err), /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: remove,
+    onClick: busy ? undefined : remove,
+    disabled: busy,
     style: {
       width: '100%',
       marginTop: 18,
@@ -1441,7 +1476,8 @@ function EditEntrySheet({
       border: '1px solid oklch(45% 0.15 25 / 0.4)',
       fontSize: 12.5,
       fontWeight: 500,
-      cursor: 'pointer',
+      cursor: busy ? 'wait' : 'pointer',
+      opacity: busy ? 0.5 : 1,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -1519,7 +1555,13 @@ function EditFamilySheet({
   const [rating, setRating] = React.useState(ratings[ratingKey(family.name)] != null ? ratings[ratingKey(family.name)] : family.rating || 0);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
+  // Synchronous re-entry guards — a fast double-tap would otherwise run
+  // updateFamily / deleteFamily twice before `busy` disables the buttons
+  // (the second deleteFamily matches nothing → a misleading empty undo).
+  const savingRef = React.useRef(false);
+  const removingRef = React.useRef(false);
   const save = async () => {
+    if (savingRef.current || removingRef.current) return;
     setErr('');
     if (!name.trim()) {
       setErr('Le nom est requis');
@@ -1534,6 +1576,11 @@ function EditFamilySheet({
       setErr('Choisissez une catégorie');
       return;
     }
+    if ((parseDecimal(alc) || 0) > 100) {
+      setErr('Degré d\'alcool invalide (0–100 %)');
+      return;
+    }
+    savingRef.current = true;
     setBusy(true);
     try {
       const finalName = name.trim();
@@ -1575,6 +1622,7 @@ function EditFamilySheet({
       setErr(e && e.message ? e.message : 'Erreur');
     } finally {
       setBusy(false);
+      savingRef.current = false;
     }
   };
 
@@ -1582,6 +1630,8 @@ function EditFamilySheet({
   // re-add them all in one batch. Snapshot is captured before deletion
   // by `deleteFamily`, so the undo is fully reversible.
   const delAll = async () => {
+    if (removingRef.current || savingRef.current) return;
+    removingRef.current = true;
     setBusy(true);
     try {
       const {
@@ -1606,6 +1656,7 @@ function EditFamilySheet({
       setErr(e && e.message ? e.message : 'Erreur');
     } finally {
       setBusy(false);
+      removingRef.current = false;
     }
   };
   return /*#__PURE__*/React.createElement(SheetOverlay, {
@@ -1733,7 +1784,8 @@ function EditFamilySheet({
     }
   }, err), /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: delAll,
+    onClick: busy ? undefined : delAll,
+    disabled: busy,
     style: {
       width: '100%',
       marginTop: 18,
@@ -1745,7 +1797,8 @@ function EditFamilySheet({
       border: '1px solid oklch(45% 0.15 25 / 0.4)',
       fontSize: 12.5,
       fontWeight: 500,
-      cursor: 'pointer',
+      cursor: busy ? 'wait' : 'pointer',
+      opacity: busy ? 0.5 : 1,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
