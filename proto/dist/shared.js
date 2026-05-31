@@ -1843,19 +1843,23 @@ function useSWVersion() {
       border: 2px solid rgba(255,255,255,0.85);
       box-shadow: 0 2px 6px rgba(0,0,0,0.25);
     }
+    /* Le cercle ET le chiffre sont tracés en SVG dans le divIcon : le
+       chiffre, centré via text-anchor:middle + dominant-baseline:central,
+       tombe pile au milieu du rond quelles que soient les métriques de la
+       police (le précédent <span>+line-height laissait un décalage de ligne
+       de base visible). Le halo blanc reste du chrome de marqueur. */
     .alco-cluster {
-      display: flex; align-items: center; justify-content: center;
       border-radius: 50%; box-sizing: border-box;
-      background: var(--alco-accent, #c98a3a);
-      color: var(--alco-accent-ink, #1a1a1a);
-      border: 2px solid rgba(255,255,255,0.85);
       box-shadow: 0 2px 8px rgba(0,0,0,0.28);
-      font-family: "Geist Mono", ui-monospace, monospace; font-weight: 600;
     }
-    /* Le chiffre est centré par le flex du parent ; line-height:1 + display
-       block suppriment tout décalage de ligne de base dans le rond. */
-    .alco-cluster span {
-      display: block; line-height: 1; text-align: center;
+    .alco-cluster svg { display: block; overflow: visible; }
+    .alco-cluster circle {
+      fill: var(--alco-accent, #c98a3a);
+      stroke: rgba(255,255,255,0.85); stroke-width: 2;
+    }
+    .alco-cluster text {
+      fill: var(--alco-accent-ink, #1a1a1a);
+      font-family: "Geist Mono", ui-monospace, monospace; font-weight: 600;
       font-variant-numeric: tabular-nums;
     }
     .alco-map-ctrl {
