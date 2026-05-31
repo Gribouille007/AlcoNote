@@ -123,9 +123,21 @@ function useChartScrubber(svgRef, _unused, onChange) {
     const vbH = vb[3] || rect.height;
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
+    // Invert the default preserveAspectRatio="xMidYMid meet": the viewBox is
+    // scaled UNIFORMLY to fit the element box and centered, so whenever the
+    // rendered box has a different aspect than the viewBox (square radar /
+    // polar clock drawn at width:100% height:size, or any fixed-viewBox chart
+    // in a container wider than the viewBox) the content is letterboxed. A
+    // plain px→viewBox linear map ignores that offset and skews off-center
+    // taps — e.g. the radar/clock pick the wrong weekday/hour. Charts whose
+    // box already matches the viewBox aspect (the width-measured BAC charts)
+    // get scale≈1 and zero offset, so this reduces to the old behaviour.
+    const scale = Math.min(rect.width / vbW, rect.height / vbH);
+    const offX = (rect.width - vbW * scale) / 2;
+    const offY = (rect.height - vbH * scale) / 2;
     return {
-      x: vbX + px / rect.width * vbW,
-      y: vbY + py / rect.height * vbH,
+      x: vbX + (px - offX) / scale,
+      y: vbY + (py - offY) / scale,
       pxRect: rect
     };
   };

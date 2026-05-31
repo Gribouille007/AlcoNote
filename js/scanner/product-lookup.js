@@ -160,17 +160,28 @@ class ProductLookup {
     }
 
     _extractAlcoholContent(product) {
-        if (product.alcohol_by_volume) {
-            return parseFloat(product.alcohol_by_volume);
-        }
-
-        if (product.nutriments && product.nutriments.alcohol) {
-            return parseFloat(product.nutriments.alcohol);
+        // OpenFoodFacts stores ABV under `nutriments` — the real keys are
+        // alcohol_100g / alcohol_value / alcohol_serving (occasionally a root
+        // alcohol_by_volume). The old code only checked `alcohol_by_volume`
+        // and `nutriments.alcohol`, which OFF almost never populates, so a
+        // genuine ABV was discarded in favour of a category default.
+        const n = product.nutriments || {};
+        const candidates = [
+            product.alcohol_by_volume,
+            n.alcohol_100g, n.alcohol_value, n.alcohol_serving, n.alcohol,
+        ];
+        for (const c of candidates) {
+            if (c == null || c === '') continue;
+            const v = parseFloat(String(c).replace(',', '.'));
+            if (Number.isFinite(v) && v >= 0 && v <= 100) return v;
         }
 
         const text = (product.product_name || '') + ' ' + (product.generic_name || '');
-        const match = text.match(/(\d+(?:\.\d+)?)\s*%/);
-        if (match) return parseFloat(match[1]);
+        const match = text.match(/(\d+(?:[.,]\d+)?)\s*%/);
+        if (match) {
+            const v = parseFloat(match[1].replace(',', '.'));
+            if (Number.isFinite(v) && v >= 0 && v <= 100) return v;
+        }
 
         return null;
     }

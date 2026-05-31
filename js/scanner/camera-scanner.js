@@ -232,10 +232,15 @@ class CameraScanner {
         });
 
         Quagga.onProcessed((result) => {
+            // Quagga.canvas only exists while Quagga is running. A trailing
+            // onProcessed can fire during stop()/reconfigure when it's already
+            // torn down — reading `.ctx`/`.dom` then throws. Bail early.
+            if (!this.isScanning || !Quagga.canvas || !Quagga.canvas.ctx || !Quagga.canvas.dom) return;
             const drawingCtx = Quagga.canvas.ctx.overlay;
             const drawingCanvas = Quagga.canvas.dom.overlay;
+            if (!drawingCtx || !drawingCanvas) return;
 
-            if (result && this.isScanning) {
+            if (result) {
                 if (result.boxes) {
                     drawingCtx.clearRect(0, 0,
                         parseInt(drawingCanvas.getAttribute("width")),
@@ -329,18 +334,32 @@ class CameraScanner {
     }
 
     _reconfigureReaders(readers) {
+        // Leave the scanner in a clean, fully-stopped state on failure
+        // instead of a frozen viewport with isScanning/isInitialized still
+        // true (no detection, camera possibly still held). Surface the error
+        // so the wrapping sheet can react.
+        const failClean = (err) => {
+            this.isScanning = false;
+            this.isInitialized = false;
+            this._clearInactivityTimer();
+            this._stopCameraStream();
+            this.updateStatus('Erreur lors du redémarrage du scanner');
+            if (this.onError) { try { this.onError(err); } catch {} }
+        };
         try {
             Quagga.stop();
             this.config.decoder.readers = readers;
             Quagga.init(this.config, (err) => {
                 if (err) {
                     console.error('Reconfiguration failed:', err);
+                    failClean(err);
                     return;
                 }
                 Quagga.start();
             });
         } catch (e) {
             console.error('Error reconfiguring readers:', e);
+            failClean(e);
         }
     }
 

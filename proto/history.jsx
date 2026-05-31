@@ -56,11 +56,14 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
   };
 
   const entries = allEntries.filter(e => {
-    if (filter !== 'all' && e.family.category !== filter) return false;
+    // Compare category names canonically (trim + NFC), never raw === — a
+    // drink stored as "Bière " or an NFD spelling must still match the
+    // "Bière" pill, matching how CategoriesTab folds them.
+    if (filter !== 'all' && canonicalCat(e.family.category) !== canonicalCat(filter)) return false;
     if (query) {
-      const q = query.toLowerCase();
-      if (!e.family.name.toLowerCase().includes(q) &&
-          !e.family.category.toLowerCase().includes(q)) return false;
+      const q = canonicalCat(query).toLowerCase();
+      if (!canonicalCat(e.family.name).toLowerCase().includes(q) &&
+          !canonicalCat(e.family.category).toLowerCase().includes(q)) return false;
     }
     return true;
   });

@@ -2209,7 +2209,7 @@ function BACSection({
       marginBottom: 10,
       letterSpacing: -0.1
     }
-  }, "Consommations prises en compte (", relevantDrinks.length, ")"), relevantDrinks.map((d, i) => /*#__PURE__*/React.createElement("div", {
+  }, "Consommations prises en compte (", bacInfo.drinks.length, ")", bacInfo.drinks.length > relevantDrinks.length ? ` · ${relevantDrinks.length} plus récentes` : ''), relevantDrinks.map((d, i) => /*#__PURE__*/React.createElement("div", {
     key: i,
     style: {
       display: 'flex',

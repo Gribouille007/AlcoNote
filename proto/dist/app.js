@@ -78,11 +78,15 @@ class AppErrorBoundary extends React.Component {
 // from a single shared subscription instead of each spawning its own
 // IndexedDB round-trip on every dataBus.bump.
 function AppShell() {
-  useTheme();
+  const themeName = useTheme();
+  // Sync the <html>/<body> theme hooks only when the theme actually
+  // changes — without a dep array this fired on every AppShell render
+  // (60s BAC tick, every sheet open/close, toasts…) re-writing the same
+  // attributes redundantly.
   React.useEffect(() => {
     document.documentElement.setAttribute('data-theme', T._name);
     document.body.className = `theme-${T._name}`;
-  });
+  }, [themeName]);
 
   // Once React has rendered for the first time, drop the splash element
   // entirely so a future render error or transient empty-root state can
