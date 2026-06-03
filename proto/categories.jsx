@@ -84,8 +84,8 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
           <SectionHead>Vos catégories</SectionHead>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 10 }}>
             {cats.map(c => <CategoryCard key={c.id || c.name} cat={c}
-              onClick={() => onOpen(c.name)}
-              onEdit={() => onEditCat(c.name)} />)}
+              onOpen={onOpen}
+              onEdit={onEditCat} />)}
           </div>
           {cats.length === 0 && (
             <div style={{
@@ -109,7 +109,7 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
           <SectionHead>{matchedFams.length} résultat{matchedFams.length > 1 ? 's' : ''}</SectionHead>
           <div style={{ marginTop: 10 }}>
             {matchedFams.map(f => (
-              <FamilyRow key={f.id} family={f} onClick={() => onOpenFamily(f)}
+              <FamilyRow key={f.id} family={f} onOpen={onOpenFamily}
                 onDirectAdd={onDirectAdd} />
             ))}
             {matchedFams.length === 0 && (
@@ -124,11 +124,11 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
   );
 }
 
-function CategoryCard({ cat, onClick, onEdit }) {
+const CategoryCard = React.memo(function CategoryCard({ cat, onOpen, onEdit }) {
   const color = catColor(cat.name, 70);
   const bg = catBg(cat.name);
   return (
-    <div {...clickable(onClick, `Ouvrir la catégorie ${cat.name}`)} style={{
+    <div {...clickable(() => onOpen && onOpen(cat.name), `Ouvrir la catégorie ${cat.name}`)} style={{
       background: T.surface, borderRadius: 18, padding: 14,
       border: `1px solid ${T.rule}`, cursor: 'pointer',
       position: 'relative', overflow: 'hidden',
@@ -136,7 +136,7 @@ function CategoryCard({ cat, onClick, onEdit }) {
       display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
     }}>
       <button type="button"
-        onClick={(e) => { e.stopPropagation(); onEdit && onEdit(); }}
+        onClick={(e) => { e.stopPropagation(); onEdit && onEdit(cat.name); }}
         aria-label={`Modifier ${cat.name}`}
         style={{
           position: 'absolute', top: 10, right: 10, width: 26, height: 26,
@@ -171,7 +171,7 @@ function CategoryCard({ cat, onClick, onEdit }) {
       </div>
     </div>
   );
-}
+});
 function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat, onEditFamily }) {
   // Sort families: identical-name groups stay contiguous, ordered by
   // total entries inside the group, then by quantity asc inside each
@@ -248,7 +248,7 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
       {rows.map(({ f, idx, total }) => (
         <FamilyRow key={f.id} family={f}
           variantIndex={idx} variantCount={total}
-          onClick={() => onOpen(f)} onDirectAdd={onDirectAdd} />
+          onOpen={onOpen} onDirectAdd={onDirectAdd} />
       ))}
 
       {rows.length === 0 && (
@@ -260,14 +260,14 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
   );
 }
 
-function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onClick, onDirectAdd }) {
+const FamilyRow = React.memo(function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onOpen, onDirectAdd }) {
   const color = catColor(f.category, 70);
   const totalEntries = f.entries.length;
   const isFirstOfGroup = variantIndex === 0;
   const isLastOfGroup  = variantIndex === variantCount - 1;
   const topMargin = isFirstOfGroup ? 8 : 0;
   return (
-    <div {...clickable(onClick, `Voir les détails de ${f.name}`)} style={{
+    <div {...clickable(() => onOpen && onOpen(f), `Voir les détails de ${f.name}`)} style={{
       display: 'flex', alignItems: 'center', gap: 14,
       padding: '14px 14px', background: T.surface,
       borderRadius: variantCount > 1
@@ -317,7 +317,7 @@ function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onClick, onD
       />
     </div>
   );
-}
+});
 function EditCategorySheet({ category, onClose, mode = 'edit' }) {
   const isCreate = mode === 'create';
   const { categories } = useCategories();

@@ -833,25 +833,27 @@ const hourlyFormatX = (d, i) => i % 4 === 0 ? d.label : '';
 
 // ── 2. Analyse temporelle ─────────────────────────────────────────
 function TemporalSection({ drinks, collapsed, toggleSection, agg, sessions }) {
-  const peakHour = agg.byHour.indexOf(Math.max(...agg.byHour));
-  const peakDow = agg.byDow.indexOf(Math.max(...agg.byDow));
   const dayNames = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
-  const avgDuration = sessions.length > 0
+  const { peakHour, peakDow } = React.useMemo(() => ({
+    peakHour: agg.byHour.indexOf(Math.max(...agg.byHour)),
+    peakDow: agg.byDow.indexOf(Math.max(...agg.byDow)),
+  }), [agg]);
+  const avgDuration = React.useMemo(() => sessions.length > 0
     ? sessions.reduce((s, x) => s + (x.endTs - x.startTs), 0) / sessions.length / 3600_000
-    : 0;
+    : 0, [sessions]);
   // Mean gap between consecutive sessions: Σ (sessions[i+1].start −
   // sessions[i].end) / (N − 1). The previous formula computed
   // (last.start − first.end) / (N−1), which conflates total elapsed
   // time with the per-pair gap and drifts whenever sessions overlap or
   // the spacing varies.
-  const between = (() => {
+  const between = React.useMemo(() => {
     if (sessions.length < 2) return 0;
     let totalGap = 0;
     for (let i = 1; i < sessions.length; i++) {
       totalGap += sessions[i].startTs - sessions[i - 1].endTs;
     }
     return (totalGap / (sessions.length - 1)) / 86400_000;
-  })();
+  }, [sessions]);
 
   const fmtH = (h) => {
     if (!h) return '—';
@@ -982,7 +984,13 @@ function CategorySection({ drinks, collapsed, toggleSection }) {
       if (d.alcoholContent) { e.abvSum += d.alcoholContent; e.abvN++; }
       e.names[d.name] = (e.names[d.name] || 0) + 1;
     }
-    return Object.values(map).sort((a, b) => b.count - a.count);
+    // Precompute each category's most-logged drink here (once per data
+    // change) instead of re-sorting `names` inside the render loop below.
+    const out = Object.values(map);
+    for (const e of out) {
+      e.fav = Object.entries(e.names).sort((a, b) => b[1] - a[1])[0];
+    }
+    return out.sort((a, b) => b.count - a.count);
   }, [drinks]);
 
   if (byCat.length === 0) {
@@ -1000,7 +1008,7 @@ function CategorySection({ drinks, collapsed, toggleSection }) {
     <StatSection id="category" title="Analyse par catégorie" collapsed={collapsed} toggleSection={toggleSection} sub="Statistiques par type de boisson">
       <div style={{ display: 'grid', gap: 8 }}>
         {byCat.map(c => {
-          const fav = Object.entries(c.names).sort((a, b) => b[1] - a[1])[0];
+          const fav = c.fav;
           const avgVol = c.count ? (c.volumeCl / c.count / 100) : 0;
           const avgAbv = c.abvN ? (c.abvSum / c.abvN) : 0;
           return (
@@ -1317,6 +1325,31 @@ const BacContext = React.createContext({ current: 0, points: [], drinks: [] });
 
 function useBacInfo() {
   return React.useContext(BacContext);
+}
+
+// Owns the single BAC computation and the 60s decay tick. Kept in its own
+// provider (instead of inline in AppShell) so the tick re-renders ONLY the
+// BacContext consumers — the header pill and the BAC stat section. <App/>
+// passes a stable `children` element, so React bails out of re-rendering
+// the rest of the shell (the three tabs) on every tick.
+function BacProvider({ children }) {
+  const { drinks } = useDrinks();
+  const settings = useSettings();
+  const [bacTick, setBacTick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setBacTick(t => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const bacInfo = React.useMemo(() => {
+    const w = Number(settings.userWeight) || 70;
+    const g = settings.userGender || 'male';
+    if (typeof computeBacOverTime !== 'function') return { current: 0, points: [], drinks: [] };
+    return computeBacOverTime(drinks, w, g);
+    // bacTick is an intentional dep: it keeps the value decaying live even
+    // when neither the drinks nor the Widmark settings change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drinks, settings.userWeight, settings.userGender, bacTick]);
+  return <BacContext.Provider value={bacInfo}>{children}</BacContext.Provider>;
 }
 
 // Wraps SvgBACProjection in a width-measured container so the viewBox
@@ -2258,12 +2291,18 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, ses
       const k = _fmtIso(d);
       out.push({ date: `${d.getDate()}/${d.getMonth() + 1}`, daily: byDay[k] || 0 });
     }
-    // Compute moving averages
+    // Moving averages via a sliding-window accumulator: each running sum
+    // gains the current day and drops the day that just left its 7-/30-day
+    // window, so this is O(days) instead of O(days × 30) of re-summing a
+    // fresh slice per day. Same windowed means as before.
+    let sum7 = 0, sum30 = 0;
     for (let i = 0; i < out.length; i++) {
-      const slice7 = out.slice(Math.max(0, i - 6), i + 1).map(x => x.daily);
-      const slice30 = out.slice(Math.max(0, i - 29), i + 1).map(x => x.daily);
-      out[i].r7 = slice7.reduce((s, v) => s + v, 0) / slice7.length;
-      out[i].r30 = slice30.reduce((s, v) => s + v, 0) / slice30.length;
+      sum7 += out[i].daily;
+      sum30 += out[i].daily;
+      if (i >= 7) sum7 -= out[i - 7].daily;
+      if (i >= 30) sum30 -= out[i - 30].daily;
+      out[i].r7 = sum7 / Math.min(i + 1, 7);
+      out[i].r30 = sum30 / Math.min(i + 1, 30);
     }
     return out.slice(-30);
   }, [allDrinks]);
@@ -2428,7 +2467,7 @@ Object.assign(window, {
   getPeriodRange, shiftAnchor, periodLabel, computeBacOverTime,
   computeBACSessions, computeBourreTime, computeStreak, fmtBourreTime,
   BAC_ELIM_RATE, BAC_RECORD_MIN,
-  BacContext, useBacInfo, BACProjectionResponsive,
+  BacContext, useBacInfo, BacProvider, BACProjectionResponsive,
   computeBacForecast, BACForecastResponsive,
   ForecastToggle, ForecastMiniStats,
 });

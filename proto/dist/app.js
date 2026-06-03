@@ -117,15 +117,12 @@ function AppShell() {
   const [toast, setToast] = React.useState(null);
   const [catQuery, setCatQuery] = React.useState('');
   const [catOpen, setCatOpen] = React.useState(null);
-
-  // Single BAC computation shared by header pill and Stats section. The
-  // 60s tick keeps the value decaying live even when the user doesn't
-  // change tabs or add drinks.
   const {
     drinks
   } = useDrinks();
   const ratings = useRatings();
-  const userSettings = useSettings();
+  // BAC (header pill + Stats gauge) is owned by <BacProvider> above, so its
+  // 60s decay tick no longer re-renders this shell or the tabs.
   // Category-icon overrides are owned by <CategoryIconsProvider> which
   // wraps <AppShell/> (see <App/> below) — every <CategoryGlyph>
   // re-renders from the context when a single mutation bumps
@@ -135,22 +132,6 @@ function AppShell() {
   // all consume the same array, so a drinks bump rebuilds the grouping
   // exactly once instead of once per visible tab.
   const families = React.useMemo(() => buildFamilies(drinks, ratings), [drinks, ratings]);
-  const [bacTick, setBacTick] = React.useState(0);
-  React.useEffect(() => {
-    const id = setInterval(() => setBacTick(t => t + 1), 60_000);
-    return () => clearInterval(id);
-  }, []);
-  const bacInfo = React.useMemo(() => {
-    const w = Number(userSettings.userWeight) || 70;
-    const g = userSettings.userGender || 'male';
-    if (typeof computeBacOverTime !== 'function') return {
-      current: 0,
-      points: [],
-      drinks: []
-    };
-    return computeBacOverTime(drinks, w, g);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drinks, userSettings.userWeight, userSettings.userGender, bacTick]);
   React.useEffect(() => {
     window.__alcoToastSetter = (msg, opts) => {
       setToast({
@@ -224,8 +205,6 @@ function AppShell() {
   });
   return /*#__PURE__*/React.createElement(FamiliesContext.Provider, {
     value: families
-  }, /*#__PURE__*/React.createElement(BacContext.Provider, {
-    value: bacInfo
   }, /*#__PURE__*/React.createElement("div", {
     className: "alco-shell",
     style: {
@@ -364,13 +343,13 @@ function AppShell() {
       flexShrink: 0,
       letterSpacing: 0.1
     }
-  }, "Annuler")))));
+  }, "Annuler"))));
 }
 
 // Outer App: hosts the data providers so AppShell's hooks read from
 // a single subscription rather than N parallel ones.
 function App() {
-  return /*#__PURE__*/React.createElement(SettingsProvider, null, /*#__PURE__*/React.createElement(CategoriesProvider, null, /*#__PURE__*/React.createElement(RatingsProvider, null, /*#__PURE__*/React.createElement(DrinksProvider, null, /*#__PURE__*/React.createElement(CategoryIconsProvider, null, /*#__PURE__*/React.createElement(AppShell, null))))));
+  return /*#__PURE__*/React.createElement(SettingsProvider, null, /*#__PURE__*/React.createElement(CategoriesProvider, null, /*#__PURE__*/React.createElement(RatingsProvider, null, /*#__PURE__*/React.createElement(DrinksProvider, null, /*#__PURE__*/React.createElement(CategoryIconsProvider, null, /*#__PURE__*/React.createElement(BacProvider, null, /*#__PURE__*/React.createElement(AppShell, null)))))));
 }
 function AppHeader({
   tab,
