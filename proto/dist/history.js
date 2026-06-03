@@ -53,31 +53,44 @@ function HistoryTab({
       Toast.show('Erreur lors de la suppression');
     }
   }, []);
-  const toggleDay = day => {
+  const toggleDay = React.useCallback(day => {
     setCollapsed(prev => {
       const next = new Set(prev);
       if (next.has(day)) next.delete(day);else next.add(day);
       saveCollapsedDays(next);
       return next;
     });
-  };
-  const entries = allEntries.filter(e => {
-    // Compare category names canonically (trim + NFC), never raw === — a
-    // drink stored as "Bière " or an NFD spelling must still match the
-    // "Bière" pill, matching how CategoriesTab folds them.
-    if (filter !== 'all' && canonicalCat(e.family.category) !== canonicalCat(filter)) return false;
-    if (query) {
-      const q = canonicalCat(query).toLowerCase();
-      if (!canonicalCat(e.family.name).toLowerCase().includes(q) && !canonicalCat(e.family.category).toLowerCase().includes(q)) return false;
+  }, []);
+
+  // Memoize the filter + day-grouping so each `groups[day]` array keeps a
+  // stable reference across renders that don't touch the data/filter —
+  // which is what lets the React.memo'd DayGroup rows skip re-rendering.
+  const {
+    groups,
+    days
+  } = React.useMemo(() => {
+    const entries = allEntries.filter(e => {
+      // Compare category names canonically (trim + NFC), never raw === — a
+      // drink stored as "Bière " or an NFD spelling must still match the
+      // "Bière" pill, matching how CategoriesTab folds them.
+      if (filter !== 'all' && canonicalCat(e.family.category) !== canonicalCat(filter)) return false;
+      if (query) {
+        const q = canonicalCat(query).toLowerCase();
+        if (!canonicalCat(e.family.name).toLowerCase().includes(q) && !canonicalCat(e.family.category).toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+    const groups = {};
+    for (const e of entries) {
+      const day = e.ts.slice(0, 10);
+      (groups[day] = groups[day] || []).push(e);
     }
-    return true;
-  });
-  const groups = {};
-  for (const e of entries) {
-    const day = e.ts.slice(0, 10);
-    (groups[day] = groups[day] || []).push(e);
-  }
-  const days = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+    const days = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+    return {
+      groups,
+      days
+    };
+  }, [allEntries, filter, query]);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -126,8 +139,8 @@ function HistoryTab({
     day: day,
     entries: groups[day],
     isCollapsed: collapsed.has(day),
-    onToggle: () => toggleDay(day),
-    onOpenEntry: e => setEditEntry(e),
+    onToggle: toggleDay,
+    onOpenEntry: setEditEntry,
     onDirectAdd: onDirectAdd,
     onDelete: onDeleteEntry,
     first: i === 0
@@ -137,7 +150,7 @@ function HistoryTab({
     onClose: () => setEditEntry(null)
   }));
 }
-function DayGroup({
+const DayGroup = React.memo(function DayGroup({
   day,
   entries,
   isCollapsed,
@@ -164,7 +177,7 @@ function DayGroup({
     }
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: onToggle,
+    onClick: () => onToggle(day),
     "aria-expanded": !isCollapsed,
     "aria-label": `${isCollapsed ? 'Déplier' : 'Replier'} ${fmtDayHeader(d)}`,
     style: {
@@ -254,16 +267,16 @@ function DayGroup({
   }, entries.map((e, i) => /*#__PURE__*/React.createElement(EntryRow, {
     key: e.id || i,
     entry: e,
-    onClick: () => onOpenEntry(e),
+    onOpenEntry: onOpenEntry,
     onDirectAdd: onDirectAdd,
     onDelete: onDelete,
     first: i === 0,
     last: i === entries.length - 1
   })))));
-}
-function EntryRow({
+});
+const EntryRow = React.memo(function EntryRow({
   entry: e,
-  onClick,
+  onOpenEntry,
   onDirectAdd,
   onDelete,
   first,
@@ -338,7 +351,7 @@ function EntryRow({
     }
   }), /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: onClick,
+    onClick: () => onOpenEntry && onOpenEntry(e),
     "aria-label": `Modifier ${e.family.name}`,
     style: {
       ...ghostButton,
@@ -376,7 +389,7 @@ function EntryRow({
     onAdd: () => onDirectAdd && onDirectAdd(e.family),
     label: `Ajouter ${e.family.name} à nouveau`
   })));
-}
+});
 
 // Tiny pointer-driven swipe controller. Returns translate offset, a
 // drag flag (so the consumer can disable transitions during dragging),

@@ -114,8 +114,8 @@ function CategoryGrid({
   }, cats.map(c => /*#__PURE__*/React.createElement(CategoryCard, {
     key: c.id || c.name,
     cat: c,
-    onClick: () => onOpen(c.name),
-    onEdit: () => onEditCat(c.name)
+    onOpen: onOpen,
+    onEdit: onEditCat
   }))), cats.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
@@ -154,7 +154,7 @@ function CategoryGrid({
   }, matchedFams.map(f => /*#__PURE__*/React.createElement(FamilyRow, {
     key: f.id,
     family: f,
-    onClick: () => onOpenFamily(f),
+    onOpen: onOpenFamily,
     onDirectAdd: onDirectAdd
   })), matchedFams.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -165,14 +165,14 @@ function CategoryGrid({
     }
   }, "Aucun r\xE9sultat pour \xAB ", query, " \xBB"))));
 }
-function CategoryCard({
+const CategoryCard = React.memo(function CategoryCard({
   cat,
-  onClick,
+  onOpen,
   onEdit
 }) {
   const color = catColor(cat.name, 70);
   const bg = catBg(cat.name);
-  return /*#__PURE__*/React.createElement("div", _extends({}, clickable(onClick, `Ouvrir la catégorie ${cat.name}`), {
+  return /*#__PURE__*/React.createElement("div", _extends({}, clickable(() => onOpen && onOpen(cat.name), `Ouvrir la catégorie ${cat.name}`), {
     style: {
       background: T.surface,
       borderRadius: 18,
@@ -190,7 +190,7 @@ function CategoryCard({
     type: "button",
     onClick: e => {
       e.stopPropagation();
-      onEdit && onEdit();
+      onEdit && onEdit(cat.name);
     },
     "aria-label": `Modifier ${cat.name}`,
     style: {
@@ -256,7 +256,7 @@ function CategoryCard({
       opacity: 0.4
     }
   }, "\xB7"), cat.families, " type", cat.families !== 1 ? 's' : '')));
-}
+});
 function FamilyList({
   category,
   families,
@@ -393,7 +393,7 @@ function FamilyList({
     family: f,
     variantIndex: idx,
     variantCount: total,
-    onClick: () => onOpen(f),
+    onOpen: onOpen,
     onDirectAdd: onDirectAdd
   })), rows.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -404,11 +404,11 @@ function FamilyList({
     }
   }, "Aucun r\xE9sultat"));
 }
-function FamilyRow({
+const FamilyRow = React.memo(function FamilyRow({
   family: f,
   variantIndex = 0,
   variantCount = 1,
-  onClick,
+  onOpen,
   onDirectAdd
 }) {
   const color = catColor(f.category, 70);
@@ -416,7 +416,7 @@ function FamilyRow({
   const isFirstOfGroup = variantIndex === 0;
   const isLastOfGroup = variantIndex === variantCount - 1;
   const topMargin = isFirstOfGroup ? 8 : 0;
-  return /*#__PURE__*/React.createElement("div", _extends({}, clickable(onClick, `Voir les détails de ${f.name}`), {
+  return /*#__PURE__*/React.createElement("div", _extends({}, clickable(() => onOpen && onOpen(f), `Voir les détails de ${f.name}`), {
     style: {
       display: 'flex',
       alignItems: 'center',
@@ -501,7 +501,7 @@ function FamilyRow({
     onAdd: () => onDirectAdd && onDirectAdd(f),
     label: `Ajouter ${f.name} (${f.quantity} ${f.unit}, ${f.alcohol}°) à nouveau`
   }));
-}
+});
 function EditCategorySheet({
   category,
   onClose,

@@ -46,34 +46,39 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
     }
   }, []);
 
-  const toggleDay = (day) => {
+  const toggleDay = React.useCallback((day) => {
     setCollapsed(prev => {
       const next = new Set(prev);
       if (next.has(day)) next.delete(day); else next.add(day);
       saveCollapsedDays(next);
       return next;
     });
-  };
+  }, []);
 
-  const entries = allEntries.filter(e => {
-    // Compare category names canonically (trim + NFC), never raw === — a
-    // drink stored as "Bière " or an NFD spelling must still match the
-    // "Bière" pill, matching how CategoriesTab folds them.
-    if (filter !== 'all' && canonicalCat(e.family.category) !== canonicalCat(filter)) return false;
-    if (query) {
-      const q = canonicalCat(query).toLowerCase();
-      if (!canonicalCat(e.family.name).toLowerCase().includes(q) &&
-          !canonicalCat(e.family.category).toLowerCase().includes(q)) return false;
+  // Memoize the filter + day-grouping so each `groups[day]` array keeps a
+  // stable reference across renders that don't touch the data/filter —
+  // which is what lets the React.memo'd DayGroup rows skip re-rendering.
+  const { groups, days } = React.useMemo(() => {
+    const entries = allEntries.filter(e => {
+      // Compare category names canonically (trim + NFC), never raw === — a
+      // drink stored as "Bière " or an NFD spelling must still match the
+      // "Bière" pill, matching how CategoriesTab folds them.
+      if (filter !== 'all' && canonicalCat(e.family.category) !== canonicalCat(filter)) return false;
+      if (query) {
+        const q = canonicalCat(query).toLowerCase();
+        if (!canonicalCat(e.family.name).toLowerCase().includes(q) &&
+            !canonicalCat(e.family.category).toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+    const groups = {};
+    for (const e of entries) {
+      const day = e.ts.slice(0, 10);
+      (groups[day] = groups[day] || []).push(e);
     }
-    return true;
-  });
-
-  const groups = {};
-  for (const e of entries) {
-    const day = e.ts.slice(0, 10);
-    (groups[day] = groups[day] || []).push(e);
-  }
-  const days = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+    const days = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+    return { groups, days };
+  }, [allEntries, filter, query]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -100,8 +105,8 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
         )}
         {days.map((day, i) => (
           <DayGroup key={day} day={day} entries={groups[day]}
-            isCollapsed={collapsed.has(day)} onToggle={() => toggleDay(day)}
-            onOpenEntry={(e) => setEditEntry(e)}
+            isCollapsed={collapsed.has(day)} onToggle={toggleDay}
+            onOpenEntry={setEditEntry}
             onDirectAdd={onDirectAdd}
             onDelete={onDeleteEntry}
             first={i === 0} />
@@ -115,7 +120,7 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
   );
 }
 
-function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAdd, onDelete, first }) {
+const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAdd, onDelete, first }) {
   const d = new Date(day + 'T00:00');
   const today = new Date(); today.setHours(0,0,0,0);
   const diff = Math.round((today - d) / 86400000);
@@ -129,7 +134,7 @@ function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAd
 
   return (
     <div style={{ marginTop: first ? 4 : 14, marginBottom: 4, position: 'relative' }}>
-      <button type="button" onClick={onToggle}
+      <button type="button" onClick={() => onToggle(day)}
         aria-expanded={!isCollapsed}
         aria-label={`${isCollapsed ? 'Déplier' : 'Replier'} ${fmtDayHeader(d)}`}
         style={{
@@ -182,7 +187,7 @@ function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAd
             marginLeft: -24,
           }}>
             {entries.map((e, i) => (
-              <EntryRow key={e.id || i} entry={e} onClick={() => onOpenEntry(e)}
+              <EntryRow key={e.id || i} entry={e} onOpenEntry={onOpenEntry}
                 onDirectAdd={onDirectAdd}
                 onDelete={onDelete}
                 first={i === 0}
@@ -193,8 +198,8 @@ function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAd
       )}
     </div>
   );
-}
-function EntryRow({ entry: e, onClick, onDirectAdd, onDelete, first, last }) {
+});
+const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectAdd, onDelete, first, last }) {
   const color = catColor(e.family.category, 70);
   const t = e.ts.slice(11, 16);
   const swipe = useSwipeToDelete(() => onDelete && onDelete(e));
@@ -235,7 +240,7 @@ function EntryRow({ entry: e, onClick, onDirectAdd, onDelete, first, last }) {
           flexShrink: 0, boxShadow: `0 0 0 3px ${T.surface}`,
           zIndex: 1,
         }}/>
-        <button type="button" onClick={onClick} aria-label={`Modifier ${e.family.name}`}
+        <button type="button" onClick={() => onOpenEntry && onOpenEntry(e)} aria-label={`Modifier ${e.family.name}`}
           style={{
             ...ghostButton,
             flex: 1, minWidth: 0, cursor: 'pointer',
@@ -263,7 +268,7 @@ function EntryRow({ entry: e, onClick, onDirectAdd, onDelete, first, last }) {
       </div>
     </div>
   );
-}
+});
 
 // Tiny pointer-driven swipe controller. Returns translate offset, a
 // drag flag (so the consumer can disable transitions during dragging),

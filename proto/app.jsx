@@ -85,12 +85,10 @@ function AppShell() {
   const [catQuery, setCatQuery] = React.useState('');
   const [catOpen, setCatOpen] = React.useState(null);
 
-  // Single BAC computation shared by header pill and Stats section. The
-  // 60s tick keeps the value decaying live even when the user doesn't
-  // change tabs or add drinks.
   const { drinks } = useDrinks();
   const ratings = useRatings();
-  const userSettings = useSettings();
+  // BAC (header pill + Stats gauge) is owned by <BacProvider> above, so its
+  // 60s decay tick no longer re-renders this shell or the tabs.
   // Category-icon overrides are owned by <CategoryIconsProvider> which
   // wraps <AppShell/> (see <App/> below) — every <CategoryGlyph>
   // re-renders from the context when a single mutation bumps
@@ -103,18 +101,6 @@ function AppShell() {
     () => buildFamilies(drinks, ratings),
     [drinks, ratings]
   );
-  const [bacTick, setBacTick] = React.useState(0);
-  React.useEffect(() => {
-    const id = setInterval(() => setBacTick(t => t + 1), 60_000);
-    return () => clearInterval(id);
-  }, []);
-  const bacInfo = React.useMemo(() => {
-    const w = Number(userSettings.userWeight) || 70;
-    const g = userSettings.userGender || 'male';
-    if (typeof computeBacOverTime !== 'function') return { current: 0, points: [], drinks: [] };
-    return computeBacOverTime(drinks, w, g);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drinks, userSettings.userWeight, userSettings.userGender, bacTick]);
 
   React.useEffect(() => {
     window.__alcoToastSetter = (msg, opts) => {
@@ -186,7 +172,6 @@ function AppShell() {
 
   return (
     <FamiliesContext.Provider value={families}>
-    <BacContext.Provider value={bacInfo}>
     <div className="alco-shell" style={{
       minHeight: '100dvh', height: '100dvh', display: 'flex', flexDirection: 'column',
       background: T.bg, color: T.ink, position: 'relative',
@@ -282,7 +267,6 @@ function AppShell() {
         </div>
       )}
     </div>
-    </BacContext.Provider>
     </FamiliesContext.Provider>
   );
 }
@@ -296,7 +280,9 @@ function App() {
         <RatingsProvider>
           <DrinksProvider>
             <CategoryIconsProvider>
-              <AppShell />
+              <BacProvider>
+                <AppShell />
+              </BacProvider>
             </CategoryIconsProvider>
           </DrinksProvider>
         </RatingsProvider>
