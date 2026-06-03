@@ -110,34 +110,51 @@
     #root:not(:empty) ~ #alco-splash { display: none; }
   </style>
 
-  <!-- React (production build — JSX is precompiled, see proto/dist/) -->
-  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"
+  <!-- Resource hints: warm up the CDN connections before the deferred
+       scripts below are fetched, and let the browser prioritise the
+       render-critical React core despite `defer`. -->
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preload" as="script" crossorigin="anonymous"
+    href="https://unpkg.com/react@18.3.1/umd/react.production.min.js">
+  <link rel="preload" as="script" crossorigin="anonymous"
+    href="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js">
+
+  <!-- React (production build — JSX is precompiled, see proto/dist/).
+       `defer` keeps these off the render-blocking path while preserving
+       execution order (deferred scripts run in document order). -->
+  <script defer src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"
     crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"
+  <script defer src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"
     crossorigin="anonymous"></script>
 
-  <!-- Scanner / DB libraries -->
-  <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
-  <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
+  <!-- Dexie (IndexedDB). Quagga (barcode scanner, ~200 KB) is no longer
+       loaded here: camera-scanner.js injects it on demand the first time
+       the scanner opens, so it stays out of the initial load path. -->
+  <script defer src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
 </head>
 <body>
   <div id="root"></div>
   <div id="alco-splash">AlcoNote</div>
 
-  <!-- Persistence + barcode scanner (logic only — UI in proto/) -->
-  <script src="js/database.js"></script>
-  <script src="js/scanner/product-lookup.js"></script>
-  <script src="js/scanner/camera-scanner.js"></script>
+  <!-- Persistence + barcode scanner (logic only — UI in proto/).
+       All scripts are deferred: they download in parallel during HTML
+       parsing and execute in document order once the DOM is ready, so
+       the global dependency chain (Dexie → database.js → proto/* → app)
+       is preserved without blocking first paint. -->
+  <script defer src="js/database.js"></script>
+  <script defer src="js/scanner/product-lookup.js"></script>
+  <script defer src="js/scanner/camera-scanner.js"></script>
 
   <!-- Proto UI (precompiled from proto/*.jsx → proto/dist/*.js) -->
-  <script src="proto/dist/shared.js"></script>
-  <script src="proto/dist/data.js"></script>
-  <script src="proto/dist/stats-charts.js"></script>
-  <script src="proto/dist/categories.js"></script>
-  <script src="proto/dist/history.js"></script>
-  <script src="proto/dist/stats.js"></script>
-  <script src="proto/dist/modals.js"></script>
-  <script src="proto/dist/app.js"></script>
+  <script defer src="proto/dist/shared.js"></script>
+  <script defer src="proto/dist/data.js"></script>
+  <script defer src="proto/dist/stats-charts.js"></script>
+  <script defer src="proto/dist/categories.js"></script>
+  <script defer src="proto/dist/history.js"></script>
+  <script defer src="proto/dist/stats.js"></script>
+  <script defer src="proto/dist/modals.js"></script>
+  <script defer src="proto/dist/app.js"></script>
 
   <!-- Service worker registration -->
   <script>

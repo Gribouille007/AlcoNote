@@ -1,12 +1,21 @@
 // Camera scanner module — Quagga lifecycle, camera management, debounced detection
 // Uses QuaggaJS for barcode reading from the device camera
 
+// Quagga (~200 KB) is loaded lazily (see _ensureQuagga) the first time the
+// scanner opens, instead of blocking the initial page load. Keep this URL
+// identical to the one precached by the service worker so the on-demand
+// fetch is served from cache and the scanner still works offline.
+const QUAGGA_URL = 'https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js';
+
 class CameraScanner {
     constructor() {
         this.isInitialized = false;
         this.isScanning = false;
         this.isStarting = false;
         this.stream = null;
+        // Memoised promise for the on-demand Quagga script load so that
+        // concurrent start() calls share a single network request.
+        this._quaggaPromise = null;
 
         this.config = {
             inputStream: {
@@ -74,7 +83,36 @@ class CameraScanner {
 
     // --- Lifecycle ---
 
+    // Inject the Quagga <script> on demand. Resolves immediately when it's
+    // already present (e.g. a second scan in the same session). The promise
+    // is cleared on failure so a later open can retry the download.
+    _ensureQuagga() {
+        if (typeof Quagga !== 'undefined') return Promise.resolve();
+        if (this._quaggaPromise) return this._quaggaPromise;
+        this._quaggaPromise = new Promise((resolve, reject) => {
+            const onFail = () => {
+                this._quaggaPromise = null;
+                reject(new Error('Échec du chargement du scanner'));
+            };
+            const existing = document.querySelector(`script[src="${QUAGGA_URL}"]`);
+            if (existing) {
+                existing.addEventListener('load', () => resolve());
+                existing.addEventListener('error', onFail);
+                if (typeof Quagga !== 'undefined') resolve();
+                return;
+            }
+            const s = document.createElement('script');
+            s.src = QUAGGA_URL;
+            s.async = true;
+            s.onload = () => resolve();
+            s.onerror = onFail;
+            document.head.appendChild(s);
+        });
+        return this._quaggaPromise;
+    }
+
     async init() {
+        await this._ensureQuagga();
         return new Promise((resolve, reject) => {
             if (this.isInitialized) {
                 resolve();
