@@ -261,8 +261,6 @@ class CameraScanner {
                 this._detectionBuffer = {};
                 this.hasDetected = true;
                 this._resetInactivityTimer();
-
-                console.log('Barcode confirmed:', code);
                 if (this.onBarcodeConfirmed) {
                     this.onBarcodeConfirmed(code);
                 }
@@ -349,7 +347,6 @@ class CameraScanner {
         this.hasDetected = false;
         this.fallbackTimer = setTimeout(() => {
             if (this.isScanning && !this.hasDetected) {
-                console.log('No detection yet, widening decoder readers');
                 this._reconfigureReaders(this.broadReaders);
                 this._notify('Recherche de codes élargie pour une meilleure détection');
             }
@@ -407,7 +404,6 @@ class CameraScanner {
         this._clearInactivityTimer();
         this.inactivityTimeout = setTimeout(() => {
             if (this.isScanning) {
-                console.log('No barcode detected in 30 seconds, stopping scanner');
                 this.stop();
                 // Notify the wrapping React sheet via a dedicated
                 // callback so it can update its UI without conflating

@@ -94,7 +94,7 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
           )}
           <button type="button" onClick={onAddCategory}
             aria-label="Créer une nouvelle catégorie" style={{
-              width: '100%', marginTop: 12, padding: '13px', borderRadius: 14,
+              width: '100%', marginTop: 12, padding: '12px', borderRadius: 14,
               background: T.surface, border: `1px dashed ${T.rule}`, color: T.ink2,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, letterSpacing: -0.1,
@@ -614,8 +614,8 @@ function EditCategorySheet({ category, onClose, mode = 'edit' }) {
 
         {err && (
           <div style={{
-            color: T.accent2, background: 'oklch(35% 0.10 25 / 0.15)',
-            border: '1px solid oklch(45% 0.15 25 / 0.4)',
+            color: T.accent2, background: T.dangerSoftBg,
+            border: `1px solid ${T.dangerSoftBorder}`,
             padding: '8px 12px', borderRadius: 10, fontSize: 12,
             marginBottom: 14,
           }}>{err}</div>
@@ -623,7 +623,7 @@ function EditCategorySheet({ category, onClose, mode = 'edit' }) {
 
         <button type="button" onClick={busy ? undefined : save} disabled={busy} style={{
           width: '100%', padding: '14px', textAlign: 'center', borderRadius: 12,
-          background: T.accent, color: T.isDark ? T.bg : '#fff',
+          background: T.accent, color: T.accentInk,
           fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer',
           opacity: busy ? 0.5 : 1, border: 'none', fontFamily: 'inherit',
           boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
@@ -633,9 +633,9 @@ function EditCategorySheet({ category, onClose, mode = 'edit' }) {
           <button type="button" onClick={busy ? undefined : remove} disabled={busy} style={{
             width: '100%',
             marginTop: 12, padding: '12px', textAlign: 'center', borderRadius: 12,
-            background: 'oklch(35% 0.10 25 / 0.15)',
+            background: T.dangerSoftBg,
             color: T.accent2,
-            border: '1px solid oklch(45% 0.15 25 / 0.4)',
+            border: `1px solid ${T.dangerSoftBorder}`,
             fontSize: 12.5, fontWeight: 500, cursor: busy ? 'wait' : 'pointer',
             opacity: busy ? 0.5 : 1, display: 'flex',
             alignItems: 'center', justifyContent: 'center', gap: 6,

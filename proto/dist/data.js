@@ -309,6 +309,13 @@ function buildFamilies(drinks, ratings = {}) {
   return Array.from(map.values()).sort((a, b) => b.entries.length - a.entries.length);
 }
 
+// True quand un drink brut appartient à `family` : même tuple d'identité que la
+// clé de `buildFamilies` (name + quantity + unit + abv, catégorie exclue).
+// Source unique du prédicat, partagé par `updateFamily` et `deleteFamily`.
+function sameFamily(drink, family) {
+  return (drink.name || '').trim().toLowerCase() === (family.name || '').trim().toLowerCase() && drink.quantity === family.quantity && (drink.unit || '').toLowerCase() === (family.unit || '').toLowerCase() && (drink.alcoholContent || 0) === (family.alcohol || 0);
+}
+
 // Stats per category
 function computeCategoryStats(categories, families) {
   // Index by canonical name so a drink whose category string differs only
@@ -683,7 +690,7 @@ async function updateFamily(family, updates) {
   const db = await waitForDb();
   if (!db) return;
   const all = await db.getAllDrinks();
-  const matches = all.filter(d => (d.name || '').trim().toLowerCase() === (family.name || '').trim().toLowerCase() && d.quantity === family.quantity && (d.unit || '').toLowerCase() === (family.unit || '').toLowerCase() && (d.alcoholContent || 0) === (family.alcohol || 0));
+  const matches = all.filter(d => sameFamily(d, family));
   for (const m of matches) {
     await db.updateDrink(m.id, updates);
   }
@@ -700,7 +707,7 @@ async function deleteFamily(family) {
   const db = await waitForDb();
   if (!db) throw new Error('DB indisponible');
   const all = await db.getAllDrinks();
-  const matches = all.filter(d => (d.name || '').trim().toLowerCase() === (family.name || '').trim().toLowerCase() && d.quantity === family.quantity && (d.unit || '').toLowerCase() === (family.unit || '').toLowerCase() && (d.alcoholContent || 0) === (family.alcohol || 0));
+  const matches = all.filter(d => sameFamily(d, family));
   // Capture full row state BEFORE deletion so we can re-add on undo.
   const snapshot = matches.map(m => ({
     ...m
@@ -930,6 +937,7 @@ Object.assign(window, {
   SettingsProvider,
   CategoryIconsProvider,
   buildFamilies,
+  sameFamily,
   computeCategoryStats,
   flattenEntries,
   ratingKey,

@@ -211,7 +211,7 @@ function aggregateGeneral(drinks) {
   for (const d of drinks) {
     const cl = toCl(d.quantity, d.unit);
     stats.volumeCl += cl;
-    stats.grams += cl * 10 * ((d.alcoholContent || 0) / 100) * 0.789;
+    stats.grams += ethanolGrams(cl, d.alcoholContent); // réutilise `cl` déjà calculé
     stats.unique.add((d.name || '').toLowerCase());
     const cat = d.category || 'Autre';
     stats.byCategory[cat] = (stats.byCategory[cat] || 0) + 1;
@@ -238,10 +238,18 @@ const BAC_ELIM_RATE = 150; // mg/L/h, standard Widmark β
 const BAC_ABSORPTION_H = 0.5; // h, linear absorption window (alcohol fully absorbed 30 min after a drink)
 const FORECAST_MAX_RATE_GPH = 60; // cap on the projected drinking pace (~6 standard drinks/h)
 const FORECAST_HORIZON_H = 12; // h, max projected horizon rendered
+const DEFAULT_WEIGHT_KG = 70; // poids supposé quand le profil ne renseigne rien
+const WIDMARK_R_MALE = 0.68; // facteur de distribution de Widmark (homme)
+const WIDMARK_R_FEMALE = 0.55; // facteur de distribution de Widmark (femme)
 
-function computeBACSessions(drinks, weight = 70, gender = 'male') {
-  const r = gender === 'female' ? 0.55 : 0.68;
-  const w = weight || 70;
+// Facteur de distribution de Widmark selon le genre. Source unique : la valeur
+// vivait en dur dans les trois fonctions BAC.
+function widmarkR(gender) {
+  return gender === 'female' ? WIDMARK_R_FEMALE : WIDMARK_R_MALE;
+}
+function computeBACSessions(drinks, weight = DEFAULT_WEIGHT_KG, gender = 'male') {
+  const r = widmarkR(gender);
+  const w = weight || DEFAULT_WEIGHT_KG;
   const hour = 3600_000;
   const T = BAC_ABSORPTION_H; // absorption window, hours
   const elim = BAC_ELIM_RATE; // mg/L per hour
@@ -254,7 +262,7 @@ function computeBACSessions(drinks, weight = 70, gender = 'male') {
 
   // Per-drink total contribution (mg/L), absorbed linearly over [_ts, _ts+T·h].
   for (const d of valid) {
-    d._grams = toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789;
+    d._grams = drinkAlcoholGrams(d);
     d._peak = d._grams * 1000 / (w * r);
   }
 
@@ -468,7 +476,7 @@ function StatsTab() {
   // never recompute the same sum/session in three places. The Widmark
   // params come from settings and feed `computeBACSessions` so a
   // session reflects the user's real elimination rate.
-  const weight = Number(settings.userWeight) || 70;
+  const weight = Number(settings.userWeight) || DEFAULT_WEIGHT_KG;
   const gender = settings.userGender || 'male';
   const agg = React.useMemo(() => aggregateGeneral(inRange), [inRange]);
   const prevAgg = React.useMemo(() => inPrevRange ? aggregateGeneral(inPrevRange) : null, [inPrevRange]);
@@ -655,7 +663,7 @@ function StatSection({
       alignItems: 'center',
       gap: 10,
       cursor: 'pointer',
-      padding: '11px 14px',
+      padding: '12px 14px',
       background: 'transparent',
       borderTop: 'none',
       borderLeft: 'none',
@@ -1529,7 +1537,7 @@ function TopDrinksSection({
       display: 'flex',
       alignItems: 'center',
       gap: 12,
-      padding: '11px 12px',
+      padding: '12px 12px',
       borderBottom: i === top.length - 1 ? 'none' : `1px solid ${T.rule}`
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -1595,12 +1603,12 @@ function TopDrinksSection({
 // constant elimination rate (mg/L/h). At t = first drink, BAC = 0 and rises.
 //   contrib_i(t) = peak_i · clamp((t − t_i) / T_abs, 0, 1)
 //   bac(t)       = max(0, Σ_i contrib_i(t) − elimRate·(t − t_first))
-// `r` is Widmark's distribution factor (male 0.68, female 0.55), `0.789`
-// is ethanol density g/mL.
+// `r` is Widmark's distribution factor (see `widmarkR`); the per-drink alcohol
+// mass in grams comes from the shared `drinkAlcoholGrams` helper.
 function computeBacOverTime(drinks, weight, gender) {
-  const r = gender === 'female' ? 0.55 : 0.68;
-  const w = weight || 70;
-  const elimRate = 150; // mg/L/h elimination, ~ standard Widmark β
+  const r = widmarkR(gender);
+  const w = weight || DEFAULT_WEIGHT_KG;
+  const elimRate = BAC_ELIM_RATE; // mg/L/h elimination (constante partagée du moteur BAC)
   const now = Date.now();
   const lookback = 24 * 3600_000;
   const recent = drinks.filter(d => d.date && d.time).map(d => ({
@@ -1617,7 +1625,7 @@ function computeBacOverTime(drinks, weight, gender) {
 
   // Per-drink peak contribution in mg/L — the full BAC each drink adds once
   // absorbed; bacAt() ramps it in linearly over BAC_ABSORPTION_H.
-  const grams = recent.map(d => toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789);
+  const grams = recent.map(drinkAlcoholGrams);
   const peaks = grams.map(g => g * 1000 / (w * r));
   const tStart = recent.map(d => (d._ts - now) / 3600_000); // negative hours
   const firstT = tStart[0];
@@ -1675,8 +1683,8 @@ function computeBacOverTime(drinks, weight, gender) {
 // projection never gets there (which the chart renders as an "∞" marker
 // pinned to the right edge).
 function computeBacForecast(currentBac, allSessions, weight, gender, nowMs) {
-  const r = gender === 'female' ? 0.55 : 0.68;
-  const w = weight || 70;
+  const r = widmarkR(gender);
+  const w = weight || DEFAULT_WEIGHT_KG;
   const elimRate = BAC_ELIM_RATE; // mg/L/h, shared with the rest of the BAC engine
 
   const sessions = (allSessions || []).filter(s => s && s.drinks && s.drinks.length > 0);
@@ -1824,7 +1832,7 @@ function BacProvider({
     return () => clearInterval(id);
   }, []);
   const bacInfo = React.useMemo(() => {
-    const w = Number(settings.userWeight) || 70;
+    const w = Number(settings.userWeight) || DEFAULT_WEIGHT_KG;
     const g = settings.userGender || 'male';
     if (typeof computeBacOverTime !== 'function') return {
       current: 0,
@@ -3108,7 +3116,7 @@ function TrendsSection({
         alcohol: 0
       };
       buckets[k].drinks++;
-      buckets[k].alcohol += toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789;
+      buckets[k].alcohol += drinkAlcoholGrams(d);
     }
     const dataMonths = Object.keys(buckets).sort();
     if (dataMonths.length < 2) return {
@@ -3230,7 +3238,7 @@ function AdvancedSection({
     const byDay = {};
     for (const d of allDrinks) {
       if (!d.date) continue;
-      byDay[d.date] = (byDay[d.date] || 0) + toCl(d.quantity, d.unit) * 10 * ((d.alcoholContent || 0) / 100) * 0.789;
+      byDay[d.date] = (byDay[d.date] || 0) + drinkAlcoholGrams(d);
     }
     const days = Object.keys(byDay).sort();
     if (days.length === 0) return [];

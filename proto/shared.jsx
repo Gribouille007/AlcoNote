@@ -23,6 +23,12 @@ const THEMES = {
     scrim:    'rgba(0,0,0,0.65)',
     dangerBg: 'oklch(45% 0.18 25)',
     dangerBtn: 'oklch(55% 0.20 25)',
+    // Encart d'erreur / bouton « soft-danger » (fond + bordure translucides).
+    dangerSoftBg:     'oklch(35% 0.10 25 / 0.15)',
+    dangerSoftBorder: 'oklch(45% 0.15 25 / 0.4)',
+    // Encre blanche fixe sur bouton rouge plein : contraste garanti dans les
+    // deux thèmes (accentInk virerait sombre en dark = illisible sur rouge).
+    dangerBtnInk:     'oklch(100% 0 0)',
     deltaPos:    'oklch(78% 0.16 155)',
     deltaNeg:    'oklch(74% 0.20 30)',
     deltaPosBg:  'oklch(28% 0.05 155)',
@@ -49,6 +55,12 @@ const THEMES = {
     scrim:    'rgba(40,30,20,0.35)',
     dangerBg: 'oklch(45% 0.18 25)',
     dangerBtn: 'oklch(55% 0.20 25)',
+    // Encart d'erreur / bouton « soft-danger » (fond + bordure translucides).
+    dangerSoftBg:     'oklch(35% 0.10 25 / 0.15)',
+    dangerSoftBorder: 'oklch(45% 0.15 25 / 0.4)',
+    // Encre blanche fixe sur bouton rouge plein : contraste garanti dans les
+    // deux thèmes (accentInk virerait sombre en dark = illisible sur rouge).
+    dangerBtnInk:     'oklch(100% 0 0)',
     deltaPos:    'oklch(42% 0.14 155)',
     deltaNeg:    'oklch(48% 0.20 30)',
     deltaPosBg:  'oklch(95% 0.04 155)',
@@ -272,12 +284,27 @@ function toCl(qty, unit) {
   return qty;
 }
 
+// ── Alcool pur (grammes d'éthanol) ────────────────────────────────
+// Source unique de la conversion volume → grammes d'alcool pur, partagée par
+// l'add-drink (stat « impact ») et toutes les sections stats/BAC. Évite que la
+// formule Widmark de base soit recopiée à six endroits.
+//   volume(cL) ×10 = mL ; ×(°/100) = mL d'éthanol ; ×densité = grammes.
+const ETHANOL_DENSITY_G_PER_ML = 0.789; // densité de l'éthanol (g/mL)
+
+function ethanolGrams(volCl, abvPct) {
+  return volCl * 10 * ((abvPct || 0) / 100) * ETHANOL_DENSITY_G_PER_ML;
+}
+
+function drinkAlcoholGrams(drink) {
+  return ethanolGrams(toCl(drink.quantity, drink.unit), drink.alcoholContent);
+}
+
 // ── Search input ──────────────────────────────────────────────────
 function SearchInput({ value, onChange, placeholder }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 10,
-      background: T.surface2, borderRadius: 14, padding: '11px 14px',
+      background: T.surface2, borderRadius: 14, padding: '12px 14px',
       border: `1px solid ${T.rule}`,
     }}>
       <span style={{ color: T.muted, display: 'flex' }}>
@@ -322,7 +349,7 @@ function Pill({ active, onClick, children, color }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={active ? 'true' : 'false'}
       style={{
-        padding: '7px 13px', borderRadius: 99, cursor: 'pointer',
+        padding: '8px 12px', borderRadius: 99, cursor: 'pointer',
         background: active ? T.ink : 'transparent',
         color: active ? T.bg : T.ink2,
         border: active ? `1px solid ${T.ink}` : `1px solid ${T.rule}`,
@@ -713,7 +740,7 @@ function ConfirmHost() {
           <button onClick={() => close(true)} autoFocus style={{
             flex: 1.4, padding: '12px', borderRadius: 12,
             background: state.danger ? T.dangerBtn : T.accent,
-            color: state.danger ? '#fff' : (T.isDark ? T.bg : '#fff'),
+            color: state.danger ? T.dangerBtnInk : T.accentInk,
             border: 'none', fontSize: 13, fontWeight: 600,
             fontFamily: fontSans, cursor: 'pointer', letterSpacing: 0.1,
             boxShadow: `0 4px 18px ${withAlpha(state.danger ? T.dangerBtn : T.accent, state.danger ? 0.5 : 0.4)}`,
@@ -852,7 +879,7 @@ function useSWVersion() {
 function inputBaseStyle() {
   return {
     width: '100%', background: T.surface2, border: `1px solid ${T.rule}`,
-    borderRadius: 12, padding: '11px 14px', color: T.ink, fontSize: 14,
+    borderRadius: 12, padding: '12px 14px', color: T.ink, fontSize: 14,
     fontFamily: fontSans, outline: 'none', letterSpacing: -0.1,
     boxSizing: 'border-box',
   };
@@ -944,7 +971,7 @@ function CategoryChips({ categories, value, onChange, ariaLabel = 'Catégorie' }
         return (
           <button key={c.id || c.name} type="button" role="radio" aria-checked={on}
             onClick={() => onChange(c.name)} style={{
-              padding: '7px 12px', borderRadius: 10, fontSize: 12,
+              padding: '8px 12px', borderRadius: 10, fontSize: 12,
               border: `1px solid ${on ? T.accent : T.rule}`,
               background: on ? T.accentSoft : 'transparent',
               color: on ? T.accent : T.ink2,
@@ -1074,7 +1101,7 @@ Object.assign(window, {
   Toast,
   FR_DAYS_LONG, FR_DAYS_SHORT, FR_MONTHS_SHORT, FR_MONTHS_LONG, FR_MONTHS_DOTTED,
   fmtDateMedium, fmtDayHeader, localDate, localTime,
-  toCl,
+  toCl, ETHANOL_DENSITY_G_PER_ML, ethanolGrams, drinkAlcoholGrams,
   SearchInput, SectionHead, Pill, Stars, CategoryGlyph, GLYPH_OPTIONS, canonicalCat,
   SheetOverlay,
   useBackButton,

@@ -109,7 +109,6 @@ class DatabaseManager {
 
         try {
             await this.db.settings.bulkAdd(defaultSettings);
-            console.log('Default settings initialized');
         } catch (error) {
             console.error('Error initializing default settings:', error);
         }
