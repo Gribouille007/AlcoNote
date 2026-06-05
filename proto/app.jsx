@@ -18,7 +18,7 @@ class AppErrorBoundary extends React.Component {
     return (
       <div style={{
         position: 'fixed', inset: 0, display: 'grid', placeItems: 'center',
-        padding: 24, background: 'oklch(14% 0.008 50)', color: 'oklch(96% 0.008 85)',
+        padding: 24, background: T.bg, color: T.ink,
         zIndex: 9999, fontFamily: 'Geist, system-ui, sans-serif',
       }}>
         <div style={{ maxWidth: 360, textAlign: 'center' }}>
@@ -31,7 +31,7 @@ class AppErrorBoundary extends React.Component {
           </div>
           <button type="button" onClick={() => location.reload()} style={{
             padding: '12px 22px', borderRadius: 12, fontSize: 13, fontWeight: 600,
-            background: 'oklch(72% 0.15 65)', color: 'oklch(14% 0.008 50)',
+            background: T.accent, color: T.accentInk,
             border: 'none', cursor: 'pointer', fontFamily: 'inherit',
           }}>Recharger</button>
         </div>
@@ -127,7 +127,7 @@ function AppShell() {
         category: family.category,
         quantity: family.quantity,
         unit: family.unit,
-        alcoholContent: family.alcohol || family.alcoholContent || 0,
+        alcoholContent: family.alcohol || 0,
         // Local date/time pair so BAC's 24h window stays consistent
         // (UTC date + local time used to drop drinks added late at
         // night in positive-UTC zones).
@@ -257,8 +257,8 @@ function AppShell() {
                 catch (err) { console.warn('AlcoNote: undo failed', err); }
               }}
               style={{
-                marginLeft: 4, padding: '5px 12px', borderRadius: 99,
-                background: T.accent, color: T.isDark ? T.bg : '#fff',
+                marginLeft: 4, padding: '6px 12px', borderRadius: 99,
+                background: T.accent, color: T.accentInk,
                 border: 'none', fontSize: 12, fontWeight: 600,
                 fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0,
                 letterSpacing: 0.1,
@@ -406,7 +406,7 @@ function Fab({ onClick }) {
       right: 14, zIndex: 30,
       width: 58, height: 58, borderRadius: 20, background: T.accent,
       display: 'grid', placeItems: 'center',
-      color: T.isDark ? T.bg : '#fff', cursor: 'pointer',
+      color: T.accentInk, cursor: 'pointer',
       border: 'none', padding: 0, fontFamily: 'inherit',
       boxShadow: `0 10px 26px ${withAlpha(T.accent, T.isDark ? 0.5 : 0.45)}, 0 0 0 1px ${withAlpha(T.accentRing, T.isDark ? 0.3 : 0.6)}`,
     }}>

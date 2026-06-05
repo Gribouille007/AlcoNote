@@ -31,8 +31,8 @@ class AppErrorBoundary extends React.Component {
         display: 'grid',
         placeItems: 'center',
         padding: 24,
-        background: 'oklch(14% 0.008 50)',
-        color: 'oklch(96% 0.008 85)',
+        background: T.bg,
+        color: T.ink,
         zIndex: 9999,
         fontFamily: 'Geist, system-ui, sans-serif'
       }
@@ -63,8 +63,8 @@ class AppErrorBoundary extends React.Component {
         borderRadius: 12,
         fontSize: 13,
         fontWeight: 600,
-        background: 'oklch(72% 0.15 65)',
-        color: 'oklch(14% 0.008 50)',
+        background: T.accent,
+        color: T.accentInk,
         border: 'none',
         cursor: 'pointer',
         fontFamily: 'inherit'
@@ -160,7 +160,7 @@ function AppShell() {
         category: family.category,
         quantity: family.quantity,
         unit: family.unit,
-        alcoholContent: family.alcohol || family.alcoholContent || 0,
+        alcoholContent: family.alcohol || 0,
         // Local date/time pair so BAC's 24h window stays consistent
         // (UTC date + local time used to drop drinks added late at
         // night in positive-UTC zones).
@@ -331,10 +331,10 @@ function AppShell() {
     },
     style: {
       marginLeft: 4,
-      padding: '5px 12px',
+      padding: '6px 12px',
       borderRadius: 99,
       background: T.accent,
-      color: T.isDark ? T.bg : '#fff',
+      color: T.accentInk,
       border: 'none',
       fontSize: 12,
       fontWeight: 600,
@@ -561,7 +561,7 @@ function Fab({
       background: T.accent,
       display: 'grid',
       placeItems: 'center',
-      color: T.isDark ? T.bg : '#fff',
+      color: T.accentInk,
       cursor: 'pointer',
       border: 'none',
       padding: 0,

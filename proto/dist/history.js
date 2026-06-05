@@ -300,7 +300,7 @@ const EntryRow = React.memo(function EntryRow({
       alignItems: 'center',
       justifyContent: 'flex-end',
       paddingRight: 18,
-      color: '#fff',
+      color: T.dangerBtnInk,
       fontSize: 12,
       fontWeight: 500,
       gap: 8,

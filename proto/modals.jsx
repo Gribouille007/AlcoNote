@@ -89,7 +89,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
   // a scanner result) are converted correctly instead of being treated
   // as cL by a local case-sensitive ternary.
   const volCl = toCl(qtyNum, unit);
-  const g = +(volCl * 10 * (alcNum / 100) * 0.789).toFixed(1);
+  const g = +(ethanolGrams(volCl, alcNum)).toFixed(1);
 
   const submit = async () => {
     if (submittingRef.current) return;
@@ -172,7 +172,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
           }}>
             <div style={{
               width: 48, height: 48, borderRadius: 14, background: T.accent,
-              display: 'grid', placeItems: 'center', color: T.isDark ? T.bg : '#fff', flexShrink: 0,
+              display: 'grid', placeItems: 'center', color: T.accentInk, flexShrink: 0,
             }}>
               <SvgIcon icon={Ic.scan} size={22} />
             </div>
@@ -252,8 +252,8 @@ function AddDrinkSheet({ open, prefill, onClose }) {
           {err && (
             <div style={{
               marginTop: 14,
-              color: T.accent2, background: 'oklch(35% 0.10 25 / 0.15)',
-              border: '1px solid oklch(45% 0.15 25 / 0.4)',
+              color: T.accent2, background: T.dangerSoftBg,
+              border: `1px solid ${T.dangerSoftBorder}`,
               padding: '8px 12px', borderRadius: 10, fontSize: 12,
             }}>{err}</div>
           )}
@@ -270,7 +270,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
           }}>Annuler</button>
           <button type="button" onClick={busy ? undefined : submit} disabled={busy} style={{
             flex: 2, padding: '14px', textAlign: 'center', borderRadius: 12,
-            background: T.accent, color: T.isDark ? T.bg : '#fff', fontSize: 13, fontWeight: 600,
+            background: T.accent, color: T.accentInk, fontSize: 13, fontWeight: 600,
             cursor: busy ? 'wait' : 'pointer', letterSpacing: 0.1, opacity: busy ? 0.5 : 1,
             border: 'none', fontFamily: 'inherit',
             boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
@@ -293,6 +293,18 @@ function AddDrinkSheet({ open, prefill, onClose }) {
   );
 }
 // ── Scanner overlay (wraps QuaggaJS via window.cameraScanner) ─────
+// Chrome du viseur scanner — délibérément hors thème. Ces couleurs sont posées
+// par-dessus le flux vidéo de la caméra (toujours sombre) ; les passer en `T.*`
+// rendrait le chrome illisible en mode clair (fond clair sur vidéo). On les
+// nomme ici plutôt que de les laisser en littéraux dispersés.
+const VIEWFINDER_BG = '#000';
+const VIEWFINDER_INK = '#fff';
+const VIEWFINDER_HEADER_SCRIM = 'linear-gradient(to bottom, rgba(0,0,0,0.55), transparent)';
+const VIEWFINDER_CLOSE_BG = 'rgba(255,255,255,0.18)';
+const VIEWFINDER_MASK = 'rgba(0,0,0,0.45)';
+const VIEWFINDER_CHIP_BG = 'rgba(0,0,0,0.5)';
+const VIEWFINDER_CHIP_BORDER = 'rgba(255,255,255,0.1)';
+
 function ScannerSheet({ onClose, onScanned }) {
   const [status, setStatus] = React.useState('scanning');
   const [statusText, setStatusText] = React.useState('Positionnez le code-barres');
@@ -366,7 +378,7 @@ function ScannerSheet({ onClose, onScanned }) {
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, background: '#000', zIndex: 200,
+      position: 'fixed', inset: 0, background: VIEWFINDER_BG, zIndex: 200,
       display: 'flex', flexDirection: 'column',
     }}>
       <div id="scanner-viewport" ref={viewportRef} style={{
@@ -376,16 +388,16 @@ function ScannerSheet({ onClose, onScanned }) {
       <div style={{
         position: 'relative', padding: 'calc(50px + env(safe-area-inset-top)) 22px 18px',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 2,
-        background: 'linear-gradient(to bottom, rgba(0,0,0,0.55), transparent)',
+        background: VIEWFINDER_HEADER_SCRIM,
       }}>
         <div style={{
-          color: '#fff', fontFamily: fontSerif, fontSize: 20, fontStyle: 'italic',
+          color: VIEWFINDER_INK, fontFamily: fontSerif, fontSize: 20, fontStyle: 'italic',
           letterSpacing: -0.2,
         }}>Scanner</div>
         <button type="button" onClick={onClose} aria-label="Fermer le scanner" style={{
           width: 36, height: 36, borderRadius: 99,
-          background: 'rgba(255,255,255,0.18)', display: 'grid', placeItems: 'center',
-          color: '#fff', cursor: 'pointer',
+          background: VIEWFINDER_CLOSE_BG, display: 'grid', placeItems: 'center',
+          color: VIEWFINDER_INK, cursor: 'pointer',
           border: 'none', padding: 0, fontFamily: 'inherit',
         }}><SvgIcon icon={Ic.close} size={16} /></button>
       </div>
@@ -395,7 +407,7 @@ function ScannerSheet({ onClose, onScanned }) {
           width: 240, height: 150, position: 'relative',
           border: `1.5px solid ${status === 'found' ? T.good : T.accent}`,
           borderRadius: 14, overflow: 'hidden',
-          boxShadow: `0 0 0 9999px rgba(0,0,0,0.45)`,
+          boxShadow: `0 0 0 9999px ${VIEWFINDER_MASK}`,
         }}>
           {[0,1,2,3].map(i => (
             <div key={i} style={{
@@ -425,13 +437,13 @@ function ScannerSheet({ onClose, onScanned }) {
 
         <div style={{
           position: 'absolute', bottom: 50, left: 0, right: 0, textAlign: 'center',
-          color: '#fff', fontSize: 13,
+          color: VIEWFINDER_INK, fontSize: 13,
         }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 8,
             padding: '8px 14px', borderRadius: 99,
-            background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)',
-            border: `1px solid rgba(255,255,255,0.1)`,
+            background: VIEWFINDER_CHIP_BG, backdropFilter: 'blur(8px)',
+            border: `1px solid ${VIEWFINDER_CHIP_BORDER}`,
           }}>
             <div style={{
               width: 8, height: 8, borderRadius: 99,
@@ -450,8 +462,8 @@ function ScannerSheet({ onClose, onScanned }) {
         }}>
           <button type="button" onClick={() => onScanned(foundProduct)} style={{
             width: '100%',
-            background: T.accent, color: T.isDark ? T.bg : '#fff',
-            padding: '15px', borderRadius: 14,
+            background: T.accent, color: T.accentInk,
+            padding: '14px', borderRadius: 14,
             textAlign: 'center', fontSize: 14, fontWeight: 600, cursor: 'pointer',
             border: 'none', fontFamily: 'inherit',
             boxShadow: `0 8px 30px ${withAlpha(T.accent, 0.32)}`,
@@ -481,6 +493,12 @@ function FactCell({ label, value, last }) {
 }
 
 // Drink detail sheet - shows family info and entries timeline
+// Pastilles posées sur l'en-tête coloré (dégradé `catBg`) de la fiche détail :
+// assombrissement volontairement hors thème — un `T.surface` casserait l'effet
+// de teinte catégorie. Nommées pour documenter l'intention.
+const DETAIL_HEADER_TILE_BG = 'rgba(0,0,0,0.18)';
+const DETAIL_HEADER_CLOSE_BG = 'rgba(0,0,0,0.25)';
+
 function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
   const ratings = useRatings();
   const { categories } = useCategories();
@@ -565,7 +583,7 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{
-              width: 54, height: 54, borderRadius: 16, background: 'rgba(0,0,0,0.18)',
+              width: 54, height: 54, borderRadius: 16, background: DETAIL_HEADER_TILE_BG,
               display: 'grid', placeItems: 'center', color, flexShrink: 0,
               border: `1px solid ${T.rule}`,
             }}>
@@ -583,7 +601,7 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
               }}>{f.name}</div>
             </div>
             <button type="button" onClick={onClose} aria-label="Fermer" style={{
-              width: 32, height: 32, borderRadius: 99, background: 'rgba(0,0,0,0.25)',
+              width: 32, height: 32, borderRadius: 99, background: DETAIL_HEADER_CLOSE_BG,
               display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
               alignSelf: 'flex-start',
               border: 'none', padding: 0, fontFamily: 'inherit',
@@ -711,7 +729,7 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
           display: 'flex', gap: 10,
         }}>
           <button type="button" onClick={() => onEdit && onEdit(f)} style={{
-            flex: 1, padding: '13px', textAlign: 'center', borderRadius: 12,
+            flex: 1, padding: '12px', textAlign: 'center', borderRadius: 12,
             background: T.surface2, color: T.ink2, fontSize: 13, cursor: 'pointer',
             border: `1px solid ${T.rule}`, display: 'flex', alignItems: 'center',
             justifyContent: 'center', gap: 6, fontFamily: 'inherit',
@@ -719,8 +737,8 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
             <SvgIcon icon={Ic.edit} size={14} /> Modifier
           </button>
           <button type="button" onClick={() => onAddAgain && onAddAgain(f)} style={{
-            flex: 2, padding: '13px', textAlign: 'center', borderRadius: 12,
-            background: T.accent, color: T.isDark ? T.bg : '#fff', fontSize: 13, fontWeight: 600,
+            flex: 2, padding: '12px', textAlign: 'center', borderRadius: 12,
+            background: T.accent, color: T.accentInk, fontSize: 13, fontWeight: 600,
             cursor: 'pointer', display: 'flex', alignItems: 'center',
             justifyContent: 'center', gap: 6,
             border: 'none', fontFamily: 'inherit',
@@ -904,8 +922,8 @@ function EditEntrySheet({ entry, onClose }) {
 
           {err && (
             <div style={{
-              color: T.accent2, background: 'oklch(35% 0.10 25 / 0.15)',
-              border: '1px solid oklch(45% 0.15 25 / 0.4)',
+              color: T.accent2, background: T.dangerSoftBg,
+              border: `1px solid ${T.dangerSoftBorder}`,
               padding: '8px 12px', borderRadius: 10, fontSize: 12, marginBottom: 10,
             }}>{err}</div>
           )}
@@ -913,9 +931,9 @@ function EditEntrySheet({ entry, onClose }) {
           <button type="button" onClick={busy ? undefined : remove} disabled={busy} style={{
             width: '100%',
             marginTop: 18, padding: '12px', textAlign: 'center', borderRadius: 12,
-            background: 'oklch(35% 0.10 25 / 0.15)',
+            background: T.dangerSoftBg,
             color: T.accent2,
-            border: '1px solid oklch(45% 0.15 25 / 0.4)',
+            border: `1px solid ${T.dangerSoftBorder}`,
             fontSize: 12.5, fontWeight: 500, cursor: busy ? 'wait' : 'pointer',
             opacity: busy ? 0.5 : 1,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -936,7 +954,7 @@ function EditEntrySheet({ entry, onClose }) {
           }}>Annuler</button>
           <button type="button" onClick={busy ? undefined : save} disabled={busy} style={{
             flex: 2, padding: '14px', textAlign: 'center', borderRadius: 12,
-            background: T.accent, color: T.isDark ? T.bg : '#fff', fontSize: 13, fontWeight: 600,
+            background: T.accent, color: T.accentInk, fontSize: 13, fontWeight: 600,
             cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.5 : 1,
             border: 'none', fontFamily: 'inherit',
             boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
@@ -1105,8 +1123,8 @@ function EditFamilySheet({ family, onClose }) {
 
           {err && (
             <div style={{
-              color: T.accent2, background: 'oklch(35% 0.10 25 / 0.15)',
-              border: '1px solid oklch(45% 0.15 25 / 0.4)',
+              color: T.accent2, background: T.dangerSoftBg,
+              border: `1px solid ${T.dangerSoftBorder}`,
               padding: '8px 12px', borderRadius: 10, fontSize: 12, marginBottom: 10,
             }}>{err}</div>
           )}
@@ -1114,9 +1132,9 @@ function EditFamilySheet({ family, onClose }) {
           <button type="button" onClick={busy ? undefined : delAll} disabled={busy} style={{
             width: '100%',
             marginTop: 18, padding: '12px', textAlign: 'center', borderRadius: 12,
-            background: 'oklch(35% 0.10 25 / 0.15)',
+            background: T.dangerSoftBg,
             color: T.accent2,
-            border: '1px solid oklch(45% 0.15 25 / 0.4)',
+            border: `1px solid ${T.dangerSoftBorder}`,
             fontSize: 12.5, fontWeight: 500, cursor: busy ? 'wait' : 'pointer',
             opacity: busy ? 0.5 : 1,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -1137,7 +1155,7 @@ function EditFamilySheet({ family, onClose }) {
           }}>Annuler</button>
           <button type="button" onClick={busy ? undefined : save} disabled={busy} style={{
             flex: 2, padding: '14px', textAlign: 'center', borderRadius: 12,
-            background: T.accent, color: T.isDark ? T.bg : '#fff', fontSize: 13, fontWeight: 600,
+            background: T.accent, color: T.accentInk, fontSize: 13, fontWeight: 600,
             cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.5 : 1,
             border: 'none', fontFamily: 'inherit',
             boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
@@ -1362,7 +1380,7 @@ function SettingRow({ label, value, icon, danger, last, onClick }) {
     <Tag {...extra} onClick={onClick} style={{
       width: '100%',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '13px 14px',
+      padding: '12px 14px',
       borderTop: 'none', borderLeft: 'none', borderRight: 'none',
       borderBottom: last ? 'none' : `1px solid ${T.rule}`,
       cursor: onClick ? 'pointer' : 'default', gap: 10,

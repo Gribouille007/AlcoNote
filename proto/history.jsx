@@ -211,7 +211,7 @@ const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectA
       <div style={{
         position: 'absolute', inset: 0, background: T.dangerBg,
         display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-        paddingRight: 18, color: '#fff', fontSize: 12, fontWeight: 500, gap: 8,
+        paddingRight: 18, color: T.dangerBtnInk, fontSize: 12, fontWeight: 500, gap: 8,
         cursor: 'pointer',
       }}
         onClick={() => onDelete && onDelete(e)}>
