@@ -5,6 +5,7 @@
 //   - computeCategoryStats dedupe (in proto/data.jsx)
 //   - parseDecimal  (comma/dot parsing, in proto/shared.jsx)
 //   - ethanolGrams / drinkAlcoholGrams (alcohol mass, in proto/shared.jsx)
+//   - sameFamily  (family identity predicate, in proto/data.jsx)
 // Run with `npm test`. Exits non-zero on the first failing assertion set.
 
 const path = require('path');
@@ -36,7 +37,7 @@ require(path.join(ROOT, 'proto/dist/shared.js'));
 require(path.join(ROOT, 'proto/dist/data.js'));
 
 const { canonicalCat, computeCategoryStats, parseDecimal,
-  ethanolGrams, drinkAlcoholGrams, ETHANOL_DENSITY_G_PER_ML } = global;
+  ethanolGrams, drinkAlcoholGrams, ETHANOL_DENSITY_G_PER_ML, sameFamily } = global;
 let fails = 0;
 function eq(actual, expected, msg) {
   const pass = JSON.stringify(actual) === JSON.stringify(expected);
@@ -88,6 +89,20 @@ eq(ethanolGrams(50, null), 0, 'null abv guarded -> 0 g');
 eq(ethanolGrams(0, 5), 0, 'zero volume -> 0 g');
 eq(drinkAlcoholGrams({ quantity: 50, unit: 'cl', alcoholContent: 5 }), ethanolGrams(50, 5), 'cL drink folds to ethanolGrams(50, 5)');
 eq(drinkAlcoholGrams({ quantity: 0.5, unit: 'L', alcoholContent: 5 }), ethanolGrams(50, 5), 'L unit converts via toCl (0.5 L = 50 cL)');
+
+console.log('sameFamily');
+eq(typeof sameFamily, 'function', 'sameFamily exported from data bundle');
+{
+  // Family objects carry `alcohol`; raw drinks carry `alcoholContent` — the
+  // predicate must bridge the two (the mapping buildFamilies establishes).
+  const fam = { name: 'Heineken', quantity: 50, unit: 'cL', alcohol: 5 };
+  eq(sameFamily({ name: 'Heineken', quantity: 50, unit: 'cL', alcoholContent: 5 }, fam), true, 'exact match (alcoholContent ↔ alcohol)');
+  eq(sameFamily({ name: '  heineken ', quantity: 50, unit: 'cl', alcoholContent: 5 }, fam), true, 'name + unit are trimmed / case-insensitive');
+  eq(sameFamily({ name: 'Heineken', quantity: 33, unit: 'cL', alcoholContent: 5 }, fam), false, 'different quantity -> false');
+  eq(sameFamily({ name: 'Heineken', quantity: 50, unit: 'cL', alcoholContent: 8 }, fam), false, 'different abv -> false');
+  eq(sameFamily({ name: 'Affligem', quantity: 50, unit: 'cL', alcoholContent: 5 }, fam), false, 'different name -> false');
+  eq(sameFamily({ name: 'X', quantity: 50, unit: 'cL' }, { name: 'X', quantity: 50, unit: 'cL' }), true, 'missing abv on both sides -> 0 === 0');
+}
 
 console.log(fails ? `\n${fails} assertion(s) FAILED` : '\nAll assertions passed');
 process.exit(fails ? 1 : 0);

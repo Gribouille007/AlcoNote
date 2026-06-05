@@ -937,6 +937,7 @@ Object.assign(window, {
   SettingsProvider,
   CategoryIconsProvider,
   buildFamilies,
+  sameFamily,
   computeCategoryStats,
   flattenEntries,
   ratingKey,

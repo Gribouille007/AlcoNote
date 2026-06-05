@@ -157,7 +157,7 @@ function aggregateGeneral(drinks) {
   for (const d of drinks) {
     const cl = toCl(d.quantity, d.unit);
     stats.volumeCl += cl;
-    stats.grams += drinkAlcoholGrams(d);
+    stats.grams += ethanolGrams(cl, d.alcoholContent); // réutilise `cl` déjà calculé
     stats.unique.add((d.name || '').toLowerCase());
     const cat = d.category || 'Autre';
     stats.byCategory[cat] = (stats.byCategory[cat] || 0) + 1;

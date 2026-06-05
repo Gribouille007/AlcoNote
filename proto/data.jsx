@@ -813,7 +813,7 @@ Object.assign(window, {
   FamiliesContext,
   DrinksProvider, RatingsProvider, CategoriesProvider, SettingsProvider,
   CategoryIconsProvider,
-  buildFamilies, computeCategoryStats, flattenEntries,
+  buildFamilies, sameFamily, computeCategoryStats, flattenEntries,
   ratingKey,
   saveSetting,
   addDrink, updateDrink, deleteDrink, deleteDrinkWithSnapshot, saveRating,
