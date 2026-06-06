@@ -65,6 +65,19 @@ create table if not exists public.shared_profiles (
   primary key (user_id, group_id)
 );
 
+-- ── Privilèges de table (RLS filtre ENSUITE les lignes) ────────────────────
+-- Les rôles anon/authenticated reçoivent normalement ces droits par défaut sur
+-- le schéma public, mais on les pose EXPLICITEMENT : sans GRANT, PostgREST
+-- renvoie « permission denied for table … » même quand les policies RLS sont
+-- correctes (cause classique de « aucune donnée partagée »). RLS reste la vraie
+-- barrière de sécurité ligne-à-ligne (les écritures interdites restent bloquées
+-- faute de policy INSERT/UPDATE correspondante).
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on
+  public.groups, public.group_members, public.invites,
+  public.shared_drinks, public.shared_profiles
+  to anon, authenticated;
+
 -- ── Helper : appartenance au groupe ────────────────────────────────────────
 create or replace function public.is_member(gid uuid)
 returns boolean

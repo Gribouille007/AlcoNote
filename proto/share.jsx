@@ -61,7 +61,8 @@ const shareState = {
   members: [],          // [{ userId, displayName, shareBac, bacWeight, bacGender }]
   lastPullAt: 0,
   syncing: false,
-  error: null,
+  error: null,          // 'pull' | 'sync' | null (catégorie)
+  errorDetail: null,    // message humain de la dernière erreur (diagnostic UI)
 };
 
 function _emit() { shareBus.bump(); }
@@ -78,14 +79,20 @@ function shareErrorMessage(e) {
     return "Active « Anonymous sign-ins » dans Supabase (Auth › Providers)";
   if (/could not find the function|function .*does not exist|pgrst202|schema cache/.test(msg) || code === '404')
     return "Exécute supabase/schema.sql dans Supabase (SQL Editor)";
+  if (/permission denied|must be owner|insufficient privilege/.test(msg) || code === '42501')
+    return "Droits manquants : ré-exécute supabase/schema.sql (GRANT/RLS)";
+  if (/violates row-level security|new row violates/.test(msg) || code === '42501')
+    return "RLS : ré-exécute supabase/schema.sql (policies)";
+  if (/relation .*does not exist|undefined table|pgrst205|column .*does not exist|pgrst204/.test(msg) || code === '42p01' || code === '42703')
+    return "Tables/colonnes manquantes : ré-exécute supabase/schema.sql";
   if (/sdk supabase|chargement sdk/.test(msg))
     return "SDK Supabase injoignable (vérifie ta connexion / CSP)";
-  if (/failed to fetch|networkerror|network request failed/.test(msg))
+  if (/failed to fetch|networkerror|network request failed|load failed/.test(msg))
     return "Réseau indisponible — réessaie";
   if (/invalid api key|jwt|apikey|401/.test(msg) || code === '401')
     return "Clé Supabase invalide (vérifie share-config.js)";
   if (/invalid invite|invite/.test(msg)) return "Code d'invitation invalide";
-  return "Échec — voir la console pour le détail";
+  return "Échec partage — voir la console (F12) pour le détail";
 }
 
 // ── helpers DB settings (écriture directe, sans bump global 'settings') ────
@@ -223,7 +230,7 @@ function MockShareTransport() {
     },
     async pullSince(cursor) {
       const srv = read();
-      if (!srv) return { drinks: [], profiles: [], members: [], cursor: cursor || 0 };
+      if (!srv) return { drinks: [], profiles: [], members: [], cursor: cursor || 0, error: null };
       const all = [...srv.drinks, ...srv.mine];
       const fresh = all.filter(r => (r.updatedAt || 0) > (cursor || 0));
       const newCursor = all.reduce((m, r) => Math.max(m, r.updatedAt || 0), cursor || 0);
@@ -232,6 +239,7 @@ function MockShareTransport() {
         profiles: srv.members,
         members: srv.members,
         cursor: newCursor,
+        error: null,
       };
     },
     async exportRecovery() { return { kind: 'mock', uid: localStorage.getItem('alconote.mock.uid') }; },
@@ -341,7 +349,13 @@ function SupabaseShareTransport(cfg) {
         sb.from('shared_profiles').select('*').eq('group_id', gid),
         sb.from('group_members').select('user_id, display_name').eq('group_id', gid),
       ]);
-      if (d.error) throw d.error;
+      // On NE jette PAS sur la seule erreur des boissons : sinon une erreur de
+      // lecture de shared_drinks effacerait aussi la liste des membres (bug :
+      // « l'autre ne me voit pas »). On loggue chaque erreur et on renvoie ce
+      // qui a réussi ; pull() relance un retry si une erreur subsiste.
+      if (d.error) console.warn('[AlcoNote partage] lecture shared_drinks', d.error);
+      if (p.error) console.warn('[AlcoNote partage] lecture shared_profiles', p.error);
+      if (m.error) console.warn('[AlcoNote partage] lecture group_members', m.error);
       const drinks = (d.data || []).map(r => ({
         uid: r.uid, groupId: r.group_id, authorId: r.author_id, tsUtc: r.ts_utc,
         date: r.date, time: r.time, name: r.name, quantity: r.quantity, unit: r.unit,
@@ -360,7 +374,7 @@ function SupabaseShareTransport(cfg) {
         };
       });
       const newCursor = drinks.reduce((mx, r) => Math.max(mx, r.updatedAt || 0), cursor || 0);
-      return { drinks, profiles: members, members, cursor: newCursor };
+      return { drinks, profiles: members, members, cursor: newCursor, error: d.error || m.error || p.error || null };
     },
     async exportRecovery() {
       const sb = await ensureClient();
@@ -424,8 +438,8 @@ async function reconcile() {
     if (upserts.length) await db.addOutbox({ op: 'upsert', records: upserts });
     if (tombs.length) await db.addOutbox({ op: 'tomb', uids: tombs });
     await _savePubIndex(idx);
-    if (upserts.length || tombs.length) flushOutbox();
-  } catch (e) { /* best-effort */ }
+    if (upserts.length || tombs.length) await flushOutbox();
+  } catch (e) { try { console.error('[AlcoNote partage] reconcile', e); } catch (_) {} }
 }
 
 async function flushOutbox(attempt) {
@@ -444,8 +458,11 @@ async function flushOutbox(attempt) {
     }
     await db.clearOutbox(done);
     shareState.error = null;
+    shareState.errorDetail = null;
   } catch (e) {
+    try { console.error('[AlcoNote partage] envoi (push) échoué', e); } catch (_) {}
     shareState.error = 'sync';
+    shareState.errorDetail = shareErrorMessage(e);
     const delay = Math.min(16000, 2000 * Math.pow(2, attempt));
     clearTimeout(_flushTimer);
     _flushTimer = setTimeout(() => { _flushing = false; flushOutbox(attempt + 1); }, delay);
@@ -470,16 +487,36 @@ async function pull(attempt) {
     const dead = incoming.filter(r => r.deleted).map(r => r.uid);
     if (live.length) await db.upsertSharedDrinks(live);
     if (dead.length) await db.deleteSharedByUids(dead);
-    shareState.members = (res.members || []);
+    // TOUJOURS rafraîchir la liste des membres, même si la lecture des boissons
+    // a partiellement échoué — sinon une erreur sur shared_drinks ferait
+    // « disparaître » les autres membres (bug : l'autre ne me voit pas).
+    if (Array.isArray(res.members)) shareState.members = res.members;
     await _sset(`share.cursor.${shareState.groupId}`, res.cursor || cursor);
     shareState.lastPullAt = Date.now();
+    if (res.error) {
+      // Erreur partielle : on a appliqué ce qui a réussi, on signale + retry.
+      try { console.error('[AlcoNote partage] lecture partielle', res.error); } catch (_) {}
+      shareState.error = 'pull';
+      shareState.errorDetail = shareErrorMessage(res.error);
+      // On libère le verrou TOUT DE SUITE (un « Rafraîchir » manuel doit
+      // pouvoir relancer immédiatement) ; le retry auto suit en backoff.
+      _pulling = false; shareState.syncing = false; _emit();
+      const delay = Math.min(16000, 2000 * Math.pow(2, attempt));
+      clearTimeout(_pullRetry);
+      _pullRetry = setTimeout(() => pull(attempt + 1), delay);
+      return;
+    }
     shareState.error = null;
+    shareState.errorDetail = null;
+    clearTimeout(_pullRetry);
   } catch (e) {
+    try { console.error('[AlcoNote partage] pull', e); } catch (_) {}
     shareState.error = 'pull';
+    shareState.errorDetail = shareErrorMessage(e);
+    _pulling = false; shareState.syncing = false; _emit();
     const delay = Math.min(16000, 2000 * Math.pow(2, attempt));
     clearTimeout(_pullRetry);
-    _pullRetry = setTimeout(() => { _pulling = false; pull(attempt + 1); }, delay);
-    shareState.syncing = false; _emit();
+    _pullRetry = setTimeout(() => pull(attempt + 1), delay);
     return;
   }
   _pulling = false; shareState.syncing = false; _emit();
@@ -545,7 +582,10 @@ async function publishMyProfile() {
 const shareEngine = {
   state: shareState,
   isAvailable: () => shareState.available,
-  refreshNow: () => pull(),
+  // Le bouton « Rafraîchir » pousse aussi les boissons locales pas encore
+  // publiées (reconcile) avant de tirer celles des amis — auto-réparateur si
+  // un push avait échoué. Retourne le détail d'erreur éventuel (pour un toast).
+  refreshNow: async () => { await reconcile(); await pull(); return shareState.errorDetail; },
 
   async setDisplayName(name) {
     shareState.displayName = (name || '').trim();

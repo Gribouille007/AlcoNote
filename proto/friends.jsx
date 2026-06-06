@@ -179,6 +179,11 @@ function FriendsTab({ onOpenFriend }) {
 
   const hasGroup = s.enabled && !!s.groupId;
 
+  const onRefresh = async () => {
+    const err = await shareEngine.refreshNow();
+    if (err) Toast.show(err);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {hasGroup && (
@@ -189,9 +194,8 @@ function FriendsTab({ onOpenFriend }) {
           <div style={{ fontSize: 9.5, color: T.muted, letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: 500 }}>
             {s.syncing ? 'Synchronisation…' :
               (s.lastPullAt ? `Mis à jour ${fmtRelTime(s.lastPullAt)}` : 'Prêt')}
-            {s.error ? ' · hors ligne' : ''}
           </div>
-          <button type="button" onClick={() => shareEngine.refreshNow()} aria-label="Rafraîchir"
+          <button type="button" onClick={onRefresh} aria-label="Rafraîchir"
             disabled={s.syncing} style={{
               ...ghostButton, display: 'flex', alignItems: 'center', gap: 6,
               color: T.accent, fontSize: 12, fontWeight: 600, cursor: 'pointer',
@@ -200,6 +204,14 @@ function FriendsTab({ onOpenFriend }) {
             <SvgIcon icon={Ic.refresh} size={15} /> Rafraîchir
           </button>
         </div>
+      )}
+
+      {hasGroup && s.errorDetail && (
+        <div style={{
+          margin: '0 16px 8px', padding: '8px 12px', borderRadius: 10,
+          background: T.dangerSoftBg, border: `1px solid ${T.dangerSoftBorder}`,
+          color: T.accent2, fontSize: 11.5, lineHeight: 1.4,
+        }}>{s.errorDetail}</div>
       )}
 
       <div style={{ flex: 1, overflow: 'auto', padding: hasGroup ? '0 16px 120px' : '0 0 120px' }}>
