@@ -505,8 +505,10 @@ function SupabaseShareTransport(cfg) {
       const members = (m.data || []).map(mm => {
         const pr = profById[mm.user_id] || {};
         return {
+          // Le pseudo vit dans shared_profiles (l'utilisateur le change) ;
+          // group_members.display_name reste vide (rempli par aucune RPC).
           userId: mm.user_id,
-          displayName: mm.display_name,
+          displayName: pr.display_name || mm.display_name || '',
           shareBac: !!pr.share_bac,
           bacWeight: pr.bac_weight,
           bacGender: pr.bac_gender
@@ -727,7 +729,13 @@ async function publishMyProfile() {
       bacWeight: shareState.shareBac ? Number(settings.userWeight) || null : null,
       bacGender: shareState.shareBac ? settings.userGender || null : null
     });
-  } catch (e) {/* best-effort */}
+  } catch (e) {
+    // best-effort, mais on trace : un échec ici = pseudo/BAC non publiés
+    // (les amis te verraient « Anonyme »).
+    try {
+      console.warn('[AlcoNote partage] publication du profil échouée', e);
+    } catch (_) {}
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -792,8 +800,9 @@ const shareEngine = {
       inviteCode
     } = await getTransport().joinGroup((code || '').trim().toUpperCase());
     shareState.groupId = groupId;
-    shareState.inviteCode = inviteCode || code;
+    shareState.inviteCode = (inviteCode || code || '').trim().toUpperCase();
     await _sset('share.groupId', groupId);
+    if (shareState.inviteCode) await _sset('share.inviteCode', shareState.inviteCode);
     _emit();
     await publishMyProfile();
     await _savePubIndex({});
@@ -814,6 +823,7 @@ const shareEngine = {
       if (shareState.groupId) await _sset(`share.cursor.${shareState.groupId}`, null);
     }
     await _sset('share.groupId', null);
+    await _sset('share.inviteCode', null);
     await _savePubIndex({});
     shareState.groupId = null;
     shareState.inviteCode = null;

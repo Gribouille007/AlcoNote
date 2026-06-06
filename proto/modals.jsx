@@ -1464,7 +1464,7 @@ function SharingSection() {
     });
     if (!ok) return;
     try { await shareEngine.leaveGroup(); Toast.show('Groupe quitté'); }
-    catch (e) { Toast.show('Erreur'); }
+    catch (e) { Toast.show(shareErrorMessage(e)); }
   };
   const onCopyCode = async () => {
     if (!s.inviteCode) return;

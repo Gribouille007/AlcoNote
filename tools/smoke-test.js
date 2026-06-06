@@ -151,6 +151,8 @@ async function main() {
 
   check('Liste des amis: Léa visible', /Léa/.test(txt()));
   check('Liste des amis: Tom visible', /Tom/.test(txt()));
+  check('Onglet Amis: "Quitter le groupe" dans le pied de page', /Quitter le groupe/.test(txt()));
+  check("Onglet Amis: code d'invitation affiché dans le pied de page", /Code d'invitation/.test(txt()));
 
   // Pastille BAC : Léa (shareBac=true) → valeur numérique ; Tom → "—".
   const members = window.shareEngine.state.members.filter(m => m.userId !== window.shareEngine.state.userId);

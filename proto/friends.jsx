@@ -5,48 +5,81 @@
 // Context.Provider surchargés (ses boissons partagées au lieu des miennes) —
 // la carte (pas de GPS) et le BAC (si non partagé) sont masqués.
 
-// Petit avatar circulaire avec l'initiale du pseudo.
-function FriendAvatar({ name, size = 38 }) {
-  const letter = (name || '?').trim().charAt(0).toUpperCase() || '?';
-  return (
-    <div aria-hidden="true" style={{
-      width: size, height: size, borderRadius: 99, flexShrink: 0,
-      background: T.surface3, border: `1px solid ${T.rule}`,
-      display: 'grid', placeItems: 'center',
-      color: T.ink, fontFamily: fontSerif, fontStyle: 'italic', fontSize: size * 0.42,
-    }}>{letter}</div>
-  );
-}
-
-// Ligne d'un ami : avatar + pseudo + pastille BAC, cliquable.
+// Ligne d'un ami : pseudo + pastille BAC, cliquable.
 function FriendRow({ member, bac, onOpen }) {
   const press = usePressScale();
+  const name = member.displayName || 'Anonyme';
   return (
     <button type="button" {...press.handlers} onClick={() => onOpen(member)}
-      aria-label={`Voir les statistiques de ${member.displayName}`}
+      aria-label={`Voir les statistiques de ${name}`}
       style={{
         display: 'flex', alignItems: 'center', gap: 12, width: '100%',
-        padding: '12px 14px', background: 'transparent', border: 'none',
+        padding: '14px 16px', background: 'transparent', border: 'none',
         borderBottom: `1px solid ${T.rule}`, cursor: 'pointer',
         fontFamily: 'inherit', textAlign: 'left', color: T.ink,
         ...press.style,
       }}>
-      <FriendAvatar name={member.displayName} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontSize: 15, fontWeight: 600, color: T.ink,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>{member.displayName || 'Anonyme'}</div>
+        }}>{name}</div>
         <div style={{
           fontSize: 9.5, color: T.muted, letterSpacing: 0.3,
           textTransform: 'uppercase', marginTop: 2, fontWeight: 500,
         }}>{member.shareBac ? 'Alcoolémie en direct' : 'BAC non partagé'}</div>
       </div>
-      <BacPill bac={bac == null ? null : bac} ariaLabel={`Alcoolémie de ${member.displayName}`} />
+      <BacPill bac={bac == null ? null : bac} ariaLabel={`Alcoolémie de ${name}`} />
       <span style={{ display: 'flex', color: T.muted, marginLeft: 2 }}>
         <SvgIcon icon={Ic.chevR} size={18} />
       </span>
     </button>
+  );
+}
+
+// Pied de l'onglet quand on est dans un groupe : code d'invitation à partager
+// (copiable) + action « Quitter le groupe ».
+function GroupFooter() {
+  const s = useShare();
+  const onCopy = async () => {
+    if (!s.inviteCode) return;
+    try { await navigator.clipboard.writeText(s.inviteCode); Toast.show('Code copié'); }
+    catch (e) { Toast.show(s.inviteCode); }
+  };
+  const onLeave = async () => {
+    const ok = await Confirm.ask({
+      title: 'Quitter le groupe ?',
+      message: 'Tes données partagées seront retirées du groupe et tu ne verras plus celles des autres membres.',
+      confirmText: 'Quitter', danger: true,
+    });
+    if (!ok) return;
+    try { await shareEngine.leaveGroup(); Toast.show('Groupe quitté'); }
+    catch (e) { Toast.show(shareErrorMessage(e)); }
+  };
+  return (
+    <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {s.inviteCode && (
+        <button type="button" onClick={onCopy} aria-label="Copier le code d'invitation"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+            width: '100%', padding: '12px 16px', borderRadius: 12,
+            background: T.surface2, border: `1px solid ${T.rule}`, cursor: 'pointer',
+            fontFamily: 'inherit', textAlign: 'left',
+          }}>
+          <span style={{ fontSize: 9.5, color: T.muted, letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: 500 }}>
+            Code d'invitation
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: T.accent }}>
+            <span style={{ fontFamily: fontNum, fontSize: 16, letterSpacing: 1.5 }}>{s.inviteCode}</span>
+            <SvgIcon icon={Ic.copy} size={15} />
+          </span>
+        </button>
+      )}
+      <button type="button" onClick={onLeave} style={{
+        ...ghostButton, padding: '10px 12px', cursor: 'pointer',
+        color: T.accent2, fontSize: 13, fontWeight: 600, alignSelf: 'center',
+      }}>Quitter le groupe</button>
+    </div>
   );
 }
 
@@ -173,18 +206,11 @@ function FriendsTab({ onOpenFriend }) {
         {!hasGroup && <FriendsEmpty />}
 
         {hasGroup && members.length === 0 && (
-          <div style={{ padding: '32px 22px', textAlign: 'center' }}>
+          <div style={{ padding: '32px 22px 8px', textAlign: 'center' }}>
             <div style={{ fontSize: 14, color: T.ink, marginBottom: 8 }}>Aucun ami pour l'instant</div>
             <div style={{ fontSize: 12.5, color: T.muted, lineHeight: 1.6 }}>
-              Partage ton code d'invitation pour que tes amis te rejoignent.
+              Partage ton code d'invitation ci-dessous pour que tes amis te rejoignent.
             </div>
-            {s.inviteCode && (
-              <div style={{
-                marginTop: 16, display: 'inline-block', padding: '10px 16px', borderRadius: 12,
-                background: T.surface2, border: `1px solid ${T.rule}`,
-                fontFamily: fontNum, fontSize: 18, letterSpacing: 2, color: T.accent,
-              }}>{s.inviteCode}</div>
-            )}
           </div>
         )}
 
@@ -198,6 +224,8 @@ function FriendsTab({ onOpenFriend }) {
             ))}
           </div>
         )}
+
+        {hasGroup && <GroupFooter />}
       </div>
     </div>
   );
@@ -241,7 +269,6 @@ function FriendStatsView({ friend, onClose }) {
         }}>
           <SvgIcon icon={Ic.back} size={18} />
         </button>
-        <FriendAvatar name={friend.displayName} size={34} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontFamily: fontSerif, fontStyle: 'italic', fontSize: 19, color: T.ink,
@@ -270,4 +297,4 @@ function FriendStatsView({ friend, onClose }) {
   );
 }
 
-Object.assign(window, { FriendsTab, FriendStatsView, FriendAvatar, FriendRow });
+Object.assign(window, { FriendsTab, FriendStatsView, FriendRow, GroupFooter });

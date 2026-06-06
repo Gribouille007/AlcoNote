@@ -7,49 +7,25 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 // Context.Provider surchargés (ses boissons partagées au lieu des miennes) —
 // la carte (pas de GPS) et le BAC (si non partagé) sont masqués.
 
-// Petit avatar circulaire avec l'initiale du pseudo.
-function FriendAvatar({
-  name,
-  size = 38
-}) {
-  const letter = (name || '?').trim().charAt(0).toUpperCase() || '?';
-  return /*#__PURE__*/React.createElement("div", {
-    "aria-hidden": "true",
-    style: {
-      width: size,
-      height: size,
-      borderRadius: 99,
-      flexShrink: 0,
-      background: T.surface3,
-      border: `1px solid ${T.rule}`,
-      display: 'grid',
-      placeItems: 'center',
-      color: T.ink,
-      fontFamily: fontSerif,
-      fontStyle: 'italic',
-      fontSize: size * 0.42
-    }
-  }, letter);
-}
-
-// Ligne d'un ami : avatar + pseudo + pastille BAC, cliquable.
+// Ligne d'un ami : pseudo + pastille BAC, cliquable.
 function FriendRow({
   member,
   bac,
   onOpen
 }) {
   const press = usePressScale();
+  const name = member.displayName || 'Anonyme';
   return /*#__PURE__*/React.createElement("button", _extends({
     type: "button"
   }, press.handlers, {
     onClick: () => onOpen(member),
-    "aria-label": `Voir les statistiques de ${member.displayName}`,
+    "aria-label": `Voir les statistiques de ${name}`,
     style: {
       display: 'flex',
       alignItems: 'center',
       gap: 12,
       width: '100%',
-      padding: '12px 14px',
+      padding: '14px 16px',
       background: 'transparent',
       border: 'none',
       borderBottom: `1px solid ${T.rule}`,
@@ -59,8 +35,6 @@ function FriendRow({
       color: T.ink,
       ...press.style
     }
-  }), /*#__PURE__*/React.createElement(FriendAvatar, {
-    name: member.displayName
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
@@ -75,7 +49,7 @@ function FriendRow({
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap'
     }
-  }, member.displayName || 'Anonyme'), /*#__PURE__*/React.createElement("div", {
+  }, name), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9.5,
       color: T.muted,
@@ -86,7 +60,7 @@ function FriendRow({
     }
   }, member.shareBac ? 'Alcoolémie en direct' : 'BAC non partagé')), /*#__PURE__*/React.createElement(BacPill, {
     bac: bac == null ? null : bac,
-    ariaLabel: `Alcoolémie de ${member.displayName}`
+    ariaLabel: `Alcoolémie de ${name}`
   }), /*#__PURE__*/React.createElement("span", {
     style: {
       display: 'flex',
@@ -97,6 +71,98 @@ function FriendRow({
     icon: Ic.chevR,
     size: 18
   })));
+}
+
+// Pied de l'onglet quand on est dans un groupe : code d'invitation à partager
+// (copiable) + action « Quitter le groupe ».
+function GroupFooter() {
+  const s = useShare();
+  const onCopy = async () => {
+    if (!s.inviteCode) return;
+    try {
+      await navigator.clipboard.writeText(s.inviteCode);
+      Toast.show('Code copié');
+    } catch (e) {
+      Toast.show(s.inviteCode);
+    }
+  };
+  const onLeave = async () => {
+    const ok = await Confirm.ask({
+      title: 'Quitter le groupe ?',
+      message: 'Tes données partagées seront retirées du groupe et tu ne verras plus celles des autres membres.',
+      confirmText: 'Quitter',
+      danger: true
+    });
+    if (!ok) return;
+    try {
+      await shareEngine.leaveGroup();
+      Toast.show('Groupe quitté');
+    } catch (e) {
+      Toast.show(shareErrorMessage(e));
+    }
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 18,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10
+    }
+  }, s.inviteCode && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: onCopy,
+    "aria-label": "Copier le code d'invitation",
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      width: '100%',
+      padding: '12px 16px',
+      borderRadius: 12,
+      background: T.surface2,
+      border: `1px solid ${T.rule}`,
+      cursor: 'pointer',
+      fontFamily: 'inherit',
+      textAlign: 'left'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 9.5,
+      color: T.muted,
+      letterSpacing: 0.3,
+      textTransform: 'uppercase',
+      fontWeight: 500
+    }
+  }, "Code d'invitation"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      color: T.accent
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: fontNum,
+      fontSize: 16,
+      letterSpacing: 1.5
+    }
+  }, s.inviteCode), /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.copy,
+    size: 15
+  }))), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: onLeave,
+    style: {
+      ...ghostButton,
+      padding: '10px 12px',
+      cursor: 'pointer',
+      color: T.accent2,
+      fontSize: 13,
+      fontWeight: 600,
+      alignSelf: 'center'
+    }
+  }, "Quitter le groupe"));
 }
 
 // État vide / d'amorçage : créer ou rejoindre un groupe.
@@ -344,7 +410,7 @@ function FriendsTab({
     }
   }, !hasGroup && /*#__PURE__*/React.createElement(FriendsEmpty, null), hasGroup && members.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
-      padding: '32px 22px',
+      padding: '32px 22px 8px',
       textAlign: 'center'
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -359,20 +425,7 @@ function FriendsTab({
       color: T.muted,
       lineHeight: 1.6
     }
-  }, "Partage ton code d'invitation pour que tes amis te rejoignent."), s.inviteCode && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 16,
-      display: 'inline-block',
-      padding: '10px 16px',
-      borderRadius: 12,
-      background: T.surface2,
-      border: `1px solid ${T.rule}`,
-      fontFamily: fontNum,
-      fontSize: 18,
-      letterSpacing: 2,
-      color: T.accent
-    }
-  }, s.inviteCode)), hasGroup && members.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, "Partage ton code d'invitation ci-dessous pour que tes amis te rejoignent.")), hasGroup && members.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.surface2,
       border: `1px solid ${T.rule}`,
@@ -384,7 +437,7 @@ function FriendsTab({
     member: m,
     bac: bacMap[m.userId],
     onOpen: onOpenFriend
-  })))));
+  }))), hasGroup && /*#__PURE__*/React.createElement(GroupFooter, null)));
 }
 
 // Libellé relatif court ("à l'instant", "il y a 8 min", "il y a 2 h").
@@ -451,10 +504,7 @@ function FriendStatsView({
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.back,
     size: 18
-  })), /*#__PURE__*/React.createElement(FriendAvatar, {
-    name: friend.displayName,
-    size: 34
-  }), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       minWidth: 0
@@ -502,6 +552,6 @@ function FriendStatsView({
 Object.assign(window, {
   FriendsTab,
   FriendStatsView,
-  FriendAvatar,
-  FriendRow
+  FriendRow,
+  GroupFooter
 });

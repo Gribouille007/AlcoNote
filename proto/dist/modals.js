@@ -2392,7 +2392,7 @@ function SharingSection() {
       await shareEngine.leaveGroup();
       Toast.show('Groupe quitté');
     } catch (e) {
-      Toast.show('Erreur');
+      Toast.show(shareErrorMessage(e));
     }
   };
   const onCopyCode = async () => {
