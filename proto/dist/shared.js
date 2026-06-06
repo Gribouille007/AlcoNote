@@ -125,7 +125,6 @@ const fontNum = '"Geist Mono", ui-monospace, monospace';
 const MOTION = Object.freeze({
   fast: 180,
   base: 220,
-  slow: 320,
   stagger: 38,
   // ms entre deux items d'une liste
   ease: 'cubic-bezier(.2,.6,.2,1)',
@@ -1987,27 +1986,6 @@ function staggerStyle(index = 0, opts = {}) {
   };
 }
 
-// Wrapper mince autour de staggerStyle (pour les conteneurs neufs ;
-// pour les lignes mémoïsées, préférer le spread direct de staggerStyle).
-function Reveal({
-  index = 0,
-  as = 'div',
-  style,
-  children,
-  ...rest
-}) {
-  const reduced = useReducedMotion();
-  const Tag = as;
-  return /*#__PURE__*/React.createElement(Tag, _extends({}, rest, {
-    style: {
-      ...style,
-      ...staggerStyle(index, {
-        reduced
-      })
-    }
-  }), children);
-}
-
 // Feedback tactile réutilisable : léger scale au pointerdown. Contourne
 // l'impossibilité d'exprimer :active en style inline. Expose `pressed`
 // + press/release pour composer avec des éléments qui gèrent déjà leurs
@@ -2036,30 +2014,12 @@ function usePressScale(opts = {}) {
     }
   };
 }
-function Pressable({
-  as = 'div',
-  style,
-  children,
-  scale,
-  ...rest
-}) {
-  const press = usePressScale({
-    scale
-  });
-  const Tag = as;
-  return /*#__PURE__*/React.createElement(Tag, _extends({}, press.handlers, rest, {
-    style: {
-      ...style,
-      ...press.style
-    }
-  }), children);
-}
 
 // Repli/dépli à hauteur animée via l'astuce grid-template-rows 0fr→1fr
 // (aucune mesure JS). Le contenu est démonté une fois le repli terminé
 // (perf : un jour d'historique replié ne garde pas ses lignes montées).
-// `expanded` est décalé d'une frame à l'ouverture pour que la transition
-// 0fr→1fr démarre bien avec le contenu déjà monté.
+// `expanded` est décalé de deux frames à l'ouverture pour que la
+// transition 0fr→1fr démarre bien avec le contenu déjà peint.
 function Collapse({
   open,
   children,
@@ -2070,16 +2030,28 @@ function Collapse({
   const [render, setRender] = React.useState(open);
   const [expanded, setExpanded] = React.useState(open);
   React.useEffect(() => {
-    if (open) {
-      setRender(true);
-      const r = requestAnimationFrame(() => setExpanded(true));
-      return () => cancelAnimationFrame(r);
-    }
-    setExpanded(false);
+    // Reduced-motion : pas d'anim, on synchronise l'état et on sort
+    // (aucun rAF/timeout laissé en suspens).
     if (reduced) {
-      setRender(false);
+      setRender(open);
+      setExpanded(open);
       return;
     }
+    if (open) {
+      // Monte le contenu, puis bascule en 1fr à la frame SUIVANTE : le
+      // double rAF garantit que l'état 0fr (avec contenu) est peint avant
+      // la transition, sinon le contenu peut « pop » sans animer.
+      setRender(true);
+      let r2 = 0;
+      const r1 = requestAnimationFrame(() => {
+        r2 = requestAnimationFrame(() => setExpanded(true));
+      });
+      return () => {
+        cancelAnimationFrame(r1);
+        cancelAnimationFrame(r2);
+      };
+    }
+    setExpanded(false);
     const t = setTimeout(() => setRender(false), duration);
     return () => clearTimeout(t);
   }, [open, reduced, duration]);
@@ -2502,9 +2474,7 @@ Object.assign(window, {
   MOTION,
   useReducedMotion,
   staggerStyle,
-  Reveal,
   usePressScale,
-  Pressable,
   Collapse,
   useSWVersion,
   inputBaseStyle,
