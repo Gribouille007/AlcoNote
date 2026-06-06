@@ -85,6 +85,7 @@ function AppShell() {
   const [toast, setToast] = React.useState(null);
   const [catQuery, setCatQuery] = React.useState('');
   const [catOpen, setCatOpen] = React.useState(null);
+  const [openFriend, setOpenFriend] = React.useState(null);
 
   const { drinks } = useDrinks();
   const ratings = useRatings();
@@ -119,6 +120,8 @@ function AppShell() {
   // category grid instead of leaving the app. Sheets/dialogs register
   // their own back handlers via SheetOverlay / ConfirmHost.
   useBackButton(!!catOpen, React.useCallback(() => setCatOpen(null), []));
+  // Android Back closes an open friend's stats view before leaving the app.
+  useBackButton(!!openFriend, React.useCallback(() => setOpenFriend(null), []));
 
   const directAdd = React.useCallback(async (family) => {
     try {
@@ -206,6 +209,11 @@ function AppShell() {
             <StatsTab />
           </div>
         )}
+        {activated.has('friends') && (
+          <div style={tabContainer('friends')}>
+            <FriendsTab onOpenFriend={setOpenFriend} />
+          </div>
+        )}
       </div>
 
       <Fab onClick={() => { setPrefill(null); setAdding(true); }} />
@@ -230,6 +238,9 @@ function AppShell() {
       )}
       {editFamily && (
         <EditFamilySheet key={editFamily.id} family={editFamily} onClose={() => setEditFamily(null)} />
+      )}
+      {openFriend && (
+        <FriendStatsView key={openFriend.userId} friend={openFriend} onClose={() => setOpenFriend(null)} />
       )}
 
       <ConfirmHost />
@@ -302,6 +313,7 @@ function AppHeader({ tab, onMenu }) {
     categories: 'Catégories',
     history: 'Historique',
     stats: 'Statistiques',
+    friends: 'Amis',
   };
   const today = new Date();
   const dateStr = `${FR_DAYS_LONG[today.getDay()]} ${today.getDate()} ${FR_MONTHS_LONG[today.getMonth()]}`;
@@ -336,26 +348,7 @@ function AppHeader({ tab, onMenu }) {
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{dateStr}</div>
       </div>
-      <div aria-label="Taux d'alcoolémie" title={`${bac} mg/L`} style={{
-        display: 'flex', alignItems: 'center', gap: 5,
-        padding: '6px 10px 6px 8px', borderRadius: 12,
-        background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
-        minWidth: 48, maxWidth: 86, justifyContent: 'center',
-        opacity: bac > 0 ? 1 : 0.7,
-      }}>
-        <div style={{
-          width: 6, height: 6, borderRadius: 99, background: T.accent,
-          boxShadow: bac > 0 ? `0 0 8px ${T.accent}` : 'none',
-          flexShrink: 0,
-        }}/>
-        <span style={{
-          color: T.accent, fontSize: 11, fontWeight: 600,
-          fontFamily: fontNum, letterSpacing: 0,
-          fontVariantNumeric: 'tabular-nums',
-          overflow: 'hidden', textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap', minWidth: 0, flex: '0 1 auto',
-        }}>{bac}</span>
-      </div>
+      <BacPill bac={bac} />
     </div>
   );
 }
@@ -390,6 +383,7 @@ function BottomNav({ tab, onChange }) {
     { id: 'categories', label: 'Catégories', icon: Ic.grid },
     { id: 'history',    label: 'Historique', icon: Ic.clockArrow },
     { id: 'stats',      label: 'Stats',      icon: Ic.bars },
+    { id: 'friends',    label: 'Amis',       icon: Ic.users },
   ];
   const activeIdx = Math.max(0, items.findIndex(it => it.id === tab));
   return (

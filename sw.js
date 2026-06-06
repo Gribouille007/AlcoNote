@@ -5,9 +5,9 @@
 // source of truth for the displayed version: the GET_VERSION handler returns
 // it and `useSWVersion()` extracts the `vX.Y.Z` suffix. STATIC_CACHE /
 // DYNAMIC_CACHE name the actual Cache Storage buckets.
-const CACHE_NAME = 'alconote-v3.21.0';
-const STATIC_CACHE = 'alconote-static-v3.21.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v3.21.0';
+const CACHE_NAME = 'alconote-v3.22.2';
+const STATIC_CACHE = 'alconote-static-v3.22.2';
+const DYNAMIC_CACHE = 'alconote-dynamic-v3.22.2';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -25,6 +25,7 @@ const STATIC_FILES = [
     '/js/database.js',
     '/js/scanner/product-lookup.js',
     '/js/scanner/camera-scanner.js',
+    '/js/share-config.js',
     // React UI (precompiled JSX)
     '/proto/dist/shared.js',
     '/proto/dist/data.js',
@@ -32,6 +33,8 @@ const STATIC_FILES = [
     '/proto/dist/categories.js',
     '/proto/dist/history.js',
     '/proto/dist/stats.js',
+    '/proto/dist/share.js',
+    '/proto/dist/friends.js',
     '/proto/dist/modals.js',
     '/proto/dist/app.js',
     // External CDN resources
@@ -120,7 +123,14 @@ self.addEventListener('fetch', (event) => {
     if (!request.url.startsWith('http')) {
         return;
     }
-    
+
+    // Friends sync (Supabase): never cache — always hit the network directly so
+    // shared-data deltas and auth tokens are never served stale. Returning
+    // without respondWith lets the browser handle the request normally.
+    if (url.hostname.endsWith('supabase.co')) {
+        return;
+    }
+
     // In dev, always prefer network-first for same-origin to keep assets fresh
     if (IS_DEV && request.url.startsWith(self.location.origin)) {
         event.respondWith(networkFirst(request));

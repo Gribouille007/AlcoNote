@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AlcoNote">
 
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; img-src 'self' data: https: blob:; connect-src 'self' https://world.openfoodfacts.org https://nominatim.openstreetmap.org https://api.upcitemdb.com https://api.barcodelookup.com https://api.timezonedb.com https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; media-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; img-src 'self' data: https: blob:; connect-src 'self' https://world.openfoodfacts.org https://nominatim.openstreetmap.org https://api.upcitemdb.com https://api.barcodelookup.com https://api.timezonedb.com https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://cdn.jsdelivr.net https://*.supabase.co; font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; media-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:;">
   <meta http-equiv="X-Content-Type-Options" content="nosniff">
   <meta http-equiv="X-Frame-Options" content="DENY">
 
@@ -145,6 +145,9 @@
   <script defer src="js/database.js"></script>
   <script defer src="js/scanner/product-lookup.js"></script>
   <script defer src="js/scanner/camera-scanner.js"></script>
+  <!-- Friends-sharing config (edited by the user; defaults to 'mock'). Must
+       run before proto/dist/share.js, which reads window.SHARE_CONFIG. -->
+  <script defer src="js/share-config.js"></script>
 
   <!-- Proto UI (precompiled from proto/*.jsx → proto/dist/*.js) -->
   <script defer src="proto/dist/shared.js"></script>
@@ -153,6 +156,10 @@
   <script defer src="proto/dist/categories.js"></script>
   <script defer src="proto/dist/history.js"></script>
   <script defer src="proto/dist/stats.js"></script>
+  <!-- Friends sharing: share.js after stats.js (uses computeBacOverTime) and
+       before app.js; friends.js after share.js; modals.js uses shareEngine. -->
+  <script defer src="proto/dist/share.js"></script>
+  <script defer src="proto/dist/friends.js"></script>
   <script defer src="proto/dist/modals.js"></script>
   <script defer src="proto/dist/app.js"></script>
 

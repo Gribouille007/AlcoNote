@@ -13,16 +13,23 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 // places.
 
 const STATS_COLLAPSED_KEY = 'alconote.stats.collapsed';
-function loadCollapsedSections() {
+
+// `scope` namespaces the persisted key so a friend's StatsTab (storageScope
+// 'friend:<id>') keeps its own collapsed/period state without clobbering the
+// user's own Stats tab. Empty scope → the original key (unchanged behaviour).
+function _statsKey(base, scope) {
+  return scope ? `${base}.${scope}` : base;
+}
+function loadCollapsedSections(scope) {
   try {
-    return new Set(JSON.parse(localStorage.getItem(STATS_COLLAPSED_KEY) || '[]'));
+    return new Set(JSON.parse(localStorage.getItem(_statsKey(STATS_COLLAPSED_KEY, scope)) || '[]'));
   } catch {
     return new Set();
   }
 }
-function saveCollapsedSections(set) {
+function saveCollapsedSections(set, scope) {
   try {
-    localStorage.setItem(STATS_COLLAPSED_KEY, JSON.stringify([...set]));
+    localStorage.setItem(_statsKey(STATS_COLLAPSED_KEY, scope), JSON.stringify([...set]));
   } catch {}
 }
 
@@ -429,24 +436,32 @@ function fmtBourreTime(ms) {
   return h === 0 ? `${days}j` : `${days}j ${h}h`;
 }
 // ── Main StatsTab ─────────────────────────────────────────────────
-function StatsTab() {
+// `storageScope` namespaces the persisted period/collapsed state; `hideMap` /
+// `hideBac` drop the sections that have no shared data for a friend's view
+// (no GPS shared → no map; BAC only when the friend opted in to share body
+// params). Defaults keep the user's own Stats tab identical.
+function StatsTab({
+  storageScope = '',
+  hideMap = false,
+  hideBac = false
+} = {}) {
   const {
     drinks
   } = useDrinks();
   const settings = useSettings();
-  const [period, setPeriod] = React.useState(() => localStorage.getItem('alconote.stats.period') || 'week');
+  const [period, setPeriod] = React.useState(() => localStorage.getItem(_statsKey('alconote.stats.period', storageScope)) || 'week');
   const [anchor, setAnchor] = React.useState(() => new Date());
-  const [collapsed, setCollapsed] = React.useState(loadCollapsedSections);
+  const [collapsed, setCollapsed] = React.useState(() => loadCollapsedSections(storageScope));
   React.useEffect(() => {
     try {
-      localStorage.setItem('alconote.stats.period', period);
+      localStorage.setItem(_statsKey('alconote.stats.period', storageScope), period);
     } catch {}
-  }, [period]);
+  }, [period, storageScope]);
   const toggleSection = id => {
     setCollapsed(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);else next.add(id);
-      saveCollapsedSections(next);
+      saveCollapsedSections(next, storageScope);
       return next;
     });
   };
@@ -535,7 +550,7 @@ function StatsTab() {
     period: period,
     anchor: anchor,
     onShift: d => setAnchor(shiftAnchor(period, anchor, d))
-  }), /*#__PURE__*/React.createElement(GeneralSection, sp), /*#__PURE__*/React.createElement(TemporalSection, sp), /*#__PURE__*/React.createElement(CategorySection, sp), /*#__PURE__*/React.createElement(TopDrinksSection, sp), /*#__PURE__*/React.createElement(BACSection, sp), /*#__PURE__*/React.createElement(MapSection, sp), /*#__PURE__*/React.createElement(TrendsSection, sp), /*#__PURE__*/React.createElement(AdvancedSection, sp)));
+  }), /*#__PURE__*/React.createElement(GeneralSection, sp), /*#__PURE__*/React.createElement(TemporalSection, sp), /*#__PURE__*/React.createElement(CategorySection, sp), /*#__PURE__*/React.createElement(TopDrinksSection, sp), !hideBac && /*#__PURE__*/React.createElement(BACSection, sp), !hideMap && /*#__PURE__*/React.createElement(MapSection, sp), /*#__PURE__*/React.createElement(TrendsSection, sp), /*#__PURE__*/React.createElement(AdvancedSection, sp)));
 }
 function PeriodSwitcher({
   period,

@@ -1,0 +1,1007 @@
+/* AUTO-GENERATED from proto/share.jsx — do not edit by hand. */
+// share.jsx — Partage entre amis (local-first).
+//
+// Principe : la PWA reste la source de vérité locale (Dexie, intact). Ce module
+//  1) publie un sous-ensemble MINIMISÉ des boissons de l'utilisateur (sans GPS)
+//     vers un backend de groupe, et
+//  2) recopie les boissons partagées des autres membres dans la table Dexie
+//     `sharedPool` (LECTURE SEULE) — jamais dans les tables locales.
+// Les stats / le BAC d'un ami sont recalculés EN LOCAL depuis ce pool.
+//
+// Pas de socket permanente : pull à l'ouverture + auto toutes les 10 min au
+// premier plan + bouton « rafraîchir ». Le « live » du BAC est un recalcul
+// local contre l'horloge (cf. useFriendsBac, tick 60 s).
+//
+// Le backend est isolé derrière l'interface `ShareTransport` : MockShareTransport
+// (local, pour développer/tester sans réseau) ou SupabaseShareTransport (réel).
+
+const SHARE_CFG = Object.assign({
+  TRANSPORT: 'mock',
+  SUPABASE_URL: '',
+  SUPABASE_ANON_KEY: '',
+  PULL_INTERVAL_MS: 10 * 60 * 1000
+}, typeof window !== 'undefined' && window.SHARE_CONFIG || {});
+
+// ── petit bus de notification pour l'UI de partage ────────────────────────
+const shareBus = (() => {
+  const subs = new Set();
+  return {
+    sub(fn) {
+      subs.add(fn);
+      return () => subs.delete(fn);
+    },
+    bump() {
+      subs.forEach(fn => {
+        try {
+          fn();
+        } catch (e) {}
+      });
+    }
+  };
+})();
+function _uid() {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  } catch (e) {}
+  return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+// Code d'invitation court et lisible (évite I/O/0/1).
+function _inviteCode() {
+  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i = 0; i < 8; i++) s += A[Math.floor(Math.random() * A.length)];
+  return s.slice(0, 4) + '-' + s.slice(4);
+}
+
+// Instant absolu (epoch ms) depuis la date/heure murale locale d'une boisson.
+function tsFromDateTime(date, time) {
+  const t = new Date(`${date}T${time || '00:00'}`).getTime();
+  return Number.isFinite(t) ? t : Date.now();
+}
+
+// ── État partagé (lu par l'UI via useShare) ───────────────────────────────
+const shareState = {
+  ready: false,
+  available: SHARE_CFG.TRANSPORT === 'mock' || SHARE_CFG.TRANSPORT === 'supabase' && !!SHARE_CFG.SUPABASE_URL,
+  transportKind: SHARE_CFG.TRANSPORT,
+  userId: null,
+  displayName: '',
+  enabled: false,
+  shareBac: false,
+  groupId: null,
+  inviteCode: null,
+  members: [],
+  // [{ userId, displayName, shareBac, bacWeight, bacGender }]
+  lastPullAt: 0,
+  syncing: false,
+  error: null
+};
+function _emit() {
+  shareBus.bump();
+}
+
+// Traduit une erreur de transport (souvent Supabase) en message court et
+// ACTIONNABLE pour l'utilisateur, et log l'erreur complète en console pour le
+// debug. Les deux pièges classiques après setup : auth anonyme non activée et
+// schéma SQL non exécuté (fonctions RPC absentes).
+function shareErrorMessage(e) {
+  try {
+    console.error('[AlcoNote partage]', e);
+  } catch (_) {}
+  const msg = String(e && (e.message || e.error_description || e.error) || e || '').toLowerCase();
+  const code = (e && (e.code || e.status)) != null ? String(e.code || e.status) : '';
+  if (/anonymous|signups? not allowed|sign-?ins? are disabled/.test(msg)) return "Active « Anonymous sign-ins » dans Supabase (Auth › Providers)";
+  if (/could not find the function|function .*does not exist|pgrst202|schema cache/.test(msg) || code === '404') return "Exécute supabase/schema.sql dans Supabase (SQL Editor)";
+  if (/sdk supabase|chargement sdk/.test(msg)) return "SDK Supabase injoignable (vérifie ta connexion / CSP)";
+  if (/failed to fetch|networkerror|network request failed/.test(msg)) return "Réseau indisponible — réessaie";
+  if (/invalid api key|jwt|apikey|401/.test(msg) || code === '401') return "Clé Supabase invalide (vérifie share-config.js)";
+  if (/invalid invite|invite/.test(msg)) return "Code d'invitation invalide";
+  return "Échec — voir la console pour le détail";
+}
+
+// ── helpers DB settings (écriture directe, sans bump global 'settings') ────
+async function _sget(key) {
+  const db = await waitForDb();
+  return db ? db.getSetting(key) : null;
+}
+async function _sset(key, val) {
+  const db = await waitForDb();
+  if (db) await db.setSetting(key, val);
+}
+
+// Index des enregistrements déjà publiés : uid → { u: updatedAt(ms), r: rating }.
+// Permet de ne ré-émettre que ce qui a changé et de détecter les suppressions.
+async function _loadPubIndex() {
+  try {
+    return JSON.parse((await _sget('share.pubindex')) || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+async function _savePubIndex(idx) {
+  await _sset('share.pubindex', JSON.stringify(idx));
+}
+
+// Carte canonique nom→note (comme RatingsProvider, mais one-shot).
+async function _ratingsMap(db) {
+  const out = {};
+  try {
+    const all = await db.getAllRatings();
+    for (const r of all) {
+      const k = ratingKey(r.drinkName);
+      const t = +r.updatedAt || 0;
+      if (out[k] == null || t >= (out[k]._t || 0)) out[k] = {
+        v: r.rating,
+        _t: t
+      };
+    }
+  } catch (e) {}
+  const flat = {};
+  for (const k in out) flat[k] = out[k].v;
+  return flat;
+}
+
+// Boisson locale → enregistrement partagé minimisé (sans GPS / barcode).
+function localDrinkToShared(d, rating) {
+  return {
+    uid: d.uid,
+    groupId: shareState.groupId,
+    authorId: shareState.userId,
+    tsUtc: tsFromDateTime(d.date, d.time),
+    date: d.date,
+    time: d.time,
+    name: d.name,
+    quantity: d.quantity,
+    unit: d.unit,
+    quantityInCL: d.quantityInCL,
+    alcoholContent: d.alcoholContent || 0,
+    category: d.category || 'Autre',
+    rating: rating || 0,
+    updatedAt: +new Date(d.updatedAt || Date.now()) || Date.now(),
+    deleted: false
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  Transports
+// ════════════════════════════════════════════════════════════════════════
+
+// Mock : « serveur » en localStorage. Sur un seul navigateur il ne synchronise
+// pas réellement entre appareils, mais il SEED des amis fictifs pour développer
+// et tester l'onglet Amis (liste, pastilles BAC live, vue stats d'un ami).
+function MockShareTransport() {
+  const KEY = 'alconote.mock.server';
+  const read = () => {
+    try {
+      return JSON.parse(localStorage.getItem(KEY) || 'null');
+    } catch {
+      return null;
+    }
+  };
+  const write = v => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(v));
+    } catch {}
+  };
+  function seed(groupId) {
+    const now = Date.now();
+    const min = 60000,
+      hr = 3600000,
+      day = 24 * hr;
+    let n = 0;
+    const mk = (author, name, qty, unit, cl, abv, cat, rating, ms) => {
+      const d = new Date(ms);
+      return {
+        uid: `mock-${author}-${ms}-${(n++).toString(36)}`,
+        groupId,
+        authorId: author,
+        tsUtc: ms,
+        date: localDate(d),
+        time: localTime(d),
+        name,
+        quantity: qty,
+        unit,
+        quantityInCL: cl,
+        alcoholContent: abv,
+        category: cat,
+        rating,
+        updatedAt: ms,
+        deleted: false
+      };
+    };
+    const lea = [mk('mock-lea', 'La Chouffe', 33, 'cL', 33, 8, 'Bière', 5, now - 35 * min), mk('mock-lea', 'La Chouffe', 33, 'cL', 33, 8, 'Bière', 5, now - 75 * min), mk('mock-lea', 'Spritz', 1, 'EcoCup', 25, 11, 'Cocktail', 4, now - 2 * hr - 20 * min), mk('mock-lea', 'Côtes du Rhône', 12, 'cL', 12, 13, 'Vin', 4, now - 2 * day), mk('mock-lea', 'Mojito', 1, 'EcoCup', 25, 10, 'Cocktail', 3, now - 5 * day), mk('mock-lea', 'La Chouffe', 33, 'cL', 33, 8, 'Bière', 5, now - 6 * day - 2 * hr)];
+    const tom = [mk('mock-tom', 'IPA Brewdog', 50, 'cL', 50, 6.5, 'Bière', 4, now - 18 * min), mk('mock-tom', 'Whisky', 4, 'cL', 4, 40, 'Spiritueux', 5, now - 3 * hr), mk('mock-tom', 'IPA Brewdog', 50, 'cL', 50, 6.5, 'Bière', 4, now - 1 * day - 1 * hr), mk('mock-tom', 'Heineken', 25, 'cL', 25, 5, 'Bière', 2, now - 4 * day), mk('mock-tom', 'Rhum', 4, 'cL', 4, 40, 'Spiritueux', 3, now - 8 * day)];
+    return {
+      groupId,
+      members: [{
+        userId: 'mock-lea',
+        displayName: 'Léa',
+        shareBac: true,
+        bacWeight: 62,
+        bacGender: 'female'
+      }, {
+        userId: 'mock-tom',
+        displayName: 'Tom',
+        shareBac: false,
+        bacWeight: null,
+        bacGender: null
+      }],
+      drinks: [...lea, ...tom],
+      mine: []
+    };
+  }
+  return {
+    kind: 'mock',
+    async ensureIdentity() {
+      let id = localStorage.getItem('alconote.mock.uid');
+      if (!id) {
+        id = _uid();
+        localStorage.setItem('alconote.mock.uid', id);
+      }
+      return {
+        userId: id
+      };
+    },
+    async setProfile() {/* no-op en mock (profil local) */},
+    async createGroup() {
+      const groupId = 'grp-' + _uid().slice(0, 8);
+      write(seed(groupId));
+      return {
+        groupId,
+        inviteCode: _inviteCode()
+      };
+    },
+    async joinGroup(/* code */
+    ) {
+      // En mock on (re)seed le même groupe de démonstration.
+      let srv = read();
+      if (!srv) {
+        srv = seed('grp-demo');
+        write(srv);
+      }
+      return {
+        groupId: srv.groupId,
+        inviteCode: _inviteCode()
+      };
+    },
+    async leaveGroup() {
+      try {
+        localStorage.removeItem(KEY);
+      } catch {}
+    },
+    async listMembers() {
+      const srv = read();
+      return srv ? srv.members : [];
+    },
+    async pushUpserts(records) {
+      const srv = read();
+      if (!srv) return;
+      const byUid = new Map(srv.mine.map(r => [r.uid, r]));
+      for (const r of records) byUid.set(r.uid, r);
+      srv.mine = [...byUid.values()];
+      write(srv);
+    },
+    async pushTombstones(uids) {
+      const srv = read();
+      if (!srv) return;
+      const set = new Set(uids);
+      srv.mine = srv.mine.map(r => set.has(r.uid) ? {
+        ...r,
+        deleted: true,
+        updatedAt: Date.now()
+      } : r);
+      write(srv);
+    },
+    async pullSince(cursor) {
+      const srv = read();
+      if (!srv) return {
+        drinks: [],
+        profiles: [],
+        members: [],
+        cursor: cursor || 0
+      };
+      const all = [...srv.drinks, ...srv.mine];
+      const fresh = all.filter(r => (r.updatedAt || 0) > (cursor || 0));
+      const newCursor = all.reduce((m, r) => Math.max(m, r.updatedAt || 0), cursor || 0);
+      return {
+        drinks: fresh,
+        profiles: srv.members,
+        members: srv.members,
+        cursor: newCursor
+      };
+    },
+    async exportRecovery() {
+      return {
+        kind: 'mock',
+        uid: localStorage.getItem('alconote.mock.uid')
+      };
+    },
+    async importRecovery(blob) {
+      if (blob && blob.uid) localStorage.setItem('alconote.mock.uid', blob.uid);
+    }
+  };
+}
+
+// Charge le SDK Supabase à la demande (zéro coût en mode mock). jsdelivr est
+// déjà autorisé par la CSP script-src.
+let _sdkPromise = null;
+function ensureSupabaseSdk() {
+  if (window.supabase && window.supabase.createClient) return Promise.resolve();
+  if (_sdkPromise) return _sdkPromise;
+  _sdkPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => {
+      _sdkPromise = null;
+      reject(new Error('Chargement SDK Supabase échoué'));
+    };
+    document.head.appendChild(s);
+  });
+  return _sdkPromise;
+}
+
+// Supabase : REST/PostgREST + auth anonyme via le SDK officiel (chargé à la
+// demande). N'active PAS le Realtime — on reste en pull (sobriété batterie).
+function SupabaseShareTransport(cfg) {
+  let client = null;
+  async function ensureClient() {
+    if (!client) {
+      await ensureSupabaseSdk();
+      client = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true
+        }
+      });
+    }
+    return client;
+  }
+  return {
+    kind: 'supabase',
+    async ensureIdentity() {
+      const sb = await ensureClient();
+      let {
+        data
+      } = await sb.auth.getSession();
+      if (!data || !data.session) {
+        const res = await sb.auth.signInAnonymously();
+        if (res.error) throw res.error;
+        data = res.data;
+      }
+      return {
+        userId: (data.session || data).user.id
+      };
+    },
+    async setProfile(p) {
+      const sb = await ensureClient();
+      const {
+        error
+      } = await sb.from('shared_profiles').upsert({
+        user_id: p.userId,
+        group_id: p.groupId,
+        display_name: p.displayName,
+        share_enabled: p.shareEnabled,
+        share_bac: p.shareBac,
+        bac_weight: p.shareBac ? p.bacWeight : null,
+        bac_gender: p.shareBac ? p.bacGender : null,
+        updated_at: Date.now()
+      }, {
+        onConflict: 'user_id,group_id'
+      });
+      if (error) throw error;
+    },
+    async createGroup() {
+      const sb = await ensureClient();
+      const {
+        data,
+        error
+      } = await sb.rpc('create_group');
+      if (error) throw error;
+      return {
+        groupId: data.group_id,
+        inviteCode: data.invite_code
+      };
+    },
+    async joinGroup(code) {
+      const sb = await ensureClient();
+      const {
+        data,
+        error
+      } = await sb.rpc('join_group', {
+        invite_token: code
+      });
+      if (error) throw error;
+      return {
+        groupId: data.group_id,
+        inviteCode: code
+      };
+    },
+    async leaveGroup() {
+      const sb = await ensureClient();
+      const {
+        error
+      } = await sb.rpc('leave_group', {
+        p_group_id: shareState.groupId
+      });
+      if (error) throw error;
+    },
+    async listMembers() {
+      const sb = await ensureClient();
+      const {
+        data,
+        error
+      } = await sb.from('group_members').select('user_id, display_name').eq('group_id', shareState.groupId);
+      if (error) throw error;
+      return (data || []).map(m => ({
+        userId: m.user_id,
+        displayName: m.display_name
+      }));
+    },
+    async pushUpserts(records) {
+      const sb = await ensureClient();
+      const rows = records.map(r => ({
+        uid: r.uid,
+        group_id: r.groupId,
+        author_id: r.authorId,
+        ts_utc: r.tsUtc,
+        date: r.date,
+        time: r.time,
+        name: r.name,
+        quantity: r.quantity,
+        unit: r.unit,
+        quantity_in_cl: r.quantityInCL,
+        alcohol_content: r.alcoholContent,
+        category: r.category,
+        rating: r.rating,
+        updated_at: r.updatedAt,
+        deleted: false
+      }));
+      const {
+        error
+      } = await sb.from('shared_drinks').upsert(rows, {
+        onConflict: 'uid'
+      });
+      if (error) throw error;
+    },
+    async pushTombstones(uids) {
+      const sb = await ensureClient();
+      const {
+        error
+      } = await sb.from('shared_drinks').update({
+        deleted: true,
+        updated_at: Date.now()
+      }).in('uid', uids);
+      if (error) throw error;
+    },
+    async pullSince(cursor) {
+      const sb = await ensureClient();
+      const gid = shareState.groupId;
+      const [d, p, m] = await Promise.all([sb.from('shared_drinks').select('*').eq('group_id', gid).gt('updated_at', cursor || 0).order('updated_at', {
+        ascending: true
+      }).limit(1000), sb.from('shared_profiles').select('*').eq('group_id', gid), sb.from('group_members').select('user_id, display_name').eq('group_id', gid)]);
+      if (d.error) throw d.error;
+      const drinks = (d.data || []).map(r => ({
+        uid: r.uid,
+        groupId: r.group_id,
+        authorId: r.author_id,
+        tsUtc: r.ts_utc,
+        date: r.date,
+        time: r.time,
+        name: r.name,
+        quantity: r.quantity,
+        unit: r.unit,
+        quantityInCL: r.quantity_in_cl,
+        alcoholContent: r.alcohol_content,
+        category: r.category,
+        rating: r.rating,
+        updatedAt: r.updated_at,
+        deleted: !!r.deleted
+      }));
+      const profById = {};
+      for (const pr of p.data || []) profById[pr.user_id] = pr;
+      const members = (m.data || []).map(mm => {
+        const pr = profById[mm.user_id] || {};
+        return {
+          // Le pseudo vit dans shared_profiles (l'utilisateur le change) ;
+          // group_members.display_name reste vide (rempli par aucune RPC).
+          userId: mm.user_id,
+          displayName: pr.display_name || mm.display_name || '',
+          shareBac: !!pr.share_bac,
+          bacWeight: pr.bac_weight,
+          bacGender: pr.bac_gender
+        };
+      });
+      const newCursor = drinks.reduce((mx, r) => Math.max(mx, r.updatedAt || 0), cursor || 0);
+      return {
+        drinks,
+        profiles: members,
+        members,
+        cursor: newCursor
+      };
+    },
+    async exportRecovery() {
+      const sb = await ensureClient();
+      const {
+        data
+      } = await sb.auth.getSession();
+      return {
+        kind: 'supabase',
+        session: data && data.session ? data.session : null
+      };
+    },
+    async importRecovery(blob) {
+      if (!blob || !blob.session) return;
+      const sb = await ensureClient();
+      await sb.auth.setSession({
+        access_token: blob.session.access_token,
+        refresh_token: blob.session.refresh_token
+      });
+    }
+  };
+}
+let transport = null;
+function getTransport() {
+  if (transport) return transport;
+  if (SHARE_CFG.TRANSPORT === 'supabase' && SHARE_CFG.SUPABASE_URL) transport = SupabaseShareTransport(SHARE_CFG);else transport = MockShareTransport();
+  return transport;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  Moteur de sync
+// ════════════════════════════════════════════════════════════════════════
+let _recTimer = null,
+  _flushTimer = null,
+  _pullRetry = null,
+  _timer = null;
+let _flushing = false,
+  _pulling = false;
+function scheduleReconcile() {
+  clearTimeout(_recTimer);
+  _recTimer = setTimeout(reconcile, 600);
+}
+
+// Calcule le sortant depuis la DB locale (déclenché par dataBus 'drinks'/'ratings').
+// Aucune mutation locale n'est modifiée : on lit l'état et on enfile les deltas.
+async function reconcile() {
+  if (!shareState.enabled || !shareState.groupId) return;
+  try {
+    const db = await waitForDb();
+    if (!db) return;
+    const drinks = await db.getAllDrinks();
+    const ratings = await _ratingsMap(db);
+    const idx = await _loadPubIndex();
+    const upserts = [];
+    const seen = new Set();
+    for (const d of drinks) {
+      if (!d.uid) continue;
+      seen.add(d.uid);
+      const rating = ratings[ratingKey(d.name)] || 0;
+      const u = +new Date(d.updatedAt || d.createdAt || 0) || 0;
+      const prev = idx[d.uid];
+      if (!prev || prev.u !== u || prev.r !== rating) {
+        upserts.push(localDrinkToShared(d, rating));
+        idx[d.uid] = {
+          u,
+          r: rating
+        };
+      }
+    }
+    const tombs = [];
+    for (const uid of Object.keys(idx)) {
+      if (!seen.has(uid)) {
+        tombs.push(uid);
+        delete idx[uid];
+      }
+    }
+    if (upserts.length) await db.addOutbox({
+      op: 'upsert',
+      records: upserts
+    });
+    if (tombs.length) await db.addOutbox({
+      op: 'tomb',
+      uids: tombs
+    });
+    await _savePubIndex(idx);
+    if (upserts.length || tombs.length) flushOutbox();
+  } catch (e) {/* best-effort */}
+}
+async function flushOutbox(attempt) {
+  attempt = attempt || 0;
+  if (_flushing || !shareState.enabled || !shareState.groupId) return;
+  _flushing = true;
+  try {
+    const db = await waitForDb();
+    const items = await db.getOutbox();
+    if (!items.length) {
+      _flushing = false;
+      return;
+    }
+    const done = [];
+    for (const it of items) {
+      if (it.op === 'upsert' && it.records && it.records.length) await getTransport().pushUpserts(it.records);else if (it.op === 'tomb' && it.uids && it.uids.length) await getTransport().pushTombstones(it.uids);
+      done.push(it.id);
+    }
+    await db.clearOutbox(done);
+    shareState.error = null;
+  } catch (e) {
+    shareState.error = 'sync';
+    const delay = Math.min(16000, 2000 * Math.pow(2, attempt));
+    clearTimeout(_flushTimer);
+    _flushTimer = setTimeout(() => {
+      _flushing = false;
+      flushOutbox(attempt + 1);
+    }, delay);
+    _emit();
+    _flushing = false;
+    return;
+  }
+  _flushing = false;
+}
+async function pull(attempt) {
+  attempt = attempt || 0;
+  if (_pulling || !shareState.enabled || !shareState.groupId) return;
+  _pulling = true;
+  shareState.syncing = true;
+  _emit();
+  try {
+    await flushOutbox();
+    const db = await waitForDb();
+    const cursor = (await _sget(`share.cursor.${shareState.groupId}`)) || 0;
+    const res = await getTransport().pullSince(cursor);
+    const incoming = (res.drinks || []).filter(r => r.authorId !== shareState.userId);
+    const live = incoming.filter(r => !r.deleted);
+    const dead = incoming.filter(r => r.deleted).map(r => r.uid);
+    if (live.length) await db.upsertSharedDrinks(live);
+    if (dead.length) await db.deleteSharedByUids(dead);
+    shareState.members = res.members || [];
+    await _sset(`share.cursor.${shareState.groupId}`, res.cursor || cursor);
+    shareState.lastPullAt = Date.now();
+    shareState.error = null;
+  } catch (e) {
+    shareState.error = 'pull';
+    const delay = Math.min(16000, 2000 * Math.pow(2, attempt));
+    clearTimeout(_pullRetry);
+    _pullRetry = setTimeout(() => {
+      _pulling = false;
+      pull(attempt + 1);
+    }, delay);
+    shareState.syncing = false;
+    _emit();
+    return;
+  }
+  _pulling = false;
+  shareState.syncing = false;
+  _emit();
+}
+function startTimer() {
+  stopTimer();
+  if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+    _timer = setInterval(() => {
+      if (document.visibilityState === 'visible') pull();
+    }, SHARE_CFG.PULL_INTERVAL_MS || 600000);
+  }
+}
+function stopTimer() {
+  if (_timer) {
+    clearInterval(_timer);
+    _timer = null;
+  }
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      startTimer();
+      if (shareState.enabled && shareState.groupId) pull();
+    } else {
+      stopTimer();
+    }
+  });
+}
+
+// Crée l'identité (anonyme) à la demande — jamais au boot si le partage est
+// désactivé, pour ne pas créer un compte anonyme inutile à chaque ouverture.
+async function ensureIdentityNow() {
+  if (shareState.userId) return shareState.userId;
+  const {
+    userId
+  } = await getTransport().ensureIdentity();
+  shareState.userId = userId;
+  await _sset('share.userId', userId);
+  _emit();
+  return userId;
+}
+
+// ── Profil (mon profil partagé : pseudo + paramètres BAC opt-in) ──────────
+async function publishMyProfile() {
+  if (!shareState.enabled || !shareState.groupId) return;
+  try {
+    const db = await waitForDb();
+    const settings = await db.getAllSettings();
+    await getTransport().setProfile({
+      userId: shareState.userId,
+      groupId: shareState.groupId,
+      displayName: shareState.displayName,
+      shareEnabled: shareState.enabled,
+      shareBac: shareState.shareBac,
+      bacWeight: shareState.shareBac ? Number(settings.userWeight) || null : null,
+      bacGender: shareState.shareBac ? settings.userGender || null : null
+    });
+  } catch (e) {
+    // best-effort, mais on trace : un échec ici = pseudo/BAC non publiés
+    // (les amis te verraient « Anonyme »).
+    try {
+      console.warn('[AlcoNote partage] publication du profil échouée', e);
+    } catch (_) {}
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  API publique (consommée par friends.jsx et SettingsDrawer)
+// ════════════════════════════════════════════════════════════════════════
+const shareEngine = {
+  state: shareState,
+  isAvailable: () => shareState.available,
+  refreshNow: () => pull(),
+  async setDisplayName(name) {
+    shareState.displayName = (name || '').trim();
+    await _sset('share.displayName', shareState.displayName);
+    _emit();
+    publishMyProfile();
+  },
+  async setEnabled(on) {
+    shareState.enabled = !!on;
+    await _sset('share.enabled', shareState.enabled);
+    _emit();
+    if (shareState.enabled) {
+      await ensureIdentityNow();
+      startTimer();
+      await publishMyProfile();
+      scheduleReconcile();
+      pull();
+    } else {
+      stopTimer();
+    }
+  },
+  async setShareBac(on) {
+    shareState.shareBac = !!on;
+    await _sset('share.shareBac', shareState.shareBac);
+    _emit();
+    publishMyProfile();
+  },
+  async createGroup() {
+    await ensureIdentityNow();
+    const {
+      groupId,
+      inviteCode
+    } = await getTransport().createGroup();
+    shareState.groupId = groupId;
+    shareState.inviteCode = inviteCode;
+    await _sset('share.groupId', groupId);
+    if (inviteCode) await _sset('share.inviteCode', inviteCode);
+    _emit();
+    await publishMyProfile();
+    // Première publication de tout l'historique local (index vide).
+    await _savePubIndex({});
+    scheduleReconcile();
+    startTimer();
+    pull();
+    return {
+      groupId,
+      inviteCode
+    };
+  },
+  async joinGroup(code) {
+    await ensureIdentityNow();
+    const {
+      groupId,
+      inviteCode
+    } = await getTransport().joinGroup((code || '').trim().toUpperCase());
+    shareState.groupId = groupId;
+    shareState.inviteCode = (inviteCode || code || '').trim().toUpperCase();
+    await _sset('share.groupId', groupId);
+    if (shareState.inviteCode) await _sset('share.inviteCode', shareState.inviteCode);
+    _emit();
+    await publishMyProfile();
+    await _savePubIndex({});
+    scheduleReconcile();
+    startTimer();
+    pull();
+    return {
+      groupId
+    };
+  },
+  async leaveGroup() {
+    try {
+      await getTransport().leaveGroup();
+    } catch (e) {}
+    const db = await waitForDb();
+    if (db) {
+      await db.clearSharedPool(); // purge des données des amis
+      if (shareState.groupId) await _sset(`share.cursor.${shareState.groupId}`, null);
+    }
+    await _sset('share.groupId', null);
+    await _sset('share.inviteCode', null);
+    await _savePubIndex({});
+    shareState.groupId = null;
+    shareState.inviteCode = null;
+    shareState.members = [];
+    stopTimer();
+    _emit();
+  },
+  async exportRecovery() {
+    const t = await getTransport().exportRecovery();
+    return {
+      v: 1,
+      userId: shareState.userId,
+      displayName: shareState.displayName,
+      groupId: shareState.groupId,
+      transport: t
+    };
+  },
+  async importRecovery(blob) {
+    if (!blob) return;
+    if (blob.transport) {
+      try {
+        await getTransport().importRecovery(blob.transport);
+      } catch (e) {}
+    }
+    if (blob.userId) {
+      shareState.userId = blob.userId;
+      await _sset('share.userId', blob.userId);
+    }
+    if (blob.displayName) {
+      shareState.displayName = blob.displayName;
+      await _sset('share.displayName', blob.displayName);
+    }
+    if (blob.groupId) {
+      shareState.groupId = blob.groupId;
+      await _sset('share.groupId', blob.groupId);
+    }
+    _emit();
+    if (shareState.enabled && shareState.groupId) {
+      startTimer();
+      pull();
+    }
+  }
+};
+
+// ── Initialisation ────────────────────────────────────────────────────────
+async function initShare() {
+  try {
+    const db = await waitForDb();
+    if (!db) return;
+    shareState.userId = await db.getSetting('share.userId');
+    shareState.displayName = (await db.getSetting('share.displayName')) || '';
+    shareState.enabled = !!(await db.getSetting('share.enabled'));
+    shareState.shareBac = !!(await db.getSetting('share.shareBac'));
+    shareState.groupId = await db.getSetting('share.groupId');
+    shareState.inviteCode = await db.getSetting('share.inviteCode');
+    // N'amorce l'identité au boot que pour un utilisateur déjà actif ; sinon
+    // on attend qu'il active le partage (évite un compte anonyme inutile).
+    if (!shareState.userId && shareState.enabled) {
+      try {
+        await ensureIdentityNow();
+      } catch (e) {/* réessayé à l'activation */}
+    }
+    shareState.ready = true;
+    _emit();
+
+    // Re-pousse les paramètres BAC si le poids/sexe local change.
+    if (window.dataBus && window.dataBus.sub) {
+      window.dataBus.sub(ch => {
+        if (ch === 'drinks' || ch === 'ratings' || ch == null) scheduleReconcile();
+        if (ch === 'settings' && shareState.enabled && shareState.shareBac) publishMyProfile();
+      });
+    }
+    if (shareState.enabled && shareState.groupId) {
+      startTimer();
+      pull();
+      scheduleReconcile();
+    }
+  } catch (e) {/* best-effort */}
+}
+initShare();
+
+// ════════════════════════════════════════════════════════════════════════
+//  Hooks React
+// ════════════════════════════════════════════════════════════════════════
+function useShare() {
+  const [, force] = React.useReducer(x => x + 1, 0);
+  React.useEffect(() => shareBus.sub(force), []);
+  return shareState;
+}
+
+// Membres du groupe (hors moi).
+function useGroupMembers() {
+  const s = useShare();
+  return React.useMemo(() => (s.members || []).filter(m => m.userId !== s.userId), [s.members, s.userId]);
+}
+
+// Boissons partagées d'un membre (depuis sharedPool), forme compatible StatsTab.
+function useSharedDrinks(authorId) {
+  const [list, setList] = React.useState([]);
+  React.useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const db = await waitForDb();
+      if (!db) return;
+      const all = await db.getAllSharedDrinks();
+      const mine = all.filter(r => r.authorId === authorId && !r.deleted).map(r => ({
+        ...r,
+        id: r.uid
+      }));
+      if (alive) setList(mine);
+    };
+    load();
+    const off = shareBus.sub(load);
+    return () => {
+      alive = false;
+      off();
+    };
+  }, [authorId]);
+  return list;
+}
+
+// Notes partagées d'un membre → carte canonique nom→note (pour RatingsContext).
+function useSharedRatings(authorId) {
+  const drinks = useSharedDrinks(authorId);
+  return React.useMemo(() => {
+    const out = {};
+    for (const d of drinks) if (d.rating) out[ratingKey(d.name)] = d.rating;
+    return out;
+  }, [drinks]);
+}
+
+// BAC courant de chaque membre (recalcul local, tick 60 s). null si pas opt-in.
+function useFriendsBac(members) {
+  const [map, setMap] = React.useState({});
+  const key = (members || []).map(m => `${m.userId}:${m.shareBac ? 1 : 0}`).join(',');
+  React.useEffect(() => {
+    let alive = true;
+    const compute = async () => {
+      const db = await waitForDb();
+      if (!db) return;
+      const all = await db.getAllSharedDrinks();
+      const out = {};
+      for (const m of members || []) {
+        if (!m.shareBac) {
+          out[m.userId] = null;
+          continue;
+        }
+        const ds = all.filter(r => r.authorId === m.userId && !r.deleted);
+        if (typeof computeBacOverTime === 'function') {
+          const info = computeBacOverTime(ds, Number(m.bacWeight) || undefined, m.bacGender || 'male');
+          out[m.userId] = info.current || 0;
+        } else out[m.userId] = 0;
+      }
+      if (alive) setMap(out);
+    };
+    compute();
+    const id = setInterval(compute, 60000);
+    const off = shareBus.sub(compute);
+    return () => {
+      alive = false;
+      clearInterval(id);
+      off();
+    };
+  }, [key]);
+  return map;
+}
+Object.assign(window, {
+  shareEngine,
+  shareBus,
+  getTransport,
+  MockShareTransport,
+  SupabaseShareTransport,
+  useShare,
+  useGroupMembers,
+  useSharedDrinks,
+  useSharedRatings,
+  useFriendsBac,
+  localDrinkToShared,
+  tsFromDateTime,
+  shareErrorMessage
+});

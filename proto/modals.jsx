@@ -1259,6 +1259,8 @@ function SettingsDrawer({ open, onClose }) {
             <SettingRow label="Tout effacer" danger onClick={onClear} last />
           </SettingsGroup>
 
+          <SharingSection />
+
           <input ref={fileInputRef} type="file" accept=".json,application/json"
             style={{ display: 'none' }} onChange={onFile}/>
 
@@ -1396,8 +1398,133 @@ function SettingRow({ label, value, icon, danger, last, onClick }) {
     </Tag>
   );
 }
+// Interrupteur (switch) DA pour les options de partage.
+function ToggleRow({ label, sub, on, onToggle, last }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '12px 14px', borderBottom: last ? 'none' : `1px solid ${T.rule}`, gap: 12,
+    }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ color: T.ink, fontSize: 13.5, letterSpacing: -0.1 }}>{label}</div>
+        {sub && <div style={{ color: T.muted, fontSize: 11, marginTop: 2, lineHeight: 1.4 }}>{sub}</div>}
+      </div>
+      <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={onToggle} style={{
+        width: 42, height: 25, borderRadius: 99, flexShrink: 0, position: 'relative',
+        cursor: 'pointer', padding: 0, fontFamily: 'inherit',
+        background: on ? T.accent : T.surface3, border: `1px solid ${on ? T.accent : T.rule}`,
+        transition: 'background 0.18s ease',
+      }}>
+        <span style={{
+          position: 'absolute', top: 2, left: on ? 19 : 2, width: 19, height: 19,
+          borderRadius: 99, background: on ? T.accentInk : T.muted, transition: 'left 0.18s ease',
+        }} />
+      </button>
+    </div>
+  );
+}
+
+// Section « Partage entre amis » du tiroir Paramètres.
+function SharingSection() {
+  const s = useShare();
+  const recoveryRef = React.useRef(null);
+  if (!s.available) return null;
+
+  const onToggleEnabled = async () => {
+    if (!s.enabled) {
+      const ok = await Confirm.ask({
+        title: 'Activer le partage entre amis ?',
+        message: "Tes boissons (sans localisation) et tes notes seront partagées avec les membres de ton groupe, qui pourront voir tes statistiques. Désactivable à tout moment.",
+        confirmText: 'Activer',
+      });
+      if (!ok) return;
+    }
+    await shareEngine.setEnabled(!s.enabled);
+  };
+  const onToggleBac = async () => {
+    if (!s.shareBac) {
+      const ok = await Confirm.ask({
+        title: 'Partager ton alcoolémie ?',
+        message: "Pour estimer ton taux d'alcoolémie en direct chez tes amis, ton poids et ton sexe seront partagés avec ton groupe.",
+        confirmText: 'Partager',
+      });
+      if (!ok) return;
+    }
+    await shareEngine.setShareBac(!s.shareBac);
+  };
+  const onCreate = async () => {
+    try { await shareEngine.createGroup(); Toast.show('Groupe créé'); }
+    catch (e) { Toast.show(shareErrorMessage(e)); }
+  };
+  const onLeave = async () => {
+    const ok = await Confirm.ask({
+      title: 'Quitter le groupe ?',
+      message: 'Tes données partagées seront retirées et tu ne verras plus celles des autres membres.',
+      confirmText: 'Quitter', danger: true,
+    });
+    if (!ok) return;
+    try { await shareEngine.leaveGroup(); Toast.show('Groupe quitté'); }
+    catch (e) { Toast.show(shareErrorMessage(e)); }
+  };
+  const onCopyCode = async () => {
+    if (!s.inviteCode) return;
+    try { await navigator.clipboard.writeText(s.inviteCode); Toast.show('Code copié'); }
+    catch (e) { Toast.show(s.inviteCode); }
+  };
+  const onExportKey = async () => {
+    try {
+      const blob = await shareEngine.exportRecovery();
+      const b = new Blob([JSON.stringify(blob)], { type: 'application/json' });
+      const url = URL.createObjectURL(b);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'alconote-cle-recup.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      Toast.show('Clé de récupération exportée');
+    } catch (e) { Toast.show('Erreur'); }
+  };
+  const onImportKey = () => recoveryRef.current && recoveryRef.current.click();
+  const onKeyFile = async (ev) => {
+    const f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    try { await shareEngine.importRecovery(JSON.parse(await f.text())); Toast.show('Identité restaurée'); }
+    catch (e) { Toast.show('Clé invalide'); }
+    ev.target.value = '';
+  };
+
+  const memberCount = (s.members || []).filter(m => m.userId !== s.userId).length;
+
+  return (
+    <SettingsGroup label="Partage entre amis">
+      <ToggleRow label="Activer le partage" sub="Boissons (sans lieu) + notes"
+        on={s.enabled} onToggle={onToggleEnabled} last={!s.enabled} />
+      {s.enabled && (
+        <>
+          <ProfileRow label="Pseudo" value={s.displayName || ''} onSave={(v) => shareEngine.setDisplayName(v)} />
+          <ToggleRow label="Partager mon alcoolémie" sub="Partage poids + sexe (modèle Widmark)"
+            on={s.shareBac} onToggle={onToggleBac} />
+          {!s.groupId ? (
+            <SettingRow label="Créer un groupe" icon={Ic.users} onClick={onCreate} last />
+          ) : (
+            <>
+              <SettingRow label="Code d'invitation" value={s.inviteCode || '—'} onClick={onCopyCode} />
+              <SettingRow label="Membres" value={String(memberCount)} />
+              <SettingRow label="Exporter la clé de récup." icon={Ic.download} onClick={onExportKey} />
+              <SettingRow label="Restaurer une identité" icon={Ic.upload} onClick={onImportKey} />
+              <SettingRow label="Quitter le groupe" danger onClick={onLeave} last />
+            </>
+          )}
+        </>
+      )}
+      <input ref={recoveryRef} type="file" accept=".json,application/json"
+        style={{ display: 'none' }} onChange={onKeyFile} />
+    </SettingsGroup>
+  );
+}
+
 Object.assign(window, {
   AddDrinkSheet, ScannerSheet, DrinkDetailSheet, EditFamilySheet, EditEntrySheet,
   SettingsDrawer, ImpactStat, FactCell,
   ThemePicker, ProfileRow, GenderPicker, SettingsGroup, SettingRow,
+  ToggleRow, SharingSection,
 });

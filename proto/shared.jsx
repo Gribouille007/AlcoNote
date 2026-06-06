@@ -147,6 +147,7 @@ const Ic = {
   check: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
   download: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
   upload: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
+  copy: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>,
   car:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 16H9m10 0h3v-3.15a1 1 0 00-.84-.99L16 11l-2.7-3.6a1 1 0 00-.8-.4H5.24a2 2 0 00-1.8 1.1l-.8 1.63A6 6 0 002 12.42V16h2"/><circle cx="6.5" cy="16.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg>,
   sun:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>,
   moon:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>,
@@ -165,6 +166,7 @@ const Ic = {
   trendUp:   <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="10" x2="6" y2="2"/><polyline points="3 5 6 2 9 5"/></svg>,
   trendDown: <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="2" x2="6" y2="10"/><polyline points="3 7 6 10 9 7"/></svg>,
   trendFlat: <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="6" x2="10" y2="6"/><polyline points="7 3 10 6 7 9"/></svg>,
+  users: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
 };
 
 function SvgIcon({ icon, size = 18, color, ariaHidden = true }) {
@@ -1230,9 +1232,39 @@ function LocationField({ value, onChange, ariaLabel = 'Lieu' }) {
   );
 }
 
+// Pastille d'alcoolémie réutilisable (header de l'app + lignes de l'onglet
+// Amis). `bac` en mg/L ; `null` → non communiqué ("—" grisé). Couleur unique
+// T.accent (pas de seuils colorés ici, comme le header d'origine).
+function BacPill({ bac, ariaLabel }) {
+  const known = bac != null && Number.isFinite(bac);
+  const active = known && bac > 0;
+  return (
+    <div aria-label={ariaLabel || "Taux d'alcoolémie"}
+      title={known ? `${bac} mg/L` : 'Non communiqué'} style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        padding: '6px 10px 6px 8px', borderRadius: 12,
+        background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
+        minWidth: 48, maxWidth: 86, justifyContent: 'center',
+        opacity: known ? (active ? 1 : 0.7) : 0.45,
+      }}>
+      <div style={{
+        width: 6, height: 6, borderRadius: 99, background: T.accent,
+        boxShadow: active ? `0 0 8px ${T.accent}` : 'none', flexShrink: 0,
+      }} />
+      <span style={{
+        color: T.accent, fontSize: 11, fontWeight: 600,
+        fontFamily: fontNum, letterSpacing: 0, fontVariantNumeric: 'tabular-nums',
+        overflow: 'hidden', textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap', minWidth: 0, flex: '0 1 auto',
+      }}>{known ? bac : '—'}</span>
+    </div>
+  );
+}
+
 Object.assign(window, {
   T, THEMES, applyTheme, useTheme,
   fontSans, fontSerif, fontNum,
+  BacPill,
   Ic, SvgIcon, CAT, catColor, catBg, withAlpha, CategoryIconsContext,
   Toast,
   FR_DAYS_LONG, FR_DAYS_SHORT, FR_MONTHS_SHORT, FR_MONTHS_LONG, FR_MONTHS_DOTTED,

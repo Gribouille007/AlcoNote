@@ -931,6 +931,13 @@ Object.assign(window, {
   useSettings,
   useFamilies,
   FamiliesContext,
+  // Exposed so the friends feature can re-render the existing StatsTab for
+  // another member by overriding these contexts with that member's shared
+  // data (see proto/friends.jsx › FriendStatsView).
+  DrinksContext,
+  RatingsContext,
+  SettingsContext,
+  CategoriesContext,
   DrinksProvider,
   RatingsProvider,
   CategoriesProvider,

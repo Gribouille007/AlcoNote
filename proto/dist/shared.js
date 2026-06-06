@@ -429,6 +429,23 @@ const Ic = {
     x2: "12",
     y2: "15"
   })),
+  copy: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("rect", {
+    x: "9",
+    y: "9",
+    width: "13",
+    height: "13",
+    rx: "2",
+    ry: "2"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+  })),
   car: /*#__PURE__*/React.createElement("svg", {
     viewBox: "0 0 24 24",
     fill: "none",
@@ -732,6 +749,24 @@ const Ic = {
     y2: "6"
   }), /*#__PURE__*/React.createElement("polyline", {
     points: "7 3 10 6 7 9"
+  })),
+  users: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "9",
+    cy: "7",
+    r: "4"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M23 21v-2a4 4 0 0 0-3-3.87"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M16 3.13a4 4 0 0 1 0 7.75"
   }))
 };
 function SvgIcon({
@@ -2428,6 +2463,57 @@ function LocationField({
     size: 14
   }), value ? 'Réessayer' : 'Localiser'));
 }
+
+// Pastille d'alcoolémie réutilisable (header de l'app + lignes de l'onglet
+// Amis). `bac` en mg/L ; `null` → non communiqué ("—" grisé). Couleur unique
+// T.accent (pas de seuils colorés ici, comme le header d'origine).
+function BacPill({
+  bac,
+  ariaLabel
+}) {
+  const known = bac != null && Number.isFinite(bac);
+  const active = known && bac > 0;
+  return /*#__PURE__*/React.createElement("div", {
+    "aria-label": ariaLabel || "Taux d'alcoolémie",
+    title: known ? `${bac} mg/L` : 'Non communiqué',
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 5,
+      padding: '6px 10px 6px 8px',
+      borderRadius: 12,
+      background: T.accentSoft,
+      border: `1px solid ${T.accentSoftBorder}`,
+      minWidth: 48,
+      maxWidth: 86,
+      justifyContent: 'center',
+      opacity: known ? active ? 1 : 0.7 : 0.45
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 6,
+      height: 6,
+      borderRadius: 99,
+      background: T.accent,
+      boxShadow: active ? `0 0 8px ${T.accent}` : 'none',
+      flexShrink: 0
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: T.accent,
+      fontSize: 11,
+      fontWeight: 600,
+      fontFamily: fontNum,
+      letterSpacing: 0,
+      fontVariantNumeric: 'tabular-nums',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      minWidth: 0,
+      flex: '0 1 auto'
+    }
+  }, known ? bac : '—'));
+}
 Object.assign(window, {
   T,
   THEMES,
@@ -2436,6 +2522,7 @@ Object.assign(window, {
   fontSans,
   fontSerif,
   fontNum,
+  BacPill,
   Ic,
   SvgIcon,
   CAT,

@@ -2017,7 +2017,7 @@ function SettingsDrawer({
     danger: true,
     onClick: onClear,
     last: true
-  })), /*#__PURE__*/React.createElement("input", {
+  })), /*#__PURE__*/React.createElement(SharingSection, null), /*#__PURE__*/React.createElement("input", {
     ref: fileInputRef,
     type: "file",
     accept: ".json,application/json",
@@ -2278,6 +2278,216 @@ function SettingRow({
     color: T.muted
   }));
 }
+// Interrupteur (switch) DA pour les options de partage.
+function ToggleRow({
+  label,
+  sub,
+  on,
+  onToggle,
+  last
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '12px 14px',
+      borderBottom: last ? 'none' : `1px solid ${T.rule}`,
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.ink,
+      fontSize: 13.5,
+      letterSpacing: -0.1
+    }
+  }, label), sub && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 11,
+      marginTop: 2,
+      lineHeight: 1.4
+    }
+  }, sub)), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    role: "switch",
+    "aria-checked": on,
+    "aria-label": label,
+    onClick: onToggle,
+    style: {
+      width: 42,
+      height: 25,
+      borderRadius: 99,
+      flexShrink: 0,
+      position: 'relative',
+      cursor: 'pointer',
+      padding: 0,
+      fontFamily: 'inherit',
+      background: on ? T.accent : T.surface3,
+      border: `1px solid ${on ? T.accent : T.rule}`,
+      transition: 'background 0.18s ease'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      position: 'absolute',
+      top: 2,
+      left: on ? 19 : 2,
+      width: 19,
+      height: 19,
+      borderRadius: 99,
+      background: on ? T.accentInk : T.muted,
+      transition: 'left 0.18s ease'
+    }
+  })));
+}
+
+// Section « Partage entre amis » du tiroir Paramètres.
+function SharingSection() {
+  const s = useShare();
+  const recoveryRef = React.useRef(null);
+  if (!s.available) return null;
+  const onToggleEnabled = async () => {
+    if (!s.enabled) {
+      const ok = await Confirm.ask({
+        title: 'Activer le partage entre amis ?',
+        message: "Tes boissons (sans localisation) et tes notes seront partagées avec les membres de ton groupe, qui pourront voir tes statistiques. Désactivable à tout moment.",
+        confirmText: 'Activer'
+      });
+      if (!ok) return;
+    }
+    await shareEngine.setEnabled(!s.enabled);
+  };
+  const onToggleBac = async () => {
+    if (!s.shareBac) {
+      const ok = await Confirm.ask({
+        title: 'Partager ton alcoolémie ?',
+        message: "Pour estimer ton taux d'alcoolémie en direct chez tes amis, ton poids et ton sexe seront partagés avec ton groupe.",
+        confirmText: 'Partager'
+      });
+      if (!ok) return;
+    }
+    await shareEngine.setShareBac(!s.shareBac);
+  };
+  const onCreate = async () => {
+    try {
+      await shareEngine.createGroup();
+      Toast.show('Groupe créé');
+    } catch (e) {
+      Toast.show(shareErrorMessage(e));
+    }
+  };
+  const onLeave = async () => {
+    const ok = await Confirm.ask({
+      title: 'Quitter le groupe ?',
+      message: 'Tes données partagées seront retirées et tu ne verras plus celles des autres membres.',
+      confirmText: 'Quitter',
+      danger: true
+    });
+    if (!ok) return;
+    try {
+      await shareEngine.leaveGroup();
+      Toast.show('Groupe quitté');
+    } catch (e) {
+      Toast.show(shareErrorMessage(e));
+    }
+  };
+  const onCopyCode = async () => {
+    if (!s.inviteCode) return;
+    try {
+      await navigator.clipboard.writeText(s.inviteCode);
+      Toast.show('Code copié');
+    } catch (e) {
+      Toast.show(s.inviteCode);
+    }
+  };
+  const onExportKey = async () => {
+    try {
+      const blob = await shareEngine.exportRecovery();
+      const b = new Blob([JSON.stringify(blob)], {
+        type: 'application/json'
+      });
+      const url = URL.createObjectURL(b);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'alconote-cle-recup.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      Toast.show('Clé de récupération exportée');
+    } catch (e) {
+      Toast.show('Erreur');
+    }
+  };
+  const onImportKey = () => recoveryRef.current && recoveryRef.current.click();
+  const onKeyFile = async ev => {
+    const f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    try {
+      await shareEngine.importRecovery(JSON.parse(await f.text()));
+      Toast.show('Identité restaurée');
+    } catch (e) {
+      Toast.show('Clé invalide');
+    }
+    ev.target.value = '';
+  };
+  const memberCount = (s.members || []).filter(m => m.userId !== s.userId).length;
+  return /*#__PURE__*/React.createElement(SettingsGroup, {
+    label: "Partage entre amis"
+  }, /*#__PURE__*/React.createElement(ToggleRow, {
+    label: "Activer le partage",
+    sub: "Boissons (sans lieu) + notes",
+    on: s.enabled,
+    onToggle: onToggleEnabled,
+    last: !s.enabled
+  }), s.enabled && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(ProfileRow, {
+    label: "Pseudo",
+    value: s.displayName || '',
+    onSave: v => shareEngine.setDisplayName(v)
+  }), /*#__PURE__*/React.createElement(ToggleRow, {
+    label: "Partager mon alcool\xE9mie",
+    sub: "Partage poids + sexe (mod\xE8le Widmark)",
+    on: s.shareBac,
+    onToggle: onToggleBac
+  }), !s.groupId ? /*#__PURE__*/React.createElement(SettingRow, {
+    label: "Cr\xE9er un groupe",
+    icon: Ic.users,
+    onClick: onCreate,
+    last: true
+  }) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(SettingRow, {
+    label: "Code d'invitation",
+    value: s.inviteCode || '—',
+    onClick: onCopyCode
+  }), /*#__PURE__*/React.createElement(SettingRow, {
+    label: "Membres",
+    value: String(memberCount)
+  }), /*#__PURE__*/React.createElement(SettingRow, {
+    label: "Exporter la cl\xE9 de r\xE9cup.",
+    icon: Ic.download,
+    onClick: onExportKey
+  }), /*#__PURE__*/React.createElement(SettingRow, {
+    label: "Restaurer une identit\xE9",
+    icon: Ic.upload,
+    onClick: onImportKey
+  }), /*#__PURE__*/React.createElement(SettingRow, {
+    label: "Quitter le groupe",
+    danger: true,
+    onClick: onLeave,
+    last: true
+  }))), /*#__PURE__*/React.createElement("input", {
+    ref: recoveryRef,
+    type: "file",
+    accept: ".json,application/json",
+    style: {
+      display: 'none'
+    },
+    onChange: onKeyFile
+  }));
+}
 Object.assign(window, {
   AddDrinkSheet,
   ScannerSheet,
@@ -2291,5 +2501,7 @@ Object.assign(window, {
   ProfileRow,
   GenderPicker,
   SettingsGroup,
-  SettingRow
+  SettingRow,
+  ToggleRow,
+  SharingSection
 });
