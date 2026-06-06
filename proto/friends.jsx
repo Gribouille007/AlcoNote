@@ -83,14 +83,14 @@ function FriendsEmpty() {
   const create = async () => {
     setBusy(true);
     try { await shareEngine.createGroup(); Toast.show('Groupe créé'); }
-    catch (e) { Toast.show("Échec de la création"); }
+    catch (e) { Toast.show(shareErrorMessage(e)); }
     finally { setBusy(false); }
   };
   const join = async () => {
     if (!code.trim()) return;
     setBusy(true);
     try { await shareEngine.joinGroup(code); Toast.show('Groupe rejoint'); }
-    catch (e) { Toast.show('Code invalide'); }
+    catch (e) { Toast.show(shareErrorMessage(e)); }
     finally { setBusy(false); }
   };
 

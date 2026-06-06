@@ -2377,7 +2377,7 @@ function SharingSection() {
       await shareEngine.createGroup();
       Toast.show('Groupe créé');
     } catch (e) {
-      Toast.show('Échec de la création');
+      Toast.show(shareErrorMessage(e));
     }
   };
   const onLeave = async () => {

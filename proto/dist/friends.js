@@ -159,7 +159,7 @@ function FriendsEmpty() {
       await shareEngine.createGroup();
       Toast.show('Groupe créé');
     } catch (e) {
-      Toast.show("Échec de la création");
+      Toast.show(shareErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -171,7 +171,7 @@ function FriendsEmpty() {
       await shareEngine.joinGroup(code);
       Toast.show('Groupe rejoint');
     } catch (e) {
-      Toast.show('Code invalide');
+      Toast.show(shareErrorMessage(e));
     } finally {
       setBusy(false);
     }

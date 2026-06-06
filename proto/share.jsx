@@ -66,6 +66,28 @@ const shareState = {
 
 function _emit() { shareBus.bump(); }
 
+// Traduit une erreur de transport (souvent Supabase) en message court et
+// ACTIONNABLE pour l'utilisateur, et log l'erreur complète en console pour le
+// debug. Les deux pièges classiques après setup : auth anonyme non activée et
+// schéma SQL non exécuté (fonctions RPC absentes).
+function shareErrorMessage(e) {
+  try { console.error('[AlcoNote partage]', e); } catch (_) {}
+  const msg = String((e && (e.message || e.error_description || e.error)) || e || '').toLowerCase();
+  const code = (e && (e.code || e.status)) != null ? String(e.code || e.status) : '';
+  if (/anonymous|signups? not allowed|sign-?ins? are disabled/.test(msg))
+    return "Active « Anonymous sign-ins » dans Supabase (Auth › Providers)";
+  if (/could not find the function|function .*does not exist|pgrst202|schema cache/.test(msg) || code === '404')
+    return "Exécute supabase/schema.sql dans Supabase (SQL Editor)";
+  if (/sdk supabase|chargement sdk/.test(msg))
+    return "SDK Supabase injoignable (vérifie ta connexion / CSP)";
+  if (/failed to fetch|networkerror|network request failed/.test(msg))
+    return "Réseau indisponible — réessaie";
+  if (/invalid api key|jwt|apikey|401/.test(msg) || code === '401')
+    return "Clé Supabase invalide (vérifie share-config.js)";
+  if (/invalid invite|invite/.test(msg)) return "Code d'invitation invalide";
+  return "Échec — voir la console pour le détail";
+}
+
 // ── helpers DB settings (écriture directe, sans bump global 'settings') ────
 async function _sget(key) { const db = await waitForDb(); return db ? db.getSetting(key) : null; }
 async function _sset(key, val) { const db = await waitForDb(); if (db) await db.setSetting(key, val); }
@@ -724,5 +746,5 @@ Object.assign(window, {
   shareEngine, shareBus, getTransport,
   MockShareTransport, SupabaseShareTransport,
   useShare, useGroupMembers, useSharedDrinks, useSharedRatings, useFriendsBac,
-  localDrinkToShared, tsFromDateTime,
+  localDrinkToShared, tsFromDateTime, shareErrorMessage,
 });
