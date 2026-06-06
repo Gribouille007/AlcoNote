@@ -92,7 +92,6 @@ async function main() {
     'js/database.js',
     'js/scanner/product-lookup.js',
     'js/scanner/camera-scanner.js',
-    'js/share-config.js',
     'proto/dist/shared.js',
     'proto/dist/data.js',
     'proto/dist/stats-charts.js',
@@ -104,6 +103,9 @@ async function main() {
     'proto/dist/modals.js',
     'proto/dist/app.js',
   ];
+  // Force le transport mock : test déterministe et hors-ligne, quelle que soit
+  // la config de prod (js/share-config.js n'est pas chargé ici).
+  window.SHARE_CONFIG = { TRANSPORT: 'mock', SUPABASE_URL: '', SUPABASE_ANON_KEY: '', PULL_INTERVAL_MS: 600000 };
   for (const s of SCRIPTS) {
     try { window.eval(read(s)); }
     catch (e) { console.error(`Eval failed in ${s}:`, e); throw e; }

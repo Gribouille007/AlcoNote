@@ -17,10 +17,11 @@
  */
 window.SHARE_CONFIG = {
   // 'mock' = amis simulés en local · 'supabase' = backend réel
-  TRANSPORT: 'mock',
+  TRANSPORT: 'supabase',
 
-  SUPABASE_URL: '',
-  SUPABASE_ANON_KEY: '',
+  SUPABASE_URL: 'https://fxhezzceinifisxfpchv.supabase.co',
+  // Clé "publishable" (publique, protégée par RLS). JAMAIS la clé "secret".
+  SUPABASE_ANON_KEY: 'sb_publishable_s-cuLxdmNBmsODhMDunBJw_QogMAloG',
 
   // Intervalle d'auto-refresh des données des amis (ms), au premier plan only.
   PULL_INTERVAL_MS: 10 * 60 * 1000,
