@@ -131,13 +131,13 @@ create policy profiles_update on public.shared_profiles
 -- Génère un code lisible (sans I/O/0/1), format XXXX-XXXX.
 create or replace function public.gen_invite_code()
 returns text language sql volatile as $$
-  select string_agg(substr('ABCDEFGHJKLMNPQRSTUVWXYZ23456789',
-                           (floor(random()*32)+1)::int, 1), '')
-         from generate_series(1,4)
-  || '-' ||
-         string_agg(substr('ABCDEFGHJKLMNPQRSTUVWXYZ23456789',
-                           (floor(random()*32)+1)::int, 1), '')
-         from generate_series(1,4);
+  with picked as (
+    select string_agg(
+             substr('ABCDEFGHJKLMNPQRSTUVWXYZ23456789',
+                    (floor(random() * 32) + 1)::int, 1), '') as t
+    from generate_series(1, 8)
+  )
+  select substr(t, 1, 4) || '-' || substr(t, 5, 4) from picked;
 $$;
 
 create or replace function public.create_group()
