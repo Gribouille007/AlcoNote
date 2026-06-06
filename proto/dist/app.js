@@ -119,6 +119,7 @@ function AppShell() {
   const [toast, setToast] = React.useState(null);
   const [catQuery, setCatQuery] = React.useState('');
   const [catOpen, setCatOpen] = React.useState(null);
+  const [openFriend, setOpenFriend] = React.useState(null);
   const {
     drinks
   } = useDrinks();
@@ -154,6 +155,8 @@ function AppShell() {
   // category grid instead of leaving the app. Sheets/dialogs register
   // their own back handlers via SheetOverlay / ConfirmHost.
   useBackButton(!!catOpen, React.useCallback(() => setCatOpen(null), []));
+  // Android Back closes an open friend's stats view before leaving the app.
+  useBackButton(!!openFriend, React.useCallback(() => setOpenFriend(null), []));
   const directAdd = React.useCallback(async family => {
     try {
       const n = new Date();
@@ -251,7 +254,11 @@ function AppShell() {
     onDirectAdd: directAdd
   })), activated.has('stats') && /*#__PURE__*/React.createElement("div", {
     style: tabContainer('stats')
-  }, /*#__PURE__*/React.createElement(StatsTab, null))), /*#__PURE__*/React.createElement(Fab, {
+  }, /*#__PURE__*/React.createElement(StatsTab, null)), activated.has('friends') && /*#__PURE__*/React.createElement("div", {
+    style: tabContainer('friends')
+  }, /*#__PURE__*/React.createElement(FriendsTab, {
+    onOpenFriend: setOpenFriend
+  }))), /*#__PURE__*/React.createElement(Fab, {
     onClick: () => {
       setPrefill(null);
       setAdding(true);
@@ -285,6 +292,10 @@ function AppShell() {
     key: editFamily.id,
     family: editFamily,
     onClose: () => setEditFamily(null)
+  }), openFriend && /*#__PURE__*/React.createElement(FriendStatsView, {
+    key: openFriend.userId,
+    friend: openFriend,
+    onClose: () => setOpenFriend(null)
   }), /*#__PURE__*/React.createElement(ConfirmHost, null), toast && /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'fixed',
@@ -365,7 +376,8 @@ function AppHeader({
   const titles = {
     categories: 'Catégories',
     history: 'Historique',
-    stats: 'Statistiques'
+    stats: 'Statistiques',
+    friends: 'Amis'
   };
   const today = new Date();
   const dateStr = `${FR_DAYS_LONG[today.getDay()]} ${today.getDate()} ${FR_MONTHS_LONG[today.getMonth()]}`;
@@ -430,46 +442,9 @@ function AppHeader({
       overflow: 'hidden',
       textOverflow: 'ellipsis'
     }
-  }, dateStr)), /*#__PURE__*/React.createElement("div", {
-    "aria-label": "Taux d'alcool\xE9mie",
-    title: `${bac} mg/L`,
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 5,
-      padding: '6px 10px 6px 8px',
-      borderRadius: 12,
-      background: T.accentSoft,
-      border: `1px solid ${T.accentSoftBorder}`,
-      minWidth: 48,
-      maxWidth: 86,
-      justifyContent: 'center',
-      opacity: bac > 0 ? 1 : 0.7
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 6,
-      height: 6,
-      borderRadius: 99,
-      background: T.accent,
-      boxShadow: bac > 0 ? `0 0 8px ${T.accent}` : 'none',
-      flexShrink: 0
-    }
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: T.accent,
-      fontSize: 11,
-      fontWeight: 600,
-      fontFamily: fontNum,
-      letterSpacing: 0,
-      fontVariantNumeric: 'tabular-nums',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-      whiteSpace: 'nowrap',
-      minWidth: 0,
-      flex: '0 1 auto'
-    }
-  }, bac)));
+  }, dateStr)), /*#__PURE__*/React.createElement(BacPill, {
+    bac: bac
+  }));
 }
 
 // Un seul bouton de nav (hook usePressScale → impossible dans un .map).
@@ -533,6 +508,10 @@ function BottomNav({
     id: 'stats',
     label: 'Stats',
     icon: Ic.bars
+  }, {
+    id: 'friends',
+    label: 'Amis',
+    icon: Ic.users
   }];
   const activeIdx = Math.max(0, items.findIndex(it => it.id === tab));
   return /*#__PURE__*/React.createElement("div", {

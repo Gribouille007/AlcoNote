@@ -1,6 +1,17 @@
 // Database management for AlcoNote PWA
 // Using Dexie.js for IndexedDB operations
 
+// Stable, globally-unique id for a drink. Used as the shared-record key so a
+// drink keeps the same identity across devices/users (Dexie ++id is local and
+// would collide between people). Falls back to a time+random id where
+// crypto.randomUUID is unavailable.
+function genUid() {
+    try {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    } catch (e) { /* ignore */ }
+    return 'uid-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
 class AlcoNoteDB extends Dexie {
     constructor() {
         super('AlcoNoteDB');
@@ -36,6 +47,53 @@ class AlcoNoteDB extends Dexie {
         // user data is lost.
         this.version(4).stores({
             bacRecords: null
+        });
+
+        // Version 5 — friends-sharing support. PURELY ADDITIVE: we only add a
+        // `uid` index to `drinks` and three new tables. No existing table is
+        // dropped/renamed/rewritten, so no user data is lost.
+        //   - drinks.uid     : stable global id (backfilled below)
+        //   - sharedPool     : READ-ONLY copy of other members' shared drinks.
+        //                      The sync engine writes ONLY here, never into the
+        //                      user's own drinks/categories/ratings/settings.
+        //   - shareOutbox    : pending outbound mutations (offline-safe queue)
+        //   - backups        : safety snapshots (a full v4 export is written
+        //                      here before the migration touches anything)
+        this.version(5).stores({
+            drinks: '++id, uid, name, category, quantity, unit, alcoholContent, date, time, location, barcode, createdAt, updatedAt',
+            sharedPool: 'uid, groupId, authorId, tsUtc, updatedAt, deleted',
+            shareOutbox: '++id, uid, op, queuedAt',
+            backups: '++id, createdAt'
+        }).upgrade(async (tx) => {
+            // 1) Safety net: snapshot all v4 data BEFORE modifying anything.
+            try {
+                const [categories, drinks, settings, drinkRatings] = await Promise.all([
+                    tx.table('categories').toArray(),
+                    tx.table('drinks').toArray(),
+                    tx.table('settings').toArray(),
+                    tx.table('drinkRatings').toArray()
+                ]);
+                const snapshot = {
+                    version: '1.0',
+                    exportDate: new Date().toISOString(),
+                    reason: 'pre-v5-migration',
+                    categories, drinks, settings, drinkRatings
+                };
+                await tx.table('backups').add({
+                    createdAt: new Date(),
+                    label: 'pre-v5',
+                    json: JSON.stringify(snapshot)
+                });
+                // 2) Backfill a stable uid on every existing drink (idempotent).
+                await tx.table('drinks').toCollection().modify((d) => {
+                    if (!d.uid) d.uid = genUid();
+                });
+            } catch (e) {
+                // Abort the migration rather than proceed in a half-migrated
+                // state; Dexie will roll back the version bump.
+                console.error('v5 migration failed:', e);
+                throw e;
+            }
         });
 
         // Add hooks for automatic timestamps
@@ -294,6 +352,7 @@ class DatabaseManager {
             }
 
             const drinkToAdd = {
+                uid: drinkData.uid || genUid(),
                 name: drinkData.name,
                 category: drinkData.category,
                 quantity: drinkData.quantity,
@@ -439,6 +498,97 @@ class DatabaseManager {
         } catch (error) {
             console.error('Error getting all ratings:', error);
             return [];
+        }
+    }
+
+    // ── Friends-sharing operations (v5) ─────────────────────────────────────
+    // These touch ONLY the sharing tables (shareOutbox / sharedPool). They
+    // never write to the user's own drinks/categories/ratings/settings.
+
+    async getDrinkByUid(uid) {
+        try {
+            return await this.db.drinks.where('uid').equals(uid).first();
+        } catch (error) {
+            console.error('Error getting drink by uid:', error);
+            return null;
+        }
+    }
+
+    // Outbox: pending outbound mutations, drained by the sync engine.
+    async addOutbox(entry) {
+        try {
+            return await this.db.shareOutbox.add({ ...entry, queuedAt: Date.now() });
+        } catch (error) {
+            console.error('Error adding to outbox:', error);
+            return null;
+        }
+    }
+
+    async getOutbox() {
+        try {
+            return await this.db.shareOutbox.orderBy('id').toArray();
+        } catch (error) {
+            console.error('Error reading outbox:', error);
+            return [];
+        }
+    }
+
+    async clearOutbox(ids) {
+        try {
+            await this.db.shareOutbox.bulkDelete(ids);
+            return true;
+        } catch (error) {
+            console.error('Error clearing outbox:', error);
+            return false;
+        }
+    }
+
+    // sharedPool: READ-ONLY mirror of other members' shared drinks.
+    async upsertSharedDrinks(records) {
+        try {
+            await this.db.sharedPool.bulkPut(records);
+            return true;
+        } catch (error) {
+            console.error('Error upserting shared drinks:', error);
+            return false;
+        }
+    }
+
+    async getAllSharedDrinks() {
+        try {
+            return await this.db.sharedPool.toArray();
+        } catch (error) {
+            console.error('Error getting shared drinks:', error);
+            return [];
+        }
+    }
+
+    async deleteSharedByUids(uids) {
+        try {
+            await this.db.sharedPool.bulkDelete(uids);
+            return true;
+        } catch (error) {
+            console.error('Error deleting shared drinks:', error);
+            return false;
+        }
+    }
+
+    async clearSharedPool() {
+        try {
+            await this.db.sharedPool.clear();
+            return true;
+        } catch (error) {
+            console.error('Error clearing shared pool:', error);
+            return false;
+        }
+    }
+
+    async getLatestBackup() {
+        try {
+            return await this.db.backups.orderBy('id').last();
+        } catch (error) {
+            console.error('Error getting latest backup:', error);
+            return null;
         }
     }
 
