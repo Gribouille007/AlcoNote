@@ -158,6 +158,25 @@ async function main() {
   const members = window.shareEngine.state.members.filter(m => m.userId !== window.shareEngine.state.userId);
   check('2 membres dans le groupe (hors moi)', members.length === 2);
 
+  // RÉGRESSION : une erreur de lecture des boissons NE DOIT PAS effacer la
+  // liste des membres (bug « l'autre ne me voit pas »). On simule un pull
+  // partiellement en échec et on vérifie que les membres restent + erreur visible.
+  {
+    const tr = window.getTransport();
+    const realPull = tr.pullSince.bind(tr);
+    tr.pullSince = async (cursor) => {
+      const r = await realPull(cursor);
+      return { ...r, drinks: [], error: { code: '42501', message: 'permission denied for table shared_drinks' } };
+    };
+    await act(async () => { await window.shareEngine.refreshNow(); await sleep(150); });
+    const stillThere = window.shareEngine.state.members.filter(m => m.userId !== window.shareEngine.state.userId);
+    check('Pull partiel en échec: membres CONSERVÉS', stillThere.length === 2);
+    check('Pull partiel en échec: erreur diagnostique exposée', /droits manquants|permission/i.test(window.shareEngine.state.errorDetail || ''));
+    tr.pullSince = realPull; // restaure
+    await act(async () => { await window.shareEngine.refreshNow(); await sleep(150); });
+    check('Après réparation: plus d\'erreur', !window.shareEngine.state.errorDetail);
+  }
+
   // Ouvre la vue stats de Léa : clique sa ligne.
   const leaBtn = [...window.document.querySelectorAll('button')]
     .find(b => (b.getAttribute('aria-label') || '').includes('Léa'));

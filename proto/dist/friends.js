@@ -360,6 +360,10 @@ function FriendsTab({
   const members = useGroupMembers();
   const bacMap = useFriendsBac(members);
   const hasGroup = s.enabled && !!s.groupId;
+  const onRefresh = async () => {
+    const err = await shareEngine.refreshNow();
+    if (err) Toast.show(err);
+  };
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -382,9 +386,9 @@ function FriendsTab({
       textTransform: 'uppercase',
       fontWeight: 500
     }
-  }, s.syncing ? 'Synchronisation…' : s.lastPullAt ? `Mis à jour ${fmtRelTime(s.lastPullAt)}` : 'Prêt', s.error ? ' · hors ligne' : ''), /*#__PURE__*/React.createElement("button", {
+  }, s.syncing ? 'Synchronisation…' : s.lastPullAt ? `Mis à jour ${fmtRelTime(s.lastPullAt)}` : 'Prêt'), /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: () => shareEngine.refreshNow(),
+    onClick: onRefresh,
     "aria-label": "Rafra\xEEchir",
     disabled: s.syncing,
     style: {
@@ -402,7 +406,18 @@ function FriendsTab({
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.refresh,
     size: 15
-  }), " Rafra\xEEchir")), /*#__PURE__*/React.createElement("div", {
+  }), " Rafra\xEEchir")), hasGroup && s.errorDetail && /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: '0 16px 8px',
+      padding: '8px 12px',
+      borderRadius: 10,
+      background: T.dangerSoftBg,
+      border: `1px solid ${T.dangerSoftBorder}`,
+      color: T.accent2,
+      fontSize: 11.5,
+      lineHeight: 1.4
+    }
+  }, s.errorDetail), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       overflow: 'auto',
