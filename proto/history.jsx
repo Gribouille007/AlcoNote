@@ -109,7 +109,7 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
             onOpenEntry={setEditEntry}
             onDirectAdd={onDirectAdd}
             onDelete={onDeleteEntry}
-            first={i === 0} />
+            index={i} first={i === 0} />
         ))}
       </div>
 
@@ -120,7 +120,8 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
   );
 }
 
-const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAdd, onDelete, first }) {
+const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAdd, onDelete, first, index = 0 }) {
+  const reduced = useReducedMotion();
   const d = new Date(day + 'T00:00');
   const today = new Date(); today.setHours(0,0,0,0);
   const diff = Math.round((today - d) / 86400000);
@@ -133,7 +134,8 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
   const totalCl = entries.reduce((s, e) => s + toCl(e.family.quantity, e.family.unit), 0);
 
   return (
-    <div style={{ marginTop: first ? 4 : 14, marginBottom: 4, position: 'relative' }}>
+    <div style={{ marginTop: first ? 4 : 14, marginBottom: 4, position: 'relative',
+      ...staggerStyle(index, { reduced }) }}>
       <button type="button" onClick={() => onToggle(day)}
         aria-expanded={!isCollapsed}
         aria-label={`${isCollapsed ? 'Déplier' : 'Replier'} ${fmtDayHeader(d)}`}
@@ -173,7 +175,7 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
         </div>
       </button>
 
-      {!isCollapsed && (
+      <Collapse open={!isCollapsed}>
         <div style={{ position: 'relative', paddingLeft: 24 }}>
           <div style={{
             position: 'absolute', left: 22, top: 0, bottom: 14,
@@ -195,7 +197,7 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
             ))}
           </div>
         </div>
-      )}
+      </Collapse>
     </div>
   );
 });

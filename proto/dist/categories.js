@@ -111,9 +111,10 @@ function CategoryGrid({
       gap: 12,
       marginTop: 10
     }
-  }, cats.map(c => /*#__PURE__*/React.createElement(CategoryCard, {
+  }, cats.map((c, i) => /*#__PURE__*/React.createElement(CategoryCard, {
     key: c.id || c.name,
     cat: c,
+    index: i,
     onOpen: onOpen,
     onEdit: onEditCat
   }))), cats.length === 0 && /*#__PURE__*/React.createElement("div", {
@@ -151,9 +152,10 @@ function CategoryGrid({
     style: {
       marginTop: 10
     }
-  }, matchedFams.map(f => /*#__PURE__*/React.createElement(FamilyRow, {
+  }, matchedFams.map((f, i) => /*#__PURE__*/React.createElement(FamilyRow, {
     key: f.id,
     family: f,
+    index: i,
     onOpen: onOpenFamily,
     onDirectAdd: onDirectAdd
   })), matchedFams.length === 0 && /*#__PURE__*/React.createElement("div", {
@@ -168,11 +170,14 @@ function CategoryGrid({
 const CategoryCard = React.memo(function CategoryCard({
   cat,
   onOpen,
-  onEdit
+  onEdit,
+  index = 0
 }) {
   const color = catColor(cat.name, 70);
   const bg = catBg(cat.name);
-  return /*#__PURE__*/React.createElement("div", _extends({}, clickable(() => onOpen && onOpen(cat.name), `Ouvrir la catégorie ${cat.name}`), {
+  const reduced = useReducedMotion();
+  const press = usePressScale();
+  return /*#__PURE__*/React.createElement("div", _extends({}, clickable(() => onOpen && onOpen(cat.name), `Ouvrir la catégorie ${cat.name}`), press.handlers, {
     style: {
       background: T.surface,
       borderRadius: 18,
@@ -184,7 +189,11 @@ const CategoryCard = React.memo(function CategoryCard({
       aspectRatio: '1 / 1.05',
       display: 'flex',
       flexDirection: 'column',
-      justifyContent: 'space-between'
+      justifyContent: 'space-between',
+      ...press.style,
+      ...staggerStyle(index, {
+        reduced
+      })
     }
   }), /*#__PURE__*/React.createElement("button", {
     type: "button",
@@ -388,9 +397,10 @@ function FamilyList({
     f,
     idx,
     total
-  }) => /*#__PURE__*/React.createElement(FamilyRow, {
+  }, i) => /*#__PURE__*/React.createElement(FamilyRow, {
     key: f.id,
     family: f,
+    index: i,
     variantIndex: idx,
     variantCount: total,
     onOpen: onOpen,
@@ -409,14 +419,17 @@ const FamilyRow = React.memo(function FamilyRow({
   variantIndex = 0,
   variantCount = 1,
   onOpen,
-  onDirectAdd
+  onDirectAdd,
+  index = 0
 }) {
   const color = catColor(f.category, 70);
   const totalEntries = f.entries.length;
   const isFirstOfGroup = variantIndex === 0;
   const isLastOfGroup = variantIndex === variantCount - 1;
   const topMargin = isFirstOfGroup ? 8 : 0;
-  return /*#__PURE__*/React.createElement("div", _extends({}, clickable(() => onOpen && onOpen(f), `Voir les détails de ${f.name}`), {
+  const reduced = useReducedMotion();
+  const press = usePressScale();
+  return /*#__PURE__*/React.createElement("div", _extends({}, clickable(() => onOpen && onOpen(f), `Voir les détails de ${f.name}`), press.handlers, {
     style: {
       display: 'flex',
       alignItems: 'center',
@@ -430,7 +443,11 @@ const FamilyRow = React.memo(function FamilyRow({
       marginTop: topMargin,
       marginBottom: isLastOfGroup ? 8 : 0,
       cursor: 'pointer',
-      position: 'relative'
+      position: 'relative',
+      ...press.style,
+      ...staggerStyle(index, {
+        reduced
+      })
     }
   }), /*#__PURE__*/React.createElement("div", {
     style: {

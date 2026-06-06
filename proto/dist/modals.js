@@ -663,17 +663,17 @@ function ScannerSheet({
       borderLeftWidth: i % 2 === 0 ? 3 : 0,
       borderRightWidth: i % 2 === 1 ? 3 : 0
     }
-  })), status === 'scanning' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("style", null, `@keyframes sl { 0%{top:0} 100%{top:100%} }`), /*#__PURE__*/React.createElement("div", {
+  })), status === 'scanning' && /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'absolute',
       left: 0,
       right: 0,
       height: 2,
       background: `linear-gradient(90deg, transparent, ${T.accent}, transparent)`,
-      animation: 'sl 1.8s ease-in-out infinite alternate',
+      animation: 'scanSweep 1.8s ease-in-out infinite alternate',
       boxShadow: `0 0 14px ${T.accent}`
     }
-  }))), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'absolute',
       bottom: 50,

@@ -143,6 +143,7 @@ function HistoryTab({
     onOpenEntry: setEditEntry,
     onDirectAdd: onDirectAdd,
     onDelete: onDeleteEntry,
+    index: i,
     first: i === 0
   }))), editEntry && /*#__PURE__*/React.createElement(EditEntrySheet, {
     key: editEntry.id,
@@ -158,8 +159,10 @@ const DayGroup = React.memo(function DayGroup({
   onOpenEntry,
   onDirectAdd,
   onDelete,
-  first
+  first,
+  index = 0
 }) {
+  const reduced = useReducedMotion();
   const d = new Date(day + 'T00:00');
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -173,7 +176,10 @@ const DayGroup = React.memo(function DayGroup({
     style: {
       marginTop: first ? 4 : 14,
       marginBottom: 4,
-      position: 'relative'
+      position: 'relative',
+      ...staggerStyle(index, {
+        reduced
+      })
     }
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
@@ -240,7 +246,9 @@ const DayGroup = React.memo(function DayGroup({
     style: {
       opacity: 0.6
     }
-  }, " \xB7 ", rel)))), !isCollapsed && /*#__PURE__*/React.createElement("div", {
+  }, " \xB7 ", rel)))), /*#__PURE__*/React.createElement(Collapse, {
+    open: !isCollapsed
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'relative',
       paddingLeft: 24
@@ -272,7 +280,7 @@ const DayGroup = React.memo(function DayGroup({
     onDelete: onDelete,
     first: i === 0,
     last: i === entries.length - 1
-  })))));
+  }))))));
 });
 const EntryRow = React.memo(function EntryRow({
   entry: e,
