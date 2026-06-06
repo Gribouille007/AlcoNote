@@ -46,6 +46,7 @@ class AppErrorBoundary extends React.Component {
 // IndexedDB round-trip on every dataBus.bump.
 function AppShell() {
   const themeName = useTheme();
+  const reducedMotion = useReducedMotion();
   // Sync the <html>/<body> theme hooks only when the theme actually
   // changes — without a dep array this fired on every AppShell render
   // (60s BAC tick, every sheet open/close, toasts…) re-writing the same
@@ -164,10 +165,15 @@ function AppShell() {
   // alive but the browser skips layout / paint. Combined with the
   // shared data context above, switching tabs becomes a CSS toggle
   // instead of a full unmount + remount + refetch.
+  // Inactive tabs keep `animation` set but `display:none` suspends it ;
+  // when a tab becomes visible (display:none → flex) the spec restarts
+  // its animation, so `alcoRise` rejoue à chaque activation sans démonter
+  // le sous-arbre (on garde la persistance/perf du StatsTab).
   const tabContainer = (id) => ({
     flex: 1, minHeight: 0,
     display: tab === id ? 'flex' : 'none',
     flexDirection: 'column',
+    animation: reducedMotion ? undefined : `alcoRise ${MOTION.base}ms ${MOTION.ease}`,
   });
 
   return (
@@ -354,12 +360,38 @@ function AppHeader({ tab, onMenu }) {
   );
 }
 
+// Un seul bouton de nav (hook usePressScale → impossible dans un .map).
+function NavButton({ item, active, onChange }) {
+  const reduced = useReducedMotion();
+  const press = usePressScale();
+  return (
+    <button type="button" role="tab" aria-selected={active}
+      aria-label={item.label}
+      {...press.handlers}
+      onClick={() => onChange(item.id)} style={{
+        flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+        gap: 4, padding: '10px 8px', cursor: 'pointer', position: 'relative',
+        color: active ? T.accent : T.muted,
+        background: 'transparent', border: 'none', fontFamily: 'inherit',
+        ...press.style,
+        ...(reduced ? null : { transition: `transform ${MOTION.fast}ms ${MOTION.ease}, color ${MOTION.fast}ms ${MOTION.ease}` }),
+      }}>
+      <SvgIcon icon={item.icon} size={22} />
+      <span style={{
+        fontSize: 10, letterSpacing: 0.2, fontWeight: active ? 600 : 400,
+      }}>{item.label}</span>
+    </button>
+  );
+}
+
 function BottomNav({ tab, onChange }) {
+  const reduced = useReducedMotion();
   const items = [
     { id: 'categories', label: 'Catégories', icon: Ic.grid },
     { id: 'history',    label: 'Historique', icon: Ic.clockArrow },
     { id: 'stats',      label: 'Stats',      icon: Ic.bars },
   ];
+  const activeIdx = Math.max(0, items.findIndex(it => it.id === tab));
   return (
     <div style={{
       position: 'relative',
@@ -368,39 +400,35 @@ function BottomNav({ tab, onChange }) {
       flexShrink: 0,
     }}>
       <div role="tablist" aria-label="Navigation principale"
-        style={{ display: 'flex', justifyContent: 'space-around', paddingBottom: 2 }}>
-        {items.map(it => {
-          const on = tab === it.id;
-          return (
-            <button key={it.id} type="button" role="tab" aria-selected={on}
-              aria-label={it.label}
-              onClick={() => onChange(it.id)} style={{
-                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-                gap: 4, padding: '10px 8px', cursor: 'pointer', position: 'relative',
-                color: on ? T.accent : T.muted,
-                background: 'transparent', border: 'none', fontFamily: 'inherit',
-              }}>
-              <SvgIcon icon={it.icon} size={22} />
-              <span style={{
-                fontSize: 10, letterSpacing: 0.2, fontWeight: on ? 600 : 400,
-              }}>{it.label}</span>
-              {on && (
-                <span aria-hidden="true" style={{
-                  position: 'absolute', top: 2, width: 20, height: 3,
-                  borderRadius: 99, background: T.accent,
-                  boxShadow: `0 0 8px ${T.accent}`,
-                }}/>
-              )}
-            </button>
-          );
-        })}
+        style={{ display: 'flex', justifyContent: 'space-around', paddingBottom: 2, position: 'relative' }}>
+        {/* Indicateur actif unique : glisse d'un onglet à l'autre au lieu
+            d'apparaître. Hors flux (absolute) pour ne pas pousser les boutons. */}
+        <div aria-hidden="true" style={{
+          position: 'absolute', top: 2, left: 0, height: 3,
+          width: `${100 / items.length}%`,
+          display: 'flex', justifyContent: 'center',
+          transform: `translateX(${activeIdx * 100}%)`,
+          transition: reduced ? undefined : `transform ${MOTION.base}ms ${MOTION.ease}`,
+          pointerEvents: 'none',
+        }}>
+          <div style={{
+            width: 20, height: 3, borderRadius: 99,
+            background: T.accent, boxShadow: `0 0 8px ${T.accent}`,
+          }}/>
+        </div>
+        {items.map(it => (
+          <NavButton key={it.id} item={it} active={tab === it.id} onChange={onChange} />
+        ))}
       </div>
     </div>
   );
 }
 function Fab({ onClick }) {
+  const reduced = useReducedMotion();
+  const press = usePressScale();
   return (
-    <button type="button" onClick={onClick} aria-label="Ajouter une boisson" style={{
+    <button type="button" onClick={onClick} aria-label="Ajouter une boisson"
+      {...press.handlers} style={{
       position: 'absolute',
       bottom: 'calc(78px + env(safe-area-inset-bottom))',
       right: 14, zIndex: 30,
@@ -409,6 +437,8 @@ function Fab({ onClick }) {
       color: T.accentInk, cursor: 'pointer',
       border: 'none', padding: 0, fontFamily: 'inherit',
       boxShadow: `0 10px 26px ${withAlpha(T.accent, T.isDark ? 0.5 : 0.45)}, 0 0 0 1px ${withAlpha(T.accentRing, T.isDark ? 0.3 : 0.6)}`,
+      ...press.style,
+      ...(reduced ? null : { animation: `scaleIn ${MOTION.base}ms ${MOTION.ease}` }),
     }}>
       <SvgIcon icon={Ic.plus} size={26} />
     </button>

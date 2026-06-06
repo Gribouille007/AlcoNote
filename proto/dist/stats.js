@@ -705,12 +705,14 @@ function StatSection({
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap'
     }
-  }, sub)), action), isOpen && /*#__PURE__*/React.createElement("div", {
+  }, sub)), action), /*#__PURE__*/React.createElement(Collapse, {
+    open: isOpen
+  }, /*#__PURE__*/React.createElement("div", {
     id: `alco-section-${id}`,
     style: {
       padding: 12
     }
-  }, children));
+  }, children)));
 }
 function Card({
   children,
@@ -903,7 +905,8 @@ function GeneralSection({
     label: c.l,
     icon: c.icon,
     delta: c.delta,
-    period: period
+    period: period,
+    index: i
   }))), catDist.length > 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
@@ -984,8 +987,10 @@ const StatCell = React.memo(function StatCell({
   label,
   icon,
   delta,
-  period
+  period,
+  index = 0
 }) {
+  const reduced = useReducedMotion();
   return /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.surface2,
@@ -996,7 +1001,10 @@ const StatCell = React.memo(function StatCell({
       display: 'flex',
       flexDirection: 'column',
       justifyContent: 'space-between',
-      minHeight: 64
+      minHeight: 64,
+      ...staggerStyle(index, {
+        reduced
+      })
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {

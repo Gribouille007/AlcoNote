@@ -83,7 +83,7 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
         <>
           <SectionHead>Vos catégories</SectionHead>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 10 }}>
-            {cats.map(c => <CategoryCard key={c.id || c.name} cat={c}
+            {cats.map((c, i) => <CategoryCard key={c.id || c.name} cat={c} index={i}
               onOpen={onOpen}
               onEdit={onEditCat} />)}
           </div>
@@ -108,8 +108,8 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
         <>
           <SectionHead>{matchedFams.length} résultat{matchedFams.length > 1 ? 's' : ''}</SectionHead>
           <div style={{ marginTop: 10 }}>
-            {matchedFams.map(f => (
-              <FamilyRow key={f.id} family={f} onOpen={onOpenFamily}
+            {matchedFams.map((f, i) => (
+              <FamilyRow key={f.id} family={f} index={i} onOpen={onOpenFamily}
                 onDirectAdd={onDirectAdd} />
             ))}
             {matchedFams.length === 0 && (
@@ -124,16 +124,21 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
   );
 }
 
-const CategoryCard = React.memo(function CategoryCard({ cat, onOpen, onEdit }) {
+const CategoryCard = React.memo(function CategoryCard({ cat, onOpen, onEdit, index = 0 }) {
   const color = catColor(cat.name, 70);
   const bg = catBg(cat.name);
+  const reduced = useReducedMotion();
+  const press = usePressScale();
   return (
-    <div {...clickable(() => onOpen && onOpen(cat.name), `Ouvrir la catégorie ${cat.name}`)} style={{
+    <div {...clickable(() => onOpen && onOpen(cat.name), `Ouvrir la catégorie ${cat.name}`)}
+      {...press.handlers} style={{
       background: T.surface, borderRadius: 18, padding: 14,
       border: `1px solid ${T.rule}`, cursor: 'pointer',
       position: 'relative', overflow: 'hidden',
       aspectRatio: '1 / 1.05',
       display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+      ...press.style,
+      ...staggerStyle(index, { reduced }),
     }}>
       <button type="button"
         onClick={(e) => { e.stopPropagation(); onEdit && onEdit(cat.name); }}
@@ -245,8 +250,8 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
         {' '}{entriesTotal} entrées au total
       </div>
 
-      {rows.map(({ f, idx, total }) => (
-        <FamilyRow key={f.id} family={f}
+      {rows.map(({ f, idx, total }, i) => (
+        <FamilyRow key={f.id} family={f} index={i}
           variantIndex={idx} variantCount={total}
           onOpen={onOpen} onDirectAdd={onDirectAdd} />
       ))}
@@ -260,14 +265,17 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
   );
 }
 
-const FamilyRow = React.memo(function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onOpen, onDirectAdd }) {
+const FamilyRow = React.memo(function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onOpen, onDirectAdd, index = 0 }) {
   const color = catColor(f.category, 70);
   const totalEntries = f.entries.length;
   const isFirstOfGroup = variantIndex === 0;
   const isLastOfGroup  = variantIndex === variantCount - 1;
   const topMargin = isFirstOfGroup ? 8 : 0;
+  const reduced = useReducedMotion();
+  const press = usePressScale();
   return (
-    <div {...clickable(() => onOpen && onOpen(f), `Voir les détails de ${f.name}`)} style={{
+    <div {...clickable(() => onOpen && onOpen(f), `Voir les détails de ${f.name}`)}
+      {...press.handlers} style={{
       display: 'flex', alignItems: 'center', gap: 14,
       padding: '14px 14px', background: T.surface,
       borderRadius: variantCount > 1
@@ -279,6 +287,8 @@ const FamilyRow = React.memo(function FamilyRow({ family: f, variantIndex = 0, v
       marginTop: topMargin,
       marginBottom: isLastOfGroup ? 8 : 0,
       cursor: 'pointer', position: 'relative',
+      ...press.style,
+      ...staggerStyle(index, { reduced }),
     }}>
       <div style={{
         width: 40, height: 40, borderRadius: 12, background: catBg(f.category),

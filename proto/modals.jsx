@@ -423,15 +423,12 @@ function ScannerSheet({ onClose, onScanned }) {
             }}/>
           ))}
           {status === 'scanning' && (
-            <>
-              <style>{`@keyframes sl { 0%{top:0} 100%{top:100%} }`}</style>
-              <div style={{
-                position: 'absolute', left: 0, right: 0, height: 2,
-                background: `linear-gradient(90deg, transparent, ${T.accent}, transparent)`,
-                animation: 'sl 1.8s ease-in-out infinite alternate',
-                boxShadow: `0 0 14px ${T.accent}`,
-              }}/>
-            </>
+            <div style={{
+              position: 'absolute', left: 0, right: 0, height: 2,
+              background: `linear-gradient(90deg, transparent, ${T.accent}, transparent)`,
+              animation: 'scanSweep 1.8s ease-in-out infinite alternate',
+              boxShadow: `0 0 14px ${T.accent}`,
+            }}/>
           )}
         </div>
 

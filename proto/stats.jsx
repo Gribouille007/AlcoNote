@@ -567,7 +567,9 @@ function StatSection({ id, title, action, children, sub, collapsed, toggleSectio
         </div>
         {action}
       </button>
-      {isOpen && <div id={`alco-section-${id}`} style={{ padding: 12 }}>{children}</div>}
+      <Collapse open={isOpen}>
+        <div id={`alco-section-${id}`} style={{ padding: 12 }}>{children}</div>
+      </Collapse>
     </section>
   );
 }
@@ -713,7 +715,7 @@ function GeneralSection({
         }}>
           {cards.map((c, i) => (
             <StatCell key={c.l} value={c.v} label={c.l} icon={c.icon}
-              delta={c.delta} period={period} />
+              delta={c.delta} period={period} index={i} />
           ))}
         </div>
       )}
@@ -764,13 +766,15 @@ function GeneralSection({
 // number-only to preserve the dense 3-column rhythm). Memoized so a
 // re-render of the parent doesn't ripple through every tile when only
 // one of them actually changed.
-const StatCell = React.memo(function StatCell({ value, label, icon, delta, period }) {
+const StatCell = React.memo(function StatCell({ value, label, icon, delta, period, index = 0 }) {
+  const reduced = useReducedMotion();
   return (
     <div style={{
       background: T.surface2, borderRadius: 12, padding: '12px 10px',
       border: `1px solid ${T.rule}`, position: 'relative',
       display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
       minHeight: 64,
+      ...staggerStyle(index, { reduced }),
     }}>
       <div style={{
         display: 'flex', alignItems: 'baseline', gap: 6,

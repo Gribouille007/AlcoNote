@@ -119,6 +119,19 @@ const fontSans = '"Geist", ui-sans-serif, system-ui, sans-serif';
 const fontSerif = '"Instrument Serif", "Times New Roman", serif';
 const fontNum = '"Geist Mono", ui-monospace, monospace';
 
+// ── Motion : source unique de vérité des durées/easing ─────────────
+// Aucun composant ne code une durée en dur : tout passe par MOTION
+// (cf. CLAUDE.md › DA). Registre sobre, sans rebond.
+const MOTION = Object.freeze({
+  fast: 180,
+  base: 220,
+  stagger: 38,
+  // ms entre deux items d'une liste
+  ease: 'cubic-bezier(.2,.6,.2,1)',
+  // calme, sans overshoot
+  press: 0.97 // scale au tap
+});
+
 // ── Icons ──────────────────────────────────────────────────────────
 const Ic = {
   menu: /*#__PURE__*/React.createElement("svg", {
@@ -1424,6 +1437,9 @@ function QuickAddButton({
 }) {
   const start = React.useRef(null);
   const lastPointerTs = React.useRef(0);
+  // Feedback tactile composé avec les handlers pointer existants (on
+  // appelle press/release, on n'écrase rien — la logique d'ajout reste).
+  const press = usePressScale();
   return /*#__PURE__*/React.createElement("button", {
     type: "button",
     onPointerDown: e => {
@@ -1433,11 +1449,13 @@ function QuickAddButton({
         y: e.clientY,
         moved: false
       };
+      press.press();
     },
     onPointerMove: e => {
       const s = start.current;
       if (s && (Math.abs(e.clientX - s.x) > 10 || Math.abs(e.clientY - s.y) > 10)) {
         s.moved = true;
+        press.release();
       }
     },
     onPointerUp: e => {
@@ -1445,10 +1463,12 @@ function QuickAddButton({
       const s = start.current;
       start.current = null;
       lastPointerTs.current = e.timeStamp;
+      press.release();
       if (s && !s.moved) onAdd && onAdd();
     },
     onPointerCancel: () => {
       start.current = null;
+      press.release();
     },
     onKeyDown: e => {
       // Keep Enter/Space from bubbling to a parent `clickable` row
@@ -1478,7 +1498,8 @@ function QuickAddButton({
       flexShrink: 0,
       padding: 0,
       fontFamily: 'inherit',
-      touchAction: 'manipulation'
+      touchAction: 'manipulation',
+      ...press.style
     },
     title: "Ajouter \xE0 nouveau",
     "aria-label": label
@@ -1858,6 +1879,10 @@ function useSWVersion() {
     @keyframes slideLeft { from { transform: translateX(16px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
     @keyframes scaleIn { from { transform: scale(.96); opacity: 0 } to { transform: scale(1); opacity: 1 } }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    /* Entrée par défaut listes & onglets : montée courte + fondu, sans rebond. */
+    @keyframes alcoRise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
+    /* Balayage du viseur scanner (rapatrié de modals.jsx : plus aucun @keyframes inline). */
+    @keyframes scanSweep { 0%{top:0} 100%{top:100%} }
 
     /* Carte (StatsTab › MapSection). Les couleurs sont pilotées par des
        variables CSS posées sur le conteneur, ce qui permet de rethémer la
@@ -1907,6 +1932,146 @@ function useSWVersion() {
   `;
   document.head.appendChild(s);
 })();
+
+// ── Motion : hooks & primitives réutilisables ──────────────────────
+// Une seule couche d'animation, consommée partout. Tout respecte
+// prefers-reduced-motion et MOTION. Aucun keyframe par composant.
+
+// prefers-reduced-motion partagé via UN seul listener global : une
+// liste peut monter des centaines de lignes, un store unique évite
+// autant d'abonnements matchMedia.
+const _reducedMotion = {
+  mq: typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null,
+  subs: new Set()
+};
+if (_reducedMotion.mq) {
+  const notify = () => _reducedMotion.subs.forEach(fn => fn());
+  if (_reducedMotion.mq.addEventListener) _reducedMotion.mq.addEventListener('change', notify);else if (_reducedMotion.mq.addListener) _reducedMotion.mq.addListener(notify);
+}
+function useReducedMotion() {
+  const [reduced, setReduced] = React.useState(() => !!(_reducedMotion.mq && _reducedMotion.mq.matches));
+  React.useEffect(() => {
+    const mq = _reducedMotion.mq;
+    if (!mq) return;
+    const fn = () => setReduced(mq.matches);
+    _reducedMotion.subs.add(fn);
+    fn();
+    return () => {
+      _reducedMotion.subs.delete(fn);
+    };
+  }, []);
+  return reduced;
+}
+
+// Entrée de liste en cascade. Fonction pure → à *spreader* dans le
+// style racine d'un item mappé (aucune prop de layout : ne casse pas
+// les bordures/marges de voisinage). Fill `backwards` : masque l'item
+// pendant le délai (pas de flash) puis relâche la transform après l'anim
+// (laisse un éventuel scale de tap reprendre la main).
+function staggerStyle(index = 0, opts = {}) {
+  const {
+    name = 'alcoRise',
+    duration = MOTION.base,
+    step = MOTION.stagger,
+    base = 0,
+    max = 12,
+    reduced = false
+  } = opts;
+  if (reduced) return null;
+  const i = Math.min(Math.max(index, 0), max); // plafonne la cascade
+  return {
+    animation: `${name} ${duration}ms ${MOTION.ease}`,
+    animationDelay: `${base + i * step}ms`,
+    animationFillMode: 'backwards'
+  };
+}
+
+// Feedback tactile réutilisable : léger scale au pointerdown. Contourne
+// l'impossibilité d'exprimer :active en style inline. Expose `pressed`
+// + press/release pour composer avec des éléments qui gèrent déjà leurs
+// propres pointer events (ex. QuickAddButton), sans les écraser.
+function usePressScale(opts = {}) {
+  const {
+    scale = MOTION.press
+  } = opts;
+  const reduced = useReducedMotion();
+  const [pressed, setPressed] = React.useState(false);
+  const press = React.useCallback(() => setPressed(true), []);
+  const release = React.useCallback(() => setPressed(false), []);
+  return {
+    pressed,
+    press,
+    release,
+    style: reduced ? null : {
+      transform: pressed ? `scale(${scale})` : 'scale(1)',
+      transition: `transform ${MOTION.fast}ms ${MOTION.ease}`
+    },
+    handlers: reduced ? {} : {
+      onPointerDown: press,
+      onPointerUp: release,
+      onPointerCancel: release,
+      onPointerLeave: release
+    }
+  };
+}
+
+// Repli/dépli à hauteur animée via l'astuce grid-template-rows 0fr→1fr
+// (aucune mesure JS). Le contenu est démonté une fois le repli terminé
+// (perf : un jour d'historique replié ne garde pas ses lignes montées).
+// `expanded` est décalé de deux frames à l'ouverture pour que la
+// transition 0fr→1fr démarre bien avec le contenu déjà peint.
+function Collapse({
+  open,
+  children,
+  duration = MOTION.base,
+  style
+}) {
+  const reduced = useReducedMotion();
+  const [render, setRender] = React.useState(open);
+  const [expanded, setExpanded] = React.useState(open);
+  React.useEffect(() => {
+    // Reduced-motion : pas d'anim, on synchronise l'état et on sort
+    // (aucun rAF/timeout laissé en suspens).
+    if (reduced) {
+      setRender(open);
+      setExpanded(open);
+      return;
+    }
+    if (open) {
+      // Monte le contenu, puis bascule en 1fr à la frame SUIVANTE : le
+      // double rAF garantit que l'état 0fr (avec contenu) est peint avant
+      // la transition, sinon le contenu peut « pop » sans animer.
+      setRender(true);
+      let r2 = 0;
+      const r1 = requestAnimationFrame(() => {
+        r2 = requestAnimationFrame(() => setExpanded(true));
+      });
+      return () => {
+        cancelAnimationFrame(r1);
+        cancelAnimationFrame(r2);
+      };
+    }
+    setExpanded(false);
+    const t = setTimeout(() => setRender(false), duration);
+    return () => clearTimeout(t);
+  }, [open, reduced, duration]);
+  if (reduced) return open ? /*#__PURE__*/React.createElement("div", {
+    style: style
+  }, children) : null;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateRows: expanded ? '1fr' : '0fr',
+      transition: `grid-template-rows ${duration}ms ${MOTION.ease}`,
+      ...style
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      overflow: 'hidden',
+      minHeight: 0
+    }
+  }, render ? children : null));
+}
 
 // ── Form primitives (shared by every add/edit sheet) ──────────────
 // Centralised so the add-drink / edit-entry / edit-family / settings
@@ -2306,6 +2471,11 @@ Object.assign(window, {
   clickable,
   ghostButton,
   QuickAddButton,
+  MOTION,
+  useReducedMotion,
+  staggerStyle,
+  usePressScale,
+  Collapse,
   useSWVersion,
   inputBaseStyle,
   inputS: inputBaseStyle,
