@@ -799,6 +799,9 @@ function useFriendsBac(members) {
     .map(m => `${m.userId}:${m.shareBac ? 1 : 0}:${m.bacWeight || ''}:${m.bacGender || ''}`)
     .join(',');
   React.useEffect(() => {
+    // Aucun membre à évaluer (ex. header sans favori) : on évite le timer 60 s
+    // et la lecture IndexedDB inutiles, et on repart d'une map vide.
+    if (!members || members.length === 0) { setMap({}); return; }
     let alive = true;
     const compute = async () => {
       const db = await waitForDb();

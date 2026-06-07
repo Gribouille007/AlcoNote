@@ -326,35 +326,41 @@ function AppHeader({ tab, onMenu }) {
   return (
     <div style={{
       padding: 'calc(env(safe-area-inset-top) + 14px) 18px 14px',
-      display: 'flex', alignItems: 'center',
-      justifyContent: 'space-between', gap: 12,
+      display: 'flex', flexDirection: 'column', gap: 6,
       flexShrink: 0,
     }}>
-      <button type="button" onClick={onMenu} aria-label="Ouvrir les paramètres" style={{
-        width: 38, height: 38, borderRadius: 12, background: T.surface2,
-        display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
-        border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit',
+      <div style={{
+        display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', gap: 12,
       }}>
-        <SvgIcon icon={Ic.menu} size={18} />
-      </button>
-      <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
-        <div style={{
-          fontFamily: fontSerif, fontSize: 20, color: T.ink,
-          letterSpacing: -0.3, lineHeight: 1, fontStyle: 'italic',
-        }}>{titles[tab]}</div>
-        <div style={{
-          fontSize: 10, color: T.muted, letterSpacing: 1, marginTop: 3,
-          textTransform: 'uppercase', fontWeight: 500,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>{dateStr}</div>
-      </div>
-      {/* Ma pastille BAC + (sous elle) la pastille verte de l'ami favori.
-          FavoriteFriendPill s'abonne lui-même au partage → seul lui re-rend
-          sur un pull ; le header (titre/menu) garde son profil de rendu. */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+        <button type="button" onClick={onMenu} aria-label="Ouvrir les paramètres" style={{
+          width: 38, height: 38, borderRadius: 12, background: T.surface2,
+          display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
+          border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit',
+        }}>
+          <SvgIcon icon={Ic.menu} size={18} />
+        </button>
+        <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
+          <div style={{
+            fontFamily: fontSerif, fontSize: 20, color: T.ink,
+            letterSpacing: -0.3, lineHeight: 1, fontStyle: 'italic',
+          }}>{titles[tab]}</div>
+          <div style={{
+            fontSize: 10, color: T.muted, letterSpacing: 1, marginTop: 3,
+            textTransform: 'uppercase', fontWeight: 500,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>{dateStr}</div>
+        </div>
         <BacPill bac={bac} />
-        <FavoriteFriendPill />
       </div>
+      {/* Pastille verte de l'ami favori : EN FLUX, juste sous ma pastille,
+          alignée à droite (cf. FavoriteFriendPill). Elle n'agrandit le header
+          que lorsqu'un favori est défini — sinon le composant renvoie null et
+          la rangée menu/titre/pastille reste identique à l'origine. Choix d'un
+          flux (vs overlay absolu) : zéro risque de chevaucher le contenu de
+          l'onglet (barre de période, recherche…). FavoriteFriendPill confine
+          l'abonnement share → un pull ne re-rend que cette pastille. */}
+      <FavoriteFriendPill />
     </div>
   );
 }

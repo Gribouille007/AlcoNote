@@ -7,11 +7,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 // Context.Provider surchargés (ses boissons partagées au lieu des miennes) —
 // la carte (pas de GPS) et le BAC (si non partagé) sont masqués.
 
-// Ligne d'un ami : étoile favori (si BAC partagé) + pseudo + pastille BAC,
-// cliquable. La ligne est un `role="button"` (div) et non un `<button>` pour
-// pouvoir y imbriquer le vrai bouton étoile sans HTML invalide (button-in-button).
-// `favorite`/`onToggleFav` sont fournis par FriendsTab (composant piloté par
-// props → pas d'abonnement share par ligne).
+// Ligne d'un ami : étoile favori (si BAC partagé) + pseudo + pastille BAC.
+// Deux boutons FRÈRES dans un conteneur non-interactif — l'étoile (toggle
+// favori) et le bouton « ouvrir la fiche » — au lieu d'imbriquer l'étoile dans
+// la ligne. Plus de button-in-button ni d'élément focusable dans un
+// `role="button"` (a11y propre), et plus besoin de garde-fou clavier ni de
+// stopPropagation : un clic/Entrée sur l'étoile ne remonte pas au bouton voisin.
+// `favorite`/`onToggleFav` viennent de FriendsTab (piloté par props → aucun
+// abonnement share par ligne).
 function FriendRow({
   member,
   bac,
@@ -21,58 +24,53 @@ function FriendRow({
 }) {
   const press = usePressScale();
   const name = member.displayName || 'Anonyme';
-  const open = () => onOpen(member);
-  return /*#__PURE__*/React.createElement("div", _extends({
-    role: "button",
-    tabIndex: 0
-  }, press.handlers, {
-    onClick: open,
-    onKeyDown: e => {
-      // Ne réagir qu'aux touches sur la ligne elle-même : sinon Entrée sur
-      // le bouton étoile (enfant) ouvrirait AUSSI la fiche (double action).
-      if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
-        e.preventDefault();
-        open();
-      }
-    },
-    "aria-label": `Voir les statistiques de ${name}`,
+  return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
-      alignItems: 'center',
-      gap: 10,
-      width: '100%',
-      padding: '14px 16px',
-      background: 'transparent',
-      borderBottom: `1px solid ${T.rule}`,
-      cursor: 'pointer',
-      fontFamily: 'inherit',
-      textAlign: 'left',
-      color: T.ink,
-      ...press.style
+      alignItems: 'stretch',
+      borderBottom: `1px solid ${T.rule}`
     }
-  }), member.shareBac && /*#__PURE__*/React.createElement("button", {
+  }, member.shareBac && /*#__PURE__*/React.createElement("button", {
     type: "button",
     "aria-label": favorite ? `Retirer ${name} des favoris` : `Mettre ${name} en favori`,
     "aria-pressed": !!favorite,
-    onPointerDown: e => e.stopPropagation(),
-    onClick: e => {
-      e.stopPropagation();
-      onToggleFav && onToggleFav();
-    },
+    onClick: () => onToggleFav && onToggleFav(),
     style: {
       ...ghostButton,
+      padding: '0 4px 0 14px',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: 4,
-      cursor: 'pointer',
       flexShrink: 0,
       color: favorite ? T.accent : T.muted
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: favorite ? Ic.star : Ic.starOutline,
     size: 17
-  })), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("button", _extends({
+    type: "button"
+  }, press.handlers, {
+    onClick: () => onOpen(member),
+    "aria-label": `Voir les statistiques de ${name}`,
+    style: {
+      flex: 1,
+      minWidth: 0,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      paddingTop: 14,
+      paddingBottom: 14,
+      paddingRight: 16,
+      paddingLeft: member.shareBac ? 6 : 16,
+      background: 'transparent',
+      border: 'none',
+      cursor: 'pointer',
+      fontFamily: 'inherit',
+      textAlign: 'left',
+      color: T.ink,
+      ...press.style
+    }
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       minWidth: 0
@@ -107,7 +105,7 @@ function FriendRow({
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.chevR,
     size: 18
-  })));
+  }))));
 }
 
 // Pied de l'onglet quand on est dans un groupe : code d'invitation à partager
@@ -629,20 +627,27 @@ function FriendStatsView({
   })))))));
 }
 
-// Pastille verte de l'ami favori, montée dans le header sous ma pastille BAC.
-// `tone="good"` (vert). Rien si pas de favori (ou favori parti du groupe). Le
-// hook `useFavoriteFriend` + l'abonnement share restent confinés ICI : un
-// `shareBus.bump` (pull) ne re-rend que cette pastille, pas tout le header.
+// Pastille verte de l'ami favori, montée dans le header SOUS ma pastille BAC,
+// alignée à droite (en flux). `tone="good"` (vert). Renvoie `null` sans favori
+// (ou favori parti du groupe) → le header retrouve exactement sa hauteur
+// d'origine, sans réserver d'espace. Le hook `useFavoriteFriend` + l'abonnement
+// share restent confinés ICI : un `shareBus.bump` (pull) ne re-rend que cette
+// pastille, pas tout le header.
 function FavoriteFriendPill() {
   const fav = useFavoriteFriend();
   const bacMap = useFriendsBac(fav ? [fav] : []);
   if (!fav) return null;
   const bac = bacMap[fav.userId];
-  return /*#__PURE__*/React.createElement(BacPill, {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'flex-end'
+    }
+  }, /*#__PURE__*/React.createElement(BacPill, {
     bac: bac == null ? null : bac,
     tone: "good",
     ariaLabel: `Alcoolémie de ${fav.displayName || 'mon favori'}`
-  });
+  }));
 }
 Object.assign(window, {
   FriendsTab,
