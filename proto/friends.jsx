@@ -63,15 +63,10 @@ function FriendRow({ member, bac, onOpen, favorite, onToggleFav }) {
   );
 }
 
-// Pied de l'onglet quand on est dans un groupe : code d'invitation à partager
-// (copiable) + action « Quitter le groupe ».
+// Pied de l'onglet quand on est dans un groupe : action « Quitter le groupe ».
+// Le code d'invitation N'EST PLUS affiché ici (déjà dans un groupe) — il reste
+// accessible dans Paramètres › Partage, pour inviter d'autres personnes.
 function GroupFooter() {
-  const s = useShare();
-  const onCopy = async () => {
-    if (!s.inviteCode) return;
-    try { await navigator.clipboard.writeText(s.inviteCode); Toast.show('Code copié'); }
-    catch (e) { Toast.show(s.inviteCode); }
-  };
   const onLeave = async () => {
     const ok = await Confirm.ask({
       title: 'Quitter le groupe ?',
@@ -84,23 +79,6 @@ function GroupFooter() {
   };
   return (
     <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {s.inviteCode && (
-        <button type="button" onClick={onCopy} aria-label="Copier le code d'invitation"
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-            width: '100%', padding: '12px 16px', borderRadius: 12,
-            background: T.surface2, border: `1px solid ${T.rule}`, cursor: 'pointer',
-            fontFamily: 'inherit', textAlign: 'left',
-          }}>
-          <span style={{ fontSize: 9.5, color: T.muted, letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: 500 }}>
-            Code d'invitation
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: T.accent }}>
-            <span style={{ fontFamily: fontNum, fontSize: 16, letterSpacing: 1.5 }}>{s.inviteCode}</span>
-            <SvgIcon icon={Ic.copy} size={15} />
-          </span>
-        </button>
-      )}
       <button type="button" onClick={onLeave} style={{
         ...ghostButton, padding: '10px 12px', cursor: 'pointer',
         color: T.accent2, fontSize: 13, fontWeight: 600, alignSelf: 'center',
@@ -232,7 +210,15 @@ function FriendsTab({ onOpenFriend }) {
         </div>
       )}
 
-      {hasGroup && s.errorDetail && (
+      {hasGroup && !s.online && (
+        <div style={{
+          margin: '0 16px 8px', padding: '8px 12px', borderRadius: 10,
+          background: T.surface2, border: `1px solid ${T.rule}`,
+          color: T.ink2, fontSize: 11.5, lineHeight: 1.4, textAlign: 'center',
+        }}>Vous n'êtes pas connecté·e à Internet</div>
+      )}
+
+      {hasGroup && s.online && s.errorDetail && (
         <div style={{
           margin: '0 16px 8px', padding: '8px 12px', borderRadius: 10,
           background: T.dangerSoftBg, border: `1px solid ${T.dangerSoftBorder}`,
@@ -322,6 +308,21 @@ function FriendStatsView({ friend, onClose }) {
             marginTop: 2, fontWeight: 500,
           }}>Statistiques partagées</div>
         </div>
+        <button type="button"
+          aria-label="Télécharger tout l'historique"
+          disabled={s.syncing}
+          onClick={async () => {
+            const errDetail = await shareEngine.pullFullHistory();
+            Toast.show(errDetail ? 'Échec du téléchargement' : 'Historique à jour');
+          }}
+          style={{
+            width: 38, height: 38, borderRadius: 12, background: T.surface2,
+            display: 'grid', placeItems: 'center', cursor: s.syncing ? 'default' : 'pointer',
+            border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit',
+            color: T.ink, flexShrink: 0, opacity: s.syncing ? 0.6 : 1,
+          }}>
+          <SvgIcon icon={s.syncing ? Ic.refresh : Ic.download} size={18} />
+        </button>
         {friend.shareBac && (
           <button type="button"
             aria-label={isFav ? 'Retirer des favoris' : 'Mettre en favori'}
@@ -343,7 +344,7 @@ function FriendStatsView({ friend, onClose }) {
           <SettingsContext.Provider value={settingsValue}>
             <RatingsContext.Provider value={friendRatings}>
               <BacProvider>
-                <StatsTab storageScope={'friend:' + friend.userId} hideMap
+                <StatsTab storageScope={'friend:' + friend.userId} hideMap hidePrice
                   hideBac={!friend.shareBac} bacAvailable={!!friend.shareBac} />
               </BacProvider>
             </RatingsContext.Provider>

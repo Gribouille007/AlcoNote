@@ -964,6 +964,16 @@ function drinkAlcoholGrams(drink) {
   return ethanolGrams(toCl(drink.quantity, drink.unit), drink.alcoholContent);
 }
 
+// Formatage prix (€) — jusqu'à 2 décimales sans zéros inutiles, séparateur
+// virgule (FR) ; null/vide/NaN → « — ». Source unique, réutilisée par les
+// feuilles (DrinkDetailSheet) et les stats (section Dépenses).
+function fmtPrice(v) {
+  const n = Number(v);
+  if (v == null || v === '' || !Number.isFinite(n)) return '—';
+  const s = (Math.round(n * 100) / 100).toString().replace('.', ',');
+  return `${s} €`;
+}
+
 // ── Search input ──────────────────────────────────────────────────
 function SearchInput({
   value,
@@ -2569,6 +2579,7 @@ Object.assign(window, {
   ETHANOL_DENSITY_G_PER_ML,
   ethanolGrams,
   drinkAlcoholGrams,
+  fmtPrice,
   SearchInput,
   SectionHead,
   Pill,

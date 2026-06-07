@@ -303,7 +303,9 @@ function computeBACSessions(drinks, weight = DEFAULT_WEIGHT_KG, gender = 'male')
       const dh = (bp.t - t) / hour;
       if (bac <= 1e-9) {
         // At zero: stays zero unless absorption now outpaces elimination.
-        bac = net > 0 ? net * dh : 0;
+        const bacEnd = net > 0 ? net * dh : 0;
+        if (cur) cur.area += (bac + bacEnd) / 2 * dh; // aire (trapèze)
+        bac = bacEnd;
         t = bp.t;
         break;
       }
@@ -311,7 +313,9 @@ function computeBACSessions(drinks, weight = DEFAULT_WEIGHT_KG, gender = 'male')
         const hZero = bac / -net; // hours until BAC reaches 0
         if (hZero <= dh) {
           if (cur) {
+            cur.area += bac / 2 * hZero; // descente bac → 0 sur hZero
             cur.endTs = t + hZero * hour;
+            cur.avgBac = cur.area / Math.max(1e-9, (cur.endTs - cur.startTs) / hour);
             cur = null;
           }
           bac = 0;
@@ -319,7 +323,9 @@ function computeBACSessions(drinks, weight = DEFAULT_WEIGHT_KG, gender = 'male')
           continue; // finish the rest of the segment at zero
         }
       }
-      bac = Math.max(0, bac + net * dh);
+      const bacEnd = Math.max(0, bac + net * dh);
+      if (cur) cur.area += (bac + bacEnd) / 2 * dh; // aire (trapèze)
+      bac = bacEnd;
       t = bp.t;
     }
 
@@ -339,7 +345,10 @@ function computeBACSessions(drinks, weight = DEFAULT_WEIGHT_KG, gender = 'male')
           drinks: [bp.d],
           grams: bp.d._grams,
           peakBac: bac,
-          peakTs: bp.d._ts
+          peakTs: bp.d._ts,
+          area: 0,
+          // ∫ bac dt sur la session (mg/L·h)
+          avgBac: 0 // = area / durée (mg/L), posé à la clôture
         };
         sessions.push(cur);
       } else {
@@ -357,7 +366,12 @@ function computeBACSessions(drinks, weight = DEFAULT_WEIGHT_KG, gender = 'male')
   }
 
   // Past the final breakpoint no absorption remains: decay straight to 0.
-  if (cur) cur.endTs = t + bac / elim * hour;
+  if (cur) {
+    const hZero = bac / elim;
+    cur.area += bac / 2 * hZero; // dernière descente bac → 0
+    cur.endTs = t + hZero * hour;
+    cur.avgBac = cur.area / Math.max(1e-9, (cur.endTs - cur.startTs) / hour);
+  }
   return sessions;
 }
 
@@ -448,6 +462,7 @@ function StatsTab({
   storageScope = '',
   hideMap = false,
   hideBac = false,
+  hidePrice = false,
   bacAvailable = true
 } = {}) {
   const {
@@ -556,7 +571,7 @@ function StatsTab({
     period: period,
     anchor: anchor,
     onShift: d => setAnchor(shiftAnchor(period, anchor, d))
-  }), /*#__PURE__*/React.createElement(GeneralSection, sp), /*#__PURE__*/React.createElement(TemporalSection, sp), /*#__PURE__*/React.createElement(CategorySection, sp), /*#__PURE__*/React.createElement(TopDrinksSection, sp), !hideBac && /*#__PURE__*/React.createElement(BACSection, sp), !hideMap && /*#__PURE__*/React.createElement(MapSection, sp), /*#__PURE__*/React.createElement(TrendsSection, sp), /*#__PURE__*/React.createElement(AdvancedSection, sp)));
+  }), /*#__PURE__*/React.createElement(GeneralSection, sp), /*#__PURE__*/React.createElement(TemporalSection, sp), /*#__PURE__*/React.createElement(CategorySection, sp), /*#__PURE__*/React.createElement(TopDrinksSection, sp), !hideBac && /*#__PURE__*/React.createElement(BACSection, sp), !hideMap && /*#__PURE__*/React.createElement(MapSection, sp), /*#__PURE__*/React.createElement(TrendsSection, sp), /*#__PURE__*/React.createElement(AdvancedSection, sp), !hidePrice && /*#__PURE__*/React.createElement(SpendingSection, sp)));
 }
 function PeriodSwitcher({
   period,
@@ -2055,12 +2070,30 @@ function BACSection({
   collapsed,
   toggleSection,
   allSessions,
+  sessions,
+  prevSessions,
+  period,
   weight,
   gender
 }) {
   const bacInfo = useBacInfo();
   const currentBAC = bacInfo.current || 0;
   const level = bacLevel(currentBAC);
+
+  // Taux moyen PAR SESSION sur la période : moyenne du taux intra-session
+  // (∫ bac dt / durée, calculé dans computeBACSessions), puis moyenne de ces
+  // moyennes sur les sessions de la période. En mg/L (comme le reste du BAC).
+  const meanSessionBac = arr => {
+    const xs = (arr || []).filter(s => s.avgBac > 0);
+    return xs.length ? xs.reduce((s, x) => s + x.avgBac, 0) / xs.length : null;
+  };
+  const periodAvgSession = React.useMemo(() => meanSessionBac(sessions), [sessions]);
+  const periodAvgDelta = React.useMemo(() => {
+    const cur = meanSessionBac(sessions),
+      prev = meanSessionBac(prevSessions);
+    if (cur == null || prev == null || prev === 0) return null;
+    return (cur - prev) / prev * 100;
+  }, [sessions, prevSessions]);
   const [forecastEnabled, setForecastEnabledState] = React.useState(loadForecastEnabled);
   const setForecastEnabled = v => {
     setForecastEnabledState(v);
@@ -2226,7 +2259,57 @@ function BACSection({
       color: T.ink,
       letterSpacing: -0.3
     }
-  }, fmtTime(hoursToLegal))))), bacInfo.points.length > 0 && /*#__PURE__*/React.createElement(Card, {
+  }, fmtTime(hoursToLegal))))), periodAvgSession != null && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 14,
+      marginBottom: 10,
+      position: 'relative'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 9.5,
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
+      marginBottom: 4
+    }
+  }, "Taux moyen par session"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.ink2,
+      fontSize: 11,
+      lineHeight: 1.4
+    }
+  }, "Moyenne intra-session, puis moyenne sur la p\xE9riode")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: fontSerif,
+      fontSize: 24,
+      color: T.ink,
+      letterSpacing: -0.3,
+      lineHeight: 1,
+      whiteSpace: 'nowrap',
+      flexShrink: 0
+    }
+  }, Math.round(periodAvgSession), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: fontSans,
+      fontSize: 12,
+      color: T.ink2,
+      marginLeft: 5
+    }
+  }, "mg/L"))), periodAvgDelta != null && period !== 'all' && /*#__PURE__*/React.createElement(DeltaBadge, {
+    delta: periodAvgDelta
+  })), bacInfo.points.length > 0 && /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 10
     }
@@ -3603,6 +3686,284 @@ function LegendDot({
     }
   }), " ", label);
 }
+
+// ── 8. Dépenses ───────────────────────────────────────────────────
+// Regroupe les prix réellement saisis par entrée (drink.price) en buckets
+// temporels adaptés à la période : heure (Aujourd'hui), jour (Semaine/Mois),
+// mois (Année/Année scolaire) ou année (Tout). Renvoie un tableau prêt pour
+// SvgBarChart + un libellé d'unité + un éventuel formatX.
+function bucketSpend(priced, period, range) {
+  const round2 = x => Math.round(x * 100) / 100;
+  const sum = {};
+  const add = (k, v) => {
+    sum[k] = (sum[k] || 0) + v;
+  };
+  if (period === 'today') {
+    for (const d of priced) {
+      const h = parseInt((d.time || '00:00').split(':')[0], 10);
+      if (h >= 0 && h < 24) add(String(h), Number(d.price));
+    }
+    const data = [];
+    for (let h = 0; h < 24; h++) data.push({
+      label: `${h}h`,
+      fullLabel: `${h}h`,
+      v: round2(sum[String(h)] || 0)
+    });
+    return {
+      data,
+      unitLabel: 'par heure',
+      formatX: (d, i) => i % 3 === 0 ? d.label : ''
+    };
+  }
+  const granularity = period === 'year' || period === 'school' ? 'month' : period === 'all' ? 'year' : 'day';
+  if (granularity === 'day') {
+    for (const d of priced) {
+      if (d.date) add(d.date, Number(d.price));
+    }
+    const start = new Date(range.start);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(range.end);
+    end.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const last = end < today ? end : today; // pas de jours futurs vides
+    const data = [];
+    for (let dt = new Date(start); dt <= last; dt = _addDays(dt, 1)) {
+      const k = _fmtIso(dt);
+      data.push({
+        label: `${dt.getDate()}/${dt.getMonth() + 1}`,
+        fullLabel: `${dt.getDate()} ${FR_MONTHS_SHORT[dt.getMonth()]}`,
+        v: round2(sum[k] || 0)
+      });
+    }
+    return {
+      data,
+      unitLabel: 'par jour',
+      formatX: null
+    };
+  }
+  if (granularity === 'month') {
+    for (const d of priced) {
+      if (d.date) add(d.date.slice(0, 7), Number(d.price));
+    }
+    const start = new Date(range.start.getFullYear(), range.start.getMonth(), 1);
+    const end = new Date(range.end.getFullYear(), range.end.getMonth(), 1);
+    const multiYear = start.getFullYear() !== end.getFullYear();
+    const data = [];
+    for (let dt = new Date(start); dt <= end; dt.setMonth(dt.getMonth() + 1)) {
+      const y = dt.getFullYear(),
+        m = dt.getMonth();
+      const k = `${y}-${String(m + 1).padStart(2, '0')}`;
+      const base = FR_MONTHS_SHORT[m].replace(/^[a-zà]/, c => c.toUpperCase());
+      data.push({
+        label: multiYear ? `${base} ${String(y).slice(2)}` : base,
+        fullLabel: `${base} ${y}`,
+        v: round2(sum[k] || 0)
+      });
+    }
+    return {
+      data,
+      unitLabel: 'par mois',
+      formatX: (d, i) => i % 2 === 0 ? d.label : ''
+    };
+  }
+
+  // année (Tout)
+  for (const d of priced) {
+    if (d.date) add(d.date.slice(0, 4), Number(d.price));
+  }
+  const years = Object.keys(sum).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  const data = [];
+  for (let y = years.length ? years[0] : 0; years.length && y <= years[years.length - 1]; y++) {
+    data.push({
+      label: `'${String(y).slice(2)}`,
+      fullLabel: String(y),
+      v: round2(sum[String(y)] || 0)
+    });
+  }
+  return {
+    data,
+    unitLabel: 'par année',
+    formatX: null
+  };
+}
+
+// Section Dépenses. N'agrège QUE les entrées portant un prix saisi
+// (drink.price != null). Le prix de référence vit en settings ; il n'est
+// jamais partagé → la section est masquée en vue ami (StatsTab hidePrice).
+function SpendingSection({
+  drinks,
+  prevDrinks,
+  period,
+  range,
+  collapsed,
+  toggleSection
+}) {
+  const isPriced = d => d && d.price != null && Number.isFinite(Number(d.price));
+  const priced = React.useMemo(() => drinks.filter(isPriced), [drinks]);
+  const total = React.useMemo(() => priced.reduce((s, d) => s + Number(d.price), 0), [priced]);
+  const avg = priced.length ? total / priced.length : null;
+  const prev = React.useMemo(() => {
+    if (!prevDrinks) return {
+      total: null,
+      count: 0
+    };
+    let t = 0,
+      n = 0;
+    for (const d of prevDrinks) {
+      if (isPriced(d)) {
+        t += Number(d.price);
+        n++;
+      }
+    }
+    return {
+      total: t,
+      count: n
+    };
+  }, [prevDrinks]);
+  const prevAvg = prev.count ? prev.total / prev.count : null;
+  const pctChange = (cur, p) => p == null || p === 0 ? null : (cur - p) / p * 100;
+  const byCat = React.useMemo(() => {
+    const map = {};
+    for (const d of priced) {
+      const cat = d.category || 'Autre';
+      if (!map[cat]) map[cat] = {
+        name: cat,
+        total: 0,
+        count: 0
+      };
+      map[cat].total += Number(d.price);
+      map[cat].count++;
+    }
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }, [priced]);
+  const catDonut = React.useMemo(() => byCat.map(c => ({
+    name: c.name,
+    v: Math.round(c.total * 100) / 100
+  })), [byCat]);
+  const spend = React.useMemo(() => bucketSpend(priced, period, range), [priced, period, range]);
+  if (priced.length === 0) {
+    return /*#__PURE__*/React.createElement(StatSection, {
+      id: "spending",
+      title: "D\xE9penses",
+      collapsed: collapsed,
+      toggleSection: toggleSection,
+      sub: "Co\xFBt de la consommation (prix saisis)"
+    }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: T.muted,
+        fontSize: 12,
+        padding: '8px 0',
+        textAlign: 'center',
+        fontStyle: 'italic',
+        fontFamily: fontSerif
+      }
+    }, "Aucun prix saisi sur cette p\xE9riode")));
+  }
+  return /*#__PURE__*/React.createElement(StatSection, {
+    id: "spending",
+    title: "D\xE9penses",
+    collapsed: collapsed,
+    toggleSection: toggleSection,
+    sub: "Co\xFBt de la consommation (prix saisis)"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(2, 1fr)',
+      gap: 8,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement(StatCell, {
+    value: fmtPrice(total),
+    label: "Total d\xE9pens\xE9",
+    delta: pctChange(total, prev.total),
+    period: period,
+    index: 0
+  }), /*#__PURE__*/React.createElement(StatCell, {
+    value: fmtPrice(avg),
+    label: "Prix moyen / boisson",
+    delta: avg != null ? pctChange(avg, prevAvg) : null,
+    period: period,
+    index: 1
+  })), byCat.length > 0 && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.ink,
+      fontSize: 12.5,
+      fontWeight: 500,
+      marginBottom: 12,
+      letterSpacing: -0.1
+    }
+  }, "Par cat\xE9gorie"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 18
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement(SvgDonut, {
+    data: catDonut,
+    size: 120,
+    thickness: 18
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 7
+    }
+  }, byCat.map(c => /*#__PURE__*/React.createElement("div", {
+    key: c.name,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      fontSize: 11
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 8,
+      height: 8,
+      borderRadius: 99,
+      background: catColor(c.name, 65)
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: T.ink,
+      flex: 1,
+      letterSpacing: -0.1,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap'
+    }
+  }, c.name), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: T.muted,
+      fontFamily: fontNum
+    }
+  }, fmtPrice(c.total))))))), spend.data.length > 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.ink,
+      fontSize: 12.5,
+      fontWeight: 500,
+      marginBottom: 10,
+      letterSpacing: -0.1
+    }
+  }, "D\xE9penses ", spend.unitLabel), /*#__PURE__*/React.createElement(SvgBarChart, {
+    data: spend.data,
+    width: 320,
+    height: 160,
+    color: T.accent,
+    formatX: spend.formatX,
+    formatTooltip: d => [d.fullLabel || d.label, fmtPrice(d.v)]
+  })));
+}
 Object.assign(window, {
   StatsTab,
   PeriodSwitcher,
@@ -3615,6 +3976,8 @@ Object.assign(window, {
   MapSection,
   TrendsSection,
   AdvancedSection,
+  SpendingSection,
+  bucketSpend,
   BACGauge,
   BACRecordRow,
   bacLevel,

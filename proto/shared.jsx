@@ -320,6 +320,16 @@ function drinkAlcoholGrams(drink) {
   return ethanolGrams(toCl(drink.quantity, drink.unit), drink.alcoholContent);
 }
 
+// Formatage prix (€) — jusqu'à 2 décimales sans zéros inutiles, séparateur
+// virgule (FR) ; null/vide/NaN → « — ». Source unique, réutilisée par les
+// feuilles (DrinkDetailSheet) et les stats (section Dépenses).
+function fmtPrice(v) {
+  const n = Number(v);
+  if (v == null || v === '' || !Number.isFinite(n)) return '—';
+  const s = (Math.round(n * 100) / 100).toString().replace('.', ',');
+  return `${s} €`;
+}
+
 // ── Search input ──────────────────────────────────────────────────
 function SearchInput({ value, onChange, placeholder }) {
   return (
@@ -1284,7 +1294,7 @@ Object.assign(window, {
   Toast,
   FR_DAYS_LONG, FR_DAYS_SHORT, FR_MONTHS_SHORT, FR_MONTHS_LONG, FR_MONTHS_DOTTED,
   fmtDateMedium, fmtDayHeader, localDate, localTime,
-  toCl, ETHANOL_DENSITY_G_PER_ML, ethanolGrams, drinkAlcoholGrams,
+  toCl, ETHANOL_DENSITY_G_PER_ML, ethanolGrams, drinkAlcoholGrams, fmtPrice,
   SearchInput, SectionHead, Pill, Stars, CategoryGlyph, GLYPH_OPTIONS, canonicalCat,
   SheetOverlay,
   useBackButton,

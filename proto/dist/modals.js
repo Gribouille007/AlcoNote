@@ -58,6 +58,11 @@ function AddDrinkSheet({
   const [date, setDate] = React.useState(() => _now().date);
   const [time, setTime] = React.useState(() => _now().time);
   const [rating, setRating] = React.useState(0);
+  // Prix de CETTE entrée (string, parsé au submit). `priceIsReference` coché ⇒
+  // ce prix devient/maj le prix de référence de la famille (repris par le
+  // « + »). Décoché ⇒ prix exceptionnel, la référence ne bouge pas.
+  const [price, setPrice] = React.useState('');
+  const [priceIsReference, setPriceIsReference] = React.useState(true);
   // `loc` = position attachée à la boisson (objet location | null). `locTouched`
   // distingue « non touché » (→ auto-capture non bloquante à l'ajout, comme
   // avant) de « choisi/retiré explicitement via le champ Lieu » (→ on respecte
@@ -91,6 +96,8 @@ function AddDrinkSheet({
       setUnit(prefill.unit || 'cL');
       setAlc(prefill.alcohol != null ? String(prefill.alcohol) : prefill.alcoholContent != null ? String(prefill.alcoholContent) : '');
       setRating(prefill.rating || 0);
+      setPrice(prefill.referencePrice != null ? String(prefill.referencePrice) : '');
+      setPriceIsReference(true);
     } else {
       setName('');
       setQty('');
@@ -98,6 +105,8 @@ function AddDrinkSheet({
       setAlc('');
       setRating(0);
       setCat('');
+      setPrice('');
+      setPriceIsReference(true);
     }
   }, [open, prefill]);
 
@@ -143,6 +152,8 @@ function AddDrinkSheet({
     setBusy(true);
     try {
       const drinkName = name.trim();
+      const priceNum = parseDecimal(price); // NaN si vide
+      const hasPrice = Number.isFinite(priceNum);
       const created = await addDrink({
         name: drinkName,
         category: cat,
@@ -151,23 +162,29 @@ function AddDrinkSheet({
         alcoholContent: alcNum,
         date,
         time,
-        location: locTouched ? loc : null
+        location: locTouched ? loc : null,
+        price: hasPrice ? priceNum : null,
+        // « Prix habituel » coché ⇒ au prix de référence (suit les cascades) ;
+        // décoché ⇒ prix personnalisé (jamais écrasé par un changement de réf.).
+        priceIsCustom: hasPrice && !priceIsReference
       });
       if (rating > 0) await saveRating(drinkName, rating);
+      // « Prix habituel » coché + valide ⇒ (re)définit la référence de la
+      // famille (reprise par le « + »). Décoché ⇒ entrée seule, réf. inchangée.
+      if (priceIsReference && hasPrice) {
+        await setReferencePrice({
+          name: drinkName,
+          quantity: qtyNum,
+          unit,
+          alcohol: alcNum
+        }, priceNum);
+      }
       Toast.show(`« ${drinkName} » ajoutée`);
       onClose && onClose();
-      // Géolocalisation non bloquante : si l'utilisateur n'a pas défini de
-      // lieu manuellement (champ Lieu), on tente une capture GPS après coup
-      // sans bloquer l'ajout. Une fois obtenue, on l'attache — elle apparaît
-      // alors sur la carte (StatsTab › MapSection). Un lieu choisi/retiré
-      // explicitement (`locTouched`) est respecté : on saute l'auto-capture.
-      if (!locTouched && created && created.id != null) {
-        captureLocationForDrink().then(captured => {
-          if (captured) updateDrink(created.id, {
-            location: captured
-          });
-        });
-      }
+      // Géolocalisation fiable et non bloquante (centralisée dans data.jsx :
+      // survit à la fermeture, reverse-geocode borné + retry). Un lieu
+      // choisi/retiré explicitement (`locTouched`) est respecté.
+      if (!locTouched && created && created.id != null) attachLocationToDrink(created.id);
     } catch (e) {
       setErr(e && e.message ? e.message : 'Erreur lors de l\'ajout');
     } finally {
@@ -352,7 +369,29 @@ function AddDrinkSheet({
     step: "0.1",
     suffix: "%",
     ariaLabel: "Degr\xE9 d'alcool"
-  })), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement(FieldGroup, {
+    label: "Prix (optionnel)"
+  }, /*#__PURE__*/React.createElement(NumberField, {
+    value: price,
+    onChange: setPrice,
+    step: "0.1",
+    suffix: "\u20AC",
+    ariaLabel: "Prix"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8,
+      background: T.surface,
+      border: `1px solid ${T.rule}`,
+      borderRadius: 12,
+      overflow: 'hidden'
+    }
+  }, /*#__PURE__*/React.createElement(ToggleRow, {
+    label: "Prix habituel pour cette boisson",
+    sub: "Le \xAB + \xBB et \xAB Ajouter \xE0 nouveau \xBB reprendront ce prix",
+    on: priceIsReference,
+    onToggle: () => setPriceIsReference(v => !v),
+    last: true
+  }))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
@@ -954,6 +993,9 @@ function DrinkDetailSheet({
   }), /*#__PURE__*/React.createElement(FactCell, {
     label: "cL",
     value: toCl(f.quantity, f.unit).toFixed(0)
+  }), f.referencePrice != null && /*#__PURE__*/React.createElement(FactCell, {
+    label: "Prix",
+    value: fmtPrice(f.referencePrice)
   }), /*#__PURE__*/React.createElement(FactCell, {
     label: "Note",
     value: /*#__PURE__*/React.createElement(Stars, {
@@ -1047,7 +1089,25 @@ function DrinkDetailSheet({
     }, /*#__PURE__*/React.createElement(SvgIcon, {
       icon: Ic.pin,
       size: 10
-    }), " ", e.place)), /*#__PURE__*/React.createElement("button", {
+    }), " ", e.place)), e.raw && e.raw.price != null && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
+        flexShrink: 0,
+        fontFamily: fontNum,
+        fontSize: 12,
+        color: T.ink2
+      }
+    }, e.raw.priceIsCustom && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontFamily: fontSans,
+        fontSize: 8.5,
+        color: T.muted,
+        letterSpacing: 0.3,
+        textTransform: 'uppercase'
+      }
+    }, "perso"), fmtPrice(e.raw.price)), /*#__PURE__*/React.createElement("button", {
       type: "button",
       "aria-label": "Supprimer cette entr\xE9e",
       onClick: async () => {
@@ -1217,6 +1277,9 @@ function EditEntrySheet({
   // Lieu de CETTE entrée (par entrée, pas par famille). Rend la position
   // éditable depuis l'Historique : définir / re-localiser / retirer.
   const [loc, setLoc] = React.useState(raw.location || null);
+  // Prix de CETTE entrée uniquement (ne touche jamais la référence de famille
+  // ni les autres entrées).
+  const [price, setPrice] = React.useState(raw.price != null ? String(raw.price) : '');
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   // Synchronous re-entry guards (save / delete) — `busy` disables the
@@ -1248,6 +1311,8 @@ function EditEntrySheet({
     setBusy(true);
     try {
       const finalName = name.trim();
+      const priceNum = parseDecimal(price);
+      const hasPrice = Number.isFinite(priceNum);
       await updateDrink(raw.id, {
         name: finalName,
         category: cat,
@@ -1256,7 +1321,12 @@ function EditEntrySheet({
         alcoholContent: parseDecimal(alc) || 0,
         date,
         time,
-        location: loc
+        location: loc,
+        price: hasPrice ? priceNum : null,
+        // Saisir un prix sur UNE entrée la rend personnalisée (protégée des
+        // cascades de prix de référence). Vider le champ la remet « au prix
+        // de référence » (price:null, suivra de nouveau la réf.).
+        priceIsCustom: hasPrice
       });
       // Renaming the entry only changes this row's name; siblings in
       // the family keep theirs. The old-name rating stays valid as
@@ -1420,6 +1490,14 @@ function EditEntrySheet({
     onChange: setAlc,
     step: "0.1",
     ariaLabel: "Degr\xE9 d'alcool"
+  })), /*#__PURE__*/React.createElement(FieldGroup, {
+    label: "Prix de cette entr\xE9e (optionnel)"
+  }, /*#__PURE__*/React.createElement(NumberField, {
+    value: price,
+    onChange: setPrice,
+    step: "0.1",
+    suffix: "\u20AC",
+    ariaLabel: "Prix de l'entr\xE9e"
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
@@ -1569,6 +1647,11 @@ function EditFamilySheet({
   // whatever name the user ends up saving. Renaming the family migrates
   // the rating to the new key.
   const [rating, setRating] = React.useState(ratings[ratingKey(family.name)] != null ? ratings[ratingKey(family.name)] : family.rating || 0);
+  // Prix de référence de la famille (repris par le « + »). `applyToExisting` ⇒
+  // au changement, applique aussi le nouveau prix aux boissons EXISTANTES qui
+  // sont au prix de référence (les prix personnalisés sont toujours préservés).
+  const [refPrice, setRefPrice] = React.useState(family.referencePrice != null ? String(family.referencePrice) : '');
+  const [applyToExisting, setApplyToExisting] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   // Synchronous re-entry guards — a fast double-tap would otherwise run
@@ -1601,13 +1684,38 @@ function EditFamilySheet({
     try {
       const finalName = name.trim();
       const renamed = finalName !== family.name;
+      const abvNum = parseDecimal(alc) || 0;
+      const refNum = parseDecimal(refPrice);
+      const hasRef = Number.isFinite(refNum);
+      // Le prix de référence a-t-il changé ? (null = pas de référence)
+      const oldRefVal = family.referencePrice != null ? family.referencePrice : null;
+      const newRefVal = hasRef ? refNum : null;
+      const refChanged = newRefVal !== oldRefVal;
+      // Toggle « Mettre à jour les boissons existantes » activé + prix changé ⇒
+      // cascade sur les entrées AU PRIX DE RÉFÉRENCE uniquement (les prix
+      // personnalisés sont préservés par `applyReferenceToFamily`). À faire AVANT
+      // la cascade d'identité car l'appariement (`sameFamily`) se fait sur
+      // l'identité d'origine.
+      if (refChanged && applyToExisting) await applyReferenceToFamily(family, newRefVal);
       await updateFamily(family, {
         name: finalName,
         quantity: qtyNum,
         unit,
-        alcoholContent: parseDecimal(alc) || 0,
+        alcoholContent: abvNum,
         category: cat
       });
+      // La référence vit en settings : (ré)écrite sous la nouvelle identité de
+      // famille ; l'ancienne clé est supprimée si l'identité (nom/qté/unité/
+      // degré) a changé, pour ne pas l'orpheliner.
+      const oldKey = familyPriceKey(family);
+      const newLike = {
+        name: finalName,
+        quantity: qtyNum,
+        unit,
+        alcohol: abvNum
+      };
+      await setReferencePrice(newLike, hasRef ? refNum : null);
+      if (familyPriceKey(newLike) !== oldKey) await saveSetting(oldKey, null);
       // Migrate the rating to the new key when the family is renamed.
       // We previously zeroed `ratings[family.name]` unconditionally to
       // avoid resurrecting the old rating on a future re-add — but that
@@ -1675,6 +1783,18 @@ function EditFamilySheet({
       removingRef.current = false;
     }
   };
+
+  // Impact live du prix de référence, affiché dans le toggle pour expliciter ce
+  // qui sera modifié : entrées AU PRIX DE RÉFÉRENCE (mises à jour si le toggle
+  // est actif) vs PERSONNALISÉES (toujours préservées). Le « dirty » compare la
+  // saisie courante au prix de référence enregistré (même calcul qu'au submit).
+  const plur = n => n > 1 ? 's' : '';
+  const refPricedCount = family.entries.filter(e => !(e.raw && e.raw.priceIsCustom)).length;
+  const customCount = family.entries.length - refPricedCount;
+  const liveRefNum = parseDecimal(refPrice);
+  const liveNewVal = Number.isFinite(liveRefNum) ? liveRefNum : null;
+  const liveOldVal = family.referencePrice != null ? family.referencePrice : null;
+  const refDirty = liveNewVal !== liveOldVal;
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: onClose
   }, /*#__PURE__*/React.createElement("div", {
@@ -1784,6 +1904,46 @@ function EditFamilySheet({
     step: "0.1",
     ariaLabel: "Degr\xE9 d'alcool"
   })), /*#__PURE__*/React.createElement(FieldGroup, {
+    label: "Prix de r\xE9f\xE9rence (optionnel)"
+  }, /*#__PURE__*/React.createElement(NumberField, {
+    value: refPrice,
+    onChange: setRefPrice,
+    step: "0.1",
+    suffix: "\u20AC",
+    ariaLabel: "Prix de r\xE9f\xE9rence"
+  }), refPricedCount > 0 ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8,
+      background: T.surface,
+      border: `1px solid ${T.rule}`,
+      borderRadius: 12,
+      overflow: 'hidden'
+    }
+  }, /*#__PURE__*/React.createElement(ToggleRow, {
+    label: "Mettre \xE0 jour les boissons existantes",
+    sub: `${refPricedCount} au prix de référence${customCount > 0 ? ` · ${customCount} personnalisée${plur(customCount)} préservée${plur(customCount)}` : ''}`,
+    on: applyToExisting,
+    onToggle: () => setApplyToExisting(v => !v),
+    last: true
+  })), refDirty && applyToExisting && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 6,
+      color: T.accent,
+      fontSize: 11,
+      letterSpacing: 0.2
+    }
+  }, refPricedCount, " boisson", plur(refPricedCount), " ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: fontNum
+    }
+  }, "\u2192 ", liveNewVal != null ? fmtPrice(liveNewVal) : 'sans prix'))) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 6,
+      color: T.muted,
+      fontSize: 11,
+      lineHeight: 1.4
+    }
+  }, "Toutes les entr\xE9es ont un prix personnalis\xE9 \u2014 ce prix ne sera repris que par les nouveaux ajouts.")), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Note"
   }, /*#__PURE__*/React.createElement(RatingField, {
     value: rating,

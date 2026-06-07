@@ -110,6 +110,42 @@ function AppShell() {
       return next;
     });
   }, [tab]);
+
+  // Pré-monte l'onglet Historique en idle après le 1er rendu : il reste en
+  // display:none, donc le premier tap devient un simple toggle CSS — ouverture
+  // instantanée au lieu de payer le mount synchrone à ce moment-là.
+  React.useEffect(() => {
+    let cancelled = false;
+    const warm = () => {
+      if (!cancelled) setActivated(prev => prev.has('history') ? prev : new Set(prev).add('history'));
+    };
+    const ric = typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback : null;
+    const handle = ric ? ric(warm, {
+      timeout: 2500
+    }) : setTimeout(warm, 1500);
+    return () => {
+      cancelled = true;
+      if (ric && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(handle);else clearTimeout(handle);
+    };
+  }, []);
+
+  // Filet « plus jamais d'adresse manquante » : en idle, complète les adresses
+  // des boissons qui ont des coordonnées mais pas de libellé (cf. data.jsx ›
+  // backfillMissingAddresses — sans nouvelle acquisition GPS).
+  React.useEffect(() => {
+    const run = () => {
+      try {
+        backfillMissingAddresses();
+      } catch (e) {}
+    };
+    const ric = typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback : null;
+    const handle = ric ? ric(run, {
+      timeout: 6000
+    }) : setTimeout(run, 4000);
+    return () => {
+      if (ric && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(handle);else clearTimeout(handle);
+    };
+  }, []);
   const [adding, setAdding] = React.useState(false);
   const [prefill, setPrefill] = React.useState(null);
   const [settings, setSettings] = React.useState(false);
@@ -124,6 +160,9 @@ function AppShell() {
     drinks
   } = useDrinks();
   const ratings = useRatings();
+  // NB: `settings` (boolean) est déjà l'état d'ouverture du tiroir Paramètres
+  // plus haut — d'où `userSettings` pour la map de réglages (prix de réf.).
+  const userSettings = useSettings();
   // BAC (header pill + Stats gauge) is owned by <BacProvider> above, so its
   // 60s decay tick no longer re-renders this shell or the tabs.
   // Category-icon overrides are owned by <CategoryIconsProvider> which
@@ -134,7 +173,11 @@ function AppShell() {
   // single memo here. HistoryTab / CategoriesTab / DrinkDetailSheet
   // all consume the same array, so a drinks bump rebuilds the grouping
   // exactly once instead of once per visible tab.
-  const families = React.useMemo(() => buildFamilies(drinks, ratings), [drinks, ratings]);
+  // Prix de référence par famille, dérivés des settings (price.ref.*) puis
+  // passés à buildFamilies pour peupler `family.referencePrice` (repris par
+  // le « + » et « Ajouter à nouveau »).
+  const priceRefs = React.useMemo(() => priceRefsFromSettings(userSettings), [userSettings]);
+  const families = React.useMemo(() => buildFamilies(drinks, ratings, priceRefs), [drinks, ratings, priceRefs]);
   React.useEffect(() => {
     window.__alcoToastSetter = (msg, opts) => {
       setToast({
@@ -166,6 +209,11 @@ function AppShell() {
         quantity: family.quantity,
         unit: family.unit,
         alcoholContent: family.alcohol || 0,
+        // Reprend le prix de référence de la famille (modifiable ensuite par
+        // entrée via « Modifier l'entrée »). N'altère jamais la référence.
+        price: family.referencePrice != null ? family.referencePrice : null,
+        // Ajout « + » = au prix de référence (suit les futures cascades de réf.).
+        priceIsCustom: false,
         // Local date/time pair so BAC's 24h window stays consistent
         // (UTC date + local time used to drop drinks added late at
         // night in positive-UTC zones).
@@ -173,15 +221,9 @@ function AppShell() {
         time: localTime(n)
       });
       Toast.show(`« ${family.name} » ajoutée`);
-      // Même capture de lieu non bloquante que l'ajout via la feuille,
-      // pour que les ajouts rapides apparaissent aussi sur la carte.
-      if (created && created.id != null) {
-        captureLocationForDrink().then(loc => {
-          if (loc) updateDrink(created.id, {
-            location: loc
-          });
-        });
-      }
+      // Capture de lieu fiable et non bloquante (centralisée dans data.jsx :
+      // survit à la fermeture, reverse-geocode borné + retry).
+      if (created && created.id != null) attachLocationToDrink(created.id);
     } catch (e) {
       Toast.show('Erreur lors de l\'ajout');
     }

@@ -23,6 +23,9 @@ function HistoryTab({
   const [filter, setFilter] = React.useState('all');
   const [collapsed, setCollapsed] = React.useState(loadCollapsedDays);
   const [editEntry, setEditEntry] = React.useState(null);
+  // Rendu incrémental : on peint d'abord les premiers jours (ouverture
+  // instantanée même sur un gros historique), puis on étend la liste en idle.
+  const [visibleCount, setVisibleCount] = React.useState(8);
   const {
     categories
   } = useCategories();
@@ -91,6 +94,26 @@ function HistoryTab({
       days
     };
   }, [allEntries, filter, query]);
+
+  // Recherche/filtre changé → on repart des premiers jours (sinon on garderait
+  // une grande fenêtre déjà étendue sur un nouveau résultat plus court).
+  React.useEffect(() => {
+    setVisibleCount(8);
+  }, [filter, query]);
+
+  // Étend la fenêtre par paquets en idle jusqu'à tout afficher, sans bloquer
+  // le thread principal (le 1er paint reste instantané).
+  React.useEffect(() => {
+    if (visibleCount >= days.length) return;
+    const ric = typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback : null;
+    const grow = () => setVisibleCount(c => Math.min(days.length, c + 10));
+    const h = ric ? ric(grow, {
+      timeout: 500
+    }) : setTimeout(grow, 80);
+    return () => {
+      if (ric && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(h);else clearTimeout(h);
+    };
+  }, [visibleCount, days.length]);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -134,7 +157,7 @@ function HistoryTab({
       padding: '60px 0',
       textAlign: 'center'
     }
-  }, "Aucune entr\xE9e trouv\xE9e"), days.map((day, i) => /*#__PURE__*/React.createElement(DayGroup, {
+  }, "Aucune entr\xE9e trouv\xE9e"), days.slice(0, visibleCount).map((day, i) => /*#__PURE__*/React.createElement(DayGroup, {
     key: day,
     day: day,
     entries: groups[day],

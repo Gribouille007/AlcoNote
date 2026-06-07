@@ -219,10 +219,17 @@ function useFamilies() { return React.useContext(FamiliesContext); }
 // A "family" groups distinct drinks by (name + quantity + unit + alcohol).
 // Each family carries a sorted entries list (newest first) and aggregate
 // counts for the UI.
-function buildFamilies(drinks, ratings = {}) {
+// Clé d'identité d'une famille : (nom + quantité + unité + degré), catégorie
+// EXCLUE (déplacer une famille de catégorie garde la même clé). Source unique,
+// partagée par buildFamilies / familyPriceKey / le prédicat sameFamily.
+function familyKey(name, quantity, unit, alcohol) {
+  return `${(name || '').trim().toLowerCase()}::${quantity}::${(unit || '').toLowerCase()}::${alcohol || 0}`;
+}
+
+function buildFamilies(drinks, ratings = {}, priceRefs = {}) {
   const map = new Map();
   for (const d of drinks) {
-    const key = `${(d.name || '').trim().toLowerCase()}::${d.quantity}::${(d.unit || '').toLowerCase()}::${d.alcoholContent || 0}`;
+    const key = familyKey(d.name, d.quantity, d.unit, d.alcoholContent);
     if (!map.has(key)) {
       map.set(key, {
         id: 'fam::' + key,
@@ -232,6 +239,10 @@ function buildFamilies(drinks, ratings = {}) {
         unit: d.unit,
         alcohol: d.alcoholContent || 0,
         rating: ratings[ratingKey(d.name)] || 0,
+        // Prix de référence stocké (setting `price.ref.<clé>`) repris par le
+        // « + » et « Ajouter à nouveau ». À défaut, on retombe (plus bas) sur
+        // le prix de l'entrée la plus récente qui en porte un.
+        referencePrice: priceRefs[key] != null ? priceRefs[key] : null,
         entries: [],
       });
     }
@@ -245,6 +256,12 @@ function buildFamilies(drinks, ratings = {}) {
   }
   for (const f of map.values()) {
     f.entries.sort((a, b) => b.ts.localeCompare(a.ts));
+    if (f.referencePrice == null) {
+      // Fallback : la dernière entrée NON personnalisée qui porte un prix
+      // (un prix perso ne doit pas devenir la référence implicite de la famille).
+      const priced = f.entries.find(e => e.raw && e.raw.price != null && !e.raw.priceIsCustom);
+      if (priced) f.referencePrice = priced.raw.price;
+    }
   }
   return Array.from(map.values()).sort((a, b) => b.entries.length - a.entries.length);
 }
@@ -303,6 +320,36 @@ async function saveSetting(key, value) {
   if (!db) return;
   await db.setSetting(key, value);
   dataBus.bump('settings');
+}
+
+// ── Prix de référence par famille ─────────────────────────────────
+// Le prix d'UNE entrée vit sur le drink (`drink.price`). Le prix de
+// RÉFÉRENCE (repris par le « + » / « Ajouter à nouveau ») est stocké en
+// settings sous `price.ref.<clé famille>` (clé = nom+qté+unité+degré, stable
+// au changement de catégorie). `value == null` SUPPRIME la clé
+// (setSetting(null), cf. convention « zéro perte »).
+const PRICE_REF_PREFIX = 'price.ref.';
+function familyPriceKey(family) {
+  const abv = family.alcohol != null ? family.alcohol : family.alcoholContent;
+  return PRICE_REF_PREFIX + familyKey(family.name, family.quantity, family.unit, abv);
+}
+// Extrait { clé famille → prix } depuis la map settings, pour la passer à
+// buildFamilies (chaque famille reçoit alors son `referencePrice`).
+function priceRefsFromSettings(settings) {
+  const out = {};
+  if (!settings) return out;
+  for (const k in settings) {
+    if (k.indexOf(PRICE_REF_PREFIX) === 0) {
+      const v = Number(settings[k]);
+      if (Number.isFinite(v)) out[k.slice(PRICE_REF_PREFIX.length)] = v;
+    }
+  }
+  return out;
+}
+async function setReferencePrice(family, value) {
+  const n = Number(value);
+  const ok = value != null && value !== '' && Number.isFinite(n);
+  await saveSetting(familyPriceKey(family), ok ? n : null);
 }
 
 function useSettings() { return React.useContext(SettingsContext); }
@@ -611,6 +658,24 @@ async function updateFamily(family, updates) {
   dataBus.bump('categories');
 }
 
+// Cascade un nouveau prix de référence sur les entrées de la famille qui sont
+// AU PRIX DE RÉFÉRENCE (`!priceIsCustom`) — les prix personnalisés ne sont
+// JAMAIS touchés. Utilisé par EditFamilySheet quand l'utilisateur choisit
+// « appliquer aux boissons existantes » (inclut les entrées sans prix).
+async function applyReferenceToFamily(family, value) {
+  const db = await waitForDb();
+  if (!db) return;
+  const n = Number(value);
+  const ok = value != null && value !== '' && Number.isFinite(n);
+  const all = await db.getAllDrinks();
+  const matches = all.filter(d => sameFamily(d, family) && !d.priceIsCustom);
+  for (const m of matches) {
+    await db.updateDrink(m.id, { price: ok ? n : null });
+  }
+  dataBus.bump('drinks');
+  dataBus.bump('categories');
+}
+
 // CONTRACT CHANGE (v3.5.0): now returns `{ count, snapshot }` instead of
 // `Promise<number>` so callers can wire an undo path. Update every
 // caller when modifying the shape — the legacy `js/app.js` does NOT
@@ -776,10 +841,31 @@ async function reverseGeocode(lat, lng) {
   return parts.join(', ') || data.display_name || null;
 }
 
+// Reverse-geocode borné dans le temps + 1 retry, ne jette jamais. Le timeout
+// précédent (4 s) laissait trop souvent l'adresse à `null` sur réseau lent —
+// d'où des boissons sans libellé. On laisse plus de temps et on réessaie une
+// fois ; on garde toujours les coordonnées même si le libellé n'arrive pas.
+async function reverseGeocodeReliable(lat, lng, { timeout = 9000, retries = 1 } = {}) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const addr = await Promise.race([
+        reverseGeocode(lat, lng),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('geocode timeout')), timeout)),
+      ]);
+      if (addr) return addr;
+    } catch {}
+    if (i < retries) await new Promise(r => setTimeout(r, 800));
+  }
+  return null;
+}
+
+// Dernière position GPS connue (récente), pour ne pas perdre le lieu sur un
+// timeout ponctuel d'un ajout rapide.
+let _lastPosition = null;
+
 // Acquiert la position courante pour l'attacher à une boisson. Retourne
 // { latitude, longitude, accuracy, address } ou null (refus, indispo,
-// timeout). Le reverse-geocoding est borné dans le temps : on garde
-// toujours les coordonnées même si le libellé n'arrive pas.
+// timeout sans position de repli).
 async function captureLocationForDrink() {
   try {
     if (!(await ensureGeoConsent())) return null;
@@ -787,21 +873,70 @@ async function captureLocationForDrink() {
     try {
       pos = await getPosition();
     } catch (e) {
-      if (e && e.code === 1 /* PERMISSION_DENIED */) setGeoConsent('denied');
-      return null;
+      if (e && e.code === 1 /* PERMISSION_DENIED */) { setGeoConsent('denied'); return null; }
+      // Timeout / indispo ponctuel : repli sur la dernière position connue
+      // (< 2 min) plutôt que de perdre le lieu.
+      if (_lastPosition && (Date.now() - _lastPosition.at) < 120000) pos = _lastPosition.pos;
+      else return null;
     }
     setGeoConsent('granted');
+    _lastPosition = { pos, at: Date.now() };
     const { latitude, longitude, accuracy } = pos.coords;
-    let address = null;
-    try {
-      address = await Promise.race([
-        reverseGeocode(latitude, longitude),
-        new Promise(resolve => setTimeout(() => resolve(null), 4000)),
-      ]);
-    } catch {}
+    const address = await reverseGeocodeReliable(latitude, longitude);
     return { latitude, longitude, accuracy: accuracy ?? null, address, capturedAt: Date.now() };
   } catch {
     return null;
+  }
+}
+
+// Capture la position et l'attache à un drink DÉJÀ créé. Module-scope : la
+// promesse n'est pas liée au cycle de vie d'un composant, donc elle aboutit
+// même si la feuille d'ajout se ferme entre-temps. Utilisée par l'ajout via
+// feuille ET l'ajout rapide (« + »).
+async function attachLocationToDrink(drinkId) {
+  if (drinkId == null) return;
+  try {
+    const loc = await captureLocationForDrink();
+    if (loc) await updateDrink(drinkId, { location: loc });
+  } catch {}
+}
+
+// Filet de sécurité « plus jamais d'adresse manquante » : complète en
+// arrière-plan les adresses des boissons qui ont déjà des coordonnées mais
+// pas de libellé (échec/timeout du reverse-geocode au moment de l'ajout).
+// Espacé (~1.1 s) pour respecter la politique Nominatim, plafonné, et lancé
+// une seule fois par session (idle au lancement). N'acquiert AUCUNE position
+// GPS — il ne fait que rattraper le libellé de coordonnées déjà consenties.
+let _backfillRan = false;
+async function backfillMissingAddresses({ cap = 25, spacingMs = 1100 } = {}) {
+  if (_backfillRan) return;
+  _backfillRan = true;
+  try {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) { _backfillRan = false; return; }
+    const db = await waitForDb();
+    if (!db) return;
+    const all = await db.getAllDrinks();
+    const targets = [];
+    for (const d of all) {
+      const c = getDrinkCoords(d);
+      const loc = d.location || null;
+      if (c && loc && (loc.address == null || loc.address === '')) targets.push({ d, c });
+      if (targets.length >= cap) break;
+    }
+    let changed = false;
+    for (const { d, c } of targets) {
+      let address = null;
+      try { address = await reverseGeocodeReliable(c.lat, c.lng, { timeout: 9000, retries: 0 }); } catch {}
+      if (address) {
+        // Écriture directe (db.updateDrink ne bump pas) : un seul bump à la fin.
+        await db.updateDrink(d.id, { location: { ...(d.location || {}), latitude: c.lat, longitude: c.lng, address } });
+        changed = true;
+      }
+      await new Promise(r => setTimeout(r, spacingMs));
+    }
+    if (changed) dataBus.bump('drinks');
+  } catch {
+    // best-effort
   }
 }
 
@@ -818,12 +953,15 @@ Object.assign(window, {
   DrinksProvider, RatingsProvider, CategoriesProvider, SettingsProvider,
   CategoryIconsProvider,
   buildFamilies, sameFamily, computeCategoryStats, flattenEntries,
+  familyKey, familyPriceKey, priceRefsFromSettings, setReferencePrice,
+  applyReferenceToFamily,
   ratingKey,
   saveSetting,
   addDrink, updateDrink, deleteDrink, deleteDrinkWithSnapshot, saveRating,
   addCategory, renameCategory, deleteCategory,
   updateFamily, deleteFamily, restoreDrinks,
   clearAllData,
-  captureLocationForDrink, getPosition, getDrinkCoords, drinkPlaceLabel,
+  captureLocationForDrink, attachLocationToDrink, backfillMissingAddresses,
+  getPosition, getDrinkCoords, drinkPlaceLabel,
   loadCategoryIcons, setCategoryIcon, migrateCategoryIconsToId,
 });
