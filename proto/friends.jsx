@@ -5,20 +5,44 @@
 // Context.Provider surchargés (ses boissons partagées au lieu des miennes) —
 // la carte (pas de GPS) et le BAC (si non partagé) sont masqués.
 
-// Ligne d'un ami : pseudo + pastille BAC, cliquable.
-function FriendRow({ member, bac, onOpen }) {
+// Ligne d'un ami : étoile favori (si BAC partagé) + pseudo + pastille BAC,
+// cliquable. La ligne est un `role="button"` (div) et non un `<button>` pour
+// pouvoir y imbriquer le vrai bouton étoile sans HTML invalide (button-in-button).
+// `favorite`/`onToggleFav` sont fournis par FriendsTab (composant piloté par
+// props → pas d'abonnement share par ligne).
+function FriendRow({ member, bac, onOpen, favorite, onToggleFav }) {
   const press = usePressScale();
   const name = member.displayName || 'Anonyme';
+  const open = () => onOpen(member);
   return (
-    <button type="button" {...press.handlers} onClick={() => onOpen(member)}
+    <div role="button" tabIndex={0} {...press.handlers} onClick={open}
+      onKeyDown={(e) => {
+        // Ne réagir qu'aux touches sur la ligne elle-même : sinon Entrée sur
+        // le bouton étoile (enfant) ouvrirait AUSSI la fiche (double action).
+        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); open(); }
+      }}
       aria-label={`Voir les statistiques de ${name}`}
       style={{
-        display: 'flex', alignItems: 'center', gap: 12, width: '100%',
-        padding: '14px 16px', background: 'transparent', border: 'none',
+        display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+        padding: '14px 16px', background: 'transparent',
         borderBottom: `1px solid ${T.rule}`, cursor: 'pointer',
         fontFamily: 'inherit', textAlign: 'left', color: T.ink,
         ...press.style,
       }}>
+      {member.shareBac && (
+        <button type="button"
+          aria-label={favorite ? `Retirer ${name} des favoris` : `Mettre ${name} en favori`}
+          aria-pressed={!!favorite}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onToggleFav && onToggleFav(); }}
+          style={{
+            ...ghostButton, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 4, cursor: 'pointer', flexShrink: 0,
+            color: favorite ? T.accent : T.muted,
+          }}>
+          <SvgIcon icon={favorite ? Ic.star : Ic.starOutline} size={17} />
+        </button>
+      )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontSize: 15, fontWeight: 600, color: T.ink,
@@ -33,7 +57,7 @@ function FriendRow({ member, bac, onOpen }) {
       <span style={{ display: 'flex', color: T.muted, marginLeft: 2 }}>
         <SvgIcon icon={Ic.chevR} size={18} />
       </span>
-    </button>
+    </div>
   );
 }
 
@@ -232,7 +256,9 @@ function FriendsTab({ onOpenFriend }) {
             overflow: 'hidden',
           }}>
             {members.map(m => (
-              <FriendRow key={m.userId} member={m} bac={bacMap[m.userId]} onOpen={onOpenFriend} />
+              <FriendRow key={m.userId} member={m} bac={bacMap[m.userId]} onOpen={onOpenFriend}
+                favorite={s.favoriteId === m.userId}
+                onToggleFav={() => shareEngine.toggleFavorite(m.userId)} />
             ))}
           </div>
         )}
@@ -254,6 +280,8 @@ function fmtRelTime(ts) {
 
 // Vue plein écran : stats d'un ami via StatsTab + contextes surchargés.
 function FriendStatsView({ friend, onClose }) {
+  const s = useShare();
+  const isFav = s.favoriteId === friend.userId;
   const friendDrinks = useSharedDrinks(friend.userId);
   const friendRatings = useSharedRatings(friend.userId);
 
@@ -292,6 +320,20 @@ function FriendStatsView({ friend, onClose }) {
             marginTop: 2, fontWeight: 500,
           }}>Statistiques partagées</div>
         </div>
+        {friend.shareBac && (
+          <button type="button"
+            aria-label={isFav ? 'Retirer des favoris' : 'Mettre en favori'}
+            aria-pressed={isFav}
+            onClick={() => shareEngine.toggleFavorite(friend.userId)}
+            style={{
+              width: 38, height: 38, borderRadius: 12, background: T.surface2,
+              display: 'grid', placeItems: 'center', cursor: 'pointer',
+              border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit',
+              color: isFav ? T.accent : T.muted, flexShrink: 0,
+            }}>
+            <SvgIcon icon={isFav ? Ic.star : Ic.starOutline} size={18} />
+          </button>
+        )}
       </div>
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -299,7 +341,8 @@ function FriendStatsView({ friend, onClose }) {
           <SettingsContext.Provider value={settingsValue}>
             <RatingsContext.Provider value={friendRatings}>
               <BacProvider>
-                <StatsTab storageScope={'friend:' + friend.userId} hideMap hideBac={!friend.shareBac} />
+                <StatsTab storageScope={'friend:' + friend.userId} hideMap
+                  hideBac={!friend.shareBac} bacAvailable={!!friend.shareBac} />
               </BacProvider>
             </RatingsContext.Provider>
           </SettingsContext.Provider>
@@ -309,4 +352,19 @@ function FriendStatsView({ friend, onClose }) {
   );
 }
 
-Object.assign(window, { FriendsTab, FriendStatsView, FriendRow, GroupFooter });
+// Pastille verte de l'ami favori, montée dans le header sous ma pastille BAC.
+// `tone="good"` (vert). Rien si pas de favori (ou favori parti du groupe). Le
+// hook `useFavoriteFriend` + l'abonnement share restent confinés ICI : un
+// `shareBus.bump` (pull) ne re-rend que cette pastille, pas tout le header.
+function FavoriteFriendPill() {
+  const fav = useFavoriteFriend();
+  const bacMap = useFriendsBac(fav ? [fav] : []);
+  if (!fav) return null;
+  const bac = bacMap[fav.userId];
+  return (
+    <BacPill bac={bac == null ? null : bac} tone="good"
+      ariaLabel={`Alcoolémie de ${fav.displayName || 'mon favori'}`} />
+  );
+}
+
+Object.assign(window, { FriendsTab, FriendStatsView, FriendRow, GroupFooter, FavoriteFriendPill });

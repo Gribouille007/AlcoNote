@@ -348,7 +348,13 @@ function AppHeader({ tab, onMenu }) {
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{dateStr}</div>
       </div>
-      <BacPill bac={bac} />
+      {/* Ma pastille BAC + (sous elle) la pastille verte de l'ami favori.
+          FavoriteFriendPill s'abonne lui-même au partage → seul lui re-rend
+          sur un pull ; le header (titre/menu) garde son profil de rendu. */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+        <BacPill bac={bac} />
+        <FavoriteFriendPill />
+      </div>
     </div>
   );
 }

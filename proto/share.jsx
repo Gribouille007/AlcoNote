@@ -59,6 +59,7 @@ const shareState = {
   groupId: null,
   inviteCode: null,
   members: [],          // [{ userId, displayName, shareBac, bacWeight, bacGender }]
+  favoriteId: null,     // userId de l'ami favori (pastille verte du header) | null
   lastPullAt: 0,
   syncing: false,
   error: null,          // 'pull' | 'sync' | null (catégorie)
@@ -215,7 +216,6 @@ function MockShareTransport() {
       return { groupId: srv.groupId, inviteCode: _inviteCode() };
     },
     async leaveGroup() { try { localStorage.removeItem(KEY); } catch {} },
-    async listMembers() { const srv = read(); return srv ? srv.members : []; },
     async pushUpserts(records) {
       const srv = read(); if (!srv) return;
       const byUid = new Map(srv.mine.map(r => [r.uid, r]));
@@ -316,13 +316,6 @@ function SupabaseShareTransport(cfg) {
       const sb = await ensureClient();
       const { error } = await sb.rpc('leave_group', { p_group_id: shareState.groupId });
       if (error) throw error;
-    },
-    async listMembers() {
-      const sb = await ensureClient();
-      const { data, error } = await sb.from('group_members')
-        .select('user_id, display_name').eq('group_id', shareState.groupId);
-      if (error) throw error;
-      return (data || []).map(m => ({ userId: m.user_id, displayName: m.display_name }));
     },
     async pushUpserts(records) {
       const sb = await ensureClient();
@@ -616,6 +609,17 @@ const shareEngine = {
     publishMyProfile();
   },
 
+  // Favori = préférence PUREMENT LOCALE (rien n'est publié au groupe). Bascule
+  // l'ami `userId` en favori (ou le retire si déjà favori). Stocké en setting
+  // `share.favoriteId` (null ⇒ la clé est supprimée). La pastille verte du
+  // header (FavoriteFriendPill) ré-affiche via le bump.
+  async toggleFavorite(userId) {
+    const next = (shareState.favoriteId === userId) ? null : (userId || null);
+    shareState.favoriteId = next;
+    await _sset('share.favoriteId', next);
+    _emit();
+  },
+
   async createGroup() {
     await ensureIdentityNow();
     const { groupId, inviteCode } = await getTransport().createGroup();
@@ -658,10 +662,12 @@ const shareEngine = {
     }
     await _sset('share.groupId', null);
     await _sset('share.inviteCode', null);
+    await _sset('share.favoriteId', null);   // le favori quitte avec le groupe
     await _savePubIndex({});
     shareState.groupId = null;
     shareState.inviteCode = null;
     shareState.members = [];
+    shareState.favoriteId = null;
     stopTimer();
     _emit();
   },
@@ -692,6 +698,7 @@ async function initShare() {
     shareState.shareBac = !!(await db.getSetting('share.shareBac'));
     shareState.groupId = await db.getSetting('share.groupId');
     shareState.inviteCode = await db.getSetting('share.inviteCode');
+    shareState.favoriteId = (await db.getSetting('share.favoriteId')) || null;
     // N'amorce l'identité au boot que pour un utilisateur déjà actif ; sinon
     // on attend qu'il active le partage (évite un compte anonyme inutile).
     if (!shareState.userId && shareState.enabled) {
@@ -730,6 +737,28 @@ function useGroupMembers() {
   );
 }
 
+// Ami favori résolu (objet membre) ou null. Résolution PARESSEUSE : on lit
+// `favoriteId` et on le cherche dans les membres courants. Si l'ami a quitté le
+// groupe (ou un pull partiel a momentanément vidé la liste), on renvoie null
+// sans effacer le choix — il réapparaît dès qu'il revient. Seul `leaveGroup`
+// (action volontaire) persiste l'effacement.
+function useFavoriteFriend() {
+  const s = useShare();
+  const members = useGroupMembers();
+  // On exige `shareBac` : la pastille verte montre un TAUX. Si l'ami favori
+  // coupe le partage de son BAC, la pastille disparaît (plutôt que « — »), et
+  // réapparaît s'il le réactive — le choix `favoriteId` n'est pas effacé.
+  // On exige aussi `enabled && groupId` : couper le partage (sans quitter le
+  // groupe) laisse `members` en mémoire ; sans ce garde-fou la pastille du
+  // header survivrait alors que l'onglet Amis, lui, masque déjà la liste.
+  return React.useMemo(
+    () => ((s.enabled && s.groupId && s.favoriteId)
+      ? (members.find(m => m.userId === s.favoriteId && m.shareBac) || null)
+      : null),
+    [s.enabled, s.groupId, s.favoriteId, members]
+  );
+}
+
 // Boissons partagées d'un membre (depuis sharedPool), forme compatible StatsTab.
 function useSharedDrinks(authorId) {
   const [list, setList] = React.useState([]);
@@ -764,7 +793,11 @@ function useSharedRatings(authorId) {
 // BAC courant de chaque membre (recalcul local, tick 60 s). null si pas opt-in.
 function useFriendsBac(members) {
   const [map, setMap] = React.useState({});
-  const key = (members || []).map(m => `${m.userId}:${m.shareBac ? 1 : 0}`).join(',');
+  // La clé encode aussi poids/sexe : un ami qui change son profil (republié au
+  // pull) doit recalculer son BAC, pas rester figé sur l'ancienne closure.
+  const key = (members || [])
+    .map(m => `${m.userId}:${m.shareBac ? 1 : 0}:${m.bacWeight || ''}:${m.bacGender || ''}`)
+    .join(',');
   React.useEffect(() => {
     let alive = true;
     const compute = async () => {
@@ -793,6 +826,7 @@ function useFriendsBac(members) {
 Object.assign(window, {
   shareEngine, shareBus, getTransport,
   MockShareTransport, SupabaseShareTransport,
-  useShare, useGroupMembers, useSharedDrinks, useSharedRatings, useFriendsBac,
+  useShare, useGroupMembers, useFavoriteFriend,
+  useSharedDrinks, useSharedRatings, useFriendsBac,
   localDrinkToShared, tsFromDateTime, shareErrorMessage,
 });

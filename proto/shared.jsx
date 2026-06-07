@@ -18,6 +18,10 @@ const THEMES = {
     shadow:   '0 60px 120px rgba(0,0,0,0.5)',
     accentSoft: 'oklch(30% 0.04 65)',
     accentSoftBorder: 'oklch(38% 0.05 65)',
+    // Variante « bonne » (verte, hue 155) du couple accentSoft : mêmes L/C que
+    // l'ambre → poids visuel identique. Sert la pastille BAC d'un ami favori.
+    goodSoft: 'oklch(30% 0.04 155)',
+    goodSoftBorder: 'oklch(38% 0.05 155)',
     accentInk: 'oklch(16% 0.008 50)',
     accentRing: 'oklch(80% 0.12 65)',
     scrim:    'rgba(0,0,0,0.65)',
@@ -50,6 +54,10 @@ const THEMES = {
     shadow:   '0 20px 60px rgba(60,40,20,0.12)',
     accentSoft: 'oklch(95% 0.04 65)',
     accentSoftBorder: 'oklch(85% 0.08 65)',
+    // Variante « bonne » (verte, hue 155) du couple accentSoft : mêmes L/C que
+    // l'ambre → poids visuel identique. Sert la pastille BAC d'un ami favori.
+    goodSoft: 'oklch(95% 0.04 155)',
+    goodSoftBorder: 'oklch(85% 0.08 155)',
     accentInk: 'oklch(100% 0 0)',
     accentRing: 'oklch(60% 0.15 50)',
     scrim:    'rgba(40,30,20,0.35)',
@@ -140,6 +148,7 @@ const Ic = {
   trash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
   pin:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>,
   star:  <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
+  starOutline: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
   filter:<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>,
   cal:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
   clock: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>,
@@ -1233,26 +1242,32 @@ function LocationField({ value, onChange, ariaLabel = 'Lieu' }) {
 }
 
 // Pastille d'alcoolémie réutilisable (header de l'app + lignes de l'onglet
-// Amis). `bac` en mg/L ; `null` → non communiqué ("—" grisé). Couleur unique
-// T.accent (pas de seuils colorés ici, comme le header d'origine).
-function BacPill({ bac, ariaLabel }) {
+// Amis). `bac` en mg/L ; `null` → non communiqué ("—" grisé). `tone='accent'`
+// (ambre, défaut) pour ma pastille / les lignes ; `tone='good'` (vert) pour la
+// pastille d'un ami favori sous la mienne. Pas de seuils colorés ici (comme le
+// header d'origine) : la teinte vient uniquement du `tone`.
+function BacPill({ bac, ariaLabel, tone = 'accent' }) {
   const known = bac != null && Number.isFinite(bac);
   const active = known && bac > 0;
+  const isGood = tone === 'good';
+  const bgSoft = isGood ? T.goodSoft : T.accentSoft;
+  const brdSoft = isGood ? T.goodSoftBorder : T.accentSoftBorder;
+  const fg = isGood ? T.good : T.accent;
   return (
     <div aria-label={ariaLabel || "Taux d'alcoolémie"}
       title={known ? `${bac} mg/L` : 'Non communiqué'} style={{
         display: 'flex', alignItems: 'center', gap: 5,
         padding: '6px 10px 6px 8px', borderRadius: 12,
-        background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
+        background: bgSoft, border: `1px solid ${brdSoft}`,
         minWidth: 48, maxWidth: 86, justifyContent: 'center',
         opacity: known ? (active ? 1 : 0.7) : 0.45,
       }}>
       <div style={{
-        width: 6, height: 6, borderRadius: 99, background: T.accent,
-        boxShadow: active ? `0 0 8px ${T.accent}` : 'none', flexShrink: 0,
+        width: 6, height: 6, borderRadius: 99, background: fg,
+        boxShadow: active ? `0 0 8px ${fg}` : 'none', flexShrink: 0,
       }} />
       <span style={{
-        color: T.accent, fontSize: 11, fontWeight: 600,
+        color: fg, fontSize: 11, fontWeight: 600,
         fontFamily: fontNum, letterSpacing: 0, fontVariantNumeric: 'tabular-nums',
         overflow: 'hidden', textOverflow: 'ellipsis',
         whiteSpace: 'nowrap', minWidth: 0, flex: '0 1 auto',

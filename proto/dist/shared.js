@@ -20,6 +20,10 @@ const THEMES = {
     shadow: '0 60px 120px rgba(0,0,0,0.5)',
     accentSoft: 'oklch(30% 0.04 65)',
     accentSoftBorder: 'oklch(38% 0.05 65)',
+    // Variante « bonne » (verte, hue 155) du couple accentSoft : mêmes L/C que
+    // l'ambre → poids visuel identique. Sert la pastille BAC d'un ami favori.
+    goodSoft: 'oklch(30% 0.04 155)',
+    goodSoftBorder: 'oklch(38% 0.05 155)',
     accentInk: 'oklch(16% 0.008 50)',
     accentRing: 'oklch(80% 0.12 65)',
     scrim: 'rgba(0,0,0,0.65)',
@@ -52,6 +56,10 @@ const THEMES = {
     shadow: '0 20px 60px rgba(60,40,20,0.12)',
     accentSoft: 'oklch(95% 0.04 65)',
     accentSoftBorder: 'oklch(85% 0.08 65)',
+    // Variante « bonne » (verte, hue 155) du couple accentSoft : mêmes L/C que
+    // l'ambre → poids visuel identique. Sert la pastille BAC d'un ami favori.
+    goodSoft: 'oklch(95% 0.04 155)',
+    goodSoftBorder: 'oklch(85% 0.08 155)',
     accentInk: 'oklch(100% 0 0)',
     accentRing: 'oklch(60% 0.15 50)',
     scrim: 'rgba(40,30,20,0.35)',
@@ -317,6 +325,16 @@ const Ic = {
   star: /*#__PURE__*/React.createElement("svg", {
     viewBox: "0 0 24 24",
     fill: "currentColor"
+  }, /*#__PURE__*/React.createElement("polygon", {
+    points: "12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+  })),
+  starOutline: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
   }, /*#__PURE__*/React.createElement("polygon", {
     points: "12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
   })),
@@ -2465,14 +2483,21 @@ function LocationField({
 }
 
 // Pastille d'alcoolémie réutilisable (header de l'app + lignes de l'onglet
-// Amis). `bac` en mg/L ; `null` → non communiqué ("—" grisé). Couleur unique
-// T.accent (pas de seuils colorés ici, comme le header d'origine).
+// Amis). `bac` en mg/L ; `null` → non communiqué ("—" grisé). `tone='accent'`
+// (ambre, défaut) pour ma pastille / les lignes ; `tone='good'` (vert) pour la
+// pastille d'un ami favori sous la mienne. Pas de seuils colorés ici (comme le
+// header d'origine) : la teinte vient uniquement du `tone`.
 function BacPill({
   bac,
-  ariaLabel
+  ariaLabel,
+  tone = 'accent'
 }) {
   const known = bac != null && Number.isFinite(bac);
   const active = known && bac > 0;
+  const isGood = tone === 'good';
+  const bgSoft = isGood ? T.goodSoft : T.accentSoft;
+  const brdSoft = isGood ? T.goodSoftBorder : T.accentSoftBorder;
+  const fg = isGood ? T.good : T.accent;
   return /*#__PURE__*/React.createElement("div", {
     "aria-label": ariaLabel || "Taux d'alcoolémie",
     title: known ? `${bac} mg/L` : 'Non communiqué',
@@ -2482,8 +2507,8 @@ function BacPill({
       gap: 5,
       padding: '6px 10px 6px 8px',
       borderRadius: 12,
-      background: T.accentSoft,
-      border: `1px solid ${T.accentSoftBorder}`,
+      background: bgSoft,
+      border: `1px solid ${brdSoft}`,
       minWidth: 48,
       maxWidth: 86,
       justifyContent: 'center',
@@ -2494,13 +2519,13 @@ function BacPill({
       width: 6,
       height: 6,
       borderRadius: 99,
-      background: T.accent,
-      boxShadow: active ? `0 0 8px ${T.accent}` : 'none',
+      background: fg,
+      boxShadow: active ? `0 0 8px ${fg}` : 'none',
       flexShrink: 0
     }
   }), /*#__PURE__*/React.createElement("span", {
     style: {
-      color: T.accent,
+      color: fg,
       fontSize: 11,
       fontWeight: 600,
       fontFamily: fontNum,

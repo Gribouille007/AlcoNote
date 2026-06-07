@@ -267,6 +267,75 @@ exposé via le context. `CategoriesTab`, `HistoryTab` et
 `DrinkDetailSheet` consomment via `useFamilies()` au lieu de
 rebuilder la map à chaque bump.
 
+## Partage entre amis (architecture)
+
+Le partage est **local-first** : la PWA reste la source de vérité
+locale (Dexie intact). `proto/share.jsx` :
+- **publie** un sous-ensemble minimisé de mes boissons (sans GPS) vers
+  un backend de groupe, et
+- **recopie** les boissons partagées des autres dans la table Dexie
+  `sharedPool` (**LECTURE SEULE**). Le moteur de partage n'écrit JAMAIS
+  dans `drinks/categories/ratings/settings` — uniquement `sharedPool` et
+  `shareOutbox` (file d'envoi).
+
+Les stats / le BAC d'un ami sont **recalculés en local** depuis ce pool
+en **réutilisant le `StatsTab` existant** : `FriendStatsView` surcharge
+`DrinksContext` / `SettingsContext` / `RatingsContext` (boissons + profil
+de l'ami) puis monte `<StatsTab>`. **Aucune fonction de calcul n'est
+dupliquée** — un ami passe par les mêmes `aggregateGeneral`,
+`computeBACSessions`, `computeBacOverTime`, etc.
+
+- Bus dédié `shareBus` (distinct de `dataBus`). Hooks : `useShare`,
+  `useGroupMembers`, `useFavoriteFriend`, `useSharedDrinks`,
+  `useSharedRatings`, `useFriendsBac`.
+- Pas de socket : pull à l'ouverture + auto 10 min au premier plan +
+  bouton « Rafraîchir ». Le « live » du BAC est un recalcul local
+  (`useFriendsBac`, tick 60 s).
+- Transport derrière l'interface `ShareTransport` : `MockShareTransport`
+  (amis fictifs Léa/Tom pour développer hors-ligne) ou
+  `SupabaseShareTransport`. Choix dans **`js/share-config.js`** (édité à
+  la main). La clé `anon`/`publishable` est publique (protégée par RLS) :
+  OK à committer ; **jamais** la clé `service_role`.
+- **Pastille favori** : un seul ami (qui partage son BAC) peut être mis
+  en « favori » (étoile dans la liste / la fiche). Stocké en setting
+  `share.favoriteId` ; `shareEngine.toggleFavorite(userId)` est une
+  préférence **purement locale** (rien n'est publié au groupe).
+  `FavoriteFriendPill` (header, sous ma pastille) lit `useFavoriteFriend`
+  + `useFriendsBac` et rend une `BacPill tone="good"` (verte). **Résolution
+  paresseuse** : si l'ami quitte le groupe la pastille disparaît sans
+  effacer le choix ; seul `leaveGroup` purge `favoriteId`. Réutiliser
+  `BacPill` (prop `tone`) pour toute nouvelle pastille — jamais de couleur
+  en dur.
+
+## Base de données & zéro perte de données
+
+`js/database.js` (Dexie). **Règle d'or : ne JAMAIS perdre de données
+utilisateur.**
+
+- **Versions monotones & additives.** Ne jamais réutiliser ni baisser un
+  numéro `version(n)`. Une migration **ajoute** (table / index) — elle ne
+  drop / rename / réécrit jamais une table contenant des données. Un drop
+  n'est toléré que sur une table **vide/orpheline** (cf. v4 qui supprime
+  `bacRecords`, jamais écrite).
+- **Snapshot avant toute étape destructive.** La migration v5 écrit
+  d'abord un export complet v4 dans la table `backups`, **puis** seulement
+  rétro-remplit les `uid`. Si l'`upgrade` jette, Dexie **annule** le bump
+  (pas d'état à moitié migré). Reproduire ce schéma pour toute future
+  migration qui touche des données.
+- **`uid` stable par boisson** (`genUid`, rétro-rempli en v5) : identité
+  globale pour le partage, indépendante de l'`++id` local.
+- **`setSetting(key, null)` SUPPRIME la clé** (pas de valeur `null`
+  fantôme). Les préférences partagées (`share.*`, dont `share.favoriteId`)
+  suivent cette convention.
+- `importData` / `clearAllData` ne touchent **que** les tables perso
+  (`categories`, `drinks`, `settings`, `drinkRatings`) et sont
+  **transactionnels** (rollback complet si échec). `sharedPool` /
+  `shareOutbox` / `backups` ne sont pas wipés par là — `sharedPool` est
+  dérivé/jetable (rechargé au pull, purgé au `leaveGroup`).
+- **Ne pas casser le cache SW** : à chaque modif statique, bumper le triple
+  `CACHE_NAME / STATIC_CACHE / DYNAMIC_CACHE` (+ `STATIC_FILES` si nouveau
+  script), sinon les clients restent sur l'ancien build.
+
 ## Onglets persistants
 
 Les 3 tabs (Catégories / Historique / Stats) ne sont **pas**
@@ -302,6 +371,13 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
   message vide.
 - Tiroir paramètres : ouvre depuis la gauche, slide animé.
 - FAB : à environ ~14 px du bord droit, ne déborde pas.
+- **Amis — favori** : l'étoile n'apparaît que sur un ami qui partage son
+  BAC ; la mettre affiche une pastille **verte** sous la mienne (header)
+  avec son taux ; un seul favori à la fois ; persiste au reload ; disparaît
+  au « Quitter le groupe ».
+- **Amis — stats** : ouvrir un ami recalcule ses stats via le même
+  `StatsTab` ; un ami qui ne partage pas son BAC masque Sessions / Temps
+  bourré / % bourré (pas de poids → pas de chiffre inventé).
 
 ## Ce qu'il NE faut pas faire
 
@@ -310,4 +386,10 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
 - Bypass le service worker en cassant la liste de cache.
 - Importer un nouveau bundler (ex. Vite, Webpack) sans en discuter —
   l'archi statique est volontaire pour Netlify.
-- Pousser des secrets : pas de clés API, pas de tokens, jamais.
+- Pousser des secrets : pas de clés API, pas de tokens, jamais (la clé
+  Supabase `anon` est l'exception publique ; **jamais** `service_role`).
+- Faire écrire le moteur de partage dans les tables perso
+  (`drinks/categories/ratings/settings`) : il n'écrit QUE dans
+  `sharedPool` / `shareOutbox`.
+- Baisser / réutiliser un numéro de version Dexie, ou drop une table
+  pleine sans snapshot `backups` préalable (= risque de perte de données).

@@ -374,7 +374,11 @@ function fmtBourreTime(ms) {
 // `hideBac` drop the sections that have no shared data for a friend's view
 // (no GPS shared → no map; BAC only when the friend opted in to share body
 // params). Defaults keep the user's own Stats tab identical.
-function StatsTab({ storageScope = '', hideMap = false, hideBac = false } = {}) {
+// `bacAvailable` (défaut true = vue perso) : passé à false par FriendStatsView
+// pour un ami qui ne partage pas son poids/sexe — on masque alors les cellules
+// dérivées du modèle Widmark (Sessions / Temps bourré / % bourré) qui seraient
+// sinon calculées avec un poids par défaut (70 kg) donc fausses.
+function StatsTab({ storageScope = '', hideMap = false, hideBac = false, bacAvailable = true } = {}) {
   const { drinks } = useDrinks();
   const settings = useSettings();
   const [period, setPeriod] = React.useState(() => localStorage.getItem(_statsKey('alconote.stats.period', storageScope)) || 'week');
@@ -457,7 +461,7 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false } = {}) 
     settings, range: allRange, anchor,
     agg, prevAgg, sessions, prevSessions, allSessions,
     streak, streakRecord, bourreMs, prevBourreMs,
-    weight, gender,
+    weight, gender, bacAvailable,
   };
 
   return (
@@ -597,6 +601,7 @@ function Card({ children, style, ...rest }) {
 function GeneralSection({
   drinks, prevDrinks, prevRange, period, range, collapsed, toggleSection,
   agg, prevAgg, sessions, prevSessions, streak, streakRecord, bourreMs, prevBourreMs,
+  bacAvailable = true,
 }) {
   const hasPrev = prevDrinks != null && prevRange != null;
   const days = Math.max(1, Math.round((range.end - range.start) / 86400000) + 1);
@@ -640,26 +645,30 @@ function GeneralSection({
   };
 
   const cards = React.useMemo(() => {
+    // « Sessions » et « Temps bourré » dérivent du modèle BAC (poids/sexe) :
+    // masquées quand `bacAvailable` est faux (ami qui ne partage pas son BAC),
+    // sinon elles seraient calculées avec un poids par défaut donc trompeuses.
     const out = [
       { v: agg.count, l: 'Boissons',
         delta: pctChange(agg.count, prevAgg ? prevAgg.count : null) },
-      { v: sessions.length, l: 'Sessions',
-        delta: pctChange(sessions.length, prevSessions ? prevSessions.length : null) },
+      ...(bacAvailable ? [{ v: sessions.length, l: 'Sessions',
+        delta: pctChange(sessions.length, prevSessions ? prevSessions.length : null) }] : []),
       { v: `${(agg.volumeCl / 100).toFixed(1)}L`, l: 'Volume',
         delta: pctChange(agg.volumeCl, prevAgg ? prevAgg.volumeCl : null) },
       { v: `${Math.round(agg.grams)}g`, l: 'Alcool pur',
         delta: pctChange(agg.grams, prevAgg ? prevAgg.grams : null) },
       { v: agg.uniqueCount, l: 'Boissons diff.',
         delta: pctChange(agg.uniqueCount, prevAgg ? prevAgg.uniqueCount : null) },
-      { v: fmtBourreTime(bourreMs), l: 'Temps bourré',
+      ...(bacAvailable ? [{ v: fmtBourreTime(bourreMs), l: 'Temps bourré',
         delta: pctChange(bourreMs, prevBourreMs),
-        icon: Ic.hourglass },
+        icon: Ic.hourglass }] : []),
     ];
     // "Tout" only: share of life spent drunk since the very first drink.
     // Counts BAC>0 time strictly up to "now" (not the projected
     // elimination tail) over (now − first drink), so it reads as a true
     // elapsed share. Pushed right after "Temps bourré" to pair the two.
-    if (period === 'all') {
+    // Dérivé du BAC → masqué aussi quand `bacAvailable` est faux.
+    if (period === 'all' && bacAvailable) {
       const now = Date.now();
       const firstTs = drinks.reduce((min, d) => {
         const t = new Date(`${d.date}T${d.time || '00:00'}`).getTime();
@@ -693,7 +702,7 @@ function GeneralSection({
         delta: pctChange(agg.count / weeks, prevWeeks && prevAgg ? prevAgg.count / prevWeeks : null) });
     }
     return out;
-  }, [agg, prevAgg, sessions, prevSessions, sober, prevSober, bourreMs, prevBourreMs, days, prevDays, period, drinks]);
+  }, [agg, prevAgg, sessions, prevSessions, sober, prevSober, bourreMs, prevBourreMs, days, prevDays, period, drinks, bacAvailable]);
 
   // Donut: sort categories by descending count so both the arc order
   // and the legend list match the user's mental "biggest first" model.
@@ -852,7 +861,7 @@ const HeroStatCard = React.memo(function HeroStatCard({ icon, label, value, suff
 const hourlyFormatX = (d, i) => i % 4 === 0 ? d.label : '';
 
 // ── 2. Analyse temporelle ─────────────────────────────────────────
-function TemporalSection({ drinks, collapsed, toggleSection, agg, sessions }) {
+function TemporalSection({ drinks, collapsed, toggleSection, agg, sessions, bacAvailable = true }) {
   const dayNames = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
   const { peakHour, peakDow } = React.useMemo(() => ({
     peakHour: agg.byHour.indexOf(Math.max(...agg.byHour)),
@@ -917,8 +926,10 @@ function TemporalSection({ drinks, collapsed, toggleSection, agg, sessions }) {
       }}>
         <MiniStat big={drinks.length > 0 ? `${peakHour}h` : '—'} label="Heure de pointe" />
         <MiniStat big={drinks.length > 0 ? dayNames[peakDow] : '—'} label="Jour de pointe" />
-        <MiniStat big={fmtH(avgDuration)} label="Durée moy. session" />
-        <MiniStat big={between > 0 ? `${between.toFixed(1)}j` : '—'} label="Entre sessions" />
+        {/* Durées de session = modèle BAC (poids/sexe) : masquées pour un ami
+            qui ne partage pas son BAC (sinon poids par défaut → valeurs fausses). */}
+        {bacAvailable && <MiniStat big={fmtH(avgDuration)} label="Durée moy. session" />}
+        {bacAvailable && <MiniStat big={between > 0 ? `${between.toFixed(1)}j` : '—'} label="Entre sessions" />}
       </div>
 
       <Card style={{ marginBottom: 10 }}>
@@ -2295,7 +2306,7 @@ function TrendsSection({ allDrinks, collapsed, toggleSection }) {
 }
 
 // ── 7. Analyses avancées ─────────────────────────────────────────
-function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, sessions }) {
+function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, sessions, bacAvailable = true }) {
   const rolling = React.useMemo(() => {
     const byDay = {};
     for (const d of allDrinks) {
@@ -2341,7 +2352,7 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, ses
   }, [sessions]);
 
   return (
-    <StatSection id="advanced" title="Analyses avancées" collapsed={collapsed} toggleSection={toggleSection} sub="Moyennes mobiles · Horloge · Distribution des sessions">
+    <StatSection id="advanced" title="Analyses avancées" collapsed={collapsed} toggleSection={toggleSection} sub={bacAvailable ? 'Moyennes mobiles · Horloge · Distribution des sessions' : 'Moyennes mobiles · Horloge'}>
       <Card style={{ marginBottom: 10 }}>
         <div style={{
           color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
@@ -2372,22 +2383,26 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, ses
         <SvgPolarClock hours={agg.byHour} size={260} />
       </Card>
 
-      <Card>
-        <div style={{
-          color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
-        }}>Distribution des sessions</div>
-        <div style={{
-          color: T.muted, fontSize: 10, marginBottom: 12, fontStyle: 'italic', fontFamily: fontSerif,
-        }}>Durée par session</div>
-
-        <div>
+      {/* Distribution des sessions = modèle BAC (poids/sexe) : masquée pour un
+          ami qui ne partage pas son BAC. */}
+      {bacAvailable && (
+        <Card>
           <div style={{
-            color: T.ink2, fontSize: 10.5, marginBottom: 4, textAlign: 'center',
-            letterSpacing: 0.3, textTransform: 'uppercase',
-          }}>Durée</div>
-          <SvgHistogram buckets={sessionDuration} width={320} height={150} color={T.accent} />
-        </div>
-      </Card>
+            color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
+          }}>Distribution des sessions</div>
+          <div style={{
+            color: T.muted, fontSize: 10, marginBottom: 12, fontStyle: 'italic', fontFamily: fontSerif,
+          }}>Durée par session</div>
+
+          <div>
+            <div style={{
+              color: T.ink2, fontSize: 10.5, marginBottom: 4, textAlign: 'center',
+              letterSpacing: 0.3, textTransform: 'uppercase',
+            }}>Durée</div>
+            <SvgHistogram buckets={sessionDuration} width={320} height={150} color={T.accent} />
+          </div>
+        </Card>
+      )}
     </StatSection>
   );
 }

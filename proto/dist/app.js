@@ -442,9 +442,16 @@ function AppHeader({
       overflow: 'hidden',
       textOverflow: 'ellipsis'
     }
-  }, dateStr)), /*#__PURE__*/React.createElement(BacPill, {
+  }, dateStr)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'flex-end',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(BacPill, {
     bac: bac
-  }));
+  }), /*#__PURE__*/React.createElement(FavoriteFriendPill, null)));
 }
 
 // Un seul bouton de nav (hook usePressScale → impossible dans un .map).
