@@ -440,10 +440,15 @@ function fmtBourreTime(ms) {
 // `hideBac` drop the sections that have no shared data for a friend's view
 // (no GPS shared → no map; BAC only when the friend opted in to share body
 // params). Defaults keep the user's own Stats tab identical.
+// `bacAvailable` (défaut true = vue perso) : passé à false par FriendStatsView
+// pour un ami qui ne partage pas son poids/sexe — on masque alors les cellules
+// dérivées du modèle Widmark (Sessions / Temps bourré / % bourré) qui seraient
+// sinon calculées avec un poids par défaut (70 kg) donc fausses.
 function StatsTab({
   storageScope = '',
   hideMap = false,
-  hideBac = false
+  hideBac = false,
+  bacAvailable = true
 } = {}) {
   const {
     drinks
@@ -526,7 +531,8 @@ function StatsTab({
     bourreMs,
     prevBourreMs,
     weight,
-    gender
+    gender,
+    bacAvailable
   };
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -760,7 +766,8 @@ function GeneralSection({
   streak,
   streakRecord,
   bourreMs,
-  prevBourreMs
+  prevBourreMs,
+  bacAvailable = true
 }) {
   const hasPrev = prevDrinks != null && prevRange != null;
   const days = Math.max(1, Math.round((range.end - range.start) / 86400000) + 1);
@@ -805,15 +812,18 @@ function GeneralSection({
     return (cur - prev) / prev * 100;
   };
   const cards = React.useMemo(() => {
+    // « Sessions » et « Temps bourré » dérivent du modèle BAC (poids/sexe) :
+    // masquées quand `bacAvailable` est faux (ami qui ne partage pas son BAC),
+    // sinon elles seraient calculées avec un poids par défaut donc trompeuses.
     const out = [{
       v: agg.count,
       l: 'Boissons',
       delta: pctChange(agg.count, prevAgg ? prevAgg.count : null)
-    }, {
+    }, ...(bacAvailable ? [{
       v: sessions.length,
       l: 'Sessions',
       delta: pctChange(sessions.length, prevSessions ? prevSessions.length : null)
-    }, {
+    }] : []), {
       v: `${(agg.volumeCl / 100).toFixed(1)}L`,
       l: 'Volume',
       delta: pctChange(agg.volumeCl, prevAgg ? prevAgg.volumeCl : null)
@@ -825,17 +835,18 @@ function GeneralSection({
       v: agg.uniqueCount,
       l: 'Boissons diff.',
       delta: pctChange(agg.uniqueCount, prevAgg ? prevAgg.uniqueCount : null)
-    }, {
+    }, ...(bacAvailable ? [{
       v: fmtBourreTime(bourreMs),
       l: 'Temps bourré',
       delta: pctChange(bourreMs, prevBourreMs),
       icon: Ic.hourglass
-    }];
+    }] : [])];
     // "Tout" only: share of life spent drunk since the very first drink.
     // Counts BAC>0 time strictly up to "now" (not the projected
     // elimination tail) over (now − first drink), so it reads as a true
     // elapsed share. Pushed right after "Temps bourré" to pair the two.
-    if (period === 'all') {
+    // Dérivé du BAC → masqué aussi quand `bacAvailable` est faux.
+    if (period === 'all' && bacAvailable) {
       const now = Date.now();
       const firstTs = drinks.reduce((min, d) => {
         const t = new Date(`${d.date}T${d.time || '00:00'}`).getTime();
@@ -882,7 +893,7 @@ function GeneralSection({
       });
     }
     return out;
-  }, [agg, prevAgg, sessions, prevSessions, sober, prevSober, bourreMs, prevBourreMs, days, prevDays, period, drinks]);
+  }, [agg, prevAgg, sessions, prevSessions, sober, prevSober, bourreMs, prevBourreMs, days, prevDays, period, drinks, bacAvailable]);
 
   // Donut: sort categories by descending count so both the arc order
   // and the legend list match the user's mental "biggest first" model.
@@ -1142,7 +1153,8 @@ function TemporalSection({
   collapsed,
   toggleSection,
   agg,
-  sessions
+  sessions,
+  bacAvailable = true
 }) {
   const dayNames = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
   const {
@@ -1230,10 +1242,10 @@ function TemporalSection({
   }), /*#__PURE__*/React.createElement(MiniStat, {
     big: drinks.length > 0 ? dayNames[peakDow] : '—',
     label: "Jour de pointe"
-  }), /*#__PURE__*/React.createElement(MiniStat, {
+  }), bacAvailable && /*#__PURE__*/React.createElement(MiniStat, {
     big: fmtH(avgDuration),
     label: "Dur\xE9e moy. session"
-  }), /*#__PURE__*/React.createElement(MiniStat, {
+  }), bacAvailable && /*#__PURE__*/React.createElement(MiniStat, {
     big: between > 0 ? `${between.toFixed(1)}j` : '—',
     label: "Entre sessions"
   })), /*#__PURE__*/React.createElement(Card, {
@@ -3255,7 +3267,8 @@ function AdvancedSection({
   collapsed,
   toggleSection,
   agg,
-  sessions
+  sessions,
+  bacAvailable = true
 }) {
   const rolling = React.useMemo(() => {
     const byDay = {};
@@ -3328,7 +3341,7 @@ function AdvancedSection({
     title: "Analyses avanc\xE9es",
     collapsed: collapsed,
     toggleSection: toggleSection,
-    sub: "Moyennes mobiles \xB7 Horloge \xB7 Distribution des sessions"
+    sub: bacAvailable ? 'Moyennes mobiles · Horloge · Distribution des sessions' : 'Moyennes mobiles · Horloge'
   }, /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 10
@@ -3400,7 +3413,7 @@ function AdvancedSection({
   }, "R\xE9partition sur 24 heures"), /*#__PURE__*/React.createElement(SvgPolarClock, {
     hours: agg.byHour,
     size: 260
-  })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+  })), bacAvailable && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
       fontSize: 12.5,

@@ -5,35 +5,61 @@
 // Context.Provider surchargés (ses boissons partagées au lieu des miennes) —
 // la carte (pas de GPS) et le BAC (si non partagé) sont masqués.
 
-// Ligne d'un ami : pseudo + pastille BAC, cliquable.
-function FriendRow({ member, bac, onOpen }) {
+// Ligne d'un ami : étoile favori (si BAC partagé) + pseudo + pastille BAC.
+// Deux boutons FRÈRES dans un conteneur non-interactif — l'étoile (toggle
+// favori) et le bouton « ouvrir la fiche » — au lieu d'imbriquer l'étoile dans
+// la ligne. Plus de button-in-button ni d'élément focusable dans un
+// `role="button"` (a11y propre), et plus besoin de garde-fou clavier ni de
+// stopPropagation : un clic/Entrée sur l'étoile ne remonte pas au bouton voisin.
+// `favorite`/`onToggleFav` viennent de FriendsTab (piloté par props → aucun
+// abonnement share par ligne).
+function FriendRow({ member, bac, onOpen, favorite, onToggleFav }) {
   const press = usePressScale();
   const name = member.displayName || 'Anonyme';
   return (
-    <button type="button" {...press.handlers} onClick={() => onOpen(member)}
-      aria-label={`Voir les statistiques de ${name}`}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 12, width: '100%',
-        padding: '14px 16px', background: 'transparent', border: 'none',
-        borderBottom: `1px solid ${T.rule}`, cursor: 'pointer',
-        fontFamily: 'inherit', textAlign: 'left', color: T.ink,
-        ...press.style,
-      }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 15, fontWeight: 600, color: T.ink,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>{name}</div>
-        <div style={{
-          fontSize: 9.5, color: T.muted, letterSpacing: 0.3,
-          textTransform: 'uppercase', marginTop: 2, fontWeight: 500,
-        }}>{member.shareBac ? 'Alcoolémie en direct' : 'BAC non partagé'}</div>
-      </div>
-      <BacPill bac={bac == null ? null : bac} ariaLabel={`Alcoolémie de ${name}`} />
-      <span style={{ display: 'flex', color: T.muted, marginLeft: 2 }}>
-        <SvgIcon icon={Ic.chevR} size={18} />
-      </span>
-    </button>
+    <div style={{
+      display: 'flex', alignItems: 'stretch',
+      borderBottom: `1px solid ${T.rule}`,
+    }}>
+      {member.shareBac && (
+        <button type="button"
+          aria-label={favorite ? `Retirer ${name} des favoris` : `Mettre ${name} en favori`}
+          aria-pressed={!!favorite}
+          onClick={() => onToggleFav && onToggleFav()}
+          style={{
+            ...ghostButton, padding: '0 4px 0 14px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0, color: favorite ? T.accent : T.muted,
+          }}>
+          <SvgIcon icon={favorite ? Ic.star : Ic.starOutline} size={17} />
+        </button>
+      )}
+      <button type="button" {...press.handlers} onClick={() => onOpen(member)}
+        aria-label={`Voir les statistiques de ${name}`}
+        style={{
+          flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 10,
+          paddingTop: 14, paddingBottom: 14, paddingRight: 16,
+          paddingLeft: member.shareBac ? 6 : 16,
+          background: 'transparent', border: 'none', cursor: 'pointer',
+          fontFamily: 'inherit', textAlign: 'left', color: T.ink,
+          ...press.style,
+        }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 15, fontWeight: 600, color: T.ink,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{name}</div>
+          <div style={{
+            fontSize: 9.5, color: T.muted, letterSpacing: 0.3,
+            textTransform: 'uppercase', marginTop: 2, fontWeight: 500,
+          }}>{member.shareBac ? 'Alcoolémie en direct' : 'BAC non partagé'}</div>
+        </div>
+        <BacPill bac={bac == null ? null : bac} ariaLabel={`Alcoolémie de ${name}`} />
+        <span style={{ display: 'flex', color: T.muted, marginLeft: 2 }}>
+          <SvgIcon icon={Ic.chevR} size={18} />
+        </span>
+      </button>
+    </div>
   );
 }
 
@@ -232,7 +258,9 @@ function FriendsTab({ onOpenFriend }) {
             overflow: 'hidden',
           }}>
             {members.map(m => (
-              <FriendRow key={m.userId} member={m} bac={bacMap[m.userId]} onOpen={onOpenFriend} />
+              <FriendRow key={m.userId} member={m} bac={bacMap[m.userId]} onOpen={onOpenFriend}
+                favorite={s.favoriteId === m.userId}
+                onToggleFav={() => shareEngine.toggleFavorite(m.userId)} />
             ))}
           </div>
         )}
@@ -254,6 +282,8 @@ function fmtRelTime(ts) {
 
 // Vue plein écran : stats d'un ami via StatsTab + contextes surchargés.
 function FriendStatsView({ friend, onClose }) {
+  const s = useShare();
+  const isFav = s.favoriteId === friend.userId;
   const friendDrinks = useSharedDrinks(friend.userId);
   const friendRatings = useSharedRatings(friend.userId);
 
@@ -292,6 +322,20 @@ function FriendStatsView({ friend, onClose }) {
             marginTop: 2, fontWeight: 500,
           }}>Statistiques partagées</div>
         </div>
+        {friend.shareBac && (
+          <button type="button"
+            aria-label={isFav ? 'Retirer des favoris' : 'Mettre en favori'}
+            aria-pressed={isFav}
+            onClick={() => shareEngine.toggleFavorite(friend.userId)}
+            style={{
+              width: 38, height: 38, borderRadius: 12, background: T.surface2,
+              display: 'grid', placeItems: 'center', cursor: 'pointer',
+              border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit',
+              color: isFav ? T.accent : T.muted, flexShrink: 0,
+            }}>
+            <SvgIcon icon={isFav ? Ic.star : Ic.starOutline} size={18} />
+          </button>
+        )}
       </div>
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -299,7 +343,8 @@ function FriendStatsView({ friend, onClose }) {
           <SettingsContext.Provider value={settingsValue}>
             <RatingsContext.Provider value={friendRatings}>
               <BacProvider>
-                <StatsTab storageScope={'friend:' + friend.userId} hideMap hideBac={!friend.shareBac} />
+                <StatsTab storageScope={'friend:' + friend.userId} hideMap
+                  hideBac={!friend.shareBac} bacAvailable={!!friend.shareBac} />
               </BacProvider>
             </RatingsContext.Provider>
           </SettingsContext.Provider>
@@ -309,4 +354,23 @@ function FriendStatsView({ friend, onClose }) {
   );
 }
 
-Object.assign(window, { FriendsTab, FriendStatsView, FriendRow, GroupFooter });
+// Pastille verte de l'ami favori, montée dans le header SOUS ma pastille BAC,
+// alignée à droite (en flux). `tone="good"` (vert). Renvoie `null` sans favori
+// (ou favori parti du groupe) → le header retrouve exactement sa hauteur
+// d'origine, sans réserver d'espace. Le hook `useFavoriteFriend` + l'abonnement
+// share restent confinés ICI : un `shareBus.bump` (pull) ne re-rend que cette
+// pastille, pas tout le header.
+function FavoriteFriendPill() {
+  const fav = useFavoriteFriend();
+  const bacMap = useFriendsBac(fav ? [fav] : []);
+  if (!fav) return null;
+  const bac = bacMap[fav.userId];
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <BacPill bac={bac == null ? null : bac} tone="good"
+        ariaLabel={`Alcoolémie de ${fav.displayName || 'mon favori'}`} />
+    </div>
+  );
+}
+
+Object.assign(window, { FriendsTab, FriendStatsView, FriendRow, GroupFooter, FavoriteFriendPill });

@@ -390,10 +390,16 @@ function AppHeader({
     style: {
       padding: 'calc(env(safe-area-inset-top) + 14px) 18px 14px',
       display: 'flex',
+      flexDirection: 'column',
+      gap: 6,
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      gap: 12,
-      flexShrink: 0
+      gap: 12
     }
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
@@ -444,7 +450,7 @@ function AppHeader({
     }
   }, dateStr)), /*#__PURE__*/React.createElement(BacPill, {
     bac: bac
-  }));
+  })), /*#__PURE__*/React.createElement(FavoriteFriendPill, null));
 }
 
 // Un seul bouton de nav (hook usePressScale → impossible dans un .map).

@@ -7,28 +7,63 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 // Context.Provider surchargés (ses boissons partagées au lieu des miennes) —
 // la carte (pas de GPS) et le BAC (si non partagé) sont masqués.
 
-// Ligne d'un ami : pseudo + pastille BAC, cliquable.
+// Ligne d'un ami : étoile favori (si BAC partagé) + pseudo + pastille BAC.
+// Deux boutons FRÈRES dans un conteneur non-interactif — l'étoile (toggle
+// favori) et le bouton « ouvrir la fiche » — au lieu d'imbriquer l'étoile dans
+// la ligne. Plus de button-in-button ni d'élément focusable dans un
+// `role="button"` (a11y propre), et plus besoin de garde-fou clavier ni de
+// stopPropagation : un clic/Entrée sur l'étoile ne remonte pas au bouton voisin.
+// `favorite`/`onToggleFav` viennent de FriendsTab (piloté par props → aucun
+// abonnement share par ligne).
 function FriendRow({
   member,
   bac,
-  onOpen
+  onOpen,
+  favorite,
+  onToggleFav
 }) {
   const press = usePressScale();
   const name = member.displayName || 'Anonyme';
-  return /*#__PURE__*/React.createElement("button", _extends({
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'stretch',
+      borderBottom: `1px solid ${T.rule}`
+    }
+  }, member.shareBac && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    "aria-label": favorite ? `Retirer ${name} des favoris` : `Mettre ${name} en favori`,
+    "aria-pressed": !!favorite,
+    onClick: () => onToggleFav && onToggleFav(),
+    style: {
+      ...ghostButton,
+      padding: '0 4px 0 14px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+      color: favorite ? T.accent : T.muted
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: favorite ? Ic.star : Ic.starOutline,
+    size: 17
+  })), /*#__PURE__*/React.createElement("button", _extends({
     type: "button"
   }, press.handlers, {
     onClick: () => onOpen(member),
     "aria-label": `Voir les statistiques de ${name}`,
     style: {
+      flex: 1,
+      minWidth: 0,
       display: 'flex',
       alignItems: 'center',
-      gap: 12,
-      width: '100%',
-      padding: '14px 16px',
+      gap: 10,
+      paddingTop: 14,
+      paddingBottom: 14,
+      paddingRight: 16,
+      paddingLeft: member.shareBac ? 6 : 16,
       background: 'transparent',
       border: 'none',
-      borderBottom: `1px solid ${T.rule}`,
       cursor: 'pointer',
       fontFamily: 'inherit',
       textAlign: 'left',
@@ -70,7 +105,7 @@ function FriendRow({
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.chevR,
     size: 18
-  })));
+  }))));
 }
 
 // Pied de l'onglet quand on est dans un groupe : code d'invitation à partager
@@ -451,7 +486,9 @@ function FriendsTab({
     key: m.userId,
     member: m,
     bac: bacMap[m.userId],
-    onOpen: onOpenFriend
+    onOpen: onOpenFriend,
+    favorite: s.favoriteId === m.userId,
+    onToggleFav: () => shareEngine.toggleFavorite(m.userId)
   }))), hasGroup && /*#__PURE__*/React.createElement(GroupFooter, null)));
 }
 
@@ -469,6 +506,8 @@ function FriendStatsView({
   friend,
   onClose
 }) {
+  const s = useShare();
+  const isFav = s.favoriteId === friend.userId;
   const friendDrinks = useSharedDrinks(friend.userId);
   const friendRatings = useSharedRatings(friend.userId);
   const drinksValue = React.useMemo(() => ({
@@ -545,7 +584,29 @@ function FriendStatsView({
       marginTop: 2,
       fontWeight: 500
     }
-  }, "Statistiques partag\xE9es"))), /*#__PURE__*/React.createElement("div", {
+  }, "Statistiques partag\xE9es")), friend.shareBac && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    "aria-label": isFav ? 'Retirer des favoris' : 'Mettre en favori',
+    "aria-pressed": isFav,
+    onClick: () => shareEngine.toggleFavorite(friend.userId),
+    style: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      background: T.surface2,
+      display: 'grid',
+      placeItems: 'center',
+      cursor: 'pointer',
+      border: `1px solid ${T.rule}`,
+      padding: 0,
+      fontFamily: 'inherit',
+      color: isFav ? T.accent : T.muted,
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: isFav ? Ic.star : Ic.starOutline,
+    size: 18
+  }))), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       minHeight: 0,
@@ -561,12 +622,37 @@ function FriendStatsView({
   }, /*#__PURE__*/React.createElement(BacProvider, null, /*#__PURE__*/React.createElement(StatsTab, {
     storageScope: 'friend:' + friend.userId,
     hideMap: true,
-    hideBac: !friend.shareBac
+    hideBac: !friend.shareBac,
+    bacAvailable: !!friend.shareBac
   })))))));
+}
+
+// Pastille verte de l'ami favori, montée dans le header SOUS ma pastille BAC,
+// alignée à droite (en flux). `tone="good"` (vert). Renvoie `null` sans favori
+// (ou favori parti du groupe) → le header retrouve exactement sa hauteur
+// d'origine, sans réserver d'espace. Le hook `useFavoriteFriend` + l'abonnement
+// share restent confinés ICI : un `shareBus.bump` (pull) ne re-rend que cette
+// pastille, pas tout le header.
+function FavoriteFriendPill() {
+  const fav = useFavoriteFriend();
+  const bacMap = useFriendsBac(fav ? [fav] : []);
+  if (!fav) return null;
+  const bac = bacMap[fav.userId];
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'flex-end'
+    }
+  }, /*#__PURE__*/React.createElement(BacPill, {
+    bac: bac == null ? null : bac,
+    tone: "good",
+    ariaLabel: `Alcoolémie de ${fav.displayName || 'mon favori'}`
+  }));
 }
 Object.assign(window, {
   FriendsTab,
   FriendStatsView,
   FriendRow,
-  GroupFooter
+  GroupFooter,
+  FavoriteFriendPill
 });
