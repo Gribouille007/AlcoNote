@@ -1783,6 +1783,18 @@ function EditFamilySheet({
       removingRef.current = false;
     }
   };
+
+  // Impact live du prix de référence, affiché dans le toggle pour expliciter ce
+  // qui sera modifié : entrées AU PRIX DE RÉFÉRENCE (mises à jour si le toggle
+  // est actif) vs PERSONNALISÉES (toujours préservées). Le « dirty » compare la
+  // saisie courante au prix de référence enregistré (même calcul qu'au submit).
+  const plur = n => n > 1 ? 's' : '';
+  const refPricedCount = family.entries.filter(e => !(e.raw && e.raw.priceIsCustom)).length;
+  const customCount = family.entries.length - refPricedCount;
+  const liveRefNum = parseDecimal(refPrice);
+  const liveNewVal = Number.isFinite(liveRefNum) ? liveRefNum : null;
+  const liveOldVal = family.referencePrice != null ? family.referencePrice : null;
+  const refDirty = liveNewVal !== liveOldVal;
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: onClose
   }, /*#__PURE__*/React.createElement("div", {
@@ -1899,7 +1911,7 @@ function EditFamilySheet({
     step: "0.1",
     suffix: "\u20AC",
     ariaLabel: "Prix de r\xE9f\xE9rence"
-  }), /*#__PURE__*/React.createElement("div", {
+  }), refPricedCount > 0 ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
       background: T.surface,
@@ -1909,11 +1921,29 @@ function EditFamilySheet({
     }
   }, /*#__PURE__*/React.createElement(ToggleRow, {
     label: "Mettre \xE0 jour les boissons existantes",
-    sub: "Applique le nouveau prix aux boissons au prix de r\xE9f\xE9rence (les prix personnalis\xE9s sont pr\xE9serv\xE9s)",
+    sub: `${refPricedCount} au prix de référence${customCount > 0 ? ` · ${customCount} personnalisée${plur(customCount)} préservée${plur(customCount)}` : ''}`,
     on: applyToExisting,
     onToggle: () => setApplyToExisting(v => !v),
     last: true
-  }))), /*#__PURE__*/React.createElement(FieldGroup, {
+  })), refDirty && applyToExisting && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 6,
+      color: T.accent,
+      fontSize: 11,
+      letterSpacing: 0.2
+    }
+  }, refPricedCount, " boisson", plur(refPricedCount), " ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: fontNum
+    }
+  }, "\u2192 ", liveNewVal != null ? fmtPrice(liveNewVal) : 'sans prix'))) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 6,
+      color: T.muted,
+      fontSize: 11,
+      lineHeight: 1.4
+    }
+  }, "Toutes les entr\xE9es ont un prix personnalis\xE9 \u2014 ce prix ne sera repris que par les nouveaux ajouts.")), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Note"
   }, /*#__PURE__*/React.createElement(RatingField, {
     value: rating,

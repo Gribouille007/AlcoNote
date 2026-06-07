@@ -1150,6 +1150,18 @@ function EditFamilySheet({ family, onClose }) {
     finally { setBusy(false); removingRef.current = false; }
   };
 
+  // Impact live du prix de référence, affiché dans le toggle pour expliciter ce
+  // qui sera modifié : entrées AU PRIX DE RÉFÉRENCE (mises à jour si le toggle
+  // est actif) vs PERSONNALISÉES (toujours préservées). Le « dirty » compare la
+  // saisie courante au prix de référence enregistré (même calcul qu'au submit).
+  const plur = (n) => (n > 1 ? 's' : '');
+  const refPricedCount = family.entries.filter(e => !(e.raw && e.raw.priceIsCustom)).length;
+  const customCount = family.entries.length - refPricedCount;
+  const liveRefNum = parseDecimal(refPrice);
+  const liveNewVal = Number.isFinite(liveRefNum) ? liveRefNum : null;
+  const liveOldVal = family.referencePrice != null ? family.referencePrice : null;
+  const refDirty = liveNewVal !== liveOldVal;
+
   return (
     <SheetOverlay onClose={onClose}>
       <div style={{
@@ -1197,14 +1209,29 @@ function EditFamilySheet({ family, onClose }) {
 
           <FieldGroup label="Prix de référence (optionnel)">
             <NumberField value={refPrice} onChange={setRefPrice} step="0.1" suffix="€" ariaLabel="Prix de référence" />
-            <div style={{
-              marginTop: 8, background: T.surface, border: `1px solid ${T.rule}`,
-              borderRadius: 12, overflow: 'hidden',
-            }}>
-              <ToggleRow label="Mettre à jour les boissons existantes"
-                sub="Applique le nouveau prix aux boissons au prix de référence (les prix personnalisés sont préservés)"
-                on={applyToExisting} onToggle={() => setApplyToExisting(v => !v)} last />
-            </div>
+            {refPricedCount > 0 ? (
+              <div>
+                <div style={{
+                  marginTop: 8, background: T.surface, border: `1px solid ${T.rule}`,
+                  borderRadius: 12, overflow: 'hidden',
+                }}>
+                  <ToggleRow label="Mettre à jour les boissons existantes"
+                    sub={`${refPricedCount} au prix de référence${customCount > 0 ? ` · ${customCount} personnalisée${plur(customCount)} préservée${plur(customCount)}` : ''}`}
+                    on={applyToExisting} onToggle={() => setApplyToExisting(v => !v)} last />
+                </div>
+                {refDirty && applyToExisting && (
+                  <div style={{
+                    marginTop: 6, color: T.accent, fontSize: 11, letterSpacing: 0.2,
+                  }}>
+                    {refPricedCount} boisson{plur(refPricedCount)} <span style={{ fontFamily: fontNum }}>→ {liveNewVal != null ? fmtPrice(liveNewVal) : 'sans prix'}</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ marginTop: 6, color: T.muted, fontSize: 11, lineHeight: 1.4 }}>
+                Toutes les entrées ont un prix personnalisé — ce prix ne sera repris que par les nouveaux ajouts.
+              </div>
+            )}
           </FieldGroup>
 
           <FieldGroup label="Note">
