@@ -76,6 +76,7 @@ const shareState = {
   favoriteId: null,
   // userId de l'ami favori (pastille verte du header) | null
   lastPullAt: 0,
+  online: typeof navigator !== 'undefined' ? navigator.onLine !== false : true,
   syncing: false,
   error: null,
   // 'pull' | 'sync' | null (catégorie)
@@ -652,32 +653,64 @@ async function flushOutbox(attempt) {
 async function pull(attempt) {
   attempt = attempt || 0;
   if (_pulling || !shareState.enabled || !shareState.groupId) return;
+  // Hors-ligne : inutile de tenter un fetch (timeouts longs). On signale
+  // l'état ; l'event 'online' relancera le pull automatiquement.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    if (shareState.online !== false) {
+      shareState.online = false;
+      _emit();
+    }
+    return;
+  }
   _pulling = true;
   shareState.syncing = true;
   _emit();
   try {
     await flushOutbox();
     const db = await waitForDb();
-    const cursor = (await _sget(`share.cursor.${shareState.groupId}`)) || 0;
-    const res = await getTransport().pullSince(cursor);
-    const incoming = (res.drinks || []).filter(r => r.authorId !== shareState.userId);
-    const live = incoming.filter(r => !r.deleted);
-    const dead = incoming.filter(r => r.deleted).map(r => r.uid);
-    if (live.length) await db.upsertSharedDrinks(live);
-    if (dead.length) await db.deleteSharedByUids(dead);
-    // TOUJOURS rafraîchir la liste des membres, même si la lecture des boissons
-    // a partiellement échoué — sinon une erreur sur shared_drinks ferait
-    // « disparaître » les autres membres (bug : l'autre ne me voit pas).
-    if (Array.isArray(res.members)) shareState.members = res.members;
-    await _sset(`share.cursor.${shareState.groupId}`, res.cursor || cursor);
+    // Boucle de drainage : on enchaîne les pages tant qu'elles sont PLEINES
+    // (le transport plafonne à 1000/req). Au 1er sync d'un groupe ⇒ télécharge
+    // TOUT l'historique de chacun ; ensuite une seule itération suffit (delta).
+    // Plafonnée (MAX_PAGES) pour écarter toute boucle pathologique.
+    const PAGE = 1000,
+      MAX_PAGES = 100;
+    let cursor = (await _sget(`share.cursor.${shareState.groupId}`)) || 0;
+    let members = null,
+      partialErr = null,
+      pages = 0;
+    for (;;) {
+      const res = await getTransport().pullSince(cursor);
+      const incoming = (res.drinks || []).filter(r => r.authorId !== shareState.userId);
+      const live = incoming.filter(r => !r.deleted);
+      const dead = incoming.filter(r => r.deleted).map(r => r.uid);
+      if (live.length) await db.upsertSharedDrinks(live);
+      if (dead.length) await db.deleteSharedByUids(dead);
+      // TOUJOURS mémoriser la dernière liste de membres reçue (appliquée plus
+      // bas même en cas d'erreur partielle — sinon une erreur sur
+      // shared_drinks ferait « disparaître » les autres membres).
+      if (Array.isArray(res.members)) members = res.members;
+      const count = (res.drinks || []).length;
+      const newCursor = res.cursor || cursor;
+      await _sset(`share.cursor.${shareState.groupId}`, newCursor);
+      pages++;
+      const advanced = newCursor > cursor;
+      cursor = newCursor;
+      if (res.error) {
+        partialErr = res.error;
+        break;
+      }
+      if (count < PAGE || !advanced || pages >= MAX_PAGES) break;
+    }
+    if (members) shareState.members = members;
     shareState.lastPullAt = Date.now();
-    if (res.error) {
+    shareState.online = true;
+    if (partialErr) {
       // Erreur partielle : on a appliqué ce qui a réussi, on signale + retry.
       try {
-        console.error('[AlcoNote partage] lecture partielle', res.error);
+        console.error('[AlcoNote partage] lecture partielle', partialErr);
       } catch (_) {}
       shareState.error = 'pull';
-      shareState.errorDetail = shareErrorMessage(res.error);
+      shareState.errorDetail = shareErrorMessage(partialErr);
       // On libère le verrou TOUT DE SUITE (un « Rafraîchir » manuel doit
       // pouvoir relancer immédiatement) ; le retry auto suit en backoff.
       _pulling = false;
@@ -732,6 +765,20 @@ if (typeof document !== 'undefined') {
       stopTimer();
     }
   });
+}
+
+// État réseau : alimente la bannière « pas de connexion » de l'onglet Amis et
+// relance un pull dès le retour en ligne (rattrapage delta + drainage).
+if (typeof window !== 'undefined') {
+  const syncOnline = () => {
+    const on = navigator.onLine !== false;
+    if (shareState.online === on) return;
+    shareState.online = on;
+    _emit();
+    if (on && shareState.enabled && shareState.groupId) pull();
+  };
+  window.addEventListener('online', syncOnline);
+  window.addEventListener('offline', syncOnline);
 }
 
 // Crée l'identité (anonyme) à la demande — jamais au boot si le partage est

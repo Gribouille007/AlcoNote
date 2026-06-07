@@ -108,19 +108,10 @@ function FriendRow({
   }))));
 }
 
-// Pied de l'onglet quand on est dans un groupe : code d'invitation à partager
-// (copiable) + action « Quitter le groupe ».
+// Pied de l'onglet quand on est dans un groupe : action « Quitter le groupe ».
+// Le code d'invitation N'EST PLUS affiché ici (déjà dans un groupe) — il reste
+// accessible dans Paramètres › Partage, pour inviter d'autres personnes.
 function GroupFooter() {
-  const s = useShare();
-  const onCopy = async () => {
-    if (!s.inviteCode) return;
-    try {
-      await navigator.clipboard.writeText(s.inviteCode);
-      Toast.show('Code copié');
-    } catch (e) {
-      Toast.show(s.inviteCode);
-    }
-  };
   const onLeave = async () => {
     const ok = await Confirm.ask({
       title: 'Quitter le groupe ?',
@@ -143,49 +134,7 @@ function GroupFooter() {
       flexDirection: 'column',
       gap: 10
     }
-  }, s.inviteCode && /*#__PURE__*/React.createElement("button", {
-    type: "button",
-    onClick: onCopy,
-    "aria-label": "Copier le code d'invitation",
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: 12,
-      width: '100%',
-      padding: '12px 16px',
-      borderRadius: 12,
-      background: T.surface2,
-      border: `1px solid ${T.rule}`,
-      cursor: 'pointer',
-      fontFamily: 'inherit',
-      textAlign: 'left'
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 9.5,
-      color: T.muted,
-      letterSpacing: 0.3,
-      textTransform: 'uppercase',
-      fontWeight: 500
-    }
-  }, "Code d'invitation"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 8,
-      color: T.accent
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontFamily: fontNum,
-      fontSize: 16,
-      letterSpacing: 1.5
-    }
-  }, s.inviteCode), /*#__PURE__*/React.createElement(SvgIcon, {
-    icon: Ic.copy,
-    size: 15
-  }))), /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: onLeave,
     style: {
@@ -441,7 +390,19 @@ function FriendsTab({
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.refresh,
     size: 15
-  }), " Rafra\xEEchir")), hasGroup && s.errorDetail && /*#__PURE__*/React.createElement("div", {
+  }), " Rafra\xEEchir")), hasGroup && !s.online && /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: '0 16px 8px',
+      padding: '8px 12px',
+      borderRadius: 10,
+      background: T.surface2,
+      border: `1px solid ${T.rule}`,
+      color: T.ink2,
+      fontSize: 11.5,
+      lineHeight: 1.4,
+      textAlign: 'center'
+    }
+  }, "Vous n'\xEAtes pas connect\xE9\xB7e \xE0 Internet"), hasGroup && s.online && s.errorDetail && /*#__PURE__*/React.createElement("div", {
     style: {
       margin: '0 16px 8px',
       padding: '8px 12px',
@@ -622,6 +583,7 @@ function FriendStatsView({
   }, /*#__PURE__*/React.createElement(BacProvider, null, /*#__PURE__*/React.createElement(StatsTab, {
     storageScope: 'friend:' + friend.userId,
     hideMap: true,
+    hidePrice: true,
     hideBac: !friend.shareBac,
     bacAvailable: !!friend.shareBac
   })))))));

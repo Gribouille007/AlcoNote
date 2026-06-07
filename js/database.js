@@ -362,7 +362,10 @@ class DatabaseManager {
                 date: drinkData.date,
                 time: drinkData.time,
                 location: drinkData.location || null,
-                barcode: drinkData.barcode || null
+                barcode: drinkData.barcode || null,
+                // Prix payé pour CETTE entrée (€). null = inconnu. La référence
+                // de famille vit en settings (price.ref.*), pas ici.
+                price: drinkData.price != null ? drinkData.price : null
             };
 
             const id = await this.db.drinks.add(drinkToAdd);

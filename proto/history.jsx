@@ -16,6 +16,9 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
   const [filter, setFilter] = React.useState('all');
   const [collapsed, setCollapsed] = React.useState(loadCollapsedDays);
   const [editEntry, setEditEntry] = React.useState(null);
+  // Rendu incrémental : on peint d'abord les premiers jours (ouverture
+  // instantanée même sur un gros historique), puis on étend la liste en idle.
+  const [visibleCount, setVisibleCount] = React.useState(8);
 
   const { categories } = useCategories();
   // Single shared families memo from the App-level FamiliesContext —
@@ -80,6 +83,23 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
     return { groups, days };
   }, [allEntries, filter, query]);
 
+  // Recherche/filtre changé → on repart des premiers jours (sinon on garderait
+  // une grande fenêtre déjà étendue sur un nouveau résultat plus court).
+  React.useEffect(() => { setVisibleCount(8); }, [filter, query]);
+
+  // Étend la fenêtre par paquets en idle jusqu'à tout afficher, sans bloquer
+  // le thread principal (le 1er paint reste instantané).
+  React.useEffect(() => {
+    if (visibleCount >= days.length) return;
+    const ric = typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback : null;
+    const grow = () => setVisibleCount(c => Math.min(days.length, c + 10));
+    const h = ric ? ric(grow, { timeout: 500 }) : setTimeout(grow, 80);
+    return () => {
+      if (ric && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(h);
+      else clearTimeout(h);
+    };
+  }, [visibleCount, days.length]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '4px 18px 10px' }}>
@@ -103,7 +123,7 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
             Aucune entrée trouvée
           </div>
         )}
-        {days.map((day, i) => (
+        {days.slice(0, visibleCount).map((day, i) => (
           <DayGroup key={day} day={day} entries={groups[day]}
             isCollapsed={collapsed.has(day)} onToggle={toggleDay}
             onOpenEntry={setEditEntry}
