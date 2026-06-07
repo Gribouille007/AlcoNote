@@ -212,6 +212,8 @@ function AppShell() {
         // Reprend le prix de référence de la famille (modifiable ensuite par
         // entrée via « Modifier l'entrée »). N'altère jamais la référence.
         price: family.referencePrice != null ? family.referencePrice : null,
+        // Ajout « + » = au prix de référence (suit les futures cascades de réf.).
+        priceIsCustom: false,
         // Local date/time pair so BAC's 24h window stays consistent
         // (UTC date + local time used to drop drinks added late at
         // night in positive-UTC zones).

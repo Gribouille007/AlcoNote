@@ -365,7 +365,11 @@ class DatabaseManager {
                 barcode: drinkData.barcode || null,
                 // Prix payé pour CETTE entrée (€). null = inconnu. La référence
                 // de famille vit en settings (price.ref.*), pas ici.
-                price: drinkData.price != null ? drinkData.price : null
+                price: drinkData.price != null ? drinkData.price : null,
+                // Provenance du prix : true = prix personnalisé (jamais écrasé
+                // par un changement de prix de référence) ; false/absent = au
+                // prix de référence de la famille (suit les cascades de réf.).
+                priceIsCustom: drinkData.priceIsCustom === true
             };
 
             const id = await this.db.drinks.add(drinkToAdd);

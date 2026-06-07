@@ -163,7 +163,10 @@ function AddDrinkSheet({
         date,
         time,
         location: locTouched ? loc : null,
-        price: hasPrice ? priceNum : null
+        price: hasPrice ? priceNum : null,
+        // « Prix habituel » coché ⇒ au prix de référence (suit les cascades) ;
+        // décoché ⇒ prix personnalisé (jamais écrasé par un changement de réf.).
+        priceIsCustom: hasPrice && !priceIsReference
       });
       if (rating > 0) await saveRating(drinkName, rating);
       // « Prix habituel » coché + valide ⇒ (re)définit la référence de la
@@ -1088,12 +1091,23 @@ function DrinkDetailSheet({
       size: 10
     }), " ", e.place)), e.raw && e.raw.price != null && /*#__PURE__*/React.createElement("div", {
       style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
+        flexShrink: 0,
         fontFamily: fontNum,
         fontSize: 12,
-        color: T.ink2,
-        flexShrink: 0
+        color: T.ink2
       }
-    }, fmtPrice(e.raw.price)), /*#__PURE__*/React.createElement("button", {
+    }, e.raw.priceIsCustom && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontFamily: fontSans,
+        fontSize: 8.5,
+        color: T.muted,
+        letterSpacing: 0.3,
+        textTransform: 'uppercase'
+      }
+    }, "perso"), fmtPrice(e.raw.price)), /*#__PURE__*/React.createElement("button", {
       type: "button",
       "aria-label": "Supprimer cette entr\xE9e",
       onClick: async () => {
@@ -1298,6 +1312,7 @@ function EditEntrySheet({
     try {
       const finalName = name.trim();
       const priceNum = parseDecimal(price);
+      const hasPrice = Number.isFinite(priceNum);
       await updateDrink(raw.id, {
         name: finalName,
         category: cat,
@@ -1307,7 +1322,11 @@ function EditEntrySheet({
         date,
         time,
         location: loc,
-        price: Number.isFinite(priceNum) ? priceNum : null
+        price: hasPrice ? priceNum : null,
+        // Saisir un prix sur UNE entrée la rend personnalisée (protégée des
+        // cascades de prix de référence). Vider le champ la remet « au prix
+        // de référence » (price:null, suivra de nouveau la réf.).
+        priceIsCustom: hasPrice
       });
       // Renaming the entry only changes this row's name; siblings in
       // the family keep theirs. The old-name rating stays valid as
@@ -1628,10 +1647,10 @@ function EditFamilySheet({
   // whatever name the user ends up saving. Renaming the family migrates
   // the rating to the new key.
   const [rating, setRating] = React.useState(ratings[ratingKey(family.name)] != null ? ratings[ratingKey(family.name)] : family.rating || 0);
-  // Prix de référence de la famille (repris par le « + »). `applyAll` ⇒
-  // applique aussi ce prix à TOUTES les entrées existantes (cascade).
+  // Prix de référence de la famille (repris par le « + »). Au changement, on
+  // DEMANDE (Confirm) s'il faut l'appliquer aux entrées existantes au prix de
+  // référence — les prix personnalisés ne sont jamais touchés.
   const [refPrice, setRefPrice] = React.useState(family.referencePrice != null ? String(family.referencePrice) : '');
-  const [applyAll, setApplyAll] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   // Synchronous re-entry guards — a fast double-tap would otherwise run
@@ -1667,16 +1686,28 @@ function EditFamilySheet({
       const abvNum = parseDecimal(alc) || 0;
       const refNum = parseDecimal(refPrice);
       const hasRef = Number.isFinite(refNum);
+      // Le prix de référence a-t-il changé ? (null = pas de référence)
+      const oldRefVal = family.referencePrice != null ? family.referencePrice : null;
+      const newRefVal = hasRef ? refNum : null;
+      const refChanged = newRefVal !== oldRefVal;
+      // Cascade sur les entrées AU PRIX DE RÉFÉRENCE uniquement, et seulement si
+      // l'utilisateur le confirme. À faire AVANT la cascade d'identité car
+      // l'appariement (`sameFamily`) se fait sur l'identité d'origine.
+      if (refChanged && family.entries.some(e => !(e.raw && e.raw.priceIsCustom))) {
+        const applyExisting = await Confirm.ask({
+          title: 'Mettre à jour les boissons existantes ?',
+          message: 'Le prix de référence a changé. L\'appliquer aux boissons déjà enregistrées au prix de référence ? Les prix personnalisés ne sont pas touchés.',
+          confirmText: 'Oui, toutes',
+          cancelText: 'Non, futures seulement'
+        });
+        if (applyExisting) await applyReferenceToFamily(family, newRefVal);
+      }
       await updateFamily(family, {
         name: finalName,
         quantity: qtyNum,
         unit,
         alcoholContent: abvNum,
-        category: cat,
-        // Case cochée ⇒ applique le prix de référence à TOUTES les entrées.
-        ...(applyAll ? {
-          price: hasRef ? refNum : null
-        } : {})
+        category: cat
       });
       // La référence vit en settings : (ré)écrite sous la nouvelle identité de
       // famille ; l'ancienne clé est supprimée si l'identité (nom/qté/unité/
@@ -1875,19 +1906,12 @@ function EditFamilySheet({
     ariaLabel: "Prix de r\xE9f\xE9rence"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
-      marginTop: 8,
-      background: T.surface,
-      border: `1px solid ${T.rule}`,
-      borderRadius: 12,
-      overflow: 'hidden'
+      marginTop: 6,
+      color: T.muted,
+      fontSize: 11,
+      lineHeight: 1.4
     }
-  }, /*#__PURE__*/React.createElement(ToggleRow, {
-    label: "Appliquer \xE0 toutes les entr\xE9es existantes",
-    sub: "Sinon, ne change que le prix repris par le \xAB + \xBB",
-    on: applyAll,
-    onToggle: () => setApplyAll(v => !v),
-    last: true
-  }))), /*#__PURE__*/React.createElement(FieldGroup, {
+  }, "En le changeant, on vous demandera s'il faut l'appliquer aux boissons d\xE9j\xE0 enregistr\xE9es (les prix personnalis\xE9s restent intacts).")), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Note"
   }, /*#__PURE__*/React.createElement(RatingField, {
     value: rating,

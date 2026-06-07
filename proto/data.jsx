@@ -257,7 +257,9 @@ function buildFamilies(drinks, ratings = {}, priceRefs = {}) {
   for (const f of map.values()) {
     f.entries.sort((a, b) => b.ts.localeCompare(a.ts));
     if (f.referencePrice == null) {
-      const priced = f.entries.find(e => e.raw && e.raw.price != null);
+      // Fallback : la dernière entrée NON personnalisée qui porte un prix
+      // (un prix perso ne doit pas devenir la référence implicite de la famille).
+      const priced = f.entries.find(e => e.raw && e.raw.price != null && !e.raw.priceIsCustom);
       if (priced) f.referencePrice = priced.raw.price;
     }
   }
@@ -656,6 +658,24 @@ async function updateFamily(family, updates) {
   dataBus.bump('categories');
 }
 
+// Cascade un nouveau prix de référence sur les entrées de la famille qui sont
+// AU PRIX DE RÉFÉRENCE (`!priceIsCustom`) — les prix personnalisés ne sont
+// JAMAIS touchés. Utilisé par EditFamilySheet quand l'utilisateur choisit
+// « appliquer aux boissons existantes » (inclut les entrées sans prix).
+async function applyReferenceToFamily(family, value) {
+  const db = await waitForDb();
+  if (!db) return;
+  const n = Number(value);
+  const ok = value != null && value !== '' && Number.isFinite(n);
+  const all = await db.getAllDrinks();
+  const matches = all.filter(d => sameFamily(d, family) && !d.priceIsCustom);
+  for (const m of matches) {
+    await db.updateDrink(m.id, { price: ok ? n : null });
+  }
+  dataBus.bump('drinks');
+  dataBus.bump('categories');
+}
+
 // CONTRACT CHANGE (v3.5.0): now returns `{ count, snapshot }` instead of
 // `Promise<number>` so callers can wire an undo path. Update every
 // caller when modifying the shape — the legacy `js/app.js` does NOT
@@ -934,6 +954,7 @@ Object.assign(window, {
   CategoryIconsProvider,
   buildFamilies, sameFamily, computeCategoryStats, flattenEntries,
   familyKey, familyPriceKey, priceRefsFromSettings, setReferencePrice,
+  applyReferenceToFamily,
   ratingKey,
   saveSetting,
   addDrink, updateDrink, deleteDrink, deleteDrinkWithSnapshot, saveRating,

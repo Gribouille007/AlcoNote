@@ -965,8 +965,8 @@ function drinkAlcoholGrams(drink) {
 }
 
 // Formatage prix (€) — jusqu'à 2 décimales sans zéros inutiles, séparateur
-// virgule (FR). `cents=false` par défaut ; null/NaN → « — ». Source unique,
-// réutilisée par les feuilles (DrinkDetailSheet) et les stats (Dépenses).
+// virgule (FR) ; null/vide/NaN → « — ». Source unique, réutilisée par les
+// feuilles (DrinkDetailSheet) et les stats (section Dépenses).
 function fmtPrice(v) {
   const n = Number(v);
   if (v == null || v === '' || !Number.isFinite(n)) return '—';

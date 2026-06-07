@@ -308,6 +308,21 @@ function FriendStatsView({ friend, onClose }) {
             marginTop: 2, fontWeight: 500,
           }}>Statistiques partagées</div>
         </div>
+        <button type="button"
+          aria-label="Télécharger tout l'historique"
+          disabled={s.syncing}
+          onClick={async () => {
+            const errDetail = await shareEngine.pullFullHistory();
+            Toast.show(errDetail ? 'Échec du téléchargement' : 'Historique à jour');
+          }}
+          style={{
+            width: 38, height: 38, borderRadius: 12, background: T.surface2,
+            display: 'grid', placeItems: 'center', cursor: s.syncing ? 'default' : 'pointer',
+            border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit',
+            color: T.ink, flexShrink: 0, opacity: s.syncing ? 0.6 : 1,
+          }}>
+          <SvgIcon icon={s.syncing ? Ic.refresh : Ic.download} size={18} />
+        </button>
         {friend.shareBac && (
           <button type="button"
             aria-label={isFav ? 'Retirer des favoris' : 'Mettre en favori'}

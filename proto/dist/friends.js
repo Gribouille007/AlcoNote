@@ -545,7 +545,33 @@ function FriendStatsView({
       marginTop: 2,
       fontWeight: 500
     }
-  }, "Statistiques partag\xE9es")), friend.shareBac && /*#__PURE__*/React.createElement("button", {
+  }, "Statistiques partag\xE9es")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    "aria-label": "T\xE9l\xE9charger tout l'historique",
+    disabled: s.syncing,
+    onClick: async () => {
+      const errDetail = await shareEngine.pullFullHistory();
+      Toast.show(errDetail ? 'Échec du téléchargement' : 'Historique à jour');
+    },
+    style: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      background: T.surface2,
+      display: 'grid',
+      placeItems: 'center',
+      cursor: s.syncing ? 'default' : 'pointer',
+      border: `1px solid ${T.rule}`,
+      padding: 0,
+      fontFamily: 'inherit',
+      color: T.ink,
+      flexShrink: 0,
+      opacity: s.syncing ? 0.6 : 1
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: s.syncing ? Ic.refresh : Ic.download,
+    size: 18
+  })), friend.shareBac && /*#__PURE__*/React.createElement("button", {
     type: "button",
     "aria-label": isFav ? 'Retirer des favoris' : 'Mettre en favori',
     "aria-pressed": isFav,

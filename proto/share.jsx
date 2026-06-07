@@ -618,6 +618,20 @@ const shareEngine = {
   // un push avait échoué. Retourne le détail d'erreur éventuel (pour un toast).
   refreshNow: async () => { await reconcile(); await pull(); return shareState.errorDetail; },
 
+  // Re-télécharge TOUT l'historique partagé du groupe depuis zéro : on remet le
+  // curseur à 0 puis on relance le pull (la boucle de drainage récupère toutes
+  // les pages). Idempotent (upserts par `uid`). Utilisé par le bouton manuel
+  // « Télécharger tout l'historique » sur la fiche d'un ami — utile quand le
+  // curseur a déjà dépassé d'anciennes boissons d'un membre.
+  pullFullHistory: async () => {
+    if (!shareState.groupId) return shareState.errorDetail;
+    clearTimeout(_pullRetry);
+    await _sset(`share.cursor.${shareState.groupId}`, 0);
+    await reconcile();   // pousse aussi mon back-catalog au passage (auto-réparateur)
+    await pull();
+    return shareState.errorDetail;
+  },
+
   async setDisplayName(name) {
     shareState.displayName = (name || '').trim();
     await _sset('share.displayName', shareState.displayName);
@@ -667,9 +681,12 @@ const shareEngine = {
     if (inviteCode) await _sset('share.inviteCode', inviteCode);
     _emit();
     await publishMyProfile();
-    // Première publication de tout l'historique local (index vide).
+    // Première publication de TOUT l'historique local (index vide). Synchrone
+    // (await reconcile) AVANT le pull pour éviter la course où le 1er pull part
+    // alors que le back-catalog n'est pas encore enfilé/poussé (sinon les autres
+    // ne voient que mon delta). reconcile() enfile + flush.
     await _savePubIndex({});
-    scheduleReconcile();
+    await reconcile();
     startTimer();
     pull();
     return { groupId, inviteCode };
@@ -684,8 +701,11 @@ const shareEngine = {
     if (shareState.inviteCode) await _sset('share.inviteCode', shareState.inviteCode);
     _emit();
     await publishMyProfile();
+    // Publie TOUT mon historique au groupe (index vide ⇒ tout « nouveau »),
+    // synchrone AVANT le pull (cf. createGroup) — sinon les autres membres ne
+    // verraient que mon delta après l'arrivée.
     await _savePubIndex({});
-    scheduleReconcile();
+    await reconcile();
     startTimer();
     pull();
     return { groupId };
@@ -752,7 +772,23 @@ async function initShare() {
         if (ch === 'settings' && shareState.enabled && shareState.shareBac) publishMyProfile();
       });
     }
-    if (shareState.enabled && shareState.groupId) { startTimer(); pull(); scheduleReconcile(); }
+    if (shareState.enabled && shareState.groupId) {
+      startTimer(); pull(); scheduleReconcile();
+      // Cicatrisation « une seule fois » : les membres déjà dans un groupe AVANT
+      // le correctif de publication n'avaient jamais poussé leur back-catalog.
+      // On republie tout l'historique une fois (index vidé ⇒ tout « nouveau »),
+      // avec des timestamps courants ⇒ remonte dans le delta des autres sans
+      // action de leur part. Gardé par un flag setting pour ne le faire qu'une fois.
+      (async () => {
+        try {
+          if (!(await _sget('share.fullResync.v1'))) {
+            await _savePubIndex({});
+            await reconcile();
+            await _sset('share.fullResync.v1', 1);
+          }
+        } catch (_) { /* best-effort */ }
+      })();
+    }
   } catch (e) { /* best-effort */ }
 }
 initShare();
