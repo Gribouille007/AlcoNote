@@ -1647,10 +1647,11 @@ function EditFamilySheet({
   // whatever name the user ends up saving. Renaming the family migrates
   // the rating to the new key.
   const [rating, setRating] = React.useState(ratings[ratingKey(family.name)] != null ? ratings[ratingKey(family.name)] : family.rating || 0);
-  // Prix de référence de la famille (repris par le « + »). Au changement, on
-  // DEMANDE (Confirm) s'il faut l'appliquer aux entrées existantes au prix de
-  // référence — les prix personnalisés ne sont jamais touchés.
+  // Prix de référence de la famille (repris par le « + »). `applyToExisting` ⇒
+  // au changement, applique aussi le nouveau prix aux boissons EXISTANTES qui
+  // sont au prix de référence (les prix personnalisés sont toujours préservés).
   const [refPrice, setRefPrice] = React.useState(family.referencePrice != null ? String(family.referencePrice) : '');
+  const [applyToExisting, setApplyToExisting] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   // Synchronous re-entry guards — a fast double-tap would otherwise run
@@ -1690,18 +1691,12 @@ function EditFamilySheet({
       const oldRefVal = family.referencePrice != null ? family.referencePrice : null;
       const newRefVal = hasRef ? refNum : null;
       const refChanged = newRefVal !== oldRefVal;
-      // Cascade sur les entrées AU PRIX DE RÉFÉRENCE uniquement, et seulement si
-      // l'utilisateur le confirme. À faire AVANT la cascade d'identité car
-      // l'appariement (`sameFamily`) se fait sur l'identité d'origine.
-      if (refChanged && family.entries.some(e => !(e.raw && e.raw.priceIsCustom))) {
-        const applyExisting = await Confirm.ask({
-          title: 'Mettre à jour les boissons existantes ?',
-          message: 'Le prix de référence a changé. L\'appliquer aux boissons déjà enregistrées au prix de référence ? Les prix personnalisés ne sont pas touchés.',
-          confirmText: 'Oui, toutes',
-          cancelText: 'Non, futures seulement'
-        });
-        if (applyExisting) await applyReferenceToFamily(family, newRefVal);
-      }
+      // Toggle « Mettre à jour les boissons existantes » activé + prix changé ⇒
+      // cascade sur les entrées AU PRIX DE RÉFÉRENCE uniquement (les prix
+      // personnalisés sont préservés par `applyReferenceToFamily`). À faire AVANT
+      // la cascade d'identité car l'appariement (`sameFamily`) se fait sur
+      // l'identité d'origine.
+      if (refChanged && applyToExisting) await applyReferenceToFamily(family, newRefVal);
       await updateFamily(family, {
         name: finalName,
         quantity: qtyNum,
@@ -1906,12 +1901,19 @@ function EditFamilySheet({
     ariaLabel: "Prix de r\xE9f\xE9rence"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
-      marginTop: 6,
-      color: T.muted,
-      fontSize: 11,
-      lineHeight: 1.4
+      marginTop: 8,
+      background: T.surface,
+      border: `1px solid ${T.rule}`,
+      borderRadius: 12,
+      overflow: 'hidden'
     }
-  }, "En le changeant, on vous demandera s'il faut l'appliquer aux boissons d\xE9j\xE0 enregistr\xE9es (les prix personnalis\xE9s restent intacts).")), /*#__PURE__*/React.createElement(FieldGroup, {
+  }, /*#__PURE__*/React.createElement(ToggleRow, {
+    label: "Mettre \xE0 jour les boissons existantes",
+    sub: "Applique le nouveau prix aux boissons au prix de r\xE9f\xE9rence (les prix personnalis\xE9s sont pr\xE9serv\xE9s)",
+    on: applyToExisting,
+    onToggle: () => setApplyToExisting(v => !v),
+    last: true
+  }))), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Note"
   }, /*#__PURE__*/React.createElement(RatingField, {
     value: rating,
