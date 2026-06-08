@@ -177,7 +177,7 @@ const CategoryCard = React.memo(function CategoryCard({
   const bg = catBg(cat.name);
   const reduced = useReducedMotion();
   const press = usePressScale();
-  return /*#__PURE__*/React.createElement("div", _extends({}, clickable(() => onOpen && onOpen(cat.name), `Ouvrir la catégorie ${cat.name}`), press.handlers, {
+  return /*#__PURE__*/React.createElement("div", _extends({}, clickable(() => onOpen && onOpen(cat.name), `Ouvrir la catégorie ${cat.name} — ${cat.entries} entrée${cat.entries !== 1 ? 's' : ''}, ${cat.families} type${cat.families !== 1 ? 's' : ''}`), press.handlers, {
     style: {
       background: T.surface,
       borderRadius: 18,
@@ -749,7 +749,8 @@ function EditCategorySheet({
   const hasOverride = !!icons[canonicalCat(category)];
   const showResetTile = hasOverride || glyph === '__reset__';
   return /*#__PURE__*/React.createElement(SheetOverlay, {
-    onClose: onClose
+    onClose: onClose,
+    label: isCreate ? 'Nouvelle catégorie' : 'Modifier la catégorie'
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.bg,
@@ -797,6 +798,7 @@ function EditCategorySheet({
   }, "Nom"), /*#__PURE__*/React.createElement("input", {
     value: name,
     onChange: e => setName(e.target.value),
+    "aria-label": "Nom de la cat\xE9gorie",
     style: {
       width: '100%',
       background: T.surface2,

@@ -35,7 +35,7 @@ function FriendRow({ member, bac, onOpen, favorite, onToggleFav }) {
         </button>
       )}
       <button type="button" {...press.handlers} onClick={() => onOpen(member)}
-        aria-label={`Voir les statistiques de ${name}`}
+        aria-label={`Voir les statistiques de ${name}, ${member.shareBac ? 'Alcoolémie en direct' : 'BAC non partagé'}`}
         style={{
           flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 10,
           paddingTop: 14, paddingBottom: 14, paddingRight: 16,

@@ -142,7 +142,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
   };
 
   return (
-    <SheetOverlay onClose={onClose}>
+    <SheetOverlay onClose={onClose} label="Nouvelle boisson">
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0', padding: '10px 0 0',
         maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
@@ -201,7 +201,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
           </button>
 
           <FieldGroup label="Boisson">
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="Ex. Pilsner Urquell" style={inputS()} />
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Ex. Pilsner Urquell" aria-label="Boisson" style={inputS()} />
           </FieldGroup>
 
           <FieldGroup label="Catégorie">
@@ -244,14 +244,14 @@ function AddDrinkSheet({ open, prefill, onClose }) {
             gap: 10, width: '100%',
           }}>
             <FieldGroup label="Date">
-              <input type="date" value={date} onChange={e => setDate(e.target.value)}
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} aria-label="Date"
                 style={{
                   ...inputS(), padding: '10px 12px', minWidth: 0, maxWidth: '100%',
                   width: '100%', WebkitAppearance: 'none', appearance: 'none',
                 }}/>
             </FieldGroup>
             <FieldGroup label="Heure">
-              <input type="time" value={time} onChange={e => setTime(e.target.value)}
+              <input type="time" value={time} onChange={e => setTime(e.target.value)} aria-label="Heure"
                 style={{
                   ...inputS(), padding: '10px 12px', minWidth: 0, maxWidth: '100%',
                   width: '100%', WebkitAppearance: 'none', appearance: 'none',
@@ -585,7 +585,7 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
   };
 
   return (
-    <SheetOverlay onClose={onClose}>
+    <SheetOverlay onClose={onClose} label="Détail de la boisson">
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0',
         maxHeight: '90dvh', display: 'flex', flexDirection: 'column',
@@ -892,7 +892,7 @@ function EditEntrySheet({ entry, onClose }) {
   };
 
   return (
-    <SheetOverlay onClose={onClose}>
+    <SheetOverlay onClose={onClose} label="Modifier l'entrée">
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0',
         maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
@@ -921,7 +921,7 @@ function EditEntrySheet({ entry, onClose }) {
           }}><SvgIcon icon={Ic.close} size={14} /></button>
         </div>
         <div style={{ overflowY: 'auto', overflowX: 'hidden', padding: '0 18px 20px', flex: 1 }}>
-          <FieldGroup label="Nom"><input value={name} onChange={e => setName(e.target.value)} style={inputS()} /></FieldGroup>
+          <FieldGroup label="Nom"><input value={name} onChange={e => setName(e.target.value)} aria-label="Nom" style={inputS()} /></FieldGroup>
           <FieldGroup label="Catégorie">
             <CategoryChips categories={categories} value={cat} onChange={setCat} />
           </FieldGroup>
@@ -950,14 +950,14 @@ function EditEntrySheet({ entry, onClose }) {
             gap: 10, width: '100%',
           }}>
             <FieldGroup label="Date">
-              <input type="date" value={date} onChange={e => setDate(e.target.value)}
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} aria-label="Date"
                 style={{
                   ...inputS(), padding: '10px 12px', minWidth: 0, maxWidth: '100%',
                   width: '100%', WebkitAppearance: 'none', appearance: 'none',
                 }}/>
             </FieldGroup>
             <FieldGroup label="Heure">
-              <input type="time" value={time} onChange={e => setTime(e.target.value)}
+              <input type="time" value={time} onChange={e => setTime(e.target.value)} aria-label="Heure"
                 style={{
                   ...inputS(), padding: '10px 12px', minWidth: 0, maxWidth: '100%',
                   width: '100%', WebkitAppearance: 'none', appearance: 'none',
@@ -1163,7 +1163,7 @@ function EditFamilySheet({ family, onClose }) {
   const refDirty = liveNewVal !== liveOldVal;
 
   return (
-    <SheetOverlay onClose={onClose}>
+    <SheetOverlay onClose={onClose} label="Modifier la boisson">
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0',
         maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
@@ -1191,7 +1191,7 @@ function EditFamilySheet({ family, onClose }) {
           }}><SvgIcon icon={Ic.close} size={14} /></button>
         </div>
         <div style={{ overflow: 'auto', padding: '0 18px 20px', flex: 1 }}>
-          <FieldGroup label="Nom"><input value={name} onChange={e => setName(e.target.value)} style={inputS()} /></FieldGroup>
+          <FieldGroup label="Nom"><input value={name} onChange={e => setName(e.target.value)} aria-label="Nom" style={inputS()} /></FieldGroup>
           <FieldGroup label="Catégorie">
             <CategoryChips categories={categories} value={cat} onChange={setCat} />
           </FieldGroup>
@@ -1338,7 +1338,7 @@ function SettingsDrawer({ open, onClose }) {
   };
 
   return (
-    <SheetOverlay onClose={onClose} side="left">
+    <SheetOverlay onClose={onClose} side="left" label="Paramètres">
       <div style={{
         background: T.bg, width: 'min(360px, 100vw)', height: '100%',
         borderRight: `1px solid ${T.rule}`,
@@ -1438,6 +1438,7 @@ function ProfileRow({ label, value, onSave, last, numeric, step, min, max, ...in
           style={{ width: 80, padding: '6px 10px', fontSize: 13, textAlign: 'right', borderRadius: 8 }} />
       ) : (
         <input value={v} onChange={(e) => setV(e.target.value)} onBlur={() => onSave(v)}
+          aria-label={label}
           {...inputProps}
           style={{
             width: 80, background: T.surface2, border: `1px solid ${T.rule}`,

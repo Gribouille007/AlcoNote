@@ -2685,7 +2685,8 @@ function MapDrinksSheet({
     return places.size === 1 ? Array.from(places)[0] : null;
   }, [drinks]);
   return /*#__PURE__*/React.createElement(SheetOverlay, {
-    onClose: onClose
+    onClose: onClose,
+    label: sharedPlace || 'Consommations ici'
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.bg,
