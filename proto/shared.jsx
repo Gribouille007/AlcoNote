@@ -46,10 +46,14 @@ const THEMES = {
     surface3: 'oklch(93% 0.008 80)',
     ink:      'oklch(22% 0.012 55)',
     ink2:     'oklch(38% 0.01 60)',
-    muted:    'oklch(55% 0.008 65)',
+    muted:    'oklch(52% 0.008 65)',
     rule:     'oklch(90% 0.008 80)',
-    accent:   'oklch(60% 0.15 50)',
-    accent2:  'oklch(55% 0.18 30)',
+    // accent / accent2 / muted assombris (vs leurs équivalents dark) pour
+    // garantir un contraste WCAG AA (≥ 4.5:1) sur surfaces claires, qu'ils
+    // servent de texte (label d'onglet actif, rouge soft-danger) ou de fond
+    // sous l'encre blanche `accentInk`. Valeurs vérifiées sur bg/surface2/accentSoft.
+    accent:   'oklch(50% 0.15 50)',
+    accent2:  'oklch(48% 0.18 30)',
     good:     'oklch(55% 0.12 155)',
     shadow:   '0 20px 60px rgba(60,40,20,0.12)',
     accentSoft: 'oklch(95% 0.04 65)',
@@ -59,7 +63,7 @@ const THEMES = {
     goodSoft: 'oklch(95% 0.04 155)',
     goodSoftBorder: 'oklch(85% 0.08 155)',
     accentInk: 'oklch(100% 0 0)',
-    accentRing: 'oklch(60% 0.15 50)',
+    accentRing: 'oklch(50% 0.15 50)',
     scrim:    'rgba(40,30,20,0.35)',
     dangerBg: 'oklch(45% 0.18 25)',
     dangerBtn: 'oklch(55% 0.20 25)',
@@ -344,6 +348,7 @@ function SearchInput({ value, onChange, placeholder }) {
       <input
         value={value || ''} onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-label={placeholder || 'Rechercher'}
         style={{
           flex: 1, background: 'transparent', border: 'none', outline: 'none',
           color: T.ink, fontFamily: fontSans, fontSize: 14, letterSpacing: -0.1,
@@ -653,7 +658,7 @@ function useBackButton(active, onClose) {
 }
 
 // ── Sheet overlay (bottom sheet / left or right drawer) ──────────
-function SheetOverlay({ children, onClose, side = 'bottom' }) {
+function SheetOverlay({ children, onClose, side = 'bottom', label }) {
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose && onClose(); };
     document.addEventListener('keydown', onKey);
@@ -673,7 +678,7 @@ function SheetOverlay({ children, onClose, side = 'bottom' }) {
                      : side === 'left' ? 'flex-start' : 'stretch',
       animation: 'fade 0.2s ease',
     }}>
-      <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" aria-label={label} onClick={e => e.stopPropagation()} style={{
         width: isSide ? 'auto' : '100%',
         maxWidth: isSide ? '100%' : 'min(560px, 100%)',
         margin: side === 'bottom' ? '0 auto' : 0,

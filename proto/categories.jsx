@@ -130,7 +130,7 @@ const CategoryCard = React.memo(function CategoryCard({ cat, onOpen, onEdit, ind
   const reduced = useReducedMotion();
   const press = usePressScale();
   return (
-    <div {...clickable(() => onOpen && onOpen(cat.name), `Ouvrir la catégorie ${cat.name}`)}
+    <div {...clickable(() => onOpen && onOpen(cat.name), `Ouvrir la catégorie ${cat.name} — ${cat.entries} entrée${cat.entries !== 1 ? 's' : ''}, ${cat.families} type${cat.families !== 1 ? 's' : ''}`)}
       {...press.handlers} style={{
       background: T.surface, borderRadius: 18, padding: 14,
       border: `1px solid ${T.rule}`, cursor: 'pointer',
@@ -547,7 +547,7 @@ function EditCategorySheet({ category, onClose, mode = 'edit' }) {
   const showResetTile = hasOverride || glyph === '__reset__';
 
   return (
-    <SheetOverlay onClose={onClose}>
+    <SheetOverlay onClose={onClose} label={isCreate ? 'Nouvelle catégorie' : 'Modifier la catégorie'}>
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0',
         padding: '18px 20px 28px',
@@ -570,7 +570,7 @@ function EditCategorySheet({ category, onClose, mode = 'edit' }) {
           color: T.muted, fontSize: 10, letterSpacing: 1.2,
           textTransform: 'uppercase', marginBottom: 8,
         }}>Nom</div>
-        <input value={name} onChange={(e) => setName(e.target.value)} style={{
+        <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Nom de la catégorie" style={{
           width: '100%', background: T.surface2, border: `1px solid ${T.rule}`,
           borderRadius: 12, padding: '12px 14px', color: T.ink,
           fontFamily: fontSans, fontSize: 14, outline: 'none',

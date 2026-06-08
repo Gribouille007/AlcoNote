@@ -193,7 +193,8 @@ function AddDrinkSheet({
     }
   };
   return /*#__PURE__*/React.createElement(SheetOverlay, {
-    onClose: onClose
+    onClose: onClose,
+    label: "Nouvelle boisson"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.bg,
@@ -329,6 +330,7 @@ function AddDrinkSheet({
     value: name,
     onChange: e => setName(e.target.value),
     placeholder: "Ex. Pilsner Urquell",
+    "aria-label": "Boisson",
     style: inputS()
   })), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Cat\xE9gorie"
@@ -404,6 +406,7 @@ function AddDrinkSheet({
     type: "date",
     value: date,
     onChange: e => setDate(e.target.value),
+    "aria-label": "Date",
     style: {
       ...inputS(),
       padding: '10px 12px',
@@ -419,6 +422,7 @@ function AddDrinkSheet({
     type: "time",
     value: time,
     onChange: e => setTime(e.target.value),
+    "aria-label": "Heure",
     style: {
       ...inputS(),
       padding: '10px 12px',
@@ -880,7 +884,8 @@ function DrinkDetailSheet({
     } catch {}
   };
   return /*#__PURE__*/React.createElement(SheetOverlay, {
-    onClose: onClose
+    onClose: onClose,
+    label: "D\xE9tail de la boisson"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.bg,
@@ -1373,7 +1378,8 @@ function EditEntrySheet({
     }
   };
   return /*#__PURE__*/React.createElement(SheetOverlay, {
-    onClose: onClose
+    onClose: onClose,
+    label: "Modifier l'entr\xE9e"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.bg,
@@ -1451,6 +1457,7 @@ function EditEntrySheet({
   }, /*#__PURE__*/React.createElement("input", {
     value: name,
     onChange: e => setName(e.target.value),
+    "aria-label": "Nom",
     style: inputS()
   })), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Cat\xE9gorie"
@@ -1511,6 +1518,7 @@ function EditEntrySheet({
     type: "date",
     value: date,
     onChange: e => setDate(e.target.value),
+    "aria-label": "Date",
     style: {
       ...inputS(),
       padding: '10px 12px',
@@ -1526,6 +1534,7 @@ function EditEntrySheet({
     type: "time",
     value: time,
     onChange: e => setTime(e.target.value),
+    "aria-label": "Heure",
     style: {
       ...inputS(),
       padding: '10px 12px',
@@ -1796,7 +1805,8 @@ function EditFamilySheet({
   const liveOldVal = family.referencePrice != null ? family.referencePrice : null;
   const refDirty = liveNewVal !== liveOldVal;
   return /*#__PURE__*/React.createElement(SheetOverlay, {
-    onClose: onClose
+    onClose: onClose,
+    label: "Modifier la boisson"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.bg,
@@ -1872,6 +1882,7 @@ function EditFamilySheet({
   }, /*#__PURE__*/React.createElement("input", {
     value: name,
     onChange: e => setName(e.target.value),
+    "aria-label": "Nom",
     style: inputS()
   })), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Cat\xE9gorie"
@@ -2090,7 +2101,8 @@ function SettingsDrawer({
   };
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: onClose,
-    side: "left"
+    side: "left",
+    label: "Param\xE8tres"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.bg,
@@ -2287,7 +2299,8 @@ function ProfileRow({
   }) : /*#__PURE__*/React.createElement("input", _extends({
     value: v,
     onChange: e => setV(e.target.value),
-    onBlur: () => onSave(v)
+    onBlur: () => onSave(v),
+    "aria-label": label
   }, inputProps, {
     style: {
       width: 80,

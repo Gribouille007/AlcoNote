@@ -1932,7 +1932,7 @@ function MapDrinksSheet({ drinks, onClose }) {
   }, [drinks]);
 
   return (
-    <SheetOverlay onClose={onClose}>
+    <SheetOverlay onClose={onClose} label={sharedPlace || 'Consommations ici'}>
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0', maxHeight: '85dvh',
         display: 'flex', flexDirection: 'column',

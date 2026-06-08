@@ -272,7 +272,7 @@ function AppShell() {
   }, /*#__PURE__*/React.createElement(AppHeader, {
     tab: tab,
     onMenu: () => setSettings(true)
-  }), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("main", {
     style: {
       flex: 1,
       overflow: 'hidden',
@@ -428,7 +428,7 @@ function AppHeader({
   // Stats-tab gauge, so the pill always shows exactly the same mg/L.
   const bacInfo = useBacInfo();
   const bac = bacInfo.current || 0;
-  return /*#__PURE__*/React.createElement("div", {
+  return /*#__PURE__*/React.createElement("header", {
     style: {
       padding: 'calc(env(safe-area-inset-top) + 14px) 18px 14px',
       display: 'flex',
@@ -469,14 +469,16 @@ function AppHeader({
       textAlign: 'center',
       minWidth: 0
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("h1", {
     style: {
       fontFamily: fontSerif,
       fontSize: 20,
       color: T.ink,
       letterSpacing: -0.3,
       lineHeight: 1,
-      fontStyle: 'italic'
+      fontStyle: 'italic',
+      margin: 0,
+      fontWeight: 400
     }
   }, titles[tab]), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -562,7 +564,7 @@ function BottomNav({
     icon: Ic.users
   }];
   const activeIdx = Math.max(0, items.findIndex(it => it.id === tab));
-  return /*#__PURE__*/React.createElement("div", {
+  return /*#__PURE__*/React.createElement("nav", {
     style: {
       position: 'relative',
       padding: '8px 16px calc(4px + env(safe-area-inset-bottom))',
