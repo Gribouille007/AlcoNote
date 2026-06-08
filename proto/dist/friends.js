@@ -51,7 +51,7 @@ function FriendRow({
     type: "button"
   }, press.handlers, {
     onClick: () => onOpen(member),
-    "aria-label": `Voir les statistiques de ${name}`,
+    "aria-label": `Voir les statistiques de ${name}, ${member.shareBac ? 'Alcoolémie en direct' : 'BAC non partagé'}`,
     style: {
       flex: 1,
       minWidth: 0,

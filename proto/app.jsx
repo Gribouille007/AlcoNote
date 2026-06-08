@@ -223,7 +223,7 @@ function AppShell() {
       overflow: 'hidden',
     }}>
       <AppHeader tab={tab} onMenu={() => setSettings(true)} />
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {activated.has('categories') && (
           <div style={tabContainer('categories')}>
             <CategoriesTab
@@ -250,7 +250,7 @@ function AppShell() {
             <FriendsTab onOpenFriend={setOpenFriend} />
           </div>
         )}
-      </div>
+      </main>
 
       <Fab onClick={() => { setPrefill(null); setAdding(true); }} />
       <BottomNav tab={tab} onChange={setTab} />
@@ -360,7 +360,7 @@ function AppHeader({ tab, onMenu }) {
   const bac = bacInfo.current || 0;
 
   return (
-    <div style={{
+    <header style={{
       padding: 'calc(env(safe-area-inset-top) + 14px) 18px 14px',
       display: 'flex', flexDirection: 'column', gap: 6,
       flexShrink: 0,
@@ -377,10 +377,11 @@ function AppHeader({ tab, onMenu }) {
           <SvgIcon icon={Ic.menu} size={18} />
         </button>
         <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
-          <div style={{
+          <h1 style={{
             fontFamily: fontSerif, fontSize: 20, color: T.ink,
             letterSpacing: -0.3, lineHeight: 1, fontStyle: 'italic',
-          }}>{titles[tab]}</div>
+            margin: 0, fontWeight: 400,
+          }}>{titles[tab]}</h1>
           <div style={{
             fontSize: 10, color: T.muted, letterSpacing: 1, marginTop: 3,
             textTransform: 'uppercase', fontWeight: 500,
@@ -397,7 +398,7 @@ function AppHeader({ tab, onMenu }) {
           l'onglet (barre de période, recherche…). FavoriteFriendPill confine
           l'abonnement share → un pull ne re-rend que cette pastille. */}
       <FavoriteFriendPill />
-    </div>
+    </header>
   );
 }
 
@@ -435,7 +436,7 @@ function BottomNav({ tab, onChange }) {
   ];
   const activeIdx = Math.max(0, items.findIndex(it => it.id === tab));
   return (
-    <div style={{
+    <nav style={{
       position: 'relative',
       padding: '8px 16px calc(4px + env(safe-area-inset-bottom))',
       background: T.bg, borderTop: `1px solid ${T.rule}`,
@@ -462,7 +463,7 @@ function BottomNav({ tab, onChange }) {
           <NavButton key={it.id} item={it} active={tab === it.id} onChange={onChange} />
         ))}
       </div>
-    </div>
+    </nav>
   );
 }
 function Fab({ onClick }) {

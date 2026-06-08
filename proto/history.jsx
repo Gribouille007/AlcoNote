@@ -158,7 +158,7 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
       ...staggerStyle(index, { reduced }) }}>
       <button type="button" onClick={() => onToggle(day)}
         aria-expanded={!isCollapsed}
-        aria-label={`${isCollapsed ? 'Déplier' : 'Replier'} ${fmtDayHeader(d)}`}
+        aria-label={`${isCollapsed ? 'Déplier' : 'Replier'} ${fmtDayHeader(d)} — ${entries.length} boisson${entries.length > 1 ? 's' : ''}, ${totalCl.toFixed(0)} cL${rel ? `, ${rel}` : ''}`}
         style={{
         width: '100%', textAlign: 'left',
         display: 'flex', alignItems: 'center', gap: 10,
@@ -190,7 +190,7 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
             fontSize: 10, color: T.muted, letterSpacing: 0.6, marginTop: 3, fontFamily: fontNum,
           }}>
             {entries.length} boisson{entries.length > 1 ? 's' : ''} · {totalCl.toFixed(0)} cL
-            {rel && <span style={{ opacity: 0.6 }}> · {rel}</span>}
+            {rel && <span> · {rel}</span>}
           </div>
         </div>
       </button>
@@ -262,7 +262,7 @@ const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectA
           flexShrink: 0, boxShadow: `0 0 0 3px ${T.surface}`,
           zIndex: 1,
         }}/>
-        <button type="button" onClick={() => onOpenEntry && onOpenEntry(e)} aria-label={`Modifier ${e.family.name}`}
+        <button type="button" onClick={() => onOpenEntry && onOpenEntry(e)} aria-label={`Modifier ${e.family.name}, ${e.family.quantity} ${e.family.unit}, ${e.family.alcohol}°${e.place ? `, ${e.place}` : ''}`}
           style={{
             ...ghostButton,
             flex: 1, minWidth: 0, cursor: 'pointer',

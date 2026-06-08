@@ -208,7 +208,7 @@ const DayGroup = React.memo(function DayGroup({
     type: "button",
     onClick: () => onToggle(day),
     "aria-expanded": !isCollapsed,
-    "aria-label": `${isCollapsed ? 'Déplier' : 'Replier'} ${fmtDayHeader(d)}`,
+    "aria-label": `${isCollapsed ? 'Déplier' : 'Replier'} ${fmtDayHeader(d)} — ${entries.length} boisson${entries.length > 1 ? 's' : ''}, ${totalCl.toFixed(0)} cL${rel ? `, ${rel}` : ''}`,
     style: {
       width: '100%',
       textAlign: 'left',
@@ -265,11 +265,7 @@ const DayGroup = React.memo(function DayGroup({
       marginTop: 3,
       fontFamily: fontNum
     }
-  }, entries.length, " boisson", entries.length > 1 ? 's' : '', " \xB7 ", totalCl.toFixed(0), " cL", rel && /*#__PURE__*/React.createElement("span", {
-    style: {
-      opacity: 0.6
-    }
-  }, " \xB7 ", rel)))), /*#__PURE__*/React.createElement(Collapse, {
+  }, entries.length, " boisson", entries.length > 1 ? 's' : '', " \xB7 ", totalCl.toFixed(0), " cL", rel && /*#__PURE__*/React.createElement("span", null, " \xB7 ", rel)))), /*#__PURE__*/React.createElement(Collapse, {
     open: !isCollapsed
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -383,7 +379,7 @@ const EntryRow = React.memo(function EntryRow({
   }), /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: () => onOpenEntry && onOpenEntry(e),
-    "aria-label": `Modifier ${e.family.name}`,
+    "aria-label": `Modifier ${e.family.name}, ${e.family.quantity} ${e.family.unit}, ${e.family.alcohol}°${e.place ? `, ${e.place}` : ''}`,
     style: {
       ...ghostButton,
       flex: 1,
