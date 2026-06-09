@@ -74,6 +74,9 @@ class AppErrorBoundary extends React.Component {
   }
 }
 
+// Ombre du toast — constante nommée (identique en thème clair/sombre).
+const TOAST_SHADOW = '0 10px 30px rgba(0,0,0,0.3)';
+
 // Inner shell — wrapped by the data providers in <App/> so every
 // `useDrinks/useRatings/useCategories/useSettings` call inside reads
 // from a single shared subscription instead of each spawning its own
@@ -352,7 +355,7 @@ function AppShell() {
       fontWeight: 500,
       letterSpacing: -0.1,
       zIndex: 9999,
-      boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+      boxShadow: TOAST_SHADOW,
       display: 'flex',
       alignItems: 'center',
       gap: 10,
@@ -423,25 +426,14 @@ function AppHeader({
   };
   const today = new Date();
   const dateStr = `${FR_DAYS_LONG[today.getDay()]} ${today.getDate()} ${FR_MONTHS_LONG[today.getMonth()]}`;
-
-  // Read from the App-level BacContext: same object reference as the
-  // Stats-tab gauge, so the pill always shows exactly the same mg/L.
-  const bacInfo = useBacInfo();
-  const bac = bacInfo.current || 0;
   return /*#__PURE__*/React.createElement("header", {
     style: {
       padding: 'calc(env(safe-area-inset-top) + 14px) 18px 14px',
       display: 'flex',
-      flexDirection: 'column',
-      gap: 6,
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      gap: 12
+      gap: 12,
+      flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
@@ -492,9 +484,7 @@ function AppHeader({
       overflow: 'hidden',
       textOverflow: 'ellipsis'
     }
-  }, dateStr)), /*#__PURE__*/React.createElement(BacPill, {
-    bac: bac
-  })), /*#__PURE__*/React.createElement(FavoriteFriendPill, null));
+  }, dateStr)), /*#__PURE__*/React.createElement(HeaderBacStack, null));
 }
 
 // Un seul bouton de nav (hook usePressScale → impossible dans un .map).

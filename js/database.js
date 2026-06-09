@@ -684,3 +684,4 @@ const dbManager = new DatabaseManager();
 
 // Export for use in other modules
 window.dbManager = dbManager;
+window.genUid = genUid;

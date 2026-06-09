@@ -40,6 +40,9 @@ class AppErrorBoundary extends React.Component {
   }
 }
 
+// Ombre du toast — constante nommée (identique en thème clair/sombre).
+const TOAST_SHADOW = '0 10px 30px rgba(0,0,0,0.3)';
+
 // Inner shell — wrapped by the data providers in <App/> so every
 // `useDrinks/useRatings/useCategories/useSettings` call inside reads
 // from a single shared subscription instead of each spawning its own
@@ -288,7 +291,7 @@ function AppShell() {
           left: '50%', transform: 'translateX(-50%)',
           background: T.ink, color: T.bg, padding: '10px 14px 10px 18px', borderRadius: 99,
           fontSize: 13, fontWeight: 500, letterSpacing: -0.1,
-          zIndex: 9999, boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+          zIndex: 9999, boxShadow: TOAST_SHADOW,
           display: 'flex', alignItems: 'center', gap: 10,
           animation: 'fade 0.2s ease',
           maxWidth: 'calc(100vw - 24px)',
@@ -354,50 +357,37 @@ function AppHeader({ tab, onMenu }) {
   const today = new Date();
   const dateStr = `${FR_DAYS_LONG[today.getDay()]} ${today.getDate()} ${FR_MONTHS_LONG[today.getMonth()]}`;
 
-  // Read from the App-level BacContext: same object reference as the
-  // Stats-tab gauge, so the pill always shows exactly the same mg/L.
-  const bacInfo = useBacInfo();
-  const bac = bacInfo.current || 0;
-
   return (
     <header style={{
       padding: 'calc(env(safe-area-inset-top) + 14px) 18px 14px',
-      display: 'flex', flexDirection: 'column', gap: 6,
+      display: 'flex', alignItems: 'center',
+      justifyContent: 'space-between', gap: 12,
       flexShrink: 0,
     }}>
-      <div style={{
-        display: 'flex', alignItems: 'center',
-        justifyContent: 'space-between', gap: 12,
+      <button type="button" onClick={onMenu} aria-label="Ouvrir les paramètres" style={{
+        width: 38, height: 38, borderRadius: 12, background: T.surface2,
+        display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
+        border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit',
       }}>
-        <button type="button" onClick={onMenu} aria-label="Ouvrir les paramètres" style={{
-          width: 38, height: 38, borderRadius: 12, background: T.surface2,
-          display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
-          border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit',
-        }}>
-          <SvgIcon icon={Ic.menu} size={18} />
-        </button>
-        <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
-          <h1 style={{
-            fontFamily: fontSerif, fontSize: 20, color: T.ink,
-            letterSpacing: -0.3, lineHeight: 1, fontStyle: 'italic',
-            margin: 0, fontWeight: 400,
-          }}>{titles[tab]}</h1>
-          <div style={{
-            fontSize: 10, color: T.muted, letterSpacing: 1, marginTop: 3,
-            textTransform: 'uppercase', fontWeight: 500,
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}>{dateStr}</div>
-        </div>
-        <BacPill bac={bac} />
+        <SvgIcon icon={Ic.menu} size={18} />
+      </button>
+      <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
+        <h1 style={{
+          fontFamily: fontSerif, fontSize: 20, color: T.ink,
+          letterSpacing: -0.3, lineHeight: 1, fontStyle: 'italic',
+          margin: 0, fontWeight: 400,
+        }}>{titles[tab]}</h1>
+        <div style={{
+          fontSize: 10, color: T.muted, letterSpacing: 1, marginTop: 3,
+          textTransform: 'uppercase', fontWeight: 500,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>{dateStr}</div>
       </div>
-      {/* Pastille verte de l'ami favori : EN FLUX, juste sous ma pastille,
-          alignée à droite (cf. FavoriteFriendPill). Elle n'agrandit le header
-          que lorsqu'un favori est défini — sinon le composant renvoie null et
-          la rangée menu/titre/pastille reste identique à l'origine. Choix d'un
-          flux (vs overlay absolu) : zéro risque de chevaucher le contenu de
-          l'onglet (barre de période, recherche…). FavoriteFriendPill confine
-          l'abonnement share → un pull ne re-rend que cette pastille. */}
-      <FavoriteFriendPill />
+      {/* Pile des pastilles BAC (la mienne + ami favori) dans un slot à
+          hauteur FIXE de 38px, calé sur le bouton menu : le header garde
+          exactement la même hauteur avec ou sans favori (cf. HeaderBacStack
+          dans friends.jsx, qui confine aussi les abonnements BAC/share). */}
+      <HeaderBacStack />
     </header>
   );
 }

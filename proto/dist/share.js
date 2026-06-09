@@ -874,7 +874,7 @@ const shareEngine = {
   // Favori = préférence PUREMENT LOCALE (rien n'est publié au groupe). Bascule
   // l'ami `userId` en favori (ou le retire si déjà favori). Stocké en setting
   // `share.favoriteId` (null ⇒ la clé est supprimée). La pastille verte du
-  // header (FavoriteFriendPill) ré-affiche via le bump.
+  // header (HeaderBacStack) ré-affiche via le bump.
   async toggleFavorite(userId) {
     const next = shareState.favoriteId === userId ? null : userId || null;
     shareState.favoriteId = next;

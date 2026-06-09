@@ -86,6 +86,34 @@ npm run watch      # mode watch
 avec un en-tête « AUTO-GENERATED ». **Ne jamais éditer** les fichiers
 sous `proto/dist/` — ils sont régénérés à chaque build.
 
+## Tests automatisés
+
+```bash
+npm test           # build (pretest) + toute la suite node --test
+npm run test:unit  # unitaires purs + DB + checks statiques (rapide)
+npm run test:app   # intégration jsdom (app complète)
+```
+
+La suite vit dans `tools/tests/*.test.js` (runner natif `node:test`,
+Node ≥ 20, zéro framework) :
+
+- **Unitaires purs** (`unit-*.test.js`) : helpers de `shared`/`data`/
+  `stats` chargés depuis `proto/dist/` avec des stubs globaux minimaux
+  (`helpers/stub-globals.js`).
+- **DB** (`db*.test.js`) : `js/database.js` sur `fake-indexeddb`
+  (conversions d'unités, settings, migrations v4→v5, import/export).
+- **Intégration** (`app-*.test.js`) : la vraie app compilée bootée sous
+  jsdom + fake-indexeddb + transport de partage mock
+  (`helpers/boot-app.js`). Toujours appeler `cleanup()` dans `after()`
+  (ferme la fenêtre jsdom → purge les intervalles 60 s BAC/share).
+- **Checks statiques** (`static-checks.test.js`) : lint DA sur les
+  sources (couleurs en dur, `<input type="number">`, `<svg>` inline,
+  `window.confirm`), cohérence `sw.js` (triple version identique,
+  `STATIC_FILES` ⊇ scripts d'`index.html`).
+
+Toute nouvelle feature doit arriver avec ses tests ; `npm test` doit
+être vert avant de pousser.
+
 ## Conventions
 
 ### Composants
@@ -300,12 +328,17 @@ dupliquée** — un ami passe par les mêmes `aggregateGeneral`,
   en « favori » (étoile dans la liste / la fiche). Stocké en setting
   `share.favoriteId` ; `shareEngine.toggleFavorite(userId)` est une
   préférence **purement locale** (rien n'est publié au groupe).
-  `FavoriteFriendPill` (header, sous ma pastille) lit `useFavoriteFriend`
-  + `useFriendsBac` et rend une `BacPill tone="good"` (verte). **Résolution
+  `HeaderBacStack` (friends.jsx, monté à droite du titre dans `AppHeader`)
+  empile ma pastille (ambre) et celle du favori (`BacPill tone="good"`,
+  verte) dans un **slot à hauteur fixe de 38 px** (= bouton menu) : la
+  hauteur du header ne change JAMAIS. Seule, ma pastille garde sa taille
+  normale ; à deux, les deux passent en variante `compact` de `BacPill`
+  et `alignItems: stretch` aligne leurs largeurs. Les abonnements (tick
+  BAC 60 s + shareBus) restent confinés à `HeaderBacStack`. **Résolution
   paresseuse** : si l'ami quitte le groupe la pastille disparaît sans
   effacer le choix ; seul `leaveGroup` purge `favoriteId`. Réutiliser
-  `BacPill` (prop `tone`) pour toute nouvelle pastille — jamais de couleur
-  en dur.
+  `BacPill` (props `tone`/`compact`) pour toute nouvelle pastille —
+  jamais de couleur en dur.
 
 ## Base de données & zéro perte de données
 
@@ -372,9 +405,10 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
 - Tiroir paramètres : ouvre depuis la gauche, slide animé.
 - FAB : à environ ~14 px du bord droit, ne déborde pas.
 - **Amis — favori** : l'étoile n'apparaît que sur un ami qui partage son
-  BAC ; la mettre affiche une pastille **verte** sous la mienne (header)
-  avec son taux ; un seul favori à la fois ; persiste au reload ; disparaît
-  au « Quitter le groupe ».
+  BAC ; la mettre affiche une pastille **verte compacte** sous la mienne
+  dans la pile à droite du titre, **sans changer la hauteur du header**
+  (slot fixe 38 px) ; un seul favori à la fois ; persiste au reload ;
+  disparaît au « Quitter le groupe ».
 - **Amis — stats** : ouvrir un ami recalcule ses stats via le même
   `StatsTab` ; un ami qui ne partage pas son BAC masque Sessions / Temps
   bourré / % bourré (pas de poids → pas de chiffre inventé).
