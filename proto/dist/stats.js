@@ -1285,14 +1285,16 @@ function TemporalSection({
       marginBottom: 10,
       letterSpacing: -0.1
     }
-  }, "Par heure"), /*#__PURE__*/React.createElement(SvgBarChart, {
+  }, "Par heure"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 150
+  }, w => /*#__PURE__*/React.createElement(SvgBarChart, {
     data: hourlyData,
-    width: 320,
+    width: w,
     height: 150,
     color: T.accent,
     formatX: hourlyFormatX,
     valueLabel: "boisson(s)"
-  })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+  }))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
       fontSize: 12.5,
@@ -1300,12 +1302,15 @@ function TemporalSection({
       marginBottom: 4,
       letterSpacing: -0.1
     }
-  }, "Par jour de la semaine"), /*#__PURE__*/React.createElement(SvgRadar, {
+  }, "Par jour de la semaine"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 250,
+    maxWidth: 300
+  }, w => /*#__PURE__*/React.createElement(SvgRadar, {
     data: dailyData,
-    size: 250,
+    size: w,
     color: T.good,
     valueLabel: "boisson(s)"
-  })));
+  }))));
 }
 
 // Pure direction badge: green when the metric rises vs the previous
@@ -1916,25 +1921,19 @@ function BacProvider({
 // `minHeight` reserves space before the first measurement so the chart
 // never collapses to 0 px during the initial frame and the surrounding
 // card doesn't reflow when the SVG mounts.
+// Slightly taller ratio + higher min height: the curve should be
+// legible end-to-end, including thresholds and labels, on the
+// narrowest phone screens we support.
+const bacChartHeight = width => Math.max(180, Math.min(240, Math.round(width * 0.6)));
 function BACProjectionResponsive({
   points
 }) {
-  const ref = React.useRef(null);
-  const width = useMeasuredWidth(ref, 320);
-  // Slightly taller ratio + higher min height: the curve should be
-  // legible end-to-end, including thresholds and labels, on the
-  // narrowest phone screens we support.
-  const height = Math.max(180, Math.min(240, Math.round(width * 0.6)));
-  return /*#__PURE__*/React.createElement("div", {
-    ref: ref,
-    style: {
-      width: '100%',
-      minHeight: 180
-    }
-  }, width > 0 && /*#__PURE__*/React.createElement(SvgBACProjection, {
+  return /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 180
+  }, width => /*#__PURE__*/React.createElement(SvgBACProjection, {
     points: points,
     width: width,
-    height: height,
+    height: bacChartHeight(width),
     nowMs: Date.now()
   }));
 }
@@ -1944,22 +1943,15 @@ function BACForecastResponsive({
   meanPeakBac,
   etaPeakHours
 }) {
-  const ref = React.useRef(null);
-  const width = useMeasuredWidth(ref, 320);
-  const height = Math.max(180, Math.min(240, Math.round(width * 0.6)));
-  return /*#__PURE__*/React.createElement("div", {
-    ref: ref,
-    style: {
-      width: '100%',
-      minHeight: 180
-    }
-  }, width > 0 && /*#__PURE__*/React.createElement(SvgBACForecast, {
+  return /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 180
+  }, width => /*#__PURE__*/React.createElement(SvgBACForecast, {
     realPoints: realPoints,
     projectedPoints: projectedPoints,
     meanPeakBac: meanPeakBac,
     etaPeakHours: etaPeakHours,
     width: width,
-    height: height,
+    height: bacChartHeight(width),
     nowMs: Date.now()
   }));
 }
@@ -3308,16 +3300,18 @@ function TrendsSection({
     collapsed: collapsed,
     toggleSection: toggleSection,
     sub: "Tendances de consommation mois par mois"
-  }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SvgLineChart, {
+  }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 170
+  }, w => /*#__PURE__*/React.createElement(SvgLineChart, {
     labels: trends.labels,
     series: [{
       data: trends.drinks
     }, {
       data: trends.alcoholG
     }],
-    width: 320,
+    width: w,
     height: 170
-  }), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 14,
@@ -3456,9 +3450,12 @@ function AdvancedSection({
       fontStyle: 'italic',
       fontFamily: fontSerif
     }
-  }, "Alcool quotidien liss\xE9 sur 7 et 30 jours"), rolling.length > 0 ? /*#__PURE__*/React.createElement(RollingChart, {
-    data: rolling
-  }) : /*#__PURE__*/React.createElement("div", {
+  }, "Alcool quotidien liss\xE9 sur 7 et 30 jours"), rolling.length > 0 ? /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 160
+  }, w => /*#__PURE__*/React.createElement(RollingChart, {
+    data: rolling,
+    width: w
+  })) : /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
       fontSize: 11,
@@ -3504,10 +3501,13 @@ function AdvancedSection({
       fontStyle: 'italic',
       fontFamily: fontSerif
     }
-  }, "R\xE9partition sur 24 heures"), /*#__PURE__*/React.createElement(SvgPolarClock, {
+  }, "R\xE9partition sur 24 heures"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 260,
+    maxWidth: 300
+  }, w => /*#__PURE__*/React.createElement(SvgPolarClock, {
     hours: agg.byHour,
-    size: 260
-  })), bacAvailable && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+    size: w
+  }))), bacAvailable && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
       fontSize: 12.5,
@@ -3532,18 +3532,20 @@ function AdvancedSection({
       letterSpacing: 0.3,
       textTransform: 'uppercase'
     }
-  }, "Dur\xE9e"), /*#__PURE__*/React.createElement(SvgHistogram, {
+  }, "Dur\xE9e"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 150
+  }, w => /*#__PURE__*/React.createElement(SvgHistogram, {
     buckets: sessionDuration,
-    width: 320,
+    width: w,
     height: 150,
     color: T.accent
-  }))));
+  })))));
 }
 function RollingChart({
-  data
+  data,
+  width = 320
 }) {
-  const width = 320,
-    height = 160;
+  const height = 160;
   const pad = {
     t: 12,
     r: 10,
@@ -3968,14 +3970,16 @@ function SpendingSection({
       marginBottom: 10,
       letterSpacing: -0.1
     }
-  }, "D\xE9penses ", spend.unitLabel), /*#__PURE__*/React.createElement(SvgBarChart, {
+  }, "D\xE9penses ", spend.unitLabel), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 160
+  }, w => /*#__PURE__*/React.createElement(SvgBarChart, {
     data: spend.data,
-    width: 320,
+    width: w,
     height: 160,
     color: T.accent,
     formatX: spend.formatX,
     formatTooltip: d => [d.fullLabel || d.label, fmtPrice(d.v)]
-  })));
+  }))));
 }
 Object.assign(window, {
   StatsTab,

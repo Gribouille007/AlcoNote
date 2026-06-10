@@ -26,6 +26,32 @@ function useMeasuredWidth(ref, fallback = 320) {
   return width;
 }
 
+// Width-measured container for charts: renders `children(width)` once the
+// content-box width is known so every chart can draw its viewBox at TRUE
+// pixel size (sharp text, no letterbox) instead of a fixed 320 scaled by
+// the browser. Generalises the pattern of BACProjectionResponsive.
+// `minHeight` reserves the chart's height before the first measurement so
+// the surrounding card never reflows; `maxWidth` caps square charts
+// (radar / polar clock) that would otherwise swallow the whole card.
+function ChartAutoWidth({
+  minHeight = 0,
+  maxWidth = null,
+  children
+}) {
+  const ref = React.useRef(null);
+  let width = useMeasuredWidth(ref, 320);
+  if (maxWidth) width = Math.min(width, maxWidth);
+  return /*#__PURE__*/React.createElement("div", {
+    ref: ref,
+    style: {
+      width: '100%',
+      minHeight,
+      display: 'flex',
+      justifyContent: 'center'
+    }
+  }, width > 0 ? children(width) : null);
+}
+
 // Rounds an axis maximum up to a "nice" value, given a target tick count.
 // The mantissa thresholds round *up* (smallest of 1/2/5/10 ≥ n) so the
 // returned max is always ≥ v — otherwise a tall bar/curve overflows the
@@ -1837,5 +1863,6 @@ Object.assign(window, {
   SvgHistogram,
   useChartScrubber,
   ChartTooltip,
-  useMeasuredWidth
+  useMeasuredWidth,
+  ChartAutoWidth
 });

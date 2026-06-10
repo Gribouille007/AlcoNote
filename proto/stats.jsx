@@ -963,19 +963,25 @@ function TemporalSection({ drinks, collapsed, toggleSection, agg, sessions, bacA
         <div style={{
           color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 10, letterSpacing: -0.1,
         }}>Par heure</div>
-        <SvgBarChart
-          data={hourlyData}
-          width={320} height={150} color={T.accent}
-          formatX={hourlyFormatX}
-          valueLabel="boisson(s)"
-        />
+        <ChartAutoWidth minHeight={150}>
+          {(w) => (
+            <SvgBarChart
+              data={hourlyData}
+              width={w} height={150} color={T.accent}
+              formatX={hourlyFormatX}
+              valueLabel="boisson(s)"
+            />
+          )}
+        </ChartAutoWidth>
       </Card>
 
       <Card>
         <div style={{
           color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 4, letterSpacing: -0.1,
         }}>Par jour de la semaine</div>
-        <SvgRadar data={dailyData} size={250} color={T.good} valueLabel="boisson(s)" />
+        <ChartAutoWidth minHeight={250} maxWidth={300}>
+          {(w) => <SvgRadar data={dailyData} size={w} color={T.good} valueLabel="boisson(s)" />}
+        </ChartAutoWidth>
       </Card>
     </StatSection>
   );
@@ -1417,39 +1423,35 @@ function BacProvider({ children }) {
 // `minHeight` reserves space before the first measurement so the chart
 // never collapses to 0 px during the initial frame and the surrounding
 // card doesn't reflow when the SVG mounts.
+// Slightly taller ratio + higher min height: the curve should be
+// legible end-to-end, including thresholds and labels, on the
+// narrowest phone screens we support.
+const bacChartHeight = (width) => Math.max(180, Math.min(240, Math.round(width * 0.6)));
+
 function BACProjectionResponsive({ points }) {
-  const ref = React.useRef(null);
-  const width = useMeasuredWidth(ref, 320);
-  // Slightly taller ratio + higher min height: the curve should be
-  // legible end-to-end, including thresholds and labels, on the
-  // narrowest phone screens we support.
-  const height = Math.max(180, Math.min(240, Math.round(width * 0.6)));
   return (
-    <div ref={ref} style={{ width: '100%', minHeight: 180 }}>
-      {width > 0 && (
+    <ChartAutoWidth minHeight={180}>
+      {(width) => (
         <SvgBACProjection
-          points={points} width={width} height={height}
+          points={points} width={width} height={bacChartHeight(width)}
           nowMs={Date.now()}
         />
       )}
-    </div>
+    </ChartAutoWidth>
   );
 }
 
 function BACForecastResponsive({ realPoints, projectedPoints, meanPeakBac, etaPeakHours }) {
-  const ref = React.useRef(null);
-  const width = useMeasuredWidth(ref, 320);
-  const height = Math.max(180, Math.min(240, Math.round(width * 0.6)));
   return (
-    <div ref={ref} style={{ width: '100%', minHeight: 180 }}>
-      {width > 0 && (
+    <ChartAutoWidth minHeight={180}>
+      {(width) => (
         <SvgBACForecast
           realPoints={realPoints} projectedPoints={projectedPoints}
           meanPeakBac={meanPeakBac} etaPeakHours={etaPeakHours}
-          width={width} height={height} nowMs={Date.now()}
+          width={width} height={bacChartHeight(width)} nowMs={Date.now()}
         />
       )}
-    </div>
+    </ChartAutoWidth>
   );
 }
 
@@ -2345,14 +2347,18 @@ function TrendsSection({ allDrinks, collapsed, toggleSection }) {
   return (
     <StatSection id="trends" title="Évolution mensuelle" collapsed={collapsed} toggleSection={toggleSection} sub="Tendances de consommation mois par mois">
       <Card>
-        <SvgLineChart
-          labels={trends.labels}
-          series={[
-            { data: trends.drinks },
-            { data: trends.alcoholG },
-          ]}
-          width={320} height={170}
-        />
+        <ChartAutoWidth minHeight={170}>
+          {(w) => (
+            <SvgLineChart
+              labels={trends.labels}
+              series={[
+                { data: trends.drinks },
+                { data: trends.alcoholG },
+              ]}
+              width={w} height={170}
+            />
+          )}
+        </ChartAutoWidth>
         <div style={{
           display: 'flex', gap: 14, justifyContent: 'center', marginTop: 8,
           fontSize: 10.5, color: T.ink2,
@@ -2427,7 +2433,11 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, ses
         <div style={{
           color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
         }}>Alcool quotidien lissé sur 7 et 30 jours</div>
-        {rolling.length > 0 ? <RollingChart data={rolling} /> : (
+        {rolling.length > 0 ? (
+          <ChartAutoWidth minHeight={160}>
+            {(w) => <RollingChart data={rolling} width={w} />}
+          </ChartAutoWidth>
+        ) : (
           <div style={{ color: T.muted, fontSize: 11, padding: '12px 0', textAlign: 'center' }}>Aucune donnée</div>
         )}
         <div style={{
@@ -2447,7 +2457,9 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, ses
         <div style={{
           color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
         }}>Répartition sur 24 heures</div>
-        <SvgPolarClock hours={agg.byHour} size={260} />
+        <ChartAutoWidth minHeight={260} maxWidth={300}>
+          {(w) => <SvgPolarClock hours={agg.byHour} size={w} />}
+        </ChartAutoWidth>
       </Card>
 
       {/* Distribution des sessions = modèle BAC (poids/sexe) : masquée pour un
@@ -2466,7 +2478,9 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, ses
               color: T.ink2, fontSize: 10.5, marginBottom: 4, textAlign: 'center',
               letterSpacing: 0.3, textTransform: 'uppercase',
             }}>Durée</div>
-            <SvgHistogram buckets={sessionDuration} width={320} height={150} color={T.accent} />
+            <ChartAutoWidth minHeight={150}>
+              {(w) => <SvgHistogram buckets={sessionDuration} width={w} height={150} color={T.accent} />}
+            </ChartAutoWidth>
           </div>
         </Card>
       )}
@@ -2474,8 +2488,8 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, ses
   );
 }
 
-function RollingChart({ data }) {
-  const width = 320, height = 160;
+function RollingChart({ data, width = 320 }) {
+  const height = 160;
   const pad = { t: 12, r: 10, b: 26, l: 32 };
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
@@ -2707,12 +2721,16 @@ function SpendingSection({ drinks, prevDrinks, period, range, collapsed, toggleS
           <div style={{
             color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 10, letterSpacing: -0.1,
           }}>Dépenses {spend.unitLabel}</div>
-          <SvgBarChart
-            data={spend.data}
-            width={320} height={160} color={T.accent}
-            formatX={spend.formatX}
-            formatTooltip={(d) => [d.fullLabel || d.label, fmtPrice(d.v)]}
-          />
+          <ChartAutoWidth minHeight={160}>
+            {(w) => (
+              <SvgBarChart
+                data={spend.data}
+                width={w} height={160} color={T.accent}
+                formatX={spend.formatX}
+                formatTooltip={(d) => [d.fullLabel || d.label, fmtPrice(d.v)]}
+              />
+            )}
+          </ChartAutoWidth>
         </Card>
       )}
     </StatSection>
