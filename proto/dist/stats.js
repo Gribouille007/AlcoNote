@@ -476,7 +476,8 @@ function StatsTab({
   bacAvailable = true
 } = {}) {
   const {
-    drinks
+    drinks,
+    loading
   } = useDrinks();
   const settings = useSettings();
   const [period, setPeriod] = React.useState(() => localStorage.getItem(_statsKey('alconote.stats.period', storageScope)) || 'week');
@@ -559,6 +560,34 @@ function StatsTab({
     gender,
     bacAvailable
   };
+
+  // Pas encore chargé : ne rien afficher plutôt que de flasher l'état
+  // vide une frame avant l'arrivée des données IndexedDB.
+  if (loading) return null;
+
+  // Aucune boisson nulle part : un seul message, pas de sélecteur de
+  // période (il n'y a rien à parcourir) ni de sections vides.
+  if (drinks.length === 0) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        overflow: 'auto',
+        padding: '0 16px 120px'
+      }
+    }, /*#__PURE__*/React.createElement(StatsEmptyState, {
+      scope: "global"
+    })));
+  }
+
+  // Période sélectionnée vide : le sélecteur et la navigation restent
+  // (pour aller voir ailleurs), les sections laissent place au message.
+  const hasPeriodData = inRange.length > 0;
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -581,7 +610,49 @@ function StatsTab({
     period: period,
     anchor: anchor,
     onShift: d => setAnchor(shiftAnchor(period, anchor, d))
-  }), /*#__PURE__*/React.createElement(GeneralSection, sp), /*#__PURE__*/React.createElement(TemporalSection, sp), /*#__PURE__*/React.createElement(CategorySection, sp), /*#__PURE__*/React.createElement(TopDrinksSection, sp), !hideBac && /*#__PURE__*/React.createElement(BACSection, sp), !hideMap && /*#__PURE__*/React.createElement(MapSection, sp), /*#__PURE__*/React.createElement(TrendsSection, sp), /*#__PURE__*/React.createElement(AdvancedSection, sp), !hidePrice && /*#__PURE__*/React.createElement(SpendingSection, sp)));
+  }), !hasPeriodData ? /*#__PURE__*/React.createElement(StatsEmptyState, {
+    scope: "period"
+  }) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(GeneralSection, sp), /*#__PURE__*/React.createElement(TemporalSection, sp), /*#__PURE__*/React.createElement(CategorySection, sp), /*#__PURE__*/React.createElement(TopDrinksSection, sp), !hideBac && /*#__PURE__*/React.createElement(BACSection, sp), !hideMap && /*#__PURE__*/React.createElement(MapSection, sp), /*#__PURE__*/React.createElement(TrendsSection, sp), /*#__PURE__*/React.createElement(AdvancedSection, sp), !hidePrice && /*#__PURE__*/React.createElement(SpendingSection, sp))));
+}
+
+// État vide de l'onglet Stats — remplace les sections quand il n'y a
+// rien à agréger (aucune boisson au global, ou période sans donnée).
+function StatsEmptyState({
+  scope
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '48px 22px',
+      textAlign: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'center',
+      marginBottom: 14,
+      color: T.muted
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.bars,
+    size: 30
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: fontSerif,
+      fontStyle: 'italic',
+      fontSize: 18,
+      color: T.ink,
+      letterSpacing: -0.3,
+      marginBottom: 8
+    }
+  }, "Pas de donn\xE9es disponibles"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: T.muted,
+      lineHeight: 1.6,
+      maxWidth: 260,
+      margin: '0 auto'
+    }
+  }, scope === 'global' ? 'Ajoute ta première boisson avec le bouton + pour voir tes statistiques ici.' : 'Aucune boisson enregistrée sur cette période.'));
 }
 function PeriodSwitcher({
   period,

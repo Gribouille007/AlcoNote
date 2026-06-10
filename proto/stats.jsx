@@ -405,7 +405,7 @@ function fmtBourreTime(ms) {
 // dérivées du modèle Widmark (Sessions / Temps bourré / % bourré) qui seraient
 // sinon calculées avec un poids par défaut (70 kg) donc fausses.
 function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePrice = false, bacAvailable = true } = {}) {
-  const { drinks } = useDrinks();
+  const { drinks, loading } = useDrinks();
   const settings = useSettings();
   const [period, setPeriod] = React.useState(() => localStorage.getItem(_statsKey('alconote.stats.period', storageScope)) || 'week');
   const [anchor, setAnchor] = React.useState(() => new Date());
@@ -490,20 +490,67 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
     weight, gender, bacAvailable,
   };
 
+  // Pas encore chargé : ne rien afficher plutôt que de flasher l'état
+  // vide une frame avant l'arrivée des données IndexedDB.
+  if (loading) return null;
+
+  // Aucune boisson nulle part : un seul message, pas de sélecteur de
+  // période (il n'y a rien à parcourir) ni de sections vides.
+  if (drinks.length === 0) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 120px' }}>
+          <StatsEmptyState scope="global" />
+        </div>
+      </div>
+    );
+  }
+
+  // Période sélectionnée vide : le sélecteur et la navigation restent
+  // (pour aller voir ailleurs), les sections laissent place au message.
+  const hasPeriodData = inRange.length > 0;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PeriodSwitcher period={period} onChange={(p) => { setPeriod(p); setAnchor(new Date()); }} />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 120px' }}>
         <PeriodNav period={period} anchor={anchor} onShift={(d) => setAnchor(shiftAnchor(period, anchor, d))} />
-        <GeneralSection {...sp} />
-        <TemporalSection {...sp} />
-        <CategorySection {...sp} />
-        <TopDrinksSection {...sp} />
-        {!hideBac && <BACSection {...sp} />}
-        {!hideMap && <MapSection {...sp} />}
-        <TrendsSection {...sp} />
-        <AdvancedSection {...sp} />
-        {!hidePrice && <SpendingSection {...sp} />}
+        {!hasPeriodData ? <StatsEmptyState scope="period" /> : (
+          <>
+            <GeneralSection {...sp} />
+            <TemporalSection {...sp} />
+            <CategorySection {...sp} />
+            <TopDrinksSection {...sp} />
+            {!hideBac && <BACSection {...sp} />}
+            {!hideMap && <MapSection {...sp} />}
+            <TrendsSection {...sp} />
+            <AdvancedSection {...sp} />
+            {!hidePrice && <SpendingSection {...sp} />}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// État vide de l'onglet Stats — remplace les sections quand il n'y a
+// rien à agréger (aucune boisson au global, ou période sans donnée).
+function StatsEmptyState({ scope }) {
+  return (
+    <div style={{ padding: '48px 22px', textAlign: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14, color: T.muted }}>
+        <SvgIcon icon={Ic.bars} size={30} />
+      </div>
+      <div style={{
+        fontFamily: fontSerif, fontStyle: 'italic', fontSize: 18,
+        color: T.ink, letterSpacing: -0.3, marginBottom: 8,
+      }}>
+        Pas de données disponibles
+      </div>
+      <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6, maxWidth: 260, margin: '0 auto' }}>
+        {scope === 'global'
+          ? 'Ajoute ta première boisson avec le bouton + pour voir tes statistiques ici.'
+          : 'Aucune boisson enregistrée sur cette période.'}
       </div>
     </div>
   );
