@@ -863,8 +863,11 @@ async function clearAllData() {
 function getDrinkCoords(d) {
   if (!d) return null;
   const loc = d.location || null;
-  const lat = parseFloat(d.latitude != null ? d.latitude : loc ? loc.latitude : undefined);
-  const lng = parseFloat(d.longitude != null ? d.longitude : loc ? loc.longitude : undefined);
+  // Conversion stricte : Number('48.8abc') → NaN là où parseFloat acceptait
+  // le préfixe ; null / '' / blancs → NaN aussi (Number(null) vaudrait 0).
+  const num = v => v == null || String(v).trim() === '' ? NaN : Number(v);
+  const lat = num(d.latitude != null ? d.latitude : loc ? loc.latitude : undefined);
+  const lng = num(d.longitude != null ? d.longitude : loc ? loc.longitude : undefined);
   return Number.isFinite(lat) && Number.isFinite(lng) ? {
     lat,
     lng

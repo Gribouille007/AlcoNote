@@ -720,6 +720,10 @@ const Confirm = (() => {
   };
 })();
 
+// Ombre du dialogue de confirmation — constante nommée (volontairement
+// identique en thème clair/sombre, comme les scrims).
+const DIALOG_SHADOW = '0 30px 60px rgba(0,0,0,0.5)';
+
 function ConfirmHost() {
   const [state, setState] = React.useState(null);
   React.useEffect(() => { Confirm._bind(setState); return () => Confirm._bind(null); }, []);
@@ -762,7 +766,7 @@ function ConfirmHost() {
         background: T.bg, color: T.ink, borderRadius: 18,
         border: `1px solid ${T.rule}`,
         padding: '22px 22px 18px', maxWidth: 360, width: '100%',
-        boxShadow: '0 30px 60px rgba(0,0,0,0.5)',
+        boxShadow: DIALOG_SHADOW,
         animation: 'scaleIn 0.18s ease',
       }}>
         <div id="alco-confirm-title" style={{
@@ -1129,7 +1133,7 @@ function CategoryChips({ categories, value, onChange, ariaLabel = 'Catégorie' }
     <div role="radiogroup" aria-label={ariaLabel}
       style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
       {(categories || []).map(c => {
-        const on = value === c.name;
+        const on = canonicalCat(value) === canonicalCat(c.name);
         return (
           <button key={c.id || c.name} type="button" role="radio" aria-checked={on}
             onClick={() => onChange(c.name)} style={{
@@ -1259,9 +1263,11 @@ function LocationField({ value, onChange, ariaLabel = 'Lieu' }) {
 // Pastille d'alcoolémie réutilisable (header de l'app + lignes de l'onglet
 // Amis). `bac` en mg/L ; `null` → non communiqué ("—" grisé). `tone='accent'`
 // (ambre, défaut) pour ma pastille / les lignes ; `tone='good'` (vert) pour la
-// pastille d'un ami favori sous la mienne. Pas de seuils colorés ici (comme le
-// header d'origine) : la teinte vient uniquement du `tone`.
-function BacPill({ bac, ariaLabel, tone = 'accent' }) {
+// pastille de l'ami favori. `compact` : variante dense (≈16px de haut, sans
+// maxWidth pour permettre le `stretch`) utilisée quand deux pastilles doivent
+// tenir dans le slot fixe de 38px du header (cf. HeaderBacStack). Pas de
+// seuils colorés ici : la teinte vient uniquement du `tone`.
+function BacPill({ bac, ariaLabel, tone = 'accent', compact = false }) {
   const known = bac != null && Number.isFinite(bac);
   const active = known && bac > 0;
   const isGood = tone === 'good';
@@ -1271,18 +1277,21 @@ function BacPill({ bac, ariaLabel, tone = 'accent' }) {
   return (
     <div aria-label={ariaLabel || "Taux d'alcoolémie"}
       title={known ? `${bac} mg/L` : 'Non communiqué'} style={{
-        display: 'flex', alignItems: 'center', gap: 5,
-        padding: '6px 10px 6px 8px', borderRadius: 12,
+        display: 'flex', alignItems: 'center', gap: compact ? 4 : 5,
+        padding: compact ? '2px 8px 2px 6px' : '6px 10px 6px 8px',
+        borderRadius: compact ? 8 : 12,
         background: bgSoft, border: `1px solid ${brdSoft}`,
-        minWidth: 48, maxWidth: 86, justifyContent: 'center',
+        minWidth: 48, maxWidth: compact ? undefined : 86, justifyContent: 'center',
         opacity: known ? (active ? 1 : 0.7) : 0.45,
+        transition: 'padding 0.18s ease, border-radius 0.18s ease',
       }}>
       <div style={{
-        width: 6, height: 6, borderRadius: 99, background: fg,
+        width: compact ? 5 : 6, height: compact ? 5 : 6, borderRadius: 99, background: fg,
         boxShadow: active ? `0 0 8px ${fg}` : 'none', flexShrink: 0,
       }} />
       <span style={{
-        color: fg, fontSize: 11, fontWeight: 600,
+        color: fg, fontSize: compact ? 10 : 11, fontWeight: 600,
+        ...(compact ? { lineHeight: 1 } : null),
         fontFamily: fontNum, letterSpacing: 0, fontVariantNumeric: 'tabular-nums',
         overflow: 'hidden', textOverflow: 'ellipsis',
         whiteSpace: 'nowrap', minWidth: 0, flex: '0 1 auto',

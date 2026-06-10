@@ -7,10 +7,17 @@
     "build": "node tools/build.js",
     "watch": "node tools/build.js --watch",
     "pretest": "node tools/build.js",
-    "test": "node tools/test-icons.js"
+    "test": "node --test tools/tests/*.test.js",
+    "test:unit": "npm run build && node --test tools/tests/unit-shared.test.js tools/tests/unit-data.test.js tools/tests/unit-stats.test.js tools/tests/db.test.js tools/tests/db-migration.test.js tools/tests/static-checks.test.js",
+    "test:app": "npm run build && node --test --test-concurrency=1 tools/tests/app-boot.test.js tools/tests/app-add-drink.test.js tools/tests/app-categories.test.js tools/tests/app-history.test.js tools/tests/app-header-stack.test.js tools/tests/app-friends.test.js tools/tests/app-settings.test.js"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
-    "@babel/preset-react": "^7.28.5"
+    "@babel/preset-react": "^7.28.5",
+    "dexie": "^3.2.7",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^29.1.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   }
 }

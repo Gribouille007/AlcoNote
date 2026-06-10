@@ -276,7 +276,7 @@ function AddDrinkSheet({
       ...ghostButton,
       width: '100%',
       textAlign: 'left',
-      background: T.isDark ? `linear-gradient(135deg, oklch(30% 0.03 65), ${T.surface})` : `linear-gradient(135deg, ${T.accentSoft}, ${T.surface})`,
+      background: `linear-gradient(135deg, ${T.accentSoft}, ${T.surface})`,
       border: `1px solid ${T.rule}`,
       borderRadius: 16,
       padding: 16,

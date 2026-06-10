@@ -615,25 +615,37 @@ function FriendStatsView({
   })))))));
 }
 
-// Pastille verte de l'ami favori, montée dans le header SOUS ma pastille BAC,
-// alignée à droite (en flux). `tone="good"` (vert). Renvoie `null` sans favori
-// (ou favori parti du groupe) → le header retrouve exactement sa hauteur
-// d'origine, sans réserver d'espace. Le hook `useFavoriteFriend` + l'abonnement
-// share restent confinés ICI : un `shareBus.bump` (pull) ne re-rend que cette
-// pastille, pas tout le header.
-function FavoriteFriendPill() {
+// Pile des pastilles BAC du header, à droite du titre : ma pastille (ambre,
+// même BacContext que la jauge Stats → même mg/L) et, si un ami favori est
+// défini, la sienne (verte) juste en dessous. Le slot a une hauteur FIXE de
+// 38px (= bouton menu) : le header ne change JAMAIS de hauteur, favori ou
+// pas. Seule, ma pastille garde sa taille normale (centrée) ; à deux, les
+// deux passent en variante `compact` empilée et `alignItems: stretch` leur
+// donne la même largeur (bords alignés). Les abonnements (tick BAC 60 s,
+// shareBus via useFavoriteFriend / useFriendsBac) sont confinés ICI : un pull
+// ou un tick ne re-rend que la pile, pas tout le header.
+function HeaderBacStack() {
+  const bacInfo = useBacInfo();
   const fav = useFavoriteFriend();
   const bacMap = useFriendsBac(fav ? [fav] : []);
-  if (!fav) return null;
-  const bac = bacMap[fav.userId];
+  const two = !!fav;
   return /*#__PURE__*/React.createElement("div", {
     style: {
+      height: 38,
+      flexShrink: 0,
       display: 'flex',
-      justifyContent: 'flex-end'
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: two ? 'stretch' : 'flex-end',
+      gap: two ? 4 : 0
     }
   }, /*#__PURE__*/React.createElement(BacPill, {
-    bac: bac == null ? null : bac,
+    bac: bacInfo.current || 0,
+    compact: two
+  }), two && /*#__PURE__*/React.createElement(BacPill, {
+    bac: bacMap[fav.userId] == null ? null : bacMap[fav.userId],
     tone: "good",
+    compact: true,
     ariaLabel: `Alcoolémie de ${fav.displayName || 'mon favori'}`
   }));
 }
@@ -642,5 +654,5 @@ Object.assign(window, {
   FriendStatsView,
   FriendRow,
   GroupFooter,
-  FavoriteFriendPill
+  HeaderBacStack
 });

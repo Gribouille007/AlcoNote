@@ -104,12 +104,22 @@ function getPeriodRange(period, anchor) {
 
 function shiftAnchor(period, anchor, dir) {
   const a = new Date(anchor);
+  // Décalage mois/année sans débordement de jour : depuis le 31 janvier,
+  // +1 mois doit donner février (jour re-clampé), pas le 3 mars — sinon la
+  // navigation « mois suivant » saute les mois courts.
+  const shiftClamped = (apply) => {
+    const day = a.getDate();
+    a.setDate(1);
+    apply();
+    const last = new Date(a.getFullYear(), a.getMonth() + 1, 0).getDate();
+    a.setDate(Math.min(day, last));
+  };
   switch (period) {
     case 'today': a.setDate(a.getDate() + dir); break;
     case 'week':  a.setDate(a.getDate() + dir * 7); break;
-    case 'month': a.setMonth(a.getMonth() + dir); break;
-    case 'year':  a.setFullYear(a.getFullYear() + dir); break;
-    case 'school': a.setFullYear(a.getFullYear() + dir); break;
+    case 'month': shiftClamped(() => a.setMonth(a.getMonth() + dir)); break;
+    case 'year':  shiftClamped(() => a.setFullYear(a.getFullYear() + dir)); break;
+    case 'school': shiftClamped(() => a.setFullYear(a.getFullYear() + dir)); break;
     case 'all':   break;
   }
   return a;
@@ -164,7 +174,7 @@ function aggregateGeneral(drinks) {
     stats.volumeCl += cl;
     stats.grams += ethanolGrams(cl, d.alcoholContent); // réutilise `cl` déjà calculé
     stats.unique.add((d.name || '').toLowerCase());
-    const cat = d.category || 'Autre';
+    const cat = canonicalCat(d.category) || 'Autre';
     stats.byCategory[cat] = (stats.byCategory[cat] || 0) + 1;
     const hour = parseInt((d.time || '00:00').split(':')[0], 10);
     if (!isNaN(hour) && hour >= 0 && hour < 24) stats.byHour[hour] = (stats.byHour[hour] || 0) + 1;
@@ -1023,7 +1033,7 @@ function CategorySection({ drinks, collapsed, toggleSection }) {
   const byCat = React.useMemo(() => {
     const map = {};
     for (const d of drinks) {
-      const cat = d.category || 'Autre';
+      const cat = canonicalCat(d.category) || 'Autre';
       if (!map[cat]) map[cat] = { name: cat, count: 0, volumeCl: 0, abvSum: 0, abvN: 0, names: {} };
       const e = map[cat];
       e.count++;
@@ -1907,7 +1917,7 @@ function groupDrinksForMap(drinks) {
     const key = `${(d.name || '').trim().toLowerCase()}::${d.quantity}::${(d.unit || '').toLowerCase()}::${d.alcoholContent || 0}`;
     if (!map.has(key)) {
       map.set(key, {
-        key, name: d.name || 'Boisson', category: d.category || 'Autre',
+        key, name: d.name || 'Boisson', category: canonicalCat(d.category) || 'Autre',
         quantity: d.quantity, unit: d.unit, alcohol: d.alcoholContent || 0, count: 0,
       });
     }
@@ -2633,7 +2643,7 @@ function SpendingSection({ drinks, prevDrinks, period, range, collapsed, toggleS
   const byCat = React.useMemo(() => {
     const map = {};
     for (const d of priced) {
-      const cat = d.category || 'Autre';
+      const cat = canonicalCat(d.category) || 'Autre';
       if (!map[cat]) map[cat] = { name: cat, total: 0, count: 0 };
       map[cat].total += Number(d.price);
       map[cat].count++;
@@ -2717,7 +2727,8 @@ Object.assign(window, {
   DeltaBadge, StatCell, HeroStatCard,
   getPeriodRange, shiftAnchor, periodLabel, computeBacOverTime,
   computeBACSessions, computeBourreTime, computeStreak, fmtBourreTime,
-  BAC_ELIM_RATE, BAC_RECORD_MIN,
+  aggregateGeneral, computeStreakRecord, filterDrinksInRange,
+  BAC_ELIM_RATE, BAC_RECORD_MIN, BAC_ABSORPTION_H, DEFAULT_WEIGHT_KG, widmarkR,
   BacContext, useBacInfo, BacProvider, BACProjectionResponsive,
   computeBacForecast, BACForecastResponsive,
   ForecastToggle, ForecastMiniStats,

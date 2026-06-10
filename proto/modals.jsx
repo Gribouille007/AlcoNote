@@ -176,9 +176,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
         <div style={{ overflowY: 'auto', overflowX: 'hidden', padding: '0 18px 20px', flex: 1 }}>
           <button type="button" onClick={() => setScan(true)} aria-label="Scanner un code-barres" style={{
             ...ghostButton, width: '100%', textAlign: 'left',
-            background: T.isDark
-              ? `linear-gradient(135deg, oklch(30% 0.03 65), ${T.surface})`
-              : `linear-gradient(135deg, ${T.accentSoft}, ${T.surface})`,
+            background: `linear-gradient(135deg, ${T.accentSoft}, ${T.surface})`,
             border: `1px solid ${T.rule}`, borderRadius: 16, padding: 16,
             display: 'flex', alignItems: 'center', gap: 14,
             cursor: 'pointer', marginBottom: 18, position: 'relative', overflow: 'hidden',
