@@ -224,8 +224,42 @@ Pour ajouter une section :
    toggleSection })`.
 2. Appeler `<StatSection id="ma-section" title=... collapsed={...}
    toggleSection={...}>` autour du contenu.
-3. L'insérer dans `StatsTab` dans l'ordre voulu et ajouter
-   l'`Object.assign` global.
+3. L'ajouter au **registry `STATS_SECTIONS`** (stats.jsx) — id stable
+   (= clé du collapse, ne jamais renommer), titre (affiché en mode
+   « Réorganiser »), `Comp`, et éventuel `hide(flags)` pour la vue ami —
+   puis l'`Object.assign` global. **Ne pas insérer de JSX en dur dans
+   `StatsTab`** : le rendu suit le registry.
+
+**Ordre personnalisé** : l'utilisateur réordonne les sections (bouton
+« Réorganiser » → drag par poignée ou flèches clavier). Persisté en
+setting Dexie **`stats.sectionOrder`** (JSON array — suit l'export/
+import, contrairement au collapse en localStorage), lu par
+`useSectionOrder()` (hook DB direct + dataBus, PAS `useSettings()` car
+FriendStatsView surcharge SettingsContext). `normalizeSectionOrder`
+réconcilie un ordre sauvegardé avec le registry : ids inconnus ignorés,
+nouvelles sections appendées en fin — une nouvelle section apparaît donc
+automatiquement, en dernier, chez un utilisateur qui a déjà réordonné.
+La vue ami suit l'ordre perso sans pouvoir l'éditer.
+
+**États vides** : aucune boisson au global → `StatsEmptyState` seul
+(pas de sélecteur de période) ; période vide → sélecteur + navigation
+conservés, sections remplacées par le message. Une nouvelle section n'a
+plus besoin de gérer le cas « période vide » globale (mais garde ses
+états partiels internes, ex. « Aucun prix saisi »).
+
+**Charts** : toute échelle Y passe par `chartTicks(max, 2)` et étiquette
+les gridlines avec les `values` EXACTES via `fmtTick` (jamais
+`Math.round(max * fraction)` — labels médians faux). Tout chart pleine
+largeur se monte dans `<ChartAutoWidth minHeight={…}>{(w) => …}` pour
+un rendu aux pixels réels ; `maxWidth` pour les charts carrés
+(radar/horloge). `ChartTooltip` reçoit TOUJOURS `width` ET `height`
+(clamp + flip aux quatre bords).
+
+**Zoom** : le zoom de page est définitivement désactivé (meta viewport +
+`touch-action: pan-x pan-y` sur html/body + guards `gesture*` /
+double-tap / Ctrl+molette dans `installZoomGuards()`, shared.jsx). Ne
+jamais réintroduire un mécanisme qui en dépend ; le zoom interne de la
+carte Leaflet reste fonctionnel.
 
 ### Sheets / overlays
 
@@ -318,7 +352,36 @@ dupliquée** — un ami passe par les mêmes `aggregateGeneral`,
   `useSharedRatings`, `useFriendsBac`.
 - Pas de socket : pull à l'ouverture + auto 10 min au premier plan +
   bouton « Rafraîchir ». Le « live » du BAC est un recalcul local
-  (`useFriendsBac`, tick 60 s).
+  (`useFriendsBac`, tick 60 s). **Sobriété données** : le pull est
+  incrémental (cursor `share.cursor.<groupId>` sur `updated_at`) et la
+  méta (profils + membres + `groups.created_by`) n'est demandée que sur
+  la **première page** du drainage (`pullSince(cursor, { withMeta })`).
+- **Watermark d'envoi** : `localDrinkToShared` publie TOUJOURS
+  `updatedAt = Date.now()` (jamais le `updatedAt` du drink) — sinon une
+  republication au re-join reste sous le cursor des autres membres et
+  devient invisible à leur pull pour toujours. Même convention que les
+  tombstones. La détection de delta locale reste `drink.updatedAt`
+  (`share.pubindex`).
+- **Cycle de vie du groupe** :
+  - *Quitter* : `leave_group` (RPC) supprime MES lignes serveur ;
+    `_resetGroupLocal()` purge l'état local (sharedPool, cursor, clés
+    `share.*` de groupe, pubindex) sans toucher aux tables perso.
+  - *Revenir* : `joinGroup` remet `share.pubindex` à zéro → `reconcile()`
+    republie TOUT le catalogue local — « ses données le suivent ».
+  - *Retirer quelqu'un* : RPC `remove_member(group, user)` — autorisé au
+    **créateur** (`groups.created_by`), ou à **tout membre** si
+    `created_by` est NULL ; le serveur purge drinks + profil +
+    membership du retiré. UI : bouton sur la fiche ami (visible selon
+    `shareState.creatorId`, le serveur re-vérifie), `Confirm.ask` danger.
+  - *Chez les autres* : après chaque pull à liste de membres saine, le
+    moteur **prune** du `sharedPool` les boissons d'auteurs absents de la
+    liste (les DELETE serveur sont invisibles au pull incrémental).
+  - *Être retiré* : un exclu reçoit 0 ligne SANS erreur (RLS) ; le moteur
+    le détecte (`authUserId` confirmé + absent de `members`) → reset
+    local + toast. `members: null` (requête échouée) ne déclenche RIEN —
+    une erreur réseau n'est pas une exclusion.
+  - Toute modification des droits/RPC passe par `supabase/schema.sql`
+    (idempotent, à ré-exécuter intégralement dans SQL Editor).
 - Transport derrière l'interface `ShareTransport` : `MockShareTransport`
   (amis fictifs Léa/Tom pour développer hors-ligne) ou
   `SupabaseShareTransport`. Choix dans **`js/share-config.js`** (édité à
