@@ -135,3 +135,34 @@ test('leave volontaire puis re-join : groupe re-seedé au créateur INCONNU', as
   assert.ok((srv.mine || []).some((r) => r.name === 'Triple Karmeliet'),
     'back-catalog republié aussi après un leave volontaire');
 });
+
+// ── UI : bouton « Retirer du groupe » sur la fiche ami ──────────────
+
+test('UI : créateur inconnu → tout membre voit le bouton, Confirm puis retrait', async () => {
+  await ctx.clickAria(/Amis/, 300);
+  await ctx.clickAria(/Voir les statistiques de Léa/, 450);
+  await ctx.waitFor(() => ctx.text().includes('Statistiques partagées'), { label: 'fiche Léa' });
+  // Groupe de démo re-seedé : created_by null → le bouton est visible.
+  await ctx.clickAria(/Retirer Léa du groupe/, 300);
+  assert.match(ctx.text(), /Retirer Léa \?/, 'Confirm danger affichée');
+  assert.match(ctx.text(), /supprimées du groupe pour tout le monde/, 'conséquences expliquées');
+  await ctx.clickText(/^Retirer$/, 450);
+  assert.ok(!engine().state.members.some((m) => m.userId === 'mock-lea'), 'Léa retirée du groupe');
+  const pool = await dbm().getAllSharedDrinks();
+  assert.ok(!pool.some((r) => r.authorId === 'mock-lea'), 'ses boissons purgées');
+  await ctx.waitFor(() => !ctx.text().includes('Statistiques partagées'), { label: 'fiche fermée' });
+});
+
+test('UI : un AUTRE est créateur → bouton masqué', async () => {
+  engine().state.creatorId = 'mock-other';
+  ctx.window.shareBus.bump();
+  await ctx.flush(200);
+  await ctx.clickAria(/Voir les statistiques de Tom/, 450);
+  await ctx.waitFor(() => ctx.text().includes('Statistiques partagées'), { label: 'fiche Tom' });
+  const kickBtn = ctx.qa('button')
+    .find((b) => /Retirer Tom du groupe/.test(b.getAttribute('aria-label') || ''));
+  assert.ok(!kickBtn, 'pas de bouton pour un non-créateur');
+  await ctx.clickAria(/^Retour$/, 300);
+  engine().state.creatorId = null;
+  ctx.window.shareBus.bump();
+});

@@ -272,6 +272,27 @@ function FriendStatsView({ friend, onClose }) {
   const isFav = s.favoriteId === friend.userId;
   const friendDrinks = useSharedDrinks(friend.userId);
   const friendRatings = useSharedRatings(friend.userId);
+  // « Retirer du groupe » : visible pour le CRÉATEUR du groupe, ou pour tout
+  // membre quand le créateur est inconnu (created_by NULL) — le serveur
+  // re-vérifie ces droits dans remove_member quoi qu'affiche l'UI.
+  const canRemove = !!s.groupId && (s.creatorId == null || s.creatorId === s.userId);
+  const name = friend.displayName || 'Anonyme';
+  const onRemove = async () => {
+    const ok = await Confirm.ask({
+      title: `Retirer ${name} ?`,
+      message: 'Ses boissons partagées seront supprimées du groupe pour tout le monde. Ses données personnelles sur son appareil ne sont pas touchées.',
+      confirmText: 'Retirer',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await shareEngine.removeMember(friend.userId);
+      Toast.show(`${name} retiré du groupe`);
+      onClose();
+    } catch (e) {
+      Toast.show(shareErrorMessage(e));
+    }
+  };
 
   const drinksValue = React.useMemo(() => ({ drinks: friendDrinks, loading: false }), [friendDrinks]);
   const settingsValue = React.useMemo(() => ({
@@ -323,6 +344,19 @@ function FriendStatsView({ friend, onClose }) {
           }}>
           <SvgIcon icon={s.syncing ? Ic.refresh : Ic.download} size={18} />
         </button>
+        {canRemove && (
+          <button type="button"
+            aria-label={`Retirer ${name} du groupe`}
+            onClick={onRemove}
+            style={{
+              width: 38, height: 38, borderRadius: 12, background: T.surface2,
+              display: 'grid', placeItems: 'center', cursor: 'pointer',
+              border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit',
+              color: T.accent2, flexShrink: 0,
+            }}>
+            <SvgIcon icon={Ic.userMinus} size={18} />
+          </button>
+        )}
         {friend.shareBac && (
           <button type="button"
             aria-label={isFav ? 'Retirer des favoris' : 'Mettre en favori'}
