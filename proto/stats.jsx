@@ -404,7 +404,7 @@ function fmtBourreTime(ms) {
 // pour un ami qui ne partage pas son poids/sexe — on masque alors les cellules
 // dérivées du modèle Widmark (Sessions / Temps bourré / % bourré) qui seraient
 // sinon calculées avec un poids par défaut (70 kg) donc fausses.
-function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePrice = false, bacAvailable = true } = {}) {
+function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePrice = false, bacAvailable = true, reorderRef } = {}) {
   const { drinks, loading } = useDrinks();
   const settings = useSettings();
   const [period, setPeriod] = React.useState(() => localStorage.getItem(_statsKey('alconote.stats.period', storageScope)) || 'week');
@@ -412,6 +412,7 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
   const [collapsed, setCollapsed] = React.useState(() => loadCollapsedSections(storageScope));
   const [sectionOrder, saveSectionOrder] = useSectionOrder();
   const [reorderMode, setReorderMode] = React.useState(false);
+  if (reorderRef) reorderRef.current = () => setReorderMode(true);
 
   React.useEffect(() => {
     try { localStorage.setItem(_statsKey('alconote.stats.period', storageScope), period); } catch {}
@@ -564,19 +565,6 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
         <PeriodNav period={period} anchor={anchor} onShift={(d) => setAnchor(shiftAnchor(period, anchor, d))} />
         {!hasPeriodData ? <StatsEmptyState scope="period" /> : (
           <>
-            {canReorder && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 4px 10px' }}>
-                <button type="button" onClick={() => setReorderMode(true)}
-                  aria-label="Réorganiser les sections"
-                  style={{
-                    ...ghostButton, display: 'flex', alignItems: 'center', gap: 5,
-                    color: T.muted, fontSize: 10, letterSpacing: 0.3,
-                    textTransform: 'uppercase', fontWeight: 500, padding: '4px 2px',
-                  }}>
-                  <SvgIcon icon={Ic.grip} size={12} /> Réorganiser
-                </button>
-              </div>
-            )}
             {visibleSections.map(({ id, Comp }) => <Comp key={id} {...sp} />)}
           </>
         )}

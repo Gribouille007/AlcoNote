@@ -159,6 +159,7 @@ function AppShell() {
   const [catQuery, setCatQuery] = React.useState('');
   const [catOpen, setCatOpen] = React.useState(null);
   const [openFriend, setOpenFriend] = React.useState(null);
+  const statsReorderRef = React.useRef();
   const {
     drinks
   } = useDrinks();
@@ -299,7 +300,9 @@ function AppShell() {
     onDirectAdd: directAdd
   })), activated.has('stats') && /*#__PURE__*/React.createElement("div", {
     style: tabContainer('stats')
-  }, /*#__PURE__*/React.createElement(StatsTab, null)), activated.has('friends') && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(StatsTab, {
+    reorderRef: statsReorderRef
+  })), activated.has('friends') && /*#__PURE__*/React.createElement("div", {
     style: tabContainer('friends')
   }, /*#__PURE__*/React.createElement(FriendsTab, {
     onOpenFriend: setOpenFriend
@@ -310,7 +313,8 @@ function AppShell() {
     }
   }), /*#__PURE__*/React.createElement(BottomNav, {
     tab: tab,
-    onChange: setTab
+    onChange: setTab,
+    onReorder: () => statsReorderRef.current && statsReorderRef.current()
   }), /*#__PURE__*/React.createElement(AddDrinkSheet, {
     open: adding,
     prefill: prefill,
@@ -533,7 +537,8 @@ function NavButton({
 }
 function BottomNav({
   tab,
-  onChange
+  onChange,
+  onReorder
 }) {
   const reduced = useReducedMotion();
   const items = [{
@@ -557,12 +562,37 @@ function BottomNav({
   return /*#__PURE__*/React.createElement("nav", {
     style: {
       position: 'relative',
-      padding: '8px 16px calc(4px + env(safe-area-inset-bottom))',
+      padding: '6px 16px calc(4px + env(safe-area-inset-bottom))',
       background: T.bg,
       borderTop: `1px solid ${T.rule}`,
       flexShrink: 0
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, tab === 'stats' && onReorder && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'center',
+      paddingBottom: 4
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: onReorder,
+    "aria-label": "R\xE9organiser les sections",
+    style: {
+      ...ghostButton,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 5,
+      color: T.muted,
+      fontSize: 10,
+      letterSpacing: 0.3,
+      textTransform: 'uppercase',
+      fontWeight: 500,
+      padding: '2px 8px'
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.grip,
+    size: 12
+  }), " R\xE9organiser")), /*#__PURE__*/React.createElement("div", {
     role: "tablist",
     "aria-label": "Navigation principale",
     style: {

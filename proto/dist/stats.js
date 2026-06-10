@@ -473,7 +473,8 @@ function StatsTab({
   hideMap = false,
   hideBac = false,
   hidePrice = false,
-  bacAvailable = true
+  bacAvailable = true,
+  reorderRef
 } = {}) {
   const {
     drinks,
@@ -485,6 +486,7 @@ function StatsTab({
   const [collapsed, setCollapsed] = React.useState(() => loadCollapsedSections(storageScope));
   const [sectionOrder, saveSectionOrder] = useSectionOrder();
   const [reorderMode, setReorderMode] = React.useState(false);
+  if (reorderRef) reorderRef.current = () => setReorderMode(true);
   React.useEffect(() => {
     try {
       localStorage.setItem(_statsKey('alconote.stats.period', storageScope), period);
@@ -688,32 +690,7 @@ function StatsTab({
     onShift: d => setAnchor(shiftAnchor(period, anchor, d))
   }), !hasPeriodData ? /*#__PURE__*/React.createElement(StatsEmptyState, {
     scope: "period"
-  }) : /*#__PURE__*/React.createElement(React.Fragment, null, canReorder && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      justifyContent: 'flex-end',
-      padding: '0 4px 10px'
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    type: "button",
-    onClick: () => setReorderMode(true),
-    "aria-label": "R\xE9organiser les sections",
-    style: {
-      ...ghostButton,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 5,
-      color: T.muted,
-      fontSize: 10,
-      letterSpacing: 0.3,
-      textTransform: 'uppercase',
-      fontWeight: 500,
-      padding: '4px 2px'
-    }
-  }, /*#__PURE__*/React.createElement(SvgIcon, {
-    icon: Ic.grip,
-    size: 12
-  }), " R\xE9organiser")), visibleSections.map(({
+  }) : /*#__PURE__*/React.createElement(React.Fragment, null, visibleSections.map(({
     id,
     Comp
   }) => /*#__PURE__*/React.createElement(Comp, _extends({

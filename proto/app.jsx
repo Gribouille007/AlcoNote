@@ -117,6 +117,7 @@ function AppShell() {
   const [catQuery, setCatQuery] = React.useState('');
   const [catOpen, setCatOpen] = React.useState(null);
   const [openFriend, setOpenFriend] = React.useState(null);
+  const statsReorderRef = React.useRef();
 
   const { drinks } = useDrinks();
   const ratings = useRatings();
@@ -245,7 +246,7 @@ function AppShell() {
         )}
         {activated.has('stats') && (
           <div style={tabContainer('stats')}>
-            <StatsTab />
+            <StatsTab reorderRef={statsReorderRef} />
           </div>
         )}
         {activated.has('friends') && (
@@ -256,7 +257,8 @@ function AppShell() {
       </main>
 
       <Fab onClick={() => { setPrefill(null); setAdding(true); }} />
-      <BottomNav tab={tab} onChange={setTab} />
+      <BottomNav tab={tab} onChange={setTab}
+        onReorder={() => statsReorderRef.current && statsReorderRef.current()} />
 
       <AddDrinkSheet open={adding} prefill={prefill}
         onClose={() => { setAdding(false); setPrefill(null); }} />
@@ -416,7 +418,7 @@ function NavButton({ item, active, onChange }) {
   );
 }
 
-function BottomNav({ tab, onChange }) {
+function BottomNav({ tab, onChange, onReorder }) {
   const reduced = useReducedMotion();
   const items = [
     { id: 'categories', label: 'Catégories', icon: Ic.grid },
@@ -428,10 +430,23 @@ function BottomNav({ tab, onChange }) {
   return (
     <nav style={{
       position: 'relative',
-      padding: '8px 16px calc(4px + env(safe-area-inset-bottom))',
+      padding: '6px 16px calc(4px + env(safe-area-inset-bottom))',
       background: T.bg, borderTop: `1px solid ${T.rule}`,
       flexShrink: 0,
     }}>
+      {tab === 'stats' && onReorder && (
+        <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 4 }}>
+          <button type="button" onClick={onReorder}
+            aria-label="Réorganiser les sections"
+            style={{
+              ...ghostButton, display: 'flex', alignItems: 'center', gap: 5,
+              color: T.muted, fontSize: 10, letterSpacing: 0.3,
+              textTransform: 'uppercase', fontWeight: 500, padding: '2px 8px',
+            }}>
+            <SvgIcon icon={Ic.grip} size={12} /> Réorganiser
+          </button>
+        </div>
+      )}
       <div role="tablist" aria-label="Navigation principale"
         style={{ display: 'flex', justifyContent: 'space-around', paddingBottom: 2, position: 'relative' }}>
         {/* Indicateur actif unique : glisse d'un onglet à l'autre au lieu
