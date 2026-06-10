@@ -3552,7 +3552,8 @@ function RollingChart({
   };
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
-  const max = chartNiceMax(Math.max(1, ...data.flatMap(r => [r.daily, r.r7, r.r30])), 3);
+  const yT = chartTicks(Math.max(1, ...data.flatMap(r => [r.daily, r.r7, r.r30])), 2);
+  const max = yT.max;
   const n = data.length;
   const xs = i => pad.l + i / Math.max(1, n - 1) * w;
   const ys = v => pad.t + h * (1 - v / max);
@@ -3585,24 +3586,24 @@ function RollingChart({
     width: width,
     height: height,
     fill: "transparent"
-  }), [0, 0.5, 1].map((f, i) => /*#__PURE__*/React.createElement("g", {
+  }), yT.values.map((v, i) => /*#__PURE__*/React.createElement("g", {
     key: i
   }, /*#__PURE__*/React.createElement("line", {
     x1: pad.l,
     x2: pad.l + w,
-    y1: pad.t + h * f,
-    y2: pad.t + h * f,
+    y1: pad.t + h * (1 - v / max),
+    y2: pad.t + h * (1 - v / max),
     stroke: T.rule,
     strokeDasharray: "2 3",
     strokeWidth: 0.6
   }), /*#__PURE__*/React.createElement("text", {
     x: pad.l - 4,
-    y: pad.t + h * f + 3,
+    y: pad.t + h * (1 - v / max) + 3,
     fontSize: 9,
     fill: T.muted,
     textAnchor: "end",
     fontFamily: fontNum
-  }, Math.round(max * (1 - f)), "g"))), data.map((r, i) => {
+  }, fmtTick(v), "g"))), data.map((r, i) => {
     const bh = r.daily / max * h;
     return /*#__PURE__*/React.createElement("rect", {
       key: i,
@@ -3671,6 +3672,7 @@ function RollingChart({
       x: tx,
       y: cy7,
       width: width,
+      height: height,
       lines: [`${r.date}`, `${Math.round(r.daily)} g brut`, `${r.r7.toFixed(1)} g · 7j`, `${r.r30.toFixed(1)} g · 30j`]
     }));
   })());
