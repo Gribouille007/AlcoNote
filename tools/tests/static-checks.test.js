@@ -166,3 +166,14 @@ test('sw.js : tous les bundles proto/dist/*.js sont précachés', () => {
     assert.ok(files.includes(`/proto/dist/${d}`), `/proto/dist/${d} manque dans STATIC_FILES`);
   }
 });
+
+test('zoom verrouillé : meta viewport + touch-action + guards gesture*', () => {
+  const html = read('index.html');
+  const viewport = (html.match(/<meta name="viewport" content="([^"]+)"/) || [])[1] || '';
+  assert.ok(viewport.includes('maximum-scale=1.0'), 'meta viewport : maximum-scale=1.0');
+  assert.ok(viewport.includes('user-scalable=no'), 'meta viewport : user-scalable=no');
+  assert.match(html, /touch-action:\s*pan-x pan-y/, 'CSS html/body : touch-action pan-x pan-y');
+  const shared = read('proto/shared.jsx');
+  assert.ok(shared.includes("'gesturestart'"), 'guard gesturestart (pinch Safari iOS)');
+  assert.ok(shared.includes('installZoomGuards'), 'installZoomGuards présent dans shared.jsx');
+});
