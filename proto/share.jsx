@@ -58,6 +58,7 @@ const shareState = {
   shareBac: false,
   groupId: null,
   inviteCode: null,
+  creatorId: null,      // créateur du groupe (groups.created_by) | null = inconnu → tout membre peut retirer
   members: [],          // [{ userId, displayName, shareBac, bacWeight, bacGender }]
   favoriteId: null,     // userId de l'ami favori (pastille verte du header) | null
   lastPullAt: 0,
@@ -566,9 +567,11 @@ async function pull(attempt) {
     // Plafonnée (MAX_PAGES) pour écarter toute boucle pathologique.
     const PAGE = 1000, MAX_PAGES = 100;
     let cursor = (await _sget(`share.cursor.${shareState.groupId}`)) || 0;
-    let members = null, partialErr = null, pages = 0;
+    let members = null, creatorId, authUserId = null, partialErr = null, pages = 0;
     for (;;) {
-      const res = await getTransport().pullSince(cursor);
+      // Méta (profils / membres / créateur) sur la PREMIÈRE page seulement :
+      // les pages suivantes du drainage ne re-téléchargent que les boissons.
+      const res = await getTransport().pullSince(cursor, { withMeta: pages === 0 });
       const incoming = (res.drinks || []).filter(r => r.authorId !== shareState.userId);
       const live = incoming.filter(r => !r.deleted);
       const dead = incoming.filter(r => r.deleted).map(r => r.uid);
@@ -578,6 +581,8 @@ async function pull(attempt) {
       // bas même en cas d'erreur partielle — sinon une erreur sur
       // shared_drinks ferait « disparaître » les autres membres).
       if (Array.isArray(res.members)) members = res.members;
+      if (res.creatorId !== undefined) creatorId = res.creatorId;
+      if (res.authUserId) authUserId = res.authUserId;
       const count = (res.drinks || []).length;
       const newCursor = res.cursor || cursor;
       await _sset(`share.cursor.${shareState.groupId}`, newCursor);
@@ -586,6 +591,37 @@ async function pull(attempt) {
       cursor = newCursor;
       if (res.error) { partialErr = res.error; break; }
       if (count < PAGE || !advanced || pages >= MAX_PAGES) break;
+    }
+    // Détection d'exclusion + purge des partants — UNIQUEMENT sur une liste
+    // de membres SAINE (`members === null` ⇒ la requête membres a échoué :
+    // erreur réseau/RLS, on ne touche à rien).
+    if (Array.isArray(members)) {
+      const memberIds = new Set(members.map(mm => mm.userId));
+      // Exclu du groupe ? Sous RLS un non-membre reçoit 0 ligne SANS erreur,
+      // alors qu'un membre sain se voit toujours lui-même (sa row est insérée
+      // par create_group/join_group). `authUserId` (session locale du
+      // transport) confirme l'identité pour écarter le faux positif « la
+      // session anonyme a changé entre-temps ».
+      const me = shareState.userId;
+      if (me && authUserId === me && !memberIds.has(me)) {
+        await _resetGroupLocal();
+        try {
+          if (typeof Toast !== 'undefined' && Toast.show) Toast.show('Tu ne fais plus partie du groupe');
+        } catch (e) {}
+        _pulling = false; shareState.syncing = false; _emit();
+        return;
+      }
+      // Boissons d'un membre PARTI (leave volontaire ou retrait) : le serveur
+      // a supprimé ses lignes, mais le pull incrémental ne voit jamais un
+      // DELETE — sans purge, elles resteraient en cache pour toujours.
+      const pool = await db.getAllSharedDrinks();
+      const stale = pool.filter(r => !memberIds.has(r.authorId)).map(r => r.uid);
+      if (stale.length) await db.deleteSharedByUids(stale);
+      // Créateur du groupe (droits « Retirer ») : persisté pour l'UI.
+      if (creatorId !== undefined && creatorId !== shareState.creatorId) {
+        shareState.creatorId = creatorId;
+        await _sset('share.creatorId', creatorId);
+      }
     }
     if (members) shareState.members = members;
     shareState.lastPullAt = Date.now();
@@ -652,6 +688,31 @@ if (typeof window !== 'undefined') {
   };
   window.addEventListener('online', syncOnline);
   window.addEventListener('offline', syncOnline);
+}
+
+// Purge LOCALE de tout l'état de groupe : sharedPool, cursor, clés share.*
+// de groupe, index de publication, state — sans aucun appel serveur.
+// Utilisée par leaveGroup() et par la détection d'exclusion du pull.
+// Ne touche JAMAIS aux tables perso (drinks/categories/ratings/settings
+// hors clés share.*) — règle d'or du moteur de partage.
+async function _resetGroupLocal() {
+  const db = await waitForDb();
+  if (db) {
+    await db.clearSharedPool();             // purge des données des amis
+    if (shareState.groupId) await _sset(`share.cursor.${shareState.groupId}`, null);
+  }
+  await _sset('share.groupId', null);
+  await _sset('share.inviteCode', null);
+  await _sset('share.favoriteId', null);   // le favori quitte avec le groupe
+  await _sset('share.creatorId', null);
+  await _savePubIndex({});
+  shareState.groupId = null;
+  shareState.inviteCode = null;
+  shareState.members = [];
+  shareState.favoriteId = null;
+  shareState.creatorId = null;
+  stopTimer();
+  _emit();
 }
 
 // Crée l'identité (anonyme) à la demande — jamais au boot si le partage est
@@ -757,8 +818,12 @@ const shareEngine = {
     const { groupId, inviteCode } = await getTransport().createGroup();
     shareState.groupId = groupId;
     shareState.inviteCode = inviteCode;
+    // Je viens de créer le groupe : j'en suis le créateur (le pull le
+    // reconfirmera depuis groups.created_by).
+    shareState.creatorId = shareState.userId;
     await _sset('share.groupId', groupId);
     if (inviteCode) await _sset('share.inviteCode', inviteCode);
+    await _sset('share.creatorId', shareState.creatorId);
     _emit();
     await publishMyProfile();
     // Première publication de TOUT l'historique local (index vide). Synchrone
@@ -792,21 +857,30 @@ const shareEngine = {
   },
 
   async leaveGroup() {
+    // Le serveur supprime MES lignes (leave_group) ; les autres appareils
+    // les purgent par diff de membres à leur prochain pull.
     try { await getTransport().leaveGroup(); } catch (e) {}
+    await _resetGroupLocal();
+  },
+
+  // Retire `userId` du groupe — créateur uniquement, ou tout membre quand le
+  // créateur est inconnu (le serveur RE-vérifie ces droits dans tous les
+  // cas). Purge serveur via RPC, puis écho local immédiat (liste + pool)
+  // sans attendre le prochain pull. Laisse remonter l'erreur à l'UI (toast).
+  async removeMember(userId) {
+    if (!shareState.groupId || !userId) return;
+    await getTransport().removeMember(shareState.groupId, userId);
     const db = await waitForDb();
     if (db) {
-      await db.clearSharedPool();             // purge des données des amis
-      if (shareState.groupId) await _sset(`share.cursor.${shareState.groupId}`, null);
+      const pool = await db.getAllSharedDrinks();
+      const uids = pool.filter(r => r.authorId === userId).map(r => r.uid);
+      if (uids.length) await db.deleteSharedByUids(uids);
     }
-    await _sset('share.groupId', null);
-    await _sset('share.inviteCode', null);
-    await _sset('share.favoriteId', null);   // le favori quitte avec le groupe
-    await _savePubIndex({});
-    shareState.groupId = null;
-    shareState.inviteCode = null;
-    shareState.members = [];
-    shareState.favoriteId = null;
-    stopTimer();
+    shareState.members = shareState.members.filter(m => m.userId !== userId);
+    if (shareState.favoriteId === userId) {
+      shareState.favoriteId = null;
+      await _sset('share.favoriteId', null);
+    }
     _emit();
   },
 
@@ -837,6 +911,7 @@ async function initShare() {
     shareState.groupId = await db.getSetting('share.groupId');
     shareState.inviteCode = await db.getSetting('share.inviteCode');
     shareState.favoriteId = (await db.getSetting('share.favoriteId')) || null;
+    shareState.creatorId = (await db.getSetting('share.creatorId')) || null;
     // N'amorce l'identité au boot que pour un utilisateur déjà actif ; sinon
     // on attend qu'il active le partage (évite un compte anonyme inutile).
     if (!shareState.userId && shareState.enabled) {
