@@ -60,3 +60,49 @@ test('période vide : message + navigation conservée, sections masquées', asyn
   await ctx.clickAria(/Période suivante/, 300);
   assert.ok(ctx.text().includes('Statistiques générales'), 'sections de retour');
 });
+
+// ── Réorganisation des sections ─────────────────────────────────────
+
+const sectionDomOrder = () =>
+  ctx.qa('[id^="alco-section-"]').map((el) => el.id.replace('alco-section-', ''));
+
+test('mode Réorganiser : flèche clavier déplace une section, ordre persisté en DB', async () => {
+  assert.deepEqual(sectionDomOrder().slice(0, 2), ['general', 'temporal'], 'ordre par défaut au départ');
+
+  await ctx.clickAria(/Réorganiser les sections/, 300);
+  assert.ok(ctx.text().includes('Terminé'), 'mode édition actif');
+  const handles = ctx.qa('button').filter((b) => /^Déplacer «/.test(b.getAttribute('aria-label') || ''));
+  assert.equal(handles.length, 9, '9 lignes compactes (toutes les sections visibles)');
+
+  // ↓ sur la première poignée : « Statistiques générales » passe en 2e.
+  await ctx.act(async () => {
+    handles[0].dispatchEvent(new ctx.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await ctx.sleep(250);
+  });
+  await ctx.clickText(/^Terminé$/, 300);
+
+  assert.deepEqual(sectionDomOrder().slice(0, 2), ['temporal', 'general'], 'ordre DOM mis à jour');
+  const raw = await ctx.window.dbManager.getSetting('stats.sectionOrder');
+  const saved = JSON.parse(raw);
+  assert.deepEqual(saved.slice(0, 2), ['temporal', 'general'], 'ordre persisté en setting Dexie');
+});
+
+test('mode Réorganiser : drag à la poignée (pointer events)', async () => {
+  await ctx.clickAria(/Réorganiser les sections/, 300);
+  const handles = ctx.qa('button').filter((b) => /^Déplacer «/.test(b.getAttribute('aria-label') || ''));
+  // La 1re ligne est désormais « Analyse temporelle » ; on la glisse d'une
+  // ligne (56 px) vers le bas → elle repasse 2e, retour à l'ordre d'origine.
+  await ctx.act(async () => {
+    handles[0].dispatchEvent(new ctx.window.MouseEvent('pointerdown', { bubbles: true, clientY: 120 }));
+    await ctx.sleep(60);
+    handles[0].dispatchEvent(new ctx.window.MouseEvent('pointermove', { bubbles: true, clientY: 120 + 56 }));
+    await ctx.sleep(60);
+    handles[0].dispatchEvent(new ctx.window.MouseEvent('pointerup', { bubbles: true, clientY: 120 + 56 }));
+    await ctx.sleep(250);
+  });
+  await ctx.clickText(/^Terminé$/, 300);
+
+  assert.deepEqual(sectionDomOrder().slice(0, 2), ['general', 'temporal'], 'drag commité au relâchement');
+  const saved = JSON.parse(await ctx.window.dbManager.getSetting('stats.sectionOrder'));
+  assert.deepEqual(saved.slice(0, 2), ['general', 'temporal'], 'persistance après drag');
+});

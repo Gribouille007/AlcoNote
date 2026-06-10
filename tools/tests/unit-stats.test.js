@@ -260,3 +260,45 @@ test('fmtBourreTime — unités lisibles et retenue des heures', () => {
 test('drinkAlcoholGrams — cohérence avec le moteur BAC', () => {
   assert.ok(Math.abs(drinkAlcoholGrams(beer('2026-06-01', '20:00')) - 19.725) < 1e-9);
 });
+
+// ── Ordre des sections (registry + réorganisation) ─────────────────
+
+test('normalizeSectionOrder — défaut, ids inconnus ignorés, nouveaux appendés', () => {
+  const { normalizeSectionOrder, DEFAULT_SECTION_ORDER } = global;
+  // null / non-array → ordre par défaut complet.
+  assert.deepEqual(normalizeSectionOrder(null), DEFAULT_SECTION_ORDER);
+  assert.deepEqual(normalizeSectionOrder('garbage'), DEFAULT_SECTION_ORDER);
+
+  // Permutation complète conservée telle quelle.
+  const reversed = [...DEFAULT_SECTION_ORDER].reverse();
+  assert.deepEqual(normalizeSectionOrder(reversed), reversed);
+
+  // Id inconnu (section supprimée d'une vieille version) → ignoré ;
+  // ids manquants (nouvelles sections) → appendés dans l'ordre par défaut.
+  const partial = ['bac', 'ghost-section', 'general'];
+  const norm = normalizeSectionOrder(partial);
+  assert.deepEqual(norm.slice(0, 2), ['bac', 'general']);
+  assert.equal(norm.length, DEFAULT_SECTION_ORDER.length, 'rien de perdu, rien de doublé');
+  for (const id of DEFAULT_SECTION_ORDER) assert.ok(norm.includes(id), `id ${id} présent`);
+});
+
+test('moveInArray — déplacement immuable + bornes', () => {
+  const { moveInArray } = global;
+  const a = ['a', 'b', 'c', 'd'];
+  assert.deepEqual(moveInArray(a, 0, 2), ['b', 'c', 'a', 'd']);
+  assert.deepEqual(moveInArray(a, 3, 0), ['d', 'a', 'b', 'c']);
+  assert.deepEqual(a, ['a', 'b', 'c', 'd'], 'source intacte');
+  assert.equal(moveInArray(a, 1, 1), a, 'no-op → même référence');
+  assert.equal(moveInArray(a, -1, 2), a, 'from hors bornes → no-op');
+  assert.equal(moveInArray(a, 0, 9), a, 'to hors bornes → no-op');
+});
+
+test('dragTargetIndex — arrondi à la ligne la plus proche, clamp', () => {
+  const { dragTargetIndex } = global;
+  const STEP = 56, N = 9;
+  assert.equal(dragTargetIndex(3, 0, STEP, N), 3, 'dy nul → même index');
+  assert.equal(dragTargetIndex(3, STEP * 0.6, STEP, N), 4, '+0.6 ligne → suivante');
+  assert.equal(dragTargetIndex(3, -STEP * 1.4, STEP, N), 2, '−1.4 ligne → arrondi −1');
+  assert.equal(dragTargetIndex(0, -500, STEP, N), 0, 'clamp haut');
+  assert.equal(dragTargetIndex(8, 500, STEP, N), 8, 'clamp bas');
+});
