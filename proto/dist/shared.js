@@ -789,6 +789,54 @@ const Ic = {
     d: "M23 21v-2a4 4 0 0 0-3-3.87"
   }), /*#__PURE__*/React.createElement("path", {
     d: "M16 3.13a4 4 0 0 1 0 7.75"
+  })),
+  grip: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "currentColor",
+    stroke: "none"
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "9",
+    cy: "6",
+    r: "1.6"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "15",
+    cy: "6",
+    r: "1.6"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "9",
+    cy: "12",
+    r: "1.6"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "15",
+    cy: "12",
+    r: "1.6"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "9",
+    cy: "18",
+    r: "1.6"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "15",
+    cy: "18",
+    r: "1.6"
+  })),
+  userMinus: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "8.5",
+    cy: "7",
+    r: "4"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "17",
+    y1: "11",
+    x2: "23",
+    y2: "11"
   }))
 };
 function SvgIcon({
@@ -2005,6 +2053,54 @@ function useSWVersion() {
     }
   `;
   document.head.appendChild(s);
+})();
+
+// ── Zoom verrouillé ────────────────────────────────────────────────
+// L'app est une UI native, pas un document : le pinch-zoom et le
+// double-tap-zoom de PAGE sont désactivés définitivement. Triple
+// ceinture, aucun mécanisme ne couvrant seul tous les moteurs :
+//   1. meta viewport `maximum-scale=1, user-scalable=no` (index.html)
+//      — Chrome/Android ;
+//   2. CSS `touch-action: pan-x pan-y` sur html/body (index.html) — le
+//      geste de zoom est refusé au niveau viewport, le pan/scroll reste
+//      libre (les touchAction inline des charts restent compatibles) ;
+//   3. ici : les events propriétaires `gesture*` (pinch Safari iOS, qui
+//      ignore user-scalable), une garde anti double-tap-zoom WebKit et
+//      le Ctrl/⌘+molette desktop.
+// Le zoom INTERNE de la carte Leaflet n'est pas concerné : il vit dans
+// `.leaflet-container` (exclu de la garde double-tap) et son pinch est
+// géré par Leaflet en touch events sur son propre conteneur.
+(function installZoomGuards() {
+  if (typeof window === 'undefined' || window.__alcoZoomGuards) return;
+  if (typeof window.addEventListener !== 'function') return; // stubs de test Node
+  window.__alcoZoomGuards = true;
+  const prevent = e => {
+    e.preventDefault();
+  };
+  for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) {
+    window.addEventListener(ev, prevent, {
+      passive: false
+    });
+  }
+  // Double-tap zoom des WebKit historiques : on neutralise le 2e tap
+  // rapproché SAUF sur les cibles interactives (un double-clic rapide sur
+  // « Période précédente » ou « + » doit rester deux clics) et la carte.
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', e => {
+    const now = Date.now();
+    const interactive = e.target && e.target.closest && e.target.closest('button, a, input, select, textarea, [role="button"], [role="tab"], [role="radio"], [contenteditable], .leaflet-container');
+    if (now - lastTouchEnd <= 320 && !interactive && e.cancelable) e.preventDefault();
+    lastTouchEnd = now;
+  }, {
+    passive: false,
+    capture: true
+  });
+  // Pinch trackpad / Ctrl+molette : zoom de page desktop.
+  window.addEventListener('wheel', e => {
+    if (e.ctrlKey) e.preventDefault();
+  }, {
+    passive: false
+  });
 })();
 
 // ── Motion : hooks & primitives réutilisables ──────────────────────

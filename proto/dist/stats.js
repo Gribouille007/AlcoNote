@@ -473,15 +473,20 @@ function StatsTab({
   hideMap = false,
   hideBac = false,
   hidePrice = false,
-  bacAvailable = true
+  bacAvailable = true,
+  reorderRef
 } = {}) {
   const {
-    drinks
+    drinks,
+    loading
   } = useDrinks();
   const settings = useSettings();
   const [period, setPeriod] = React.useState(() => localStorage.getItem(_statsKey('alconote.stats.period', storageScope)) || 'week');
   const [anchor, setAnchor] = React.useState(() => new Date());
   const [collapsed, setCollapsed] = React.useState(() => loadCollapsedSections(storageScope));
+  const [sectionOrder, saveSectionOrder] = useSectionOrder();
+  const [reorderMode, setReorderMode] = React.useState(false);
+  if (reorderRef) reorderRef.current = () => setReorderMode(true);
   React.useEffect(() => {
     try {
       localStorage.setItem(_statsKey('alconote.stats.period', storageScope), period);
@@ -559,6 +564,108 @@ function StatsTab({
     gender,
     bacAvailable
   };
+
+  // Sections visibles, dans l'ordre personnalisé (les flags de la vue
+  // ami continuent de filtrer APRÈS l'ordre — l'ordre reste global).
+  const visibleSections = React.useMemo(() => {
+    const flags = {
+      hideBac,
+      hideMap,
+      hidePrice
+    };
+    return sectionOrder.map(id => STATS_SECTIONS.find(s => s.id === id)).filter(s => s && !(s.hide && s.hide(flags)));
+  }, [sectionOrder, hideBac, hideMap, hidePrice]);
+
+  // La réorganisation n'est proposée que sur MA vue (la vue ami suit
+  // l'ordre personnel, sans l'éditer).
+  const canReorder = storageScope === '';
+
+  // Pas encore chargé : ne rien afficher plutôt que de flasher l'état
+  // vide une frame avant l'arrivée des données IndexedDB.
+  if (loading) return null;
+
+  // Aucune boisson nulle part : un seul message, pas de sélecteur de
+  // période (il n'y a rien à parcourir) ni de sections vides.
+  if (drinks.length === 0) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        overflow: 'auto',
+        padding: '0 16px 120px'
+      }
+    }, /*#__PURE__*/React.createElement(StatsEmptyState, {
+      scope: "global"
+    })));
+  }
+
+  // Mode « Réorganiser » : les sections deviennent des lignes compactes
+  // à glisser ; le sélecteur de période s'efface pour donner la place.
+  if (reorderMode && canReorder) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        overflow: 'auto',
+        padding: '0 16px 120px'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 10,
+        padding: '4px 4px 16px'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontFamily: fontSerif,
+        fontSize: 18,
+        color: T.ink,
+        fontStyle: 'italic',
+        letterSpacing: -0.3
+      }
+    }, "R\xE9organiser les sections"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setReorderMode(false),
+      style: {
+        border: 'none',
+        fontFamily: 'inherit',
+        cursor: 'pointer',
+        background: T.accent,
+        color: T.accentInk,
+        fontWeight: 600,
+        fontSize: 12,
+        padding: '8px 14px',
+        borderRadius: 10,
+        flexShrink: 0
+      }
+    }, "Termin\xE9")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: T.muted,
+        fontSize: 10.5,
+        padding: '0 4px 14px',
+        lineHeight: 1.5
+      }
+    }, "Glisse une section par sa poign\xE9e pour changer l'ordre. Il est conserv\xE9 d\xE9finitivement."), /*#__PURE__*/React.createElement(SectionReorderList, {
+      sections: visibleSections,
+      onChange: saveSectionOrder
+    })));
+  }
+
+  // Période sélectionnée vide : le sélecteur et la navigation restent
+  // (pour aller voir ailleurs), les sections laissent place au message.
+  const hasPeriodData = inRange.length > 0;
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -581,7 +688,54 @@ function StatsTab({
     period: period,
     anchor: anchor,
     onShift: d => setAnchor(shiftAnchor(period, anchor, d))
-  }), /*#__PURE__*/React.createElement(GeneralSection, sp), /*#__PURE__*/React.createElement(TemporalSection, sp), /*#__PURE__*/React.createElement(CategorySection, sp), /*#__PURE__*/React.createElement(TopDrinksSection, sp), !hideBac && /*#__PURE__*/React.createElement(BACSection, sp), !hideMap && /*#__PURE__*/React.createElement(MapSection, sp), /*#__PURE__*/React.createElement(TrendsSection, sp), /*#__PURE__*/React.createElement(AdvancedSection, sp), !hidePrice && /*#__PURE__*/React.createElement(SpendingSection, sp)));
+  }), !hasPeriodData ? /*#__PURE__*/React.createElement(StatsEmptyState, {
+    scope: "period"
+  }) : /*#__PURE__*/React.createElement(React.Fragment, null, visibleSections.map(({
+    id,
+    Comp
+  }) => /*#__PURE__*/React.createElement(Comp, _extends({
+    key: id
+  }, sp))))));
+}
+
+// État vide de l'onglet Stats — remplace les sections quand il n'y a
+// rien à agréger (aucune boisson au global, ou période sans donnée).
+function StatsEmptyState({
+  scope
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '48px 22px',
+      textAlign: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'center',
+      marginBottom: 14,
+      color: T.muted
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.bars,
+    size: 30
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: fontSerif,
+      fontStyle: 'italic',
+      fontSize: 18,
+      color: T.ink,
+      letterSpacing: -0.3,
+      marginBottom: 8
+    }
+  }, "Pas de donn\xE9es disponibles"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: T.muted,
+      lineHeight: 1.6,
+      maxWidth: 260,
+      margin: '0 auto'
+    }
+  }, scope === 'global' ? 'Ajoute ta première boisson avec le bouton + pour voir tes statistiques ici.' : 'Aucune boisson enregistrée sur cette période.'));
 }
 function PeriodSwitcher({
   period,
@@ -759,6 +913,247 @@ function StatSection({
       padding: 12
     }
   }, children)));
+}
+
+// ── Registry des sections + ordre personnalisé ────────────────────
+// Source unique de vérité pour les sections de l'onglet : id stable
+// (= clé localStorage du collapse, NE PAS renommer), titre (mode
+// réorganisation) et flag de masquage contextuel (vue ami). Ajouter une
+// section = ajouter une entrée ici — l'ordre par défaut suit ce tableau.
+// Les déclarations `function` plus bas sont hoistées : les références
+// sont valides dès l'évaluation du module.
+const STATS_SECTIONS = [{
+  id: 'general',
+  title: 'Statistiques générales',
+  Comp: GeneralSection
+}, {
+  id: 'temporal',
+  title: 'Analyse temporelle',
+  Comp: TemporalSection
+}, {
+  id: 'category',
+  title: 'Analyse par catégorie',
+  Comp: CategorySection
+}, {
+  id: 'top',
+  title: 'Top boissons',
+  Comp: TopDrinksSection
+}, {
+  id: 'bac',
+  title: 'Alcoolémie',
+  Comp: BACSection,
+  hide: f => f.hideBac
+}, {
+  id: 'map',
+  title: 'Carte des consommations',
+  Comp: MapSection,
+  hide: f => f.hideMap
+}, {
+  id: 'trends',
+  title: 'Évolution mensuelle',
+  Comp: TrendsSection
+}, {
+  id: 'advanced',
+  title: 'Analyses avancées',
+  Comp: AdvancedSection
+}, {
+  id: 'spending',
+  title: 'Dépenses',
+  Comp: SpendingSection,
+  hide: f => f.hidePrice
+}];
+const DEFAULT_SECTION_ORDER = STATS_SECTIONS.map(s => s.id);
+const SECTION_ORDER_KEY = 'stats.sectionOrder';
+
+// Réconcilie un ordre sauvegardé avec le registry actuel : les ids
+// inconnus (section supprimée d'une version) sont ignorés, les ids
+// manquants (nouvelle section) sont appendés dans l'ordre par défaut.
+function normalizeSectionOrder(saved, defaults = DEFAULT_SECTION_ORDER) {
+  const valid = Array.isArray(saved) ? saved.filter(id => defaults.includes(id)) : [];
+  const seen = new Set(valid);
+  return valid.concat(defaults.filter(id => !seen.has(id)));
+}
+
+// Déplacement immuable d'un élément (drag & drop / flèches clavier).
+function moveInArray(arr, from, to) {
+  if (from === to || from < 0 || from >= arr.length || to < 0 || to >= arr.length) return arr;
+  const next = arr.slice();
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
+// Index cible d'une ligne draguée : position de départ + déplacement
+// vertical, arrondi à la ligne la plus proche, clampé aux bornes.
+function dragTargetIndex(fromIndex, dy, step, count) {
+  return Math.max(0, Math.min(count - 1, Math.round((fromIndex * step + dy) / step)));
+}
+
+// Ordre des sections persisté en setting Dexie `stats.sectionOrder`
+// (JSON array) : suit l'export/import de données, contrairement au
+// localStorage du collapse. Hook autonome (lecture DB directe + dataBus)
+// plutôt que `useSettings()` : FriendStatsView surcharge SettingsContext
+// avec le profil de l'ami, ce qui rendrait l'ordre invisible — ici la
+// vue ami suit automatiquement l'ordre personnel.
+function useSectionOrder() {
+  const [order, setOrder] = React.useState(DEFAULT_SECTION_ORDER);
+  React.useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const db = await waitForDb();
+      if (!db || !alive) return;
+      let saved = null;
+      try {
+        saved = JSON.parse((await db.getSetting(SECTION_ORDER_KEY)) || 'null');
+      } catch {}
+      if (alive) setOrder(normalizeSectionOrder(saved));
+    };
+    load();
+    const unsub = dataBus.sub(ch => {
+      if (ch === 'settings' || ch == null) load();
+    });
+    return () => {
+      alive = false;
+      unsub();
+    };
+  }, []);
+  const save = React.useCallback(next => {
+    setOrder(next); // optimiste — le bump 'settings' resynchronise les autres instances
+    saveSetting(SECTION_ORDER_KEY, JSON.stringify(next));
+  }, []);
+  return [order, save];
+}
+
+// ── Mode « Réorganiser » ──────────────────────────────────────────
+// Les sections deviennent des lignes compactes à poignée : drag vertical
+// au pointeur (capture sur la poignée seule, le scroll de page reste
+// libre ailleurs) ou flèches ↑/↓ au clavier. La liste committe l'ordre
+// au relâchement ; les autres lignes glissent en aperçu pendant le drag.
+const REORDER_ROW = 48;
+const REORDER_GAP = 8;
+const REORDER_STEP = REORDER_ROW + REORDER_GAP;
+function SectionReorderList({
+  sections,
+  onChange
+}) {
+  const ids = sections.map(s => s.id);
+  // L'état pilote le rendu ; la ref porte la valeur À JOUR pour les
+  // handlers (au pointerup, l'état peut accuser une frame de retard sur
+  // le dernier move — la ref non).
+  const [drag, setDrag] = React.useState(null); // { id, from, dy, pointerId }
+  const dragRef = React.useRef(null);
+  const startYRef = React.useRef(0);
+  const setDragBoth = d => {
+    dragRef.current = d;
+    setDrag(d);
+  };
+  const targetIndex = drag ? dragTargetIndex(drag.from, drag.dy, REORDER_STEP, ids.length) : -1;
+  const displayIds = drag ? moveInArray(ids, drag.from, targetIndex) : ids;
+  const commit = () => {
+    const d = dragRef.current;
+    if (!d) return;
+    const to = dragTargetIndex(d.from, d.dy, REORDER_STEP, ids.length);
+    setDragBoth(null);
+    if (to !== d.from) onChange(moveInArray(ids, d.from, to));
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: 'relative',
+      height: sections.length * REORDER_STEP - REORDER_GAP
+    }
+  }, sections.map((s, i) => {
+    const isDragged = drag != null && drag.id === s.id;
+    const y = isDragged ? drag.from * REORDER_STEP + drag.dy : displayIds.indexOf(s.id) * REORDER_STEP;
+    return /*#__PURE__*/React.createElement("div", {
+      key: s.id,
+      style: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        height: REORDER_ROW,
+        transform: `translateY(${y}px) scale(${isDragged ? 1.02 : 1})`,
+        transition: isDragged ? 'none' : 'transform 0.18s ease',
+        zIndex: isDragged ? 2 : 1,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        background: T.surface2,
+        border: `1px solid ${T.rule}`,
+        borderRadius: 12,
+        padding: '0 4px 0 14px',
+        boxShadow: isDragged ? `0 6px 20px ${T.scrim}` : 'none'
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: T.muted,
+        fontSize: 10,
+        fontFamily: fontNum,
+        width: 14,
+        textAlign: 'center',
+        flexShrink: 0
+      }
+    }, displayIds.indexOf(s.id) + 1), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0,
+        fontSize: 13,
+        color: T.ink,
+        letterSpacing: -0.1,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap'
+      }
+    }, s.title), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "aria-label": `Déplacer « ${s.title} » — glisser, ou flèches haut/bas`,
+      onPointerDown: e => {
+        e.preventDefault();
+        try {
+          if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {}
+        startYRef.current = e.clientY;
+        setDragBoth({
+          id: s.id,
+          from: i,
+          dy: 0,
+          pointerId: e.pointerId
+        });
+      },
+      onPointerMove: e => {
+        const d = dragRef.current;
+        if (!d || d.id !== s.id || e.pointerId !== d.pointerId) return;
+        if (e.cancelable) e.preventDefault();
+        setDragBoth({
+          ...d,
+          dy: e.clientY - startYRef.current
+        });
+      },
+      onPointerUp: commit,
+      onPointerCancel: () => setDragBoth(null),
+      onKeyDown: e => {
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+        e.preventDefault();
+        const to = e.key === 'ArrowUp' ? i - 1 : i + 1;
+        if (to < 0 || to >= ids.length) return;
+        onChange(moveInArray(ids, i, to));
+      },
+      style: {
+        ...ghostButton,
+        width: 38,
+        height: 38,
+        flexShrink: 0,
+        display: 'grid',
+        placeItems: 'center',
+        color: T.muted,
+        touchAction: 'none',
+        cursor: isDragged ? 'grabbing' : 'grab',
+        borderRadius: 10
+      }
+    }, /*#__PURE__*/React.createElement(SvgIcon, {
+      icon: Ic.grip,
+      size: 16
+    })));
+  }));
 }
 function Card({
   children,
@@ -1285,14 +1680,16 @@ function TemporalSection({
       marginBottom: 10,
       letterSpacing: -0.1
     }
-  }, "Par heure"), /*#__PURE__*/React.createElement(SvgBarChart, {
+  }, "Par heure"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 150
+  }, w => /*#__PURE__*/React.createElement(SvgBarChart, {
     data: hourlyData,
-    width: 320,
+    width: w,
     height: 150,
     color: T.accent,
     formatX: hourlyFormatX,
     valueLabel: "boisson(s)"
-  })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+  }))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
       fontSize: 12.5,
@@ -1300,12 +1697,15 @@ function TemporalSection({
       marginBottom: 4,
       letterSpacing: -0.1
     }
-  }, "Par jour de la semaine"), /*#__PURE__*/React.createElement(SvgRadar, {
+  }, "Par jour de la semaine"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 250,
+    maxWidth: 300
+  }, w => /*#__PURE__*/React.createElement(SvgRadar, {
     data: dailyData,
-    size: 250,
+    size: w,
     color: T.good,
     valueLabel: "boisson(s)"
-  })));
+  }))));
 }
 
 // Pure direction badge: green when the metric rises vs the previous
@@ -1916,25 +2316,19 @@ function BacProvider({
 // `minHeight` reserves space before the first measurement so the chart
 // never collapses to 0 px during the initial frame and the surrounding
 // card doesn't reflow when the SVG mounts.
+// Slightly taller ratio + higher min height: the curve should be
+// legible end-to-end, including thresholds and labels, on the
+// narrowest phone screens we support.
+const bacChartHeight = width => Math.max(180, Math.min(240, Math.round(width * 0.6)));
 function BACProjectionResponsive({
   points
 }) {
-  const ref = React.useRef(null);
-  const width = useMeasuredWidth(ref, 320);
-  // Slightly taller ratio + higher min height: the curve should be
-  // legible end-to-end, including thresholds and labels, on the
-  // narrowest phone screens we support.
-  const height = Math.max(180, Math.min(240, Math.round(width * 0.6)));
-  return /*#__PURE__*/React.createElement("div", {
-    ref: ref,
-    style: {
-      width: '100%',
-      minHeight: 180
-    }
-  }, width > 0 && /*#__PURE__*/React.createElement(SvgBACProjection, {
+  return /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 180
+  }, width => /*#__PURE__*/React.createElement(SvgBACProjection, {
     points: points,
     width: width,
-    height: height,
+    height: bacChartHeight(width),
     nowMs: Date.now()
   }));
 }
@@ -1944,22 +2338,15 @@ function BACForecastResponsive({
   meanPeakBac,
   etaPeakHours
 }) {
-  const ref = React.useRef(null);
-  const width = useMeasuredWidth(ref, 320);
-  const height = Math.max(180, Math.min(240, Math.round(width * 0.6)));
-  return /*#__PURE__*/React.createElement("div", {
-    ref: ref,
-    style: {
-      width: '100%',
-      minHeight: 180
-    }
-  }, width > 0 && /*#__PURE__*/React.createElement(SvgBACForecast, {
+  return /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 180
+  }, width => /*#__PURE__*/React.createElement(SvgBACForecast, {
     realPoints: realPoints,
     projectedPoints: projectedPoints,
     meanPeakBac: meanPeakBac,
     etaPeakHours: etaPeakHours,
     width: width,
-    height: height,
+    height: bacChartHeight(width),
     nowMs: Date.now()
   }));
 }
@@ -3308,16 +3695,18 @@ function TrendsSection({
     collapsed: collapsed,
     toggleSection: toggleSection,
     sub: "Tendances de consommation mois par mois"
-  }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SvgLineChart, {
+  }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 170
+  }, w => /*#__PURE__*/React.createElement(SvgLineChart, {
     labels: trends.labels,
     series: [{
       data: trends.drinks
     }, {
       data: trends.alcoholG
     }],
-    width: 320,
+    width: w,
     height: 170
-  }), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 14,
@@ -3456,9 +3845,12 @@ function AdvancedSection({
       fontStyle: 'italic',
       fontFamily: fontSerif
     }
-  }, "Alcool quotidien liss\xE9 sur 7 et 30 jours"), rolling.length > 0 ? /*#__PURE__*/React.createElement(RollingChart, {
-    data: rolling
-  }) : /*#__PURE__*/React.createElement("div", {
+  }, "Alcool quotidien liss\xE9 sur 7 et 30 jours"), rolling.length > 0 ? /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 160
+  }, w => /*#__PURE__*/React.createElement(RollingChart, {
+    data: rolling,
+    width: w
+  })) : /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
       fontSize: 11,
@@ -3504,10 +3896,13 @@ function AdvancedSection({
       fontStyle: 'italic',
       fontFamily: fontSerif
     }
-  }, "R\xE9partition sur 24 heures"), /*#__PURE__*/React.createElement(SvgPolarClock, {
+  }, "R\xE9partition sur 24 heures"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 260,
+    maxWidth: 300
+  }, w => /*#__PURE__*/React.createElement(SvgPolarClock, {
     hours: agg.byHour,
-    size: 260
-  })), bacAvailable && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+    size: w
+  }))), bacAvailable && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
       fontSize: 12.5,
@@ -3532,18 +3927,20 @@ function AdvancedSection({
       letterSpacing: 0.3,
       textTransform: 'uppercase'
     }
-  }, "Dur\xE9e"), /*#__PURE__*/React.createElement(SvgHistogram, {
+  }, "Dur\xE9e"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 150
+  }, w => /*#__PURE__*/React.createElement(SvgHistogram, {
     buckets: sessionDuration,
-    width: 320,
+    width: w,
     height: 150,
     color: T.accent
-  }))));
+  })))));
 }
 function RollingChart({
-  data
+  data,
+  width = 320
 }) {
-  const width = 320,
-    height = 160;
+  const height = 160;
   const pad = {
     t: 12,
     r: 10,
@@ -3552,7 +3949,8 @@ function RollingChart({
   };
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
-  const max = chartNiceMax(Math.max(1, ...data.flatMap(r => [r.daily, r.r7, r.r30])), 3);
+  const yT = chartTicks(Math.max(1, ...data.flatMap(r => [r.daily, r.r7, r.r30])), 2);
+  const max = yT.max;
   const n = data.length;
   const xs = i => pad.l + i / Math.max(1, n - 1) * w;
   const ys = v => pad.t + h * (1 - v / max);
@@ -3585,24 +3983,24 @@ function RollingChart({
     width: width,
     height: height,
     fill: "transparent"
-  }), [0, 0.5, 1].map((f, i) => /*#__PURE__*/React.createElement("g", {
+  }), yT.values.map((v, i) => /*#__PURE__*/React.createElement("g", {
     key: i
   }, /*#__PURE__*/React.createElement("line", {
     x1: pad.l,
     x2: pad.l + w,
-    y1: pad.t + h * f,
-    y2: pad.t + h * f,
+    y1: pad.t + h * (1 - v / max),
+    y2: pad.t + h * (1 - v / max),
     stroke: T.rule,
     strokeDasharray: "2 3",
     strokeWidth: 0.6
   }), /*#__PURE__*/React.createElement("text", {
     x: pad.l - 4,
-    y: pad.t + h * f + 3,
+    y: pad.t + h * (1 - v / max) + 3,
     fontSize: 9,
     fill: T.muted,
     textAnchor: "end",
     fontFamily: fontNum
-  }, Math.round(max * (1 - f)), "g"))), data.map((r, i) => {
+  }, fmtTick(v), "g"))), data.map((r, i) => {
     const bh = r.daily / max * h;
     return /*#__PURE__*/React.createElement("rect", {
       key: i,
@@ -3671,6 +4069,7 @@ function RollingChart({
       x: tx,
       y: cy7,
       width: width,
+      height: height,
       lines: [`${r.date}`, `${Math.round(r.daily)} g brut`, `${r.r7.toFixed(1)} g · 7j`, `${r.r30.toFixed(1)} g · 30j`]
     }));
   })());
@@ -3966,14 +4365,16 @@ function SpendingSection({
       marginBottom: 10,
       letterSpacing: -0.1
     }
-  }, "D\xE9penses ", spend.unitLabel), /*#__PURE__*/React.createElement(SvgBarChart, {
+  }, "D\xE9penses ", spend.unitLabel), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 160
+  }, w => /*#__PURE__*/React.createElement(SvgBarChart, {
     data: spend.data,
-    width: 320,
+    width: w,
     height: 160,
     color: T.accent,
     formatX: spend.formatX,
     formatTooltip: d => [d.fullLabel || d.label, fmtPrice(d.v)]
-  })));
+  }))));
 }
 Object.assign(window, {
   StatsTab,
@@ -4025,5 +4426,14 @@ Object.assign(window, {
   computeBacForecast,
   BACForecastResponsive,
   ForecastToggle,
-  ForecastMiniStats
+  ForecastMiniStats,
+  STATS_SECTIONS,
+  DEFAULT_SECTION_ORDER,
+  SECTION_ORDER_KEY,
+  normalizeSectionOrder,
+  moveInArray,
+  dragTargetIndex,
+  useSectionOrder,
+  SectionReorderList,
+  StatsEmptyState
 });

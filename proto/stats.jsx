@@ -404,12 +404,15 @@ function fmtBourreTime(ms) {
 // pour un ami qui ne partage pas son poids/sexe — on masque alors les cellules
 // dérivées du modèle Widmark (Sessions / Temps bourré / % bourré) qui seraient
 // sinon calculées avec un poids par défaut (70 kg) donc fausses.
-function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePrice = false, bacAvailable = true } = {}) {
-  const { drinks } = useDrinks();
+function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePrice = false, bacAvailable = true, reorderRef } = {}) {
+  const { drinks, loading } = useDrinks();
   const settings = useSettings();
   const [period, setPeriod] = React.useState(() => localStorage.getItem(_statsKey('alconote.stats.period', storageScope)) || 'week');
   const [anchor, setAnchor] = React.useState(() => new Date());
   const [collapsed, setCollapsed] = React.useState(() => loadCollapsedSections(storageScope));
+  const [sectionOrder, saveSectionOrder] = useSectionOrder();
+  const [reorderMode, setReorderMode] = React.useState(false);
+  if (reorderRef) reorderRef.current = () => setReorderMode(true);
 
   React.useEffect(() => {
     try { localStorage.setItem(_statsKey('alconote.stats.period', storageScope), period); } catch {}
@@ -490,20 +493,104 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
     weight, gender, bacAvailable,
   };
 
+  // Sections visibles, dans l'ordre personnalisé (les flags de la vue
+  // ami continuent de filtrer APRÈS l'ordre — l'ordre reste global).
+  const visibleSections = React.useMemo(() => {
+    const flags = { hideBac, hideMap, hidePrice };
+    return sectionOrder
+      .map(id => STATS_SECTIONS.find(s => s.id === id))
+      .filter(s => s && !(s.hide && s.hide(flags)));
+  }, [sectionOrder, hideBac, hideMap, hidePrice]);
+
+  // La réorganisation n'est proposée que sur MA vue (la vue ami suit
+  // l'ordre personnel, sans l'éditer).
+  const canReorder = storageScope === '';
+
+  // Pas encore chargé : ne rien afficher plutôt que de flasher l'état
+  // vide une frame avant l'arrivée des données IndexedDB.
+  if (loading) return null;
+
+  // Aucune boisson nulle part : un seul message, pas de sélecteur de
+  // période (il n'y a rien à parcourir) ni de sections vides.
+  if (drinks.length === 0) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 120px' }}>
+          <StatsEmptyState scope="global" />
+        </div>
+      </div>
+    );
+  }
+
+  // Mode « Réorganiser » : les sections deviennent des lignes compactes
+  // à glisser ; le sélecteur de période s'efface pour donner la place.
+  if (reorderMode && canReorder) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 120px' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 10, padding: '4px 4px 16px',
+          }}>
+            <div style={{
+              fontFamily: fontSerif, fontSize: 18, color: T.ink,
+              fontStyle: 'italic', letterSpacing: -0.3,
+            }}>Réorganiser les sections</div>
+            <button type="button" onClick={() => setReorderMode(false)} style={{
+              border: 'none', fontFamily: 'inherit', cursor: 'pointer',
+              background: T.accent, color: T.accentInk, fontWeight: 600,
+              fontSize: 12, padding: '8px 14px', borderRadius: 10, flexShrink: 0,
+            }}>Terminé</button>
+          </div>
+          <div style={{
+            color: T.muted, fontSize: 10.5, padding: '0 4px 14px', lineHeight: 1.5,
+          }}>Glisse une section par sa poignée pour changer l'ordre. Il est conservé définitivement.</div>
+          <SectionReorderList
+            sections={visibleSections}
+            onChange={saveSectionOrder}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Période sélectionnée vide : le sélecteur et la navigation restent
+  // (pour aller voir ailleurs), les sections laissent place au message.
+  const hasPeriodData = inRange.length > 0;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PeriodSwitcher period={period} onChange={(p) => { setPeriod(p); setAnchor(new Date()); }} />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 120px' }}>
         <PeriodNav period={period} anchor={anchor} onShift={(d) => setAnchor(shiftAnchor(period, anchor, d))} />
-        <GeneralSection {...sp} />
-        <TemporalSection {...sp} />
-        <CategorySection {...sp} />
-        <TopDrinksSection {...sp} />
-        {!hideBac && <BACSection {...sp} />}
-        {!hideMap && <MapSection {...sp} />}
-        <TrendsSection {...sp} />
-        <AdvancedSection {...sp} />
-        {!hidePrice && <SpendingSection {...sp} />}
+        {!hasPeriodData ? <StatsEmptyState scope="period" /> : (
+          <>
+            {visibleSections.map(({ id, Comp }) => <Comp key={id} {...sp} />)}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// État vide de l'onglet Stats — remplace les sections quand il n'y a
+// rien à agréger (aucune boisson au global, ou période sans donnée).
+function StatsEmptyState({ scope }) {
+  return (
+    <div style={{ padding: '48px 22px', textAlign: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14, color: T.muted }}>
+        <SvgIcon icon={Ic.bars} size={30} />
+      </div>
+      <div style={{
+        fontFamily: fontSerif, fontStyle: 'italic', fontSize: 18,
+        color: T.ink, letterSpacing: -0.3, marginBottom: 8,
+      }}>
+        Pas de données disponibles
+      </div>
+      <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6, maxWidth: 260, margin: '0 auto' }}>
+        {scope === 'global'
+          ? 'Ajoute ta première boisson avec le bouton + pour voir tes statistiques ici.'
+          : 'Aucune boisson enregistrée sur cette période.'}
       </div>
     </div>
   );
@@ -611,6 +698,175 @@ function StatSection({ id, title, action, children, sub, collapsed, toggleSectio
         <div id={`alco-section-${id}`} style={{ padding: 12 }}>{children}</div>
       </Collapse>
     </section>
+  );
+}
+
+// ── Registry des sections + ordre personnalisé ────────────────────
+// Source unique de vérité pour les sections de l'onglet : id stable
+// (= clé localStorage du collapse, NE PAS renommer), titre (mode
+// réorganisation) et flag de masquage contextuel (vue ami). Ajouter une
+// section = ajouter une entrée ici — l'ordre par défaut suit ce tableau.
+// Les déclarations `function` plus bas sont hoistées : les références
+// sont valides dès l'évaluation du module.
+const STATS_SECTIONS = [
+  { id: 'general',  title: 'Statistiques générales',  Comp: GeneralSection },
+  { id: 'temporal', title: 'Analyse temporelle',      Comp: TemporalSection },
+  { id: 'category', title: 'Analyse par catégorie',   Comp: CategorySection },
+  { id: 'top',      title: 'Top boissons',            Comp: TopDrinksSection },
+  { id: 'bac',      title: 'Alcoolémie',              Comp: BACSection,      hide: (f) => f.hideBac },
+  { id: 'map',      title: 'Carte des consommations', Comp: MapSection,      hide: (f) => f.hideMap },
+  { id: 'trends',   title: 'Évolution mensuelle',     Comp: TrendsSection },
+  { id: 'advanced', title: 'Analyses avancées',       Comp: AdvancedSection },
+  { id: 'spending', title: 'Dépenses',                Comp: SpendingSection, hide: (f) => f.hidePrice },
+];
+const DEFAULT_SECTION_ORDER = STATS_SECTIONS.map(s => s.id);
+const SECTION_ORDER_KEY = 'stats.sectionOrder';
+
+// Réconcilie un ordre sauvegardé avec le registry actuel : les ids
+// inconnus (section supprimée d'une version) sont ignorés, les ids
+// manquants (nouvelle section) sont appendés dans l'ordre par défaut.
+function normalizeSectionOrder(saved, defaults = DEFAULT_SECTION_ORDER) {
+  const valid = Array.isArray(saved) ? saved.filter(id => defaults.includes(id)) : [];
+  const seen = new Set(valid);
+  return valid.concat(defaults.filter(id => !seen.has(id)));
+}
+
+// Déplacement immuable d'un élément (drag & drop / flèches clavier).
+function moveInArray(arr, from, to) {
+  if (from === to || from < 0 || from >= arr.length || to < 0 || to >= arr.length) return arr;
+  const next = arr.slice();
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
+// Index cible d'une ligne draguée : position de départ + déplacement
+// vertical, arrondi à la ligne la plus proche, clampé aux bornes.
+function dragTargetIndex(fromIndex, dy, step, count) {
+  return Math.max(0, Math.min(count - 1, Math.round((fromIndex * step + dy) / step)));
+}
+
+// Ordre des sections persisté en setting Dexie `stats.sectionOrder`
+// (JSON array) : suit l'export/import de données, contrairement au
+// localStorage du collapse. Hook autonome (lecture DB directe + dataBus)
+// plutôt que `useSettings()` : FriendStatsView surcharge SettingsContext
+// avec le profil de l'ami, ce qui rendrait l'ordre invisible — ici la
+// vue ami suit automatiquement l'ordre personnel.
+function useSectionOrder() {
+  const [order, setOrder] = React.useState(DEFAULT_SECTION_ORDER);
+  React.useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const db = await waitForDb();
+      if (!db || !alive) return;
+      let saved = null;
+      try { saved = JSON.parse((await db.getSetting(SECTION_ORDER_KEY)) || 'null'); } catch {}
+      if (alive) setOrder(normalizeSectionOrder(saved));
+    };
+    load();
+    const unsub = dataBus.sub((ch) => { if (ch === 'settings' || ch == null) load(); });
+    return () => { alive = false; unsub(); };
+  }, []);
+  const save = React.useCallback((next) => {
+    setOrder(next); // optimiste — le bump 'settings' resynchronise les autres instances
+    saveSetting(SECTION_ORDER_KEY, JSON.stringify(next));
+  }, []);
+  return [order, save];
+}
+
+// ── Mode « Réorganiser » ──────────────────────────────────────────
+// Les sections deviennent des lignes compactes à poignée : drag vertical
+// au pointeur (capture sur la poignée seule, le scroll de page reste
+// libre ailleurs) ou flèches ↑/↓ au clavier. La liste committe l'ordre
+// au relâchement ; les autres lignes glissent en aperçu pendant le drag.
+const REORDER_ROW = 48;
+const REORDER_GAP = 8;
+const REORDER_STEP = REORDER_ROW + REORDER_GAP;
+
+function SectionReorderList({ sections, onChange }) {
+  const ids = sections.map(s => s.id);
+  // L'état pilote le rendu ; la ref porte la valeur À JOUR pour les
+  // handlers (au pointerup, l'état peut accuser une frame de retard sur
+  // le dernier move — la ref non).
+  const [drag, setDrag] = React.useState(null); // { id, from, dy, pointerId }
+  const dragRef = React.useRef(null);
+  const startYRef = React.useRef(0);
+  const setDragBoth = (d) => { dragRef.current = d; setDrag(d); };
+
+  const targetIndex = drag ? dragTargetIndex(drag.from, drag.dy, REORDER_STEP, ids.length) : -1;
+  const displayIds = drag ? moveInArray(ids, drag.from, targetIndex) : ids;
+
+  const commit = () => {
+    const d = dragRef.current;
+    if (!d) return;
+    const to = dragTargetIndex(d.from, d.dy, REORDER_STEP, ids.length);
+    setDragBoth(null);
+    if (to !== d.from) onChange(moveInArray(ids, d.from, to));
+  };
+
+  return (
+    <div style={{ position: 'relative', height: sections.length * REORDER_STEP - REORDER_GAP }}>
+      {sections.map((s, i) => {
+        const isDragged = drag != null && drag.id === s.id;
+        const y = isDragged
+          ? drag.from * REORDER_STEP + drag.dy
+          : displayIds.indexOf(s.id) * REORDER_STEP;
+        return (
+          <div key={s.id} style={{
+            position: 'absolute', left: 0, right: 0, height: REORDER_ROW,
+            transform: `translateY(${y}px) scale(${isDragged ? 1.02 : 1})`,
+            transition: isDragged ? 'none' : 'transform 0.18s ease',
+            zIndex: isDragged ? 2 : 1,
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: T.surface2, border: `1px solid ${T.rule}`,
+            borderRadius: 12, padding: '0 4px 0 14px',
+            boxShadow: isDragged ? `0 6px 20px ${T.scrim}` : 'none',
+          }}>
+            <span style={{
+              color: T.muted, fontSize: 10, fontFamily: fontNum,
+              width: 14, textAlign: 'center', flexShrink: 0,
+            }}>{displayIds.indexOf(s.id) + 1}</span>
+            <div style={{
+              flex: 1, minWidth: 0, fontSize: 13, color: T.ink, letterSpacing: -0.1,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{s.title}</div>
+            <button type="button"
+              aria-label={`Déplacer « ${s.title} » — glisser, ou flèches haut/bas`}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                try {
+                  if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId);
+                } catch {}
+                startYRef.current = e.clientY;
+                setDragBoth({ id: s.id, from: i, dy: 0, pointerId: e.pointerId });
+              }}
+              onPointerMove={(e) => {
+                const d = dragRef.current;
+                if (!d || d.id !== s.id || e.pointerId !== d.pointerId) return;
+                if (e.cancelable) e.preventDefault();
+                setDragBoth({ ...d, dy: e.clientY - startYRef.current });
+              }}
+              onPointerUp={commit}
+              onPointerCancel={() => setDragBoth(null)}
+              onKeyDown={(e) => {
+                if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                e.preventDefault();
+                const to = e.key === 'ArrowUp' ? i - 1 : i + 1;
+                if (to < 0 || to >= ids.length) return;
+                onChange(moveInArray(ids, i, to));
+              }}
+              style={{
+                ...ghostButton, width: 38, height: 38, flexShrink: 0,
+                display: 'grid', placeItems: 'center', color: T.muted,
+                touchAction: 'none', cursor: isDragged ? 'grabbing' : 'grab',
+                borderRadius: 10,
+              }}>
+              <SvgIcon icon={Ic.grip} size={16} />
+            </button>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -963,19 +1219,25 @@ function TemporalSection({ drinks, collapsed, toggleSection, agg, sessions, bacA
         <div style={{
           color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 10, letterSpacing: -0.1,
         }}>Par heure</div>
-        <SvgBarChart
-          data={hourlyData}
-          width={320} height={150} color={T.accent}
-          formatX={hourlyFormatX}
-          valueLabel="boisson(s)"
-        />
+        <ChartAutoWidth minHeight={150}>
+          {(w) => (
+            <SvgBarChart
+              data={hourlyData}
+              width={w} height={150} color={T.accent}
+              formatX={hourlyFormatX}
+              valueLabel="boisson(s)"
+            />
+          )}
+        </ChartAutoWidth>
       </Card>
 
       <Card>
         <div style={{
           color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 4, letterSpacing: -0.1,
         }}>Par jour de la semaine</div>
-        <SvgRadar data={dailyData} size={250} color={T.good} valueLabel="boisson(s)" />
+        <ChartAutoWidth minHeight={250} maxWidth={300}>
+          {(w) => <SvgRadar data={dailyData} size={w} color={T.good} valueLabel="boisson(s)" />}
+        </ChartAutoWidth>
       </Card>
     </StatSection>
   );
@@ -1417,39 +1679,35 @@ function BacProvider({ children }) {
 // `minHeight` reserves space before the first measurement so the chart
 // never collapses to 0 px during the initial frame and the surrounding
 // card doesn't reflow when the SVG mounts.
+// Slightly taller ratio + higher min height: the curve should be
+// legible end-to-end, including thresholds and labels, on the
+// narrowest phone screens we support.
+const bacChartHeight = (width) => Math.max(180, Math.min(240, Math.round(width * 0.6)));
+
 function BACProjectionResponsive({ points }) {
-  const ref = React.useRef(null);
-  const width = useMeasuredWidth(ref, 320);
-  // Slightly taller ratio + higher min height: the curve should be
-  // legible end-to-end, including thresholds and labels, on the
-  // narrowest phone screens we support.
-  const height = Math.max(180, Math.min(240, Math.round(width * 0.6)));
   return (
-    <div ref={ref} style={{ width: '100%', minHeight: 180 }}>
-      {width > 0 && (
+    <ChartAutoWidth minHeight={180}>
+      {(width) => (
         <SvgBACProjection
-          points={points} width={width} height={height}
+          points={points} width={width} height={bacChartHeight(width)}
           nowMs={Date.now()}
         />
       )}
-    </div>
+    </ChartAutoWidth>
   );
 }
 
 function BACForecastResponsive({ realPoints, projectedPoints, meanPeakBac, etaPeakHours }) {
-  const ref = React.useRef(null);
-  const width = useMeasuredWidth(ref, 320);
-  const height = Math.max(180, Math.min(240, Math.round(width * 0.6)));
   return (
-    <div ref={ref} style={{ width: '100%', minHeight: 180 }}>
-      {width > 0 && (
+    <ChartAutoWidth minHeight={180}>
+      {(width) => (
         <SvgBACForecast
           realPoints={realPoints} projectedPoints={projectedPoints}
           meanPeakBac={meanPeakBac} etaPeakHours={etaPeakHours}
-          width={width} height={height} nowMs={Date.now()}
+          width={width} height={bacChartHeight(width)} nowMs={Date.now()}
         />
       )}
-    </div>
+    </ChartAutoWidth>
   );
 }
 
@@ -2345,14 +2603,18 @@ function TrendsSection({ allDrinks, collapsed, toggleSection }) {
   return (
     <StatSection id="trends" title="Évolution mensuelle" collapsed={collapsed} toggleSection={toggleSection} sub="Tendances de consommation mois par mois">
       <Card>
-        <SvgLineChart
-          labels={trends.labels}
-          series={[
-            { data: trends.drinks },
-            { data: trends.alcoholG },
-          ]}
-          width={320} height={170}
-        />
+        <ChartAutoWidth minHeight={170}>
+          {(w) => (
+            <SvgLineChart
+              labels={trends.labels}
+              series={[
+                { data: trends.drinks },
+                { data: trends.alcoholG },
+              ]}
+              width={w} height={170}
+            />
+          )}
+        </ChartAutoWidth>
         <div style={{
           display: 'flex', gap: 14, justifyContent: 'center', marginTop: 8,
           fontSize: 10.5, color: T.ink2,
@@ -2427,7 +2689,11 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, ses
         <div style={{
           color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
         }}>Alcool quotidien lissé sur 7 et 30 jours</div>
-        {rolling.length > 0 ? <RollingChart data={rolling} /> : (
+        {rolling.length > 0 ? (
+          <ChartAutoWidth minHeight={160}>
+            {(w) => <RollingChart data={rolling} width={w} />}
+          </ChartAutoWidth>
+        ) : (
           <div style={{ color: T.muted, fontSize: 11, padding: '12px 0', textAlign: 'center' }}>Aucune donnée</div>
         )}
         <div style={{
@@ -2447,7 +2713,9 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, ses
         <div style={{
           color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
         }}>Répartition sur 24 heures</div>
-        <SvgPolarClock hours={agg.byHour} size={260} />
+        <ChartAutoWidth minHeight={260} maxWidth={300}>
+          {(w) => <SvgPolarClock hours={agg.byHour} size={w} />}
+        </ChartAutoWidth>
       </Card>
 
       {/* Distribution des sessions = modèle BAC (poids/sexe) : masquée pour un
@@ -2466,7 +2734,9 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, ses
               color: T.ink2, fontSize: 10.5, marginBottom: 4, textAlign: 'center',
               letterSpacing: 0.3, textTransform: 'uppercase',
             }}>Durée</div>
-            <SvgHistogram buckets={sessionDuration} width={320} height={150} color={T.accent} />
+            <ChartAutoWidth minHeight={150}>
+              {(w) => <SvgHistogram buckets={sessionDuration} width={w} height={150} color={T.accent} />}
+            </ChartAutoWidth>
           </div>
         </Card>
       )}
@@ -2474,12 +2744,13 @@ function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, ses
   );
 }
 
-function RollingChart({ data }) {
-  const width = 320, height = 160;
+function RollingChart({ data, width = 320 }) {
+  const height = 160;
   const pad = { t: 12, r: 10, b: 26, l: 32 };
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
-  const max = chartNiceMax(Math.max(1, ...data.flatMap(r => [r.daily, r.r7, r.r30])), 3);
+  const yT = chartTicks(Math.max(1, ...data.flatMap(r => [r.daily, r.r7, r.r30])), 2);
+  const max = yT.max;
   const n = data.length;
   const xs = i => pad.l + (i / Math.max(1, (n - 1))) * w;
   const ys = v => pad.t + h * (1 - v / max);
@@ -2501,14 +2772,14 @@ function RollingChart({ data }) {
     <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" height={height}
       style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
       <rect x="0" y="0" width={width} height={height} fill="transparent" />
-      {[0, 0.5, 1].map((f, i) => (
+      {yT.values.map((v, i) => (
         <g key={i}>
           <line x1={pad.l} x2={pad.l + w}
-            y1={pad.t + h * f} y2={pad.t + h * f}
+            y1={pad.t + h * (1 - v / max)} y2={pad.t + h * (1 - v / max)}
             stroke={T.rule} strokeDasharray="2 3" strokeWidth={0.6} />
-          <text x={pad.l - 4} y={pad.t + h * f + 3}
+          <text x={pad.l - 4} y={pad.t + h * (1 - v / max) + 3}
             fontSize={9} fill={T.muted} textAnchor="end" fontFamily={fontNum}>
-            {Math.round(max * (1 - f))}g
+            {fmtTick(v)}g
           </text>
         </g>
       ))}
@@ -2537,7 +2808,7 @@ function RollingChart({ data }) {
             <circle cx={tx} cy={ys(r.daily)} r={3} fill={T.accent} />
             <circle cx={tx} cy={cy7} r={3} fill={T.accent} stroke={T.bg} strokeWidth={1} />
             <circle cx={tx} cy={ys(r.r30)} r={3} fill={T.ink2} stroke={T.bg} strokeWidth={1} />
-            <ChartTooltip x={tx} y={cy7} width={width}
+            <ChartTooltip x={tx} y={cy7} width={width} height={height}
               lines={[`${r.date}`, `${Math.round(r.daily)} g brut`,
                       `${r.r7.toFixed(1)} g · 7j`, `${r.r30.toFixed(1)} g · 30j`]} />
           </>
@@ -2706,12 +2977,16 @@ function SpendingSection({ drinks, prevDrinks, period, range, collapsed, toggleS
           <div style={{
             color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 10, letterSpacing: -0.1,
           }}>Dépenses {spend.unitLabel}</div>
-          <SvgBarChart
-            data={spend.data}
-            width={320} height={160} color={T.accent}
-            formatX={spend.formatX}
-            formatTooltip={(d) => [d.fullLabel || d.label, fmtPrice(d.v)]}
-          />
+          <ChartAutoWidth minHeight={160}>
+            {(w) => (
+              <SvgBarChart
+                data={spend.data}
+                width={w} height={160} color={T.accent}
+                formatX={spend.formatX}
+                formatTooltip={(d) => [d.fullLabel || d.label, fmtPrice(d.v)]}
+              />
+            )}
+          </ChartAutoWidth>
         </Card>
       )}
     </StatSection>
@@ -2732,4 +3007,7 @@ Object.assign(window, {
   BacContext, useBacInfo, BacProvider, BACProjectionResponsive,
   computeBacForecast, BACForecastResponsive,
   ForecastToggle, ForecastMiniStats,
+  STATS_SECTIONS, DEFAULT_SECTION_ORDER, SECTION_ORDER_KEY,
+  normalizeSectionOrder, moveInArray, dragTargetIndex,
+  useSectionOrder, SectionReorderList, StatsEmptyState,
 });

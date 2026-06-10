@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>AlcoNote — Suivi de Consommation d'Alcool</title>
   <meta name="description" content="Application PWA pour suivre votre consommation d'alcool avec scanner de codes-barres, statistiques détaillées et fonctionnement hors ligne.">
   <meta name="keywords" content="alcool, consommation, suivi, PWA, scanner, statistiques, santé">
@@ -45,6 +45,12 @@
       transition: background 0.35s ease;
       overflow: hidden;
       overscroll-behavior: none;
+      /* Zoom de page définitivement désactivé : seuls les pans (scroll)
+         restent permis — la restriction s'applique à toute la chaîne
+         target→racine, aucun descendant ne peut réactiver le pinch.
+         Complète le meta viewport (Chrome) et les guards gesture*
+         de shared.jsx (Safari iOS). */
+      touch-action: pan-x pan-y;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }

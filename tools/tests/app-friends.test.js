@@ -65,6 +65,13 @@ test('stats de Léa : mêmes sections, carte masquée, BAC visible (opt-in)', as
   assert.ok(t.includes('Statistiques partagées'), 'en-tête de la vue ami');
   assert.ok(t.includes('Statistiques générales'), 'StatsTab réutilisé');
   assert.ok(!t.includes('Carte des consommations'), 'carte MASQUÉE (pas de GPS partagé)');
+  // La vue ami SUIT l'ordre personnel des sections mais ne l'édite pas.
+  // (L'onglet Stats perso n'est jamais monté dans ce fichier — le seul
+  // StatsTab du DOM est celui de la vue ami, qui doit masquer le bouton.)
+  const reorderBtn = ctx.qa('button').find(
+    (b) => (b.getAttribute('aria-label') || '') === 'Réorganiser les sections'
+  );
+  assert.ok(!reorderBtn, 'pas de bouton Réorganiser dans la vue ami');
   await ctx.clickAria(/^Retour$/, 300);
 });
 

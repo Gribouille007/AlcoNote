@@ -26,6 +26,32 @@ function useMeasuredWidth(ref, fallback = 320) {
   return width;
 }
 
+// Width-measured container for charts: renders `children(width)` once the
+// content-box width is known so every chart can draw its viewBox at TRUE
+// pixel size (sharp text, no letterbox) instead of a fixed 320 scaled by
+// the browser. Generalises the pattern of BACProjectionResponsive.
+// `minHeight` reserves the chart's height before the first measurement so
+// the surrounding card never reflows; `maxWidth` caps square charts
+// (radar / polar clock) that would otherwise swallow the whole card.
+function ChartAutoWidth({
+  minHeight = 0,
+  maxWidth = null,
+  children
+}) {
+  const ref = React.useRef(null);
+  let width = useMeasuredWidth(ref, 320);
+  if (maxWidth) width = Math.min(width, maxWidth);
+  return /*#__PURE__*/React.createElement("div", {
+    ref: ref,
+    style: {
+      width: '100%',
+      minHeight,
+      display: 'flex',
+      justifyContent: 'center'
+    }
+  }, width > 0 ? children(width) : null);
+}
+
 // Rounds an axis maximum up to a "nice" value, given a target tick count.
 // The mantissa thresholds round *up* (smallest of 1/2/5/10 ≥ n) so the
 // returned max is always ≥ v — otherwise a tall bar/curve overflows the
@@ -38,6 +64,27 @@ function chartNiceMax(v, ticks = 4) {
   const n = raw / mag;
   const step = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
   return step * ticks;
+}
+
+// Nice axis maximum + the EXACT value of every gridline. Charts must label
+// gridlines from `values` (never `max * fraction` re-rounded): with 3 lines
+// and max = 3·step the old `Math.round(max * 0.5)` printed "2" on the 1.5
+// gridline. ticks=2 → 3 gridlines (0 / step / 2·step), all exact.
+function chartTicks(v, ticks = 2) {
+  const max = chartNiceMax(v, ticks);
+  const step = max / ticks;
+  return {
+    max,
+    values: Array.from({
+      length: ticks + 1
+    }, (_, i) => i * step)
+  };
+}
+
+// Axis-label formatting for tick values: bare integers, one decimal with a
+// French comma otherwise (steps like 0.5 happen when the data max is ≤ 1).
+function fmtTick(v) {
+  return Number.isInteger(v) ? String(v) : String(Math.round(v * 10) / 10).replace('.', ',');
 }
 
 // Adaptive framing for the two BAC curves so they always fill the view
@@ -121,6 +168,9 @@ function useChartScrubber(svgRef, _unused, onChange) {
       vbY = vb[1] || 0;
     const vbW = vb[2] || rect.width;
     const vbH = vb[3] || rect.height;
+    // A malformed/zero-sized viewBox would make `scale` 0 or NaN below and
+    // poison every projected coordinate — bail out instead.
+    if (!(vbW > 0) || !(vbH > 0)) return null;
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
     // Invert the default preserveAspectRatio="xMidYMid meet": the viewBox is
@@ -228,24 +278,62 @@ function useChartScrubber(svgRef, _unused, onChange) {
   };
 }
 
+// Pure tooltip layout, separated from the component so it can be unit-tested
+// without a renderer. Sizes the box to the longest line (Geist Mono at
+// fontSize 10 ≈ 5.8 viewBox units per char) instead of a fixed 110 that long
+// labels used to overflow, prefers sitting above the focus point, flips BELOW
+// it when that would clip the top edge, and clamps inside
+// [pad .. width/height − pad] on both axes.
+function chartTooltipLayout({
+  x,
+  y,
+  lines,
+  width,
+  height = null,
+  pad = 8
+}) {
+  const maxChars = Math.max(0, ...lines.map(l => String(l).length));
+  const w = Math.max(72, Math.min(width - 2 * pad, 16 + maxChars * 5.8));
+  const h = 16 + lines.length * 14;
+  let tx = x + 8;
+  if (tx + w > width - pad) tx = x - w - 8;
+  // Flipping left near the left edge can push tx negative (tooltip clips
+  // the SVG edge); clamp it back inside the viewBox.
+  tx = Math.max(pad, Math.min(tx, width - w - pad));
+  let ty = y - h - 6;
+  if (ty < pad) ty = y + 14;
+  if (height != null) ty = Math.max(pad, Math.min(ty, height - h - pad));
+  return {
+    tx,
+    ty,
+    w,
+    h
+  };
+}
+
 // Floating chart tooltip rendered as native SVG (rect + text) so it
-// renders identically across browsers (no foreignObject quirks). It
-// auto-flips horizontally when it would clip the right edge.
+// renders identically across browsers (no foreignObject quirks).
 function ChartTooltip({
   x,
   y,
   lines,
   width = 320,
+  height = null,
   pad = 8
 }) {
-  const w = 110;
-  const h = 16 + lines.length * 14;
-  let tx = x + 8;
-  let ty = Math.max(0, y - h - 6);
-  if (tx + w > width - pad) tx = x - w - 8;
-  // Flipping left near the left edge can push tx negative (tooltip clips
-  // the SVG edge); clamp it back inside the viewBox.
-  tx = Math.max(pad, Math.min(tx, width - w - pad));
+  const {
+    tx,
+    ty,
+    w,
+    h
+  } = chartTooltipLayout({
+    x,
+    y,
+    lines,
+    width,
+    height,
+    pad
+  });
   return /*#__PURE__*/React.createElement("g", {
     pointerEvents: "none"
   }, /*#__PURE__*/React.createElement("rect", {
@@ -286,8 +374,9 @@ function SvgBarChart({
   };
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
-  const max = chartNiceMax(Math.max(1, ...data.map(d => d.v)), 3);
-  const bw = w / data.length;
+  const yT = chartTicks(Math.max(1, ...data.map(d => d.v)), 2);
+  const max = yT.max;
+  const bw = w / Math.max(1, data.length);
   const svgRef = React.useRef(null);
   const [hover, setHover] = React.useState(null);
   const scr = useChartScrubber(svgRef, null, p => {
@@ -298,6 +387,8 @@ function SvgBarChart({
     const i = Math.max(0, Math.min(data.length - 1, Math.floor((p.x - pad.l) / bw)));
     setHover(i);
   });
+  // After the hooks so a later render with data keeps the hook order.
+  if (!data.length) return null;
   return /*#__PURE__*/React.createElement("svg", _extends({
     ref: svgRef,
     viewBox: `0 0 ${width} ${height}`,
@@ -313,24 +404,24 @@ function SvgBarChart({
     width: width,
     height: height,
     fill: "transparent"
-  }), [0, 0.5, 1].map((f, i) => /*#__PURE__*/React.createElement("line", {
-    key: i,
+  }), yT.values.map((v, i) => /*#__PURE__*/React.createElement("g", {
+    key: i
+  }, /*#__PURE__*/React.createElement("line", {
     x1: pad.l,
     x2: width - pad.r,
-    y1: pad.t + h * (1 - f),
-    y2: pad.t + h * (1 - f),
+    y1: pad.t + h * (1 - v / max),
+    y2: pad.t + h * (1 - v / max),
     stroke: T.rule,
     strokeDasharray: "2 3",
     strokeWidth: 0.6
-  })), [0, max].map((t, i) => /*#__PURE__*/React.createElement("text", {
-    key: i,
+  }), /*#__PURE__*/React.createElement("text", {
     x: pad.l - 4,
-    y: pad.t + h * (1 - t / max) + 3,
+    y: pad.t + h * (1 - v / max) + 3,
     fontSize: 9,
     fill: T.muted,
     textAnchor: "end",
     fontFamily: fontNum
-  }, t)), data.map((d, i) => {
+  }, fmtTick(v)))), data.map((d, i) => {
     const bh = d.v > 0 ? Math.max(2, d.v / max * h) : 0;
     const x = pad.l + i * bw + bw * 0.18;
     const y = pad.t + h - bh;
@@ -380,7 +471,8 @@ function SvgBarChart({
       x: tx,
       y: ty,
       lines: lines,
-      width: width
+      width: width,
+      height: height
     }));
   })());
 }
@@ -499,6 +591,7 @@ function SvgRadar({
       x: x,
       y: y,
       width: size,
+      height: size,
       lines: [`${d.label}`, `${d.v}${valueLabel ? ' ' + valueLabel : ''}`]
     });
   })());
@@ -640,8 +733,10 @@ function SvgLineChart({
   };
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
-  const maxL = chartNiceMax(Math.max(1, ...series[0].data), 3);
-  const maxR = chartNiceMax(Math.max(1, ...series[1].data), 3);
+  const yL = chartTicks(Math.max(1, ...series[0].data), 2);
+  const yR = chartTicks(Math.max(1, ...series[1].data), 2);
+  const maxL = yL.max;
+  const maxR = yR.max;
   const n = labels.length;
   const xs = i => pad.l + i / Math.max(1, n - 1) * w;
   const pathFor = (data, max) => data.map((v, i) => `${i === 0 ? 'M' : 'L'}${xs(i)},${pad.t + h * (1 - v / max)}`).join(' ');
@@ -657,6 +752,9 @@ function SvgLineChart({
     const i = Math.max(0, Math.min(n - 1, Math.round(rel * (n - 1))));
     setHover(i);
   });
+
+  // A single point can't form a line — render nothing (after the hooks).
+  if (n < 2) return null;
   return /*#__PURE__*/React.createElement("svg", _extends({
     ref: svgRef,
     viewBox: `0 0 ${width} ${height}`,
@@ -709,23 +807,23 @@ function SvgLineChart({
     stroke: T.rule,
     strokeDasharray: "2 3",
     strokeWidth: 0.6
-  })), [0, 0.5, 1].map((f, i) => /*#__PURE__*/React.createElement("text", {
+  })), yL.values.map((v, i) => /*#__PURE__*/React.createElement("text", {
     key: `yl-${i}`,
     x: pad.l - 4,
-    y: pad.t + h * (1 - f) + 3,
+    y: pad.t + h * (1 - v / maxL) + 3,
     fontSize: 9,
     fill: T.muted,
     textAnchor: "end",
     fontFamily: fontNum
-  }, Math.round(maxL * f))), [0, 0.5, 1].map((f, i) => /*#__PURE__*/React.createElement("text", {
+  }, fmtTick(v))), yR.values.map((v, i) => /*#__PURE__*/React.createElement("text", {
     key: `yr-${i}`,
     x: width - pad.r + 4,
-    y: pad.t + h * (1 - f) + 3,
+    y: pad.t + h * (1 - v / maxR) + 3,
     fontSize: 9,
     fill: T.muted,
     textAnchor: "start",
     fontFamily: fontNum
-  }, Math.round(maxR * f))), /*#__PURE__*/React.createElement("path", {
+  }, fmtTick(v))), /*#__PURE__*/React.createElement("path", {
     d: areaFor(series[0].data, maxL),
     fill: "url(#lg-a)"
   }), /*#__PURE__*/React.createElement("path", {
@@ -795,6 +893,7 @@ function SvgLineChart({
       x: tx,
       y: Math.min(cy0, cy1),
       width: width,
+      height: height,
       lines: [`${labels[hover]}`, `${v0} verres`, `${v1} g`]
     }));
   })());
@@ -946,6 +1045,7 @@ function SvgPolarClock({
       x: tx,
       y: ty,
       width: size,
+      height: size,
       lines: [`${hover}h – ${(hover + 1) % 24}h`, `${v} boisson${v > 1 ? 's' : ''}`]
     });
   })());
@@ -1262,6 +1362,7 @@ function SvgBACProjection({
     x: xs(focus.t),
     y: ys(focus.bac),
     width: width,
+    height: height,
     lines: [`${Math.round(focus.bac)} mg/L`, fmtStatus(focus.bac), fmtRel(focus.t)]
   })));
 }
@@ -1640,6 +1741,7 @@ function SvgBACForecast({
     x: xs(focus.t),
     y: yc(focus.bac),
     width: width,
+    height: height,
     lines: [`${Math.round(focus.bac)} mg/L`, fmtStatus(focus.bac), fmtRel(focus.t)]
   })));
 }
@@ -1660,17 +1762,19 @@ function SvgHistogram({
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
   const max = Math.max(1, ...buckets.map(b => b.v));
-  const bw = w / buckets.length;
+  const bw = w / Math.max(1, buckets.length);
   const svgRef = React.useRef(null);
   const [hover, setHover] = React.useState(null);
   const scr = useChartScrubber(svgRef, null, p => {
-    if (!p) {
+    if (!p || !buckets.length) {
       setHover(null);
       return;
     }
     const i = Math.max(0, Math.min(buckets.length - 1, Math.floor((p.x - pad.l) / bw)));
     setHover(i);
   });
+  // After the hooks so a later render with data keeps the hook order.
+  if (!buckets.length) return null;
   return /*#__PURE__*/React.createElement("svg", _extends({
     ref: svgRef,
     viewBox: `0 0 ${width} ${height}`,
@@ -1724,6 +1828,7 @@ function SvgHistogram({
       x: tx,
       y: ty,
       width: width,
+      height: height,
       lines: [`${b.label}`, `${b.v}${valueLabel ? ' ' + valueLabel : ' session' + (b.v > 1 ? 's' : '')}`]
     });
   })());
@@ -1744,6 +1849,10 @@ SvgBACForecast = React.memo(SvgBACForecast);
 SvgHistogram = React.memo(SvgHistogram);
 Object.assign(window, {
   chartNiceMax,
+  chartTicks,
+  fmtTick,
+  chartTooltipLayout,
+  bacChartRange,
   SvgBarChart,
   SvgRadar,
   SvgDonut,
@@ -1754,5 +1863,6 @@ Object.assign(window, {
   SvgHistogram,
   useChartScrubber,
   ChartTooltip,
-  useMeasuredWidth
+  useMeasuredWidth,
+  ChartAutoWidth
 });
