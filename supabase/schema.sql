@@ -203,6 +203,32 @@ begin
 end;
 $$;
 
-grant execute on function public.create_group()      to anon, authenticated;
-grant execute on function public.join_group(text)    to anon, authenticated;
-grant execute on function public.leave_group(uuid)   to anon, authenticated;
+-- Retire un membre du groupe (et purge toutes ses données partagées).
+-- Droits : le CRÉATEUR du groupe (groups.created_by) peut retirer n'importe
+-- qui ; si created_by est NULL (groupe historique au créateur inconnu), tout
+-- membre peut retirer. Pas de nouvelle policy nécessaire : les écritures
+-- passent par SECURITY DEFINER et la lecture de groups.created_by côté client
+-- est déjà couverte par la policy groups_select.
+create or replace function public.remove_member(p_group_id uuid, p_user_id uuid)
+returns void
+language plpgsql security definer
+set search_path = public
+as $$
+declare v_creator uuid;
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+  if not public.is_member(p_group_id) then raise exception 'not a member'; end if;
+  select created_by into v_creator from public.groups where id = p_group_id;
+  if v_creator is not null and v_creator <> auth.uid() then
+    raise exception 'only the group creator can remove members';
+  end if;
+  delete from public.shared_drinks   where group_id = p_group_id and author_id = p_user_id;
+  delete from public.shared_profiles where group_id = p_group_id and user_id   = p_user_id;
+  delete from public.group_members   where group_id = p_group_id and user_id   = p_user_id;
+end;
+$$;
+
+grant execute on function public.create_group()              to anon, authenticated;
+grant execute on function public.join_group(text)            to anon, authenticated;
+grant execute on function public.leave_group(uuid)           to anon, authenticated;
+grant execute on function public.remove_member(uuid, uuid)   to anon, authenticated;

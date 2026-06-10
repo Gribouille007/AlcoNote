@@ -24,6 +24,10 @@ function installStubs() {
   });
   defineGlobal('navigator', { serviceWorker: null, userAgent: 'node' });
   defineGlobal('localStorage', { getItem: () => null, setItem: noop, removeItem: noop });
+  // share.jsx pose des listeners top-level (online/offline) sur window —
+  // window EST global ici, qui n'est pas un EventTarget sous Node.
+  defineGlobal('addEventListener', noop);
+  defineGlobal('removeEventListener', noop);
   defineGlobal('matchMedia', () => ({
     matches: false, addEventListener: noop, removeEventListener: noop,
     addListener: noop, removeListener: noop,
