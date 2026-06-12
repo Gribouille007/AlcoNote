@@ -419,6 +419,62 @@ async function setReferencePrice(family, value) {
   const ok = value != null && value !== '' && Number.isFinite(n);
   await saveSetting(familyPriceKey(family), ok ? n : null);
 }
+
+// ── Prix intelligent ──────────────────────────────────────────────
+// Les familles homonymes (même nom, contenants différents — « différentes
+// Jupiler ») partagent un prix AU LITRE : la première boisson tarifée impose
+// le €/L, toute autre quantité est suggérée au prorata, arrondie au centime.
+// Sélection de la source, par priorité :
+//   1. même contenant (volume identique en cL) ET même degré → son prix de
+//      référence TEL QUEL (pas de re-arrondi) ;
+//   2. même contenant ; 3. même degré ; 4. n'importe quelle homonyme —
+//   à rang égal, la famille tarifée la plus ANCIENNE gagne (« la première
+//   boisson mise impose le prix par litre »).
+// Retourne { price, perLiter, exact, source } ou null (aucune référence).
+function suggestPriceForVolume(families, name, volCl, alcohol) {
+  const key = (name || '').trim().toLowerCase();
+  if (!key || !(volCl > 0)) return null;
+  const cands = [];
+  for (const f of families || []) {
+    if ((f.name || '').trim().toLowerCase() !== key) continue;
+    const ref = Number(f.referencePrice);
+    if (f.referencePrice == null || !Number.isFinite(ref) || ref < 0) continue;
+    const vol = toCl(f.quantity, f.unit);
+    if (!(vol > 0)) continue;
+    cands.push({
+      f,
+      vol,
+      ref,
+      // entries triées du plus récent au plus ancien → le dernier élément
+      // est la première entrée jamais saisie pour cette famille.
+      firstTs: f.entries && f.entries.length ? f.entries[f.entries.length - 1].ts : ''
+    });
+  }
+  if (cands.length === 0) return null;
+  const abv = alcohol == null ? null : alcohol || 0;
+  const rank = c => {
+    const exactVol = Math.abs(c.vol - volCl) < 1e-9;
+    const sameAbv = abv == null || (c.f.alcohol || 0) === abv;
+    return exactVol && sameAbv ? 0 : exactVol ? 1 : sameAbv ? 2 : 3;
+  };
+  cands.sort((a, b) => rank(a) - rank(b) || a.firstTs.localeCompare(b.firstTs));
+  const src = cands[0];
+  const exact = Math.abs(src.vol - volCl) < 1e-9;
+  const perCl = src.ref / src.vol;
+  const price = exact ? src.ref : Math.round(perCl * volCl * 100) / 100;
+  if (!Number.isFinite(price)) return null;
+  return {
+    price,
+    perLiter: Math.round(perCl * 100 * 100) / 100,
+    exact,
+    source: {
+      name: src.f.name,
+      quantity: src.f.quantity,
+      unit: src.f.unit,
+      referencePrice: src.ref
+    }
+  };
+}
 function useSettings() {
   return React.useContext(SettingsContext);
 }
@@ -1125,6 +1181,7 @@ Object.assign(window, {
   priceRefsFromSettings,
   setReferencePrice,
   applyReferenceToFamily,
+  suggestPriceForVolume,
   ratingKey,
   saveSetting,
   addDrink,

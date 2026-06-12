@@ -91,3 +91,40 @@ test('« Ajouter à nouveau » depuis la fiche détail — prefill complet', asy
   assert.equal(fam[0].quantityInCL, fam[1].quantityInCL);
   assert.equal(fam[0].alcoholContent, fam[1].alcoholContent);
 });
+
+test('prix intelligent — autre quantité préremplie au prorata du €/L, saisie manuelle respectée', async () => {
+  // 1. Référence : Smart Pils 25 cL à 2 € (prix habituel coché par défaut).
+  await openAddSheet();
+  await ctx.setInput(ctx.findInputByAria(/^Boisson$/), 'Smart Pils');
+  await pickRadio('Bière');
+  await ctx.setInput(ctx.findInputByAria(/^Quantité$/), '25');
+  await ctx.setInput(ctx.findInputByAria(/^Degré d'alcool$/), '5');
+  await ctx.setInput(ctx.findInputByAria(/^Prix$/), '2');
+  await ctx.clickText(/^Enregistrer$/, 400);
+  const first = (await db().getAllDrinks()).find((x) => x.name === 'Smart Pils');
+  assert.equal(first.price, 2, 'prix de la 1re entrée en DB');
+
+  // 2. Même nom, 50 cL → le champ Prix se préremplit à 4 € (8 €/L × 0,5 L).
+  await openAddSheet();
+  await ctx.setInput(ctx.findInputByAria(/^Boisson$/), 'Smart Pils');
+  await pickRadio('Bière');
+  await ctx.setInput(ctx.findInputByAria(/^Quantité$/), '50');
+  await ctx.setInput(ctx.findInputByAria(/^Degré d'alcool$/), '5');
+  await ctx.waitFor(() => ctx.findInputByAria(/^Prix$/).value === '4',
+    { label: 'prix suggéré 4 € pour 50 cL' });
+  assert.match(ctx.text(), /Suggéré d'après 25 cL/, 'hint de suggestion affiché');
+
+  // 3. La quantité change → la suggestion suit (33 cL → 2.64 €).
+  await ctx.setInput(ctx.findInputByAria(/^Quantité$/), '33');
+  await ctx.waitFor(() => ctx.findInputByAria(/^Prix$/).value === '2.64',
+    { label: 'prix re-suggéré au prorata' });
+
+  // 4. Une saisie manuelle coupe l'auto : changer la quantité ne l'écrase plus.
+  await ctx.setInput(ctx.findInputByAria(/^Prix$/), '3');
+  await ctx.setInput(ctx.findInputByAria(/^Quantité$/), '50');
+  await ctx.sleep(150);
+  assert.equal(ctx.findInputByAria(/^Prix$/).value, '3', 'prix manuel conservé');
+  await ctx.clickText(/^Enregistrer$/, 400);
+  const second = (await db().getAllDrinks()).find((x) => x.name === 'Smart Pils' && x.quantity === 50);
+  assert.equal(second.price, 3, 'le prix saisi manuellement est enregistré');
+});

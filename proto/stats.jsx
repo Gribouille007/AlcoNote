@@ -1449,14 +1449,29 @@ function TopDrinksSection({ drinks, collapsed, toggleSection }) {
   );
 }
 // ── 5. Alcoolémie (BAC + records) ────────────────────────────────
-// Widmark BAC computation with linear absorption over BAC_ABSORPTION_H (30 min):
-// each drink ramps from 0 up to its full peak contribution across the
-// absorption window after consumption, then the running total decays at a
-// constant elimination rate (mg/L/h). At t = first drink, BAC = 0 and rises.
-//   contrib_i(t) = peak_i · clamp((t − t_i) / T_abs, 0, 1)
-//   bac(t)       = max(0, Σ_i contrib_i(t) − elimRate·(t − t_first))
-// `r` is Widmark's distribution factor (see `widmarkR`); the per-drink alcohol
-// mass in grams comes from the shared `drinkAlcoholGrams` helper.
+// Seuil légal de conduite affiché partout (0,5 g/L = 500 mg/L). Constante
+// nommée du moteur BAC, partagée par la cellule « Conduite » et les calculs.
+const BAC_LEGAL_LIMIT = 500;
+
+// Courbe BAC temps réel (fenêtre 24 h) — MÊME modèle que computeBACSessions :
+// absorption linéaire sur BAC_ABSORPTION_H, élimination constante, et marche
+// exacte des points de rupture avec CLAMP À ZÉRO (l'élimination s'arrête quand
+// le taux touche 0). L'ancienne forme fermée
+//   max(0, Σ absorbé(t) − elim·(t − t_première))
+// continuait d'« éliminer » virtuellement pendant les périodes à zéro : avec
+// deux épisodes dans la fenêtre (la veille + ce soir), la dette accumulée
+// écrasait le taux du soir à 0 — taux courant, sobriété et projection faux.
+//
+// Retourne :
+//   points    : échantillons {t (h, rel. maintenant), bac} à la minute, du
+//               début du DERNIER épisode au retour à 0 (+30 min de marge) —
+//               un épisode de la veille déjà éliminé n'écrase plus l'échelle.
+//   current   : taux maintenant (mg/L, arrondi).
+//   soberInH  : heures avant le retour FINAL à 0 (tient compte de
+//               l'absorption en cours : le taux peut encore monter) ; 0 si sobre.
+//   legalInH  : heures avant de repasser définitivement sous BAC_LEGAL_LIMIT.
+//   sobrietyT : instant (h, rel. maintenant) du retour final à 0 ; firstT :
+//               première boisson de la fenêtre.
 function computeBacOverTime(drinks, weight, gender) {
   const r = widmarkR(gender);
   const w = weight || DEFAULT_WEIGHT_KG;
@@ -1466,49 +1481,125 @@ function computeBacOverTime(drinks, weight, gender) {
   const recent = drinks
     .filter(d => d.date && d.time)
     .map(d => ({ ...d, _ts: new Date(`${d.date}T${d.time}`).getTime() }))
-    .filter(d => d._ts <= now && (now - d._ts) <= lookback)
+    .filter(d => Number.isFinite(d._ts) && d._ts <= now && (now - d._ts) <= lookback)
     .sort((a, b) => a._ts - b._ts);
 
-  if (recent.length === 0) return { points: [], current: 0, drinks: [], elimRate, nowT: 0 };
-
-  // Per-drink peak contribution in mg/L — the full BAC each drink adds once
-  // absorbed; bacAt() ramps it in linearly over BAC_ABSORPTION_H.
-  const grams = recent.map(drinkAlcoholGrams);
-  const peaks = grams.map(g => (g * 1000) / (w * r));
-  const tStart = recent.map(d => (d._ts - now) / 3600_000); // negative hours
-  const firstT = tStart[0];
-
-  function bacAt(h) {
-    let absorbed = 0;
-    for (let i = 0; i < recent.length; i++) {
-      const dt = h - tStart[i];
-      if (dt <= 0) continue;
-      absorbed += peaks[i] * Math.min(1, dt / BAC_ABSORPTION_H);
-    }
-    if (absorbed <= 0) return 0;
-    const eliminated = Math.max(0, h - firstT) * elimRate;
-    return Math.max(0, absorbed - eliminated);
+  if (recent.length === 0) {
+    return { points: [], current: 0, drinks: [], elimRate, nowT: 0, soberInH: 0, legalInH: 0 };
   }
 
-  // Bound the curve to the actual session: from the first drink (so the
-  // curve starts at the real BAC, not a flat-zero pre-drink region) to
-  // a small buffer past sobriety. We always extend at least 30 min past
-  // "now" so the user keeps seeing the present.
-  const totalPeak = peaks.reduce((s, v) => s + v, 0);
-  const sobrietyT = firstT + (totalPeak / elimRate);
-  const tMin = firstT;                            // start exactly at first drink (BAC = peak_1)
-  const tMax = Math.max(0.5, sobrietyT + 0.5);    // 30 min past sobriety, at least 30 min ahead
-  const step = 1 / 60;                            // 1-minute resolution (smooth scrub)
+  // Points de rupture : la pente ne change qu'au début (+pic/T_abs) et à la
+  // fin (−pic/T_abs) de la fenêtre d'absorption de chaque boisson.
+  const bps = [];
+  for (const d of recent) {
+    const peak = (drinkAlcoholGrams(d) * 1000) / (w * r);
+    const h0 = (d._ts - now) / 3600_000; // heures relatives à maintenant (≤ 0)
+    bps.push({ h: h0, dr: peak / BAC_ABSORPTION_H });
+    bps.push({ h: h0 + BAC_ABSORPTION_H, dr: -peak / BAC_ABSORPTION_H });
+  }
+  bps.sort((a, b) => a.h - b.h);
+
+  // Marche exacte : sommets (h, bac) de la courbe affine par morceaux, avec
+  // un sommet exact à chaque passage par zéro.
+  const firstT = bps[0].h;
+  const verts = [{ h: firstT, bac: 0 }];
+  let bac = 0, rate = 0, h = firstT;
+  const emit = (hh, bb) => {
+    const last = verts[verts.length - 1];
+    if (Math.abs(last.h - hh) < 1e-9 && Math.abs(last.bac - bb) < 1e-9) return;
+    verts.push({ h: hh, bac: bb });
+  };
+  const advanceTo = (hEnd) => {
+    while (h < hEnd - 1e-12) {
+      const net = rate - elimRate;
+      if (bac <= 1e-9 && net <= 0) { bac = 0; h = hEnd; emit(h, 0); return; }
+      if (bac > 1e-9 && net < 0) {
+        const hZero = bac / -net;
+        if (h + hZero <= hEnd + 1e-12) {
+          h += hZero; bac = 0;
+          emit(h, 0);
+          continue; // le reste du segment s'écoule à zéro
+        }
+      }
+      bac = Math.max(0, bac + net * (hEnd - h));
+      h = hEnd;
+      emit(h, bac);
+    }
+    h = hEnd;
+  };
+  for (const bp of bps) {
+    advanceTo(bp.h);
+    rate += bp.dr;
+    if (rate < 1e-9) rate = 0;
+  }
+  // Après le dernier point de rupture il ne reste que l'élimination.
+  if (bac > 1e-9) {
+    h += bac / elimRate;
+    bac = 0;
+    emit(h, 0);
+  }
+
+  // Évaluation exacte par interpolation linéaire entre sommets.
+  const bacAtH = (x) => {
+    if (x <= verts[0].h) return 0;
+    if (x >= verts[verts.length - 1].h) return 0; // après le retour final à 0
+    let lo = 0, hi = verts.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (verts[mid].h <= x) lo = mid; else hi = mid;
+    }
+    const a = verts[lo], b = verts[hi];
+    const f = (x - a.h) / Math.max(1e-12, b.h - a.h);
+    return a.bac + (b.bac - a.bac) * f;
+  };
+
+  // Dernier passage (depuis la fin) au-dessus de `limit` → instant exact du
+  // crossing descendant vers le sommet suivant (la courbe se clôt à 0, donc
+  // le successeur existe et est ≤ limit).
+  const lastDropBelow = (limit) => {
+    for (let i = verts.length - 1; i >= 0; i--) {
+      if (verts[i].bac > limit + 1e-9) {
+        const a = verts[i], b = verts[i + 1];
+        const f = (a.bac - limit) / Math.max(1e-12, a.bac - b.bac);
+        return a.h + (b.h - a.h) * f;
+      }
+    }
+    return null;
+  };
+  const zeroH = lastDropBelow(0);
+  const legalH = lastDropBelow(BAC_LEGAL_LIMIT);
+  const soberInH = zeroH != null ? Math.max(0, zeroH) : 0;
+  const legalInH = legalH != null ? Math.max(0, legalH) : 0;
+
+  // Début du DERNIER épisode (≤ maintenant) : dernier sommet à 0 suivi d'une
+  // montée. La courbe affichée démarre là — un épisode de la veille déjà
+  // éliminé reste compté (drinks/current) mais n'aplatit plus le graphe.
+  let chartStartH = firstT;
+  for (let i = 0; i < verts.length - 1; i++) {
+    if (verts[i].h > 1e-9) break;
+    if (verts[i].bac <= 1e-9 && verts[i + 1].bac > 1e-9) chartStartH = verts[i].h;
+  }
+
+  // Échantillonnage à la minute (scrub fluide), borné à la vraie session :
+  // du début d'épisode à 30 min après le retour à zéro, prolongé à 30 min
+  // après « maintenant » tant que la sobriété est récente. Si elle date de
+  // plus d'une heure, on n'étire plus jusqu'au présent — des heures de ligne
+  // plate écraseraient l'épisode (le marqueur « maintenant » des charts est
+  // conditionnel et sort proprement de la fenêtre).
+  const endH = verts[verts.length - 1].h;
+  const tMax = endH > -1 ? Math.max(0.5, endH + 0.5) : endH + 0.5;
+  const step = 1 / 60;
   const pts = [];
-  for (let t = tMin; t <= tMax + 1e-6; t += step) {
-    pts.push({ t: +t.toFixed(4), bac: bacAt(t) });
+  for (let t = chartStartH; t <= tMax + 1e-6; t += step) {
+    pts.push({ t: +t.toFixed(4), bac: bacAtH(t) });
   }
   return {
     points: pts,
-    current: Math.round(bacAt(0)),
+    current: Math.round(bacAtH(0)),
     drinks: recent,
     elimRate, nowT: 0,
-    sobrietyT, firstT,
+    sobrietyT: endH, firstT,
+    soberInH, legalInH,
   };
 }
 
@@ -1829,8 +1920,16 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
     return (bacInfo.points || []).filter(p => p.t <= 0 && p.t >= startRelH - 1e-6);
   }, [bacInfo.points, forecast.sessionStartMs]);
 
-  const hoursToSober = currentBAC / 150;
-  const hoursToLegal = Math.max(0, (currentBAC - 500) / 150);
+  // Heures exactes issues de la courbe (computeBacOverTime) : elles intègrent
+  // l'absorption en cours — le taux peut encore MONTER avant de redescendre,
+  // ce que l'ancienne division `currentBAC / élimination` ignorait (sobriété
+  // sous-estimée de toute la montée restante juste après une boisson).
+  const hoursToSober = bacInfo.soberInH != null
+    ? bacInfo.soberInH
+    : currentBAC / BAC_ELIM_RATE;
+  const hoursToLegal = bacInfo.legalInH != null
+    ? bacInfo.legalInH
+    : Math.max(0, (currentBAC - BAC_LEGAL_LIMIT) / BAC_ELIM_RATE);
 
   const fmtTime = (h) => {
     if (h <= 0) return '—';
@@ -2192,6 +2291,7 @@ function groupDrinksForMap(drinks) {
 function MapDrinksSheet({ drinks, onClose }) {
   const groups = React.useMemo(() => groupDrinksForMap(drinks), [drinks]);
   const total = drinks ? drinks.length : 0;
+  const [closing, close] = useSheetClose(onClose);
   // Si toutes les boissons partagent un même libellé de lieu, on le met en
   // titre ; sinon un titre générique (le rond couvre plusieurs endroits).
   const sharedPlace = React.useMemo(() => {
@@ -2200,13 +2300,12 @@ function MapDrinksSheet({ drinks, onClose }) {
   }, [drinks]);
 
   return (
-    <SheetOverlay onClose={onClose} label={sharedPlace || 'Consommations ici'}>
+    <SheetOverlay onClose={close} closing={closing} label={sharedPlace || 'Consommations ici'}>
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0', maxHeight: '85dvh',
         display: 'flex', flexDirection: 'column',
         borderTop: `1px solid ${T.rule}`, borderLeft: `1px solid ${T.rule}`,
         borderRight: `1px solid ${T.rule}`, overflow: 'hidden',
-        animation: 'slideUp 0.25s ease',
       }}>
         <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
           <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }} />
@@ -2226,7 +2325,7 @@ function MapDrinksSheet({ drinks, onClose }) {
               textTransform: 'uppercase', marginTop: 6,
             }}>{total} boisson{total !== 1 ? 's' : ''} · {groups.length} type{groups.length !== 1 ? 's' : ''}</div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Fermer" style={{
+          <button type="button" onClick={close} aria-label="Fermer" style={{
             width: 32, height: 32, borderRadius: 99, background: T.surface2,
             display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
             border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit', flexShrink: 0,
@@ -3003,7 +3102,7 @@ Object.assign(window, {
   getPeriodRange, shiftAnchor, periodLabel, computeBacOverTime,
   computeBACSessions, computeBourreTime, computeStreak, fmtBourreTime,
   aggregateGeneral, computeStreakRecord, filterDrinksInRange,
-  BAC_ELIM_RATE, BAC_RECORD_MIN, BAC_ABSORPTION_H, DEFAULT_WEIGHT_KG, widmarkR,
+  BAC_ELIM_RATE, BAC_RECORD_MIN, BAC_ABSORPTION_H, BAC_LEGAL_LIMIT, DEFAULT_WEIGHT_KG, widmarkR,
   BacContext, useBacInfo, BacProvider, BACProjectionResponsive,
   computeBacForecast, BACForecastResponsive,
   ForecastToggle, ForecastMiniStats,

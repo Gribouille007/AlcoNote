@@ -595,6 +595,19 @@ function QuickAddButton({ onAdd, label, size = 32 }) {
 }
 
 // ── Back button / overlay back-stack ─────────────────────────────
+// Au chargement : si l'entrée d'historique COURANTE est un piège `__alcoBack`
+// hérité d'une session précédente (app tuée/rechargée avec une feuille ou une
+// vue ouverte), on le consomme immédiatement. Sans cette purge, le premier
+// geste « retour » du système navigue vers l'entrée morte de la même URL —
+// la page se recharge — puis l'historique est vide et le geste ne fait plus
+// rien (symptôme : « ça me remet sur la page et je ne peux plus glisser »).
+(function dropStaleBackTrap() {
+  if (typeof window === 'undefined' || typeof history === 'undefined') return;
+  try {
+    if (history.state && history.state.__alcoBack) history.back();
+  } catch {}
+})();
+
 // Makes the Android system Back button (and browser back) close the
 // top-most open overlay instead of leaving the app. Each open layer
 // pushes one synthetic history entry; a Back press pops it and closes
@@ -660,7 +673,14 @@ function useBackButton(active, onClose) {
 }
 
 // ── Sheet overlay (bottom sheet / left or right drawer) ──────────
-function SheetOverlay({ children, onClose, side = 'bottom', label }) {
+// L'animation d'ENTRÉE (slideUp / slideRight / slideLeft selon `side`) vit
+// ici, sur le wrapper du dialog — les sheets n'ont plus d'`animation:` à
+// poser sur leur racine. La SORTIE est pilotée par la prop `closing`
+// (fournie par useSheetClose) : scrim en fadeOut + sheet en sheetOut*,
+// `forwards` pour tenir l'état final jusqu'au démontage. Reduced-motion :
+// aucune animation, ni entrée ni sortie.
+function SheetOverlay({ children, onClose, side = 'bottom', label, closing = false }) {
+  const reduced = useReducedMotion();
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose && onClose(); };
     document.addEventListener('keydown', onKey);
@@ -671,6 +691,8 @@ function SheetOverlay({ children, onClose, side = 'bottom', label }) {
   // (Add / Detail / EditEntry / EditFamily / Settings / EditCategory).
   useBackButton(true, onClose);
   const isSide = side === 'left' || side === 'right';
+  const enter = side === 'left' ? 'slideRight' : side === 'right' ? 'slideLeft' : 'slideUp';
+  const exit = side === 'left' ? 'sheetOutLeft' : side === 'right' ? 'sheetOutRight' : 'sheetOutDown';
   return (
     <div role="presentation" onClick={onClose} style={{
       position: 'fixed', inset: 0, background: T.scrim,
@@ -678,7 +700,12 @@ function SheetOverlay({ children, onClose, side = 'bottom', label }) {
       alignItems: side === 'bottom' ? 'flex-end' : 'stretch',
       justifyContent: side === 'right' ? 'flex-end'
                      : side === 'left' ? 'flex-start' : 'stretch',
-      animation: 'fade 0.2s ease',
+      animation: reduced ? undefined
+        : closing ? `fadeOut ${MOTION.fast}ms ${MOTION.ease} forwards`
+        : `fade ${MOTION.base}ms ${MOTION.ease}`,
+      // Plus aucune interaction pendant la sortie (évite un double-tap qui
+      // relancerait une action sur une sheet déjà en train de partir).
+      pointerEvents: closing ? 'none' : undefined,
     }}>
       <div role="dialog" aria-modal="true" aria-label={label} onClick={e => e.stopPropagation()} style={{
         width: isSide ? 'auto' : '100%',
@@ -686,11 +713,50 @@ function SheetOverlay({ children, onClose, side = 'bottom', label }) {
         margin: side === 'bottom' ? '0 auto' : 0,
         height: isSide ? '100%' : 'auto',
         display: 'flex', flexDirection: 'column',
+        animation: reduced ? undefined
+          : closing ? `${exit} ${MOTION.fast}ms ${MOTION.ease} forwards`
+          : `${enter} ${MOTION.base}ms ${MOTION.ease}`,
       }}>
         {children}
       </div>
     </div>
   );
+}
+
+// Fermeture animée d'une sheet / vue : retourne `[closing, close]`.
+// `close()` déclenche l'animation de sortie (en passant `closing` à
+// SheetOverlay, ou à toute racine qui mappe closing → animation `forwards`)
+// puis appelle `onClose` après MOTION.fast — les sorties sont volontairement
+// plus brèves que les entrées. Idempotent (un double-tap pendant la sortie ne
+// referme pas deux fois) ; reduced-motion → fermeture immédiate. `open` ré-arme
+// le hook pour les sheets montées en continu (AddDrinkSheet, SettingsDrawer) ;
+// les sheets montées conditionnellement laissent le défaut `true`.
+function useSheetClose(onClose, open = true) {
+  const reduced = useReducedMotion();
+  const [closing, setClosing] = React.useState(false);
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
+  const reducedRef = React.useRef(reduced);
+  reducedRef.current = reduced;
+  const armedRef = React.useRef(false);
+  const timerRef = React.useRef(0);
+  React.useEffect(() => {
+    if (open) { armedRef.current = false; setClosing(false); }
+  }, [open]);
+  React.useEffect(() => () => clearTimeout(timerRef.current), []);
+  const close = React.useCallback(() => {
+    if (armedRef.current) return;
+    armedRef.current = true;
+    if (reducedRef.current) {
+      if (onCloseRef.current) onCloseRef.current();
+      return;
+    }
+    setClosing(true);
+    timerRef.current = setTimeout(() => {
+      if (onCloseRef.current) onCloseRef.current();
+    }, MOTION.fast);
+  }, []);
+  return [closing, close];
 }
 
 // ── Styled confirmation dialog (replaces native confirm()) ────────
@@ -871,6 +937,21 @@ function useSWVersion() {
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
     /* Entrée par défaut listes & onglets : montée courte + fondu, sans rebond. */
     @keyframes alcoRise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
+    /* Sorties miroir des entrées de sheet (jouées par SheetOverlay quand
+       \`closing\` est vrai, cf. useSheetClose) : même distance, même easing. */
+    @keyframes fadeOut { from { opacity: 1 } to { opacity: 0 } }
+    @keyframes sheetOutDown { from { transform: translateY(0); opacity: 1 } to { transform: translateY(16px); opacity: 0 } }
+    @keyframes sheetOutLeft { from { transform: translateX(0); opacity: 1 } to { transform: translateX(-16px); opacity: 0 } }
+    @keyframes sheetOutRight { from { transform: translateX(0); opacity: 1 } to { transform: translateX(16px); opacity: 0 } }
+    /* Transition « page » (vue plein écran type fiche ami) : pousse depuis la
+       droite à l'ouverture, ressort vers la droite au retour — cohérent avec
+       le geste système « revenir en arrière ». */
+    @keyframes pageIn { from { transform: translateX(28px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
+    @keyframes pageOut { from { transform: translateX(0); opacity: 1 } to { transform: translateX(28px); opacity: 0 } }
+    /* Toast : montée + fondu (le translateX(-50%) du centrage doit vivre DANS
+       les keyframes, sinon l'animation de transform écrase le centrage). */
+    @keyframes toastIn { from { transform: translate(-50%, 10px); opacity: 0 } to { transform: translate(-50%, 0); opacity: 1 } }
+    @keyframes toastOut { from { transform: translate(-50%, 0); opacity: 1 } to { transform: translate(-50%, 8px); opacity: 0 } }
     /* Balayage du viseur scanner (rapatrié de modals.jsx : plus aucun @keyframes inline). */
     @keyframes scanSweep { 0%{top:0} 100%{top:100%} }
 
@@ -1353,7 +1434,7 @@ Object.assign(window, {
   fmtDateMedium, fmtDayHeader, localDate, localTime,
   toCl, ETHANOL_DENSITY_G_PER_ML, ethanolGrams, drinkAlcoholGrams, fmtPrice,
   SearchInput, SectionHead, Pill, Stars, CategoryGlyph, GLYPH_OPTIONS, canonicalCat,
-  SheetOverlay,
+  SheetOverlay, useSheetClose,
   useBackButton,
   Confirm, ConfirmHost,
   clickable, ghostButton, QuickAddButton,

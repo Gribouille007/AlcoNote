@@ -184,26 +184,41 @@ function AppShell() {
   const families = React.useMemo(() => buildFamilies(drinks, ratings, priceRefs), [drinks, ratings, priceRefs]);
   React.useEffect(() => {
     window.__alcoToastSetter = (msg, opts) => {
+      clearTimeout(window.__aToast);
+      clearTimeout(window.__aToastOut);
       setToast({
         msg,
-        opts: opts || null
+        opts: opts || null,
+        leaving: false
       });
-      clearTimeout(window.__aToast);
       // Undo toasts stay visible longer so the user has time to react.
       const ttl = opts && typeof opts.undo === 'function' ? 5000 : 1800;
-      window.__aToast = setTimeout(() => setToast(null), ttl);
+      // Sortie en deux temps : phase `leaving` (animation toastOut) puis
+      // démontage — le toast s'efface au lieu de disparaître brutalement.
+      window.__aToast = setTimeout(() => {
+        setToast(t => t ? {
+          ...t,
+          leaving: true
+        } : t);
+        window.__aToastOut = setTimeout(() => setToast(null), MOTION.fast);
+      }, ttl);
     };
   }, []);
   React.useEffect(() => {
     localStorage.setItem('alconote.tab', tab);
   }, [tab]);
 
+  // Geste/bouton Retour système, du plus profond au plus superficiel :
+  // les sheets/dialogs/vue ami enregistrent leur propre handler (SheetOverlay,
+  // ConfirmHost, FriendStatsView) ; ici on couvre les deux niveaux de
+  // navigation du shell. Un seul piège « onglet » vit à la fois : Retour
+  // depuis n'importe quel onglet secondaire ramène aux Catégories (pattern
+  // Android standard), au lieu de quitter/recharger l'app — c'est ce qui rend
+  // le « glisser pour revenir en arrière » utilisable depuis l'onglet Amis.
+  useBackButton(tab !== 'categories', React.useCallback(() => setTab('categories'), []));
   // Android Back exits the category drill-down (FamilyList) back to the
-  // category grid instead of leaving the app. Sheets/dialogs register
-  // their own back handlers via SheetOverlay / ConfirmHost.
+  // category grid instead of leaving the app.
   useBackButton(!!catOpen, React.useCallback(() => setCatOpen(null), []));
-  // Android Back closes an open friend's stats view before leaving the app.
-  useBackButton(!!openFriend, React.useCallback(() => setOpenFriend(null), []));
   const directAdd = React.useCallback(async family => {
     try {
       const n = new Date();
@@ -363,7 +378,9 @@ function AppShell() {
       display: 'flex',
       alignItems: 'center',
       gap: 10,
-      animation: 'fade 0.2s ease',
+      // Montée + fondu à l'arrivée, fondu descendant au départ (les
+      // keyframes toast* embarquent le translateX(-50%) du centrage).
+      animation: reducedMotion ? undefined : toast.leaving ? `toastOut ${MOTION.fast}ms ${MOTION.ease} forwards` : `toastIn ${MOTION.base}ms ${MOTION.ease}`,
       maxWidth: 'calc(100vw - 24px)'
     }
   }, /*#__PURE__*/React.createElement("span", {
@@ -386,6 +403,7 @@ function AppShell() {
     onClick: () => {
       const fn = toast.opts.undo;
       clearTimeout(window.__aToast);
+      clearTimeout(window.__aToastOut);
       setToast(null);
       // Surface synchronous undo failures rather than swallow
       // them silently — async errors are reported by the

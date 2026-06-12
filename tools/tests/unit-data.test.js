@@ -138,3 +138,60 @@ test('drinkPlaceLabel — priorité label > name > address', () => {
   assert.equal(drinkPlaceLabel({ location: {} }), null);
   assert.equal(drinkPlaceLabel({}), null);
 });
+
+// ── Prix intelligent (suggestPriceForVolume) ───────────────────────
+
+test('suggestPriceForVolume — €/L hérité de la famille homonyme, prorata arrondi au centime', () => {
+  const { suggestPriceForVolume } = global;
+  // Jupiler 25 cL à 2 € → 8 €/L. entries triées récent → ancien.
+  const fams = [{
+    name: 'Jupiler', quantity: 25, unit: 'cL', alcohol: 5.2, referencePrice: 2,
+    entries: [{ ts: '2026-06-02T20:00' }, { ts: '2026-06-01T20:00' }],
+  }];
+  // 50 cL → 4 € ; 33 cL → 2.64 € (8 €/L × 0,33 L) ; unités converties.
+  assert.deepEqual(
+    suggestPriceForVolume(fams, 'Jupiler', 50, 5.2),
+    { price: 4, perLiter: 8, exact: false,
+      source: { name: 'Jupiler', quantity: 25, unit: 'cL', referencePrice: 2 } }
+  );
+  assert.equal(suggestPriceForVolume(fams, 'jupiler ', 33, 5.2).price, 2.64,
+    'nom trimé/insensible à la casse, arrondi 2 décimales');
+  // Volume exact → prix de référence TEL QUEL (pas de re-arrondi).
+  assert.equal(suggestPriceForVolume(fams, 'Jupiler', 25, 5.2).exact, true);
+  assert.equal(suggestPriceForVolume(fams, 'Jupiler', 25, 5.2).price, 2);
+  // Aucun homonyme tarifé / volume nul → null.
+  assert.equal(suggestPriceForVolume(fams, 'Chouffe', 33, 8), null);
+  assert.equal(suggestPriceForVolume(fams, 'Jupiler', 0, 5.2), null);
+  assert.equal(suggestPriceForVolume([], 'Jupiler', 33, 5.2), null);
+  assert.equal(suggestPriceForVolume(fams, '', 33, 5.2), null);
+});
+
+test('suggestPriceForVolume — priorités : contenant exact > degré > première famille tarifée', () => {
+  const { suggestPriceForVolume } = global;
+  const fams = [
+    // Tarifée APRÈS la 25 cL mais €/L différent (pinte happy hour 9 €/L).
+    { name: 'Jupiler', quantity: 50, unit: 'cL', alcohol: 5.2, referencePrice: 4.5,
+      entries: [{ ts: '2026-06-03T20:00' }] },
+    // Première boisson tarifée (8 €/L) → impose le €/L pour les autres volumes.
+    { name: 'Jupiler', quantity: 25, unit: 'cL', alcohol: 5.2, referencePrice: 2,
+      entries: [{ ts: '2026-06-01T20:00' }] },
+    // Homonyme sans prix de référence → jamais source.
+    { name: 'Jupiler', quantity: 75, unit: 'cL', alcohol: 5.2, referencePrice: null,
+      entries: [{ ts: '2026-05-01T20:00' }] },
+  ];
+  // Le contenant exact (50 cL) garde SON prix de référence, pas le prorata 25 cL.
+  assert.equal(suggestPriceForVolume(fams, 'Jupiler', 50, 5.2).price, 4.5);
+  // Autre volume → la PREMIÈRE famille tarifée (25 cL, plus ancienne) impose le €/L.
+  assert.equal(suggestPriceForVolume(fams, 'Jupiler', 33, 5.2).price, 2.64);
+  // Conversion d'unités : 0,5 L = le contenant 50 cL → sa référence exacte.
+  assert.equal(suggestPriceForVolume(fams, 'Jupiler', global.toCl(0.5, 'L'), 5.2).price, 4.5);
+  // Même degré préféré quand aucun contenant exact : 8° matche la seule 8°.
+  const mix = [
+    { name: 'Brune', quantity: 25, unit: 'cL', alcohol: 5, referencePrice: 2,
+      entries: [{ ts: '2026-06-01T20:00' }] },
+    { name: 'Brune', quantity: 33, unit: 'cL', alcohol: 8, referencePrice: 4,
+      entries: [{ ts: '2026-06-02T20:00' }] },
+  ];
+  // 50 cL à 8° → source 33 cL 8° (12,12 €/L) malgré la 25 cL plus ancienne.
+  assert.equal(suggestPriceForVolume(mix, 'Brune', 50, 8).price, 6.06);
+});
