@@ -26,6 +26,7 @@ function ImpactStat({ big, unit, accent }) {
 
 function AddDrinkSheet({ open, prefill, onClose }) {
   const { categories } = useCategories();
+  const families = useFamilies();
   const [scan, setScan] = React.useState(false);
   const [name, setName] = React.useState('');
   const [cat, setCat] = React.useState('');
@@ -40,6 +41,12 @@ function AddDrinkSheet({ open, prefill, onClose }) {
   // « + »). Décoché ⇒ prix exceptionnel, la référence ne bouge pas.
   const [price, setPrice] = React.useState('');
   const [priceIsReference, setPriceIsReference] = React.useState(true);
+  // Prix intelligent : tant que `priceAuto` est vrai, le champ Prix suit la
+  // suggestion dérivée du €/L de la famille homonyme (suggestPriceForVolume) —
+  // changer la quantité re-calcule le prix au prorata. La première saisie
+  // MANUELLE dans le champ coupe l'auto pour le reste de la session de la
+  // sheet (on n'écrase jamais un prix tapé par l'utilisateur).
+  const [priceAuto, setPriceAuto] = React.useState(true);
   // `loc` = position attachée à la boisson (objet location | null). `locTouched`
   // distingue « non touché » (→ auto-capture non bloquante à l'ajout, comme
   // avant) de « choisi/retiré explicitement via le champ Lieu » (→ on respecte
@@ -52,6 +59,8 @@ function AddDrinkSheet({ open, prefill, onClose }) {
   // double-tap on Enregistrer would fire `submit` twice and create the same
   // drink twice before the button disables. Mirrors EditCategorySheet.
   const submittingRef = React.useRef(false);
+  // Fermeture animée (sortie de sheet) — ré-armée à chaque ouverture.
+  const [closing, close] = useSheetClose(onClose, open);
 
   // Reset on open / prefill changes.
   React.useEffect(() => {
@@ -60,6 +69,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
     setDate(n.date); setTime(n.time); setErr(''); setBusy(false);
     submittingRef.current = false;
     setLoc(null); setLocTouched(false);
+    setPriceAuto(true);
     if (prefill) {
       // NumberField state stays a string — coerce prefilled numbers so the
       // controlled input never flips number↔string mid-edit.
@@ -86,6 +96,19 @@ function AddDrinkSheet({ open, prefill, onClose }) {
     if (!open || prefill) return;
     if (!cat && categories.length > 0) setCat(categories[0].name);
   }, [open, prefill, categories, cat]);
+
+  // Suggestion de prix au prorata du volume (cf. suggestPriceForVolume).
+  // Recalculée à chaque frappe sur nom / quantité / unité / degré ; appliquée
+  // au champ uniquement tant que `priceAuto` tient.
+  const suggestion = React.useMemo(() => {
+    const q = parseDecimal(qty) || 0;
+    const a = parseDecimal(alc) || 0;
+    return suggestPriceForVolume(families, name, toCl(q, unit), a);
+  }, [families, name, qty, unit, alc]);
+  React.useEffect(() => {
+    if (!open || !priceAuto) return;
+    setPrice(suggestion ? String(suggestion.price) : '');
+  }, [open, priceAuto, suggestion]);
 
   if (!open) return null;
 
@@ -128,7 +151,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
         await setReferencePrice({ name: drinkName, quantity: qtyNum, unit, alcohol: alcNum }, priceNum);
       }
       Toast.show(`« ${drinkName} » ajoutée`);
-      onClose && onClose();
+      close();
       // Géolocalisation fiable et non bloquante (centralisée dans data.jsx :
       // survit à la fermeture, reverse-geocode borné + retry). Un lieu
       // choisi/retiré explicitement (`locTouched`) est respecté.
@@ -142,14 +165,13 @@ function AddDrinkSheet({ open, prefill, onClose }) {
   };
 
   return (
-    <SheetOverlay onClose={onClose} label="Nouvelle boisson">
+    <SheetOverlay onClose={close} closing={closing} label="Nouvelle boisson">
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0', padding: '10px 0 0',
         maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
         borderTop: `1px solid ${T.rule}`,
         borderLeft: `1px solid ${T.rule}`,
         borderRight: `1px solid ${T.rule}`,
-        animation: 'slideUp 0.25s ease',
         overflowX: 'hidden',
       }}>
         <div style={{ display: 'grid', placeItems: 'center', padding: '6px 0 4px' }}>
@@ -164,7 +186,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
             fontFamily: fontSerif, fontSize: 22, color: T.ink,
             letterSpacing: -0.3, fontStyle: 'italic',
           }}>Nouvelle boisson</div>
-          <button type="button" onClick={onClose} aria-label="Fermer" style={{
+          <button type="button" onClick={close} aria-label="Fermer" style={{
             width: 30, height: 30, borderRadius: 99, background: T.surface2,
             display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
             border: 'none', padding: 0, fontFamily: 'inherit',
@@ -225,8 +247,20 @@ function AddDrinkSheet({ open, prefill, onClose }) {
           </FieldGroup>
 
           <FieldGroup label="Prix (optionnel)">
-            <NumberField value={price} onChange={setPrice} step="0.1" suffix="€"
-              ariaLabel="Prix" />
+            <NumberField value={price}
+              onChange={(v) => { setPriceAuto(false); setPrice(v); }}
+              step="0.1" suffix="€" ariaLabel="Prix" />
+            {priceAuto && suggestion && price !== '' && (
+              <div style={{
+                marginTop: 6, color: T.muted, fontSize: 11, lineHeight: 1.4,
+                display: 'flex', alignItems: 'center', gap: 5,
+              }}>
+                <SvgIcon icon={Ic.check} size={11} color={T.accent} />
+                {suggestion.exact
+                  ? 'Prix habituel de cette boisson'
+                  : <>Suggéré d'après {suggestion.source.quantity} {suggestion.source.unit} à {fmtPrice(suggestion.source.referencePrice)} · <span style={{ fontFamily: fontNum }}>{fmtPrice(suggestion.perLiter)}/L</span></>}
+              </div>
+            )}
             <div style={{
               marginTop: 8, background: T.surface, border: `1px solid ${T.rule}`,
               borderRadius: 12, overflow: 'hidden',
@@ -287,7 +321,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
           padding: '12px 18px calc(22px + env(safe-area-inset-bottom))',
           borderTop: `1px solid ${T.rule}`, display: 'flex', gap: 10,
         }}>
-          <button type="button" onClick={onClose} style={{
+          <button type="button" onClick={close} style={{
             flex: 1, padding: '14px', textAlign: 'center', borderRadius: 12,
             background: T.surface2, color: T.ink2, fontSize: 13, cursor: 'pointer',
             border: `1px solid ${T.rule}`, fontFamily: 'inherit',
@@ -524,6 +558,9 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
   const ratings = useRatings();
   const { categories } = useCategories();
   const { loading } = useDrinks();
+  // Fermeture animée. `onEdit` / `onAddAgain` restent des bascules
+  // instantanées : la sheet est REMPLACÉE par la suivante, pas fermée.
+  const [closing, close] = useSheetClose(onClose);
   // Inline "move to another category" affordance (applies to the whole
   // family via updateFamily).
   const [moving, setMoving] = React.useState(false);
@@ -570,9 +607,9 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
   React.useEffect(() => {
     if (loading) return;
     if (liveFamily && liveFamily.entries && liveFamily.entries.length === 0) {
-      onClose && onClose();
+      close();
     }
-  }, [liveFamily, loading, onClose]);
+  }, [liveFamily, loading, close]);
   const f = liveFamily || family || (entry && entry.family);
   if (!f) return null;
   const color = catColor(f.category, 70);
@@ -583,7 +620,7 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
   };
 
   return (
-    <SheetOverlay onClose={onClose} label="Détail de la boisson">
+    <SheetOverlay onClose={close} closing={closing} label="Détail de la boisson">
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0',
         maxHeight: '90dvh', display: 'flex', flexDirection: 'column',
@@ -591,7 +628,6 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
         borderLeft: `1px solid ${T.rule}`,
         borderRight: `1px solid ${T.rule}`,
         overflow: 'hidden',
-        animation: 'slideUp 0.25s ease',
       }}>
         <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
           <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }}/>
@@ -621,7 +657,7 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
                 wordBreak: 'break-word',
               }}>{f.name}</div>
             </div>
-            <button type="button" onClick={onClose} aria-label="Fermer" style={{
+            <button type="button" onClick={close} aria-label="Fermer" style={{
               width: 32, height: 32, borderRadius: 99, background: DETAIL_HEADER_CLOSE_BG,
               display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
               alignSelf: 'flex-start',
@@ -820,6 +856,8 @@ function EditEntrySheet({ entry, onClose }) {
   // the mutation twice (e.g. delete → second call throws "introuvable").
   const savingRef = React.useRef(false);
   const removingRef = React.useRef(false);
+  // Fermeture animée (sortie de sheet).
+  const [closing, close] = useSheetClose(onClose);
 
   const save = async () => {
     if (savingRef.current || removingRef.current) return;
@@ -857,7 +895,7 @@ function EditEntrySheet({ entry, onClose }) {
         await saveRating(finalName, rating);
       }
       Toast.show('Boisson modifiée');
-      onClose && onClose();
+      close();
     } catch (e) {
       setErr(e && e.message ? e.message : 'Erreur');
     } finally { setBusy(false); savingRef.current = false; }
@@ -882,7 +920,7 @@ function EditEntrySheet({ entry, onClose }) {
           }
         },
       });
-      onClose && onClose();
+      close();
     } catch (e) {
       console.warn('AlcoNote: deleteDrinkWithSnapshot failed', e);
       setErr(e && e.message ? e.message : 'Erreur');
@@ -890,14 +928,13 @@ function EditEntrySheet({ entry, onClose }) {
   };
 
   return (
-    <SheetOverlay onClose={onClose} label="Modifier l'entrée">
+    <SheetOverlay onClose={close} closing={closing} label="Modifier l'entrée">
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0',
         maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
         borderTop: `1px solid ${T.rule}`,
         borderLeft: `1px solid ${T.rule}`,
         borderRight: `1px solid ${T.rule}`,
-        animation: 'slideUp 0.25s ease',
         overflowX: 'hidden',
       }}>
         <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
@@ -912,7 +949,7 @@ function EditEntrySheet({ entry, onClose }) {
             fontFamily: fontSerif, fontSize: 22, color: T.ink,
             letterSpacing: -0.3, fontStyle: 'italic',
           }}>Modifier l'entrée</div>
-          <button type="button" onClick={onClose} aria-label="Fermer" style={{
+          <button type="button" onClick={close} aria-label="Fermer" style={{
             width: 30, height: 30, borderRadius: 99, background: T.surface2,
             display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
             border: 'none', padding: 0, fontFamily: 'inherit',
@@ -998,7 +1035,7 @@ function EditEntrySheet({ entry, onClose }) {
           padding: '12px 18px calc(22px + env(safe-area-inset-bottom))',
           borderTop: `1px solid ${T.rule}`, display: 'flex', gap: 10,
         }}>
-          <button type="button" onClick={onClose} style={{
+          <button type="button" onClick={close} style={{
             flex: 1, padding: '14px', textAlign: 'center', borderRadius: 12,
             background: T.surface2, color: T.ink2, fontSize: 13, cursor: 'pointer',
             border: `1px solid ${T.rule}`, fontFamily: 'inherit',
@@ -1047,6 +1084,8 @@ function EditFamilySheet({ family, onClose }) {
   // (the second deleteFamily matches nothing → a misleading empty undo).
   const savingRef = React.useRef(false);
   const removingRef = React.useRef(false);
+  // Fermeture animée (sortie de sheet).
+  const [closing, close] = useSheetClose(onClose);
 
   const save = async () => {
     if (savingRef.current || removingRef.current) return;
@@ -1113,7 +1152,7 @@ function EditFamilySheet({ family, onClose }) {
         if (!stillUsed) await saveRating(family.name, 0);
       }
       Toast.show('Boisson mise à jour');
-      onClose && onClose();
+      close();
     } catch (e) {
       setErr(e && e.message ? e.message : 'Erreur');
     } finally { setBusy(false); savingRef.current = false; }
@@ -1140,7 +1179,7 @@ function EditFamilySheet({ family, onClose }) {
           }
         },
       });
-      onClose && onClose();
+      close();
     } catch (e) {
       console.warn('AlcoNote: deleteFamily failed', e);
       setErr(e && e.message ? e.message : 'Erreur');
@@ -1161,14 +1200,13 @@ function EditFamilySheet({ family, onClose }) {
   const refDirty = liveNewVal !== liveOldVal;
 
   return (
-    <SheetOverlay onClose={onClose} label="Modifier la boisson">
+    <SheetOverlay onClose={close} closing={closing} label="Modifier la boisson">
       <div style={{
         background: T.bg, borderRadius: '22px 22px 0 0',
         maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
         borderTop: `1px solid ${T.rule}`,
         borderLeft: `1px solid ${T.rule}`,
         borderRight: `1px solid ${T.rule}`,
-        animation: 'slideUp 0.25s ease',
       }}>
         <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
           <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }}/>
@@ -1182,7 +1220,7 @@ function EditFamilySheet({ family, onClose }) {
             fontFamily: fontSerif, fontSize: 22, color: T.ink,
             letterSpacing: -0.3, fontStyle: 'italic',
           }}>Modifier la boisson</div>
-          <button type="button" onClick={onClose} aria-label="Fermer" style={{
+          <button type="button" onClick={close} aria-label="Fermer" style={{
             width: 30, height: 30, borderRadius: 99, background: T.surface2,
             display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
             border: 'none', padding: 0, fontFamily: 'inherit',
@@ -1263,7 +1301,7 @@ function EditFamilySheet({ family, onClose }) {
           padding: '12px 18px calc(22px + env(safe-area-inset-bottom))',
           borderTop: `1px solid ${T.rule}`, display: 'flex', gap: 10,
         }}>
-          <button type="button" onClick={onClose} style={{
+          <button type="button" onClick={close} style={{
             flex: 1, padding: '14px', textAlign: 'center', borderRadius: 12,
             background: T.surface2, color: T.ink2, fontSize: 13, cursor: 'pointer',
             border: `1px solid ${T.rule}`, fontFamily: 'inherit',
@@ -1288,6 +1326,8 @@ function SettingsDrawer({ open, onClose }) {
   // matches the cache actually shipping. Falls back to "—" when no
   // SW is registered (browser preview, file://).
   const swVersion = useSWVersion();
+  // Fermeture animée (le tiroir repart vers la gauche) — ré-armée à l'ouverture.
+  const [closing, close] = useSheetClose(onClose, open);
 
   if (!open) return null;
 
@@ -1329,19 +1369,18 @@ function SettingsDrawer({ open, onClose }) {
     try {
       await clearAllData();
       Toast.show('Données effacées');
-      onClose && onClose();
+      close();
     } catch (e) {
       Toast.show('Erreur lors de l\'effacement');
     }
   };
 
   return (
-    <SheetOverlay onClose={onClose} side="left" label="Paramètres">
+    <SheetOverlay onClose={close} closing={closing} side="left" label="Paramètres">
       <div style={{
         background: T.bg, width: 'min(360px, 100vw)', height: '100%',
         borderRight: `1px solid ${T.rule}`,
         display: 'flex', flexDirection: 'column',
-        animation: 'slideRight 0.22s ease',
       }}>
         <div style={{
           padding: 'calc(36px + env(safe-area-inset-top)) 20px 18px',
@@ -1352,7 +1391,7 @@ function SettingsDrawer({ open, onClose }) {
             fontFamily: fontSerif, fontSize: 24, color: T.ink,
             letterSpacing: -0.4, fontStyle: 'italic',
           }}>Paramètres</div>
-          <button type="button" onClick={onClose} aria-label="Fermer les paramètres" style={{
+          <button type="button" onClick={close} aria-label="Fermer les paramètres" style={{
             width: 32, height: 32, borderRadius: 99, background: T.surface2,
             display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
             border: 'none', padding: 0, fontFamily: 'inherit',

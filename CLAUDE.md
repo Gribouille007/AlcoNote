@@ -60,8 +60,13 @@ valeur en dur.
   virgule. Son state reste une *string* ; convertir avec
   `parseDecimal(str)` (virgule→point, `NaN` si vide/invalide) au submit.
 - **Animations** : utiliser celles déjà injectées dans `shared.jsx`
-  (`fade`, `slideUp`, `slideRight`, `slideLeft`, `scaleIn`, `pulse`).
-  Transitions : `0.18–0.22s ease`.
+  (`fade`, `slideUp`, `slideRight`, `slideLeft`, `scaleIn`, `pulse`,
+  les sorties `fadeOut`/`sheetOutDown`/`sheetOutLeft`/`sheetOutRight`,
+  les transitions de page `pageIn`/`pageOut`, `toastIn`/`toastOut`).
+  Durées/easing via `MOTION` (`base` 220 ms en entrée, `fast` 180 ms en
+  sortie) ; transitions : `0.18–0.22s ease`. Toute fermeture de
+  sheet/vue passe par `useSheetClose` (cf. § Sheets) — jamais de
+  démontage sec d'un overlay.
 - **Charts** : tous via les primitives de `stats-charts.jsx`
   (`SvgBarChart`, `SvgRadar`, `SvgDonut`, `SvgLineChart`,
   `SvgPolarClock`, `SvgBACProjection`, `SvgHistogram`). Toujours
@@ -175,6 +180,17 @@ quand la cible change (évite des champs figés sur l'ancienne cible).
 - **Déplacer une famille** : `updateFamily(family, { category })` réassigne
   toutes ses entrées. Exposé via l'action « Déplacer vers… » de
   `DrinkDetailSheet` et via le sélecteur de catégorie d'`EditFamilySheet`.
+- **Prix** : le prix d'UNE entrée vit sur le drink (`drink.price`,
+  `priceIsCustom`) ; le prix de **référence** d'une famille vit en setting
+  `price.ref.<clé famille>` (repris par le « + » / « Ajouter à nouveau »).
+  **Prix intelligent** : `suggestPriceForVolume(families, name, volCl,
+  abv)` dérive un €/L des familles homonymes tarifées (priorité :
+  contenant exact > même degré > première famille tarifée) et suggère le
+  prix au prorata, arrondi au centime. `AddDrinkSheet` préremplit le champ
+  Prix avec cette suggestion tant que l'utilisateur n'a pas tapé dedans
+  (`priceAuto`) — changer la quantité re-calcule ; une saisie manuelle
+  n'est JAMAIS écrasée. Toute évolution du prix passe par cet helper,
+  pas par un calcul local.
 
 ### Charts
 
@@ -198,13 +214,27 @@ Pour ajouter un nouveau type de graphe interactif :
 ### BAC
 
 `computeBacOverTime(drinks, weight, gender)` retourne :
-- `points: { t (heures relatives à maintenant), bac (mg/L) }[]`
-- `current: number`
+- `points: { t (heures relatives à maintenant), bac (mg/L) }[]` —
+  la courbe affichée démarre au **dernier épisode** (dernier passage
+  0 → >0), pas à la première boisson des 24 h, et s'arrête ~30 min
+  après le retour à 0 (sans s'étirer jusqu'à « maintenant » si la
+  sobriété date de plus d'une heure).
+- `current: number` (mg/L arrondi)
 - `drinks: drinks pris en compte (≤ 24 h)`
+- `soberInH` / `legalInH` : heures avant le retour **final** à 0 /
+  sous `BAC_LEGAL_LIMIT` (500 mg/L). Calculées sur la courbe exacte —
+  elles intègrent l'absorption en cours (le taux peut encore monter).
+  C'est la SEULE source des cellules « Sobriété » / « Conduite » de
+  `BACSection` ; ne jamais re-diviser `current / élimination`.
 
-Modèle : Widmark avec absorption linéaire sur 0,5 h, élimination
-constante 150 mg/L/h. Élimination ne commence pas avant la première
-boisson (`max(0, h - earliest)`).
+Modèle : Widmark avec absorption linéaire sur `BAC_ABSORPTION_H`
+(0,5 h), élimination constante `BAC_ELIM_RATE` (150 mg/L/h), intégré
+par **marche exacte des points de rupture avec clamp à zéro** — le
+MÊME schéma que `computeBACSessions`. L'élimination s'arrête quand le
+taux touche 0 : ne jamais revenir à une forme fermée
+`max(0, Σ absorbé − elim·Δt)`, qui accumule une « dette » virtuelle
+pendant les creux à zéro et écrase l'épisode suivant (bug historique :
+boire la veille + ce soir → taux du soir affiché 0).
 
 ### Sections statistiques
 
@@ -263,8 +293,29 @@ carte Leaflet reste fonctionnel.
 
 ### Sheets / overlays
 
-- `SheetOverlay` accepte `side: 'bottom' | 'left' | 'right'`.
-  Animations : `slideUp`, `slideRight`, `slideLeft`.
+- `SheetOverlay` accepte `side: 'bottom' | 'left' | 'right'` et porte
+  lui-même l'animation d'ENTRÉE (`slideUp`/`slideRight`/`slideLeft`)
+  sur le wrapper du dialog — **ne plus poser d'`animation:` sur la
+  racine d'une sheet**.
+- **Fermeture animée** : chaque sheet fait
+  `const [closing, close] = useSheetClose(onClose)` (passer `open` en
+  2ᵉ argument pour les sheets montées en continu : AddDrinkSheet,
+  SettingsDrawer), passe `onClose={close} closing={closing}` à
+  `SheetOverlay` et appelle `close()` partout en interne (X, Annuler,
+  succès de submit…). `close()` joue la sortie (`MOTION.fast`) puis
+  appelle le vrai `onClose` ; idempotent ; immédiat en
+  prefers-reduced-motion. Exception : remplacer une sheet par une autre
+  (ex. `onAddAgain`) reste un swap instantané via le parent.
+- `FriendStatsView` suit le même hook avec les keyframes `pageIn`/
+  `pageOut` (transition de page, pousse depuis la droite) et possède
+  son `useBackButton(true, close)` — comme une sheet, montée = piège
+  Retour posé.
+- **Back système** : les pièges d'historique portent le state
+  `__alcoBack` ; au boot, `shared.jsx` consomme un piège resté courant
+  (app tuée avec un overlay ouvert) sinon le premier geste retour
+  recharge la page puis devient inopérant. Au niveau du shell, Retour
+  depuis un onglet secondaire ramène à l'onglet Catégories (un seul
+  piège « onglet » à la fois, cf. AppShell).
 - Tous les boutons doivent rester clavier-accessibles
   (`role`, `aria-label`, `tabIndex` au besoin).
 - Préférer `Confirm.ask({ title, message, confirmText, danger })` au
@@ -463,6 +514,17 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
 - BAC : ajouter une bière maintenant et vérifier que la pilule
   d'en-tête monte, que la projection se courbe, que le scrubber suit
   le doigt.
+- **BAC — deux épisodes** : une boisson la veille + une maintenant →
+  le taux courant et la sobriété ne dépendent QUE de l'épisode en
+  cours ; la projection démarre à l'épisode du soir. « Sobriété »
+  juste après une boisson > `taux/150` (montée d'absorption comptée).
+- **Prix intelligent** : saisir un prix sur Jupiler 25 cL, rouvrir
+  l'ajout avec Jupiler 50 cL → champ prérempli au double (hint €/L
+  affiché) ; modifier la quantité re-calcule ; taper un prix manuel
+  puis changer la quantité ne l'écrase plus.
+- **Sheets** : chaque fermeture (X, Annuler, succès, backdrop, Escape,
+  Retour système) glisse vers sa sortie au lieu de disparaître sec ;
+  aucune interaction possible pendant la sortie.
 - Carte : un drink avec coordonnées doit apparaître ; sans coords,
   message vide.
 - Tiroir paramètres : ouvre depuis la gauche, slide animé.
@@ -475,6 +537,10 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
 - **Amis — stats** : ouvrir un ami recalcule ses stats via le même
   `StatsTab` ; un ami qui ne partage pas son BAC masque Sessions / Temps
   bourré / % bourré (pas de poids → pas de chiffre inventé).
+- **Amis — retour** : la fiche ami pousse depuis la droite ; le geste
+  retour système la referme (sortie vers la droite) ; un autre geste
+  retour ramène à l'onglet Catégories ; répétable à volonté (jamais de
+  rechargement de page ni de geste « mort »).
 
 ## Ce qu'il NE faut pas faire
 

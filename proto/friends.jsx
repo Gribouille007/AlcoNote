@@ -13,13 +13,15 @@
 // stopPropagation : un clic/Entrée sur l'étoile ne remonte pas au bouton voisin.
 // `favorite`/`onToggleFav` viennent de FriendsTab (piloté par props → aucun
 // abonnement share par ligne).
-function FriendRow({ member, bac, onOpen, favorite, onToggleFav }) {
+function FriendRow({ member, bac, onOpen, favorite, onToggleFav, index = 0 }) {
   const press = usePressScale();
+  const reduced = useReducedMotion();
   const name = member.displayName || 'Anonyme';
   return (
     <div style={{
       display: 'flex', alignItems: 'stretch',
       borderBottom: `1px solid ${T.rule}`,
+      ...staggerStyle(index, { reduced }),
     }}>
       {member.shareBac && (
         <button type="button"
@@ -243,8 +245,9 @@ function FriendsTab({ onOpenFriend }) {
             background: T.surface2, border: `1px solid ${T.rule}`, borderRadius: 14,
             overflow: 'hidden',
           }}>
-            {members.map(m => (
+            {members.map((m, i) => (
               <FriendRow key={m.userId} member={m} bac={bacMap[m.userId]} onOpen={onOpenFriend}
+                index={i}
                 favorite={s.favoriteId === m.userId}
                 onToggleFav={() => shareEngine.toggleFavorite(m.userId)} />
             ))}
@@ -267,8 +270,15 @@ function fmtRelTime(ts) {
 }
 
 // Vue plein écran : stats d'un ami via StatsTab + contextes surchargés.
+// Transition « page » : pousse depuis la droite à l'ouverture (pageIn),
+// ressort vers la droite à la fermeture (pageOut) — cohérent avec le geste
+// système « revenir en arrière », qu'elle gère elle-même via useBackButton
+// (montée = piège posé, fermée = piège retiré, comme une sheet).
 function FriendStatsView({ friend, onClose }) {
   const s = useShare();
+  const reduced = useReducedMotion();
+  const [closing, close] = useSheetClose(onClose);
+  useBackButton(true, close);
   const isFav = s.favoriteId === friend.userId;
   const friendDrinks = useSharedDrinks(friend.userId);
   const friendRatings = useSharedRatings(friend.userId);
@@ -288,7 +298,7 @@ function FriendStatsView({ friend, onClose }) {
     try {
       await shareEngine.removeMember(friend.userId);
       Toast.show(`${name} retiré du groupe`);
-      onClose();
+      close();
     } catch (e) {
       Toast.show(shareErrorMessage(e));
     }
@@ -304,14 +314,17 @@ function FriendStatsView({ friend, onClose }) {
     <div style={{
       position: 'fixed', inset: 0, zIndex: 60,
       background: T.bg, color: T.ink, display: 'flex', flexDirection: 'column',
-      animation: `slideUp ${MOTION.base}ms ${MOTION.ease}`,
+      animation: reduced ? undefined
+        : closing ? `pageOut ${MOTION.fast}ms ${MOTION.ease} forwards`
+        : `pageIn ${MOTION.base}ms ${MOTION.ease}`,
+      pointerEvents: closing ? 'none' : undefined,
     }}>
       <div style={{
         padding: 'calc(env(safe-area-inset-top) + 14px) 16px 12px',
         display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
         borderBottom: `1px solid ${T.rule}`,
       }}>
-        <button type="button" onClick={onClose} aria-label="Retour" style={{
+        <button type="button" onClick={close} aria-label="Retour" style={{
           width: 38, height: 38, borderRadius: 12, background: T.surface2,
           display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
           border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit',

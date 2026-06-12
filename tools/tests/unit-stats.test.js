@@ -214,6 +214,83 @@ test('computeBacOverTime — poids/genre par défaut', () => {
   assert.equal(DEFAULT_WEIGHT_KG, 70);
 });
 
+// RÉGRESSION (clamp à zéro) : deux épisodes dans la fenêtre de 24 h. L'ancienne
+// forme fermée `max(0, Σ absorbé − elim·(t − t_première))` continuait
+// d'éliminer pendant le creux à zéro : la bière de la veille (−20 h) générait
+// 20 h × 150 = 3000 mg/L de « dette » virtuelle et écrasait le taux du soir à 0.
+test('computeBacOverTime — deux épisodes : l\'élimination s\'arrête à zéro', () => {
+  const lastNight = new Date(Date.now() - 20 * HOUR);
+  const oneHourAgo = new Date(Date.now() - 1 * HOUR);
+  const old = beer(localDate(lastNight), localTime(lastNight));
+  const fresh = beer(localDate(oneHourAgo), localTime(oneHourAgo));
+  const out = computeBacOverTime([old, fresh], 70, 'male');
+
+  // Le taux courant ne dépend QUE de l'épisode en cours (la veille est éliminée).
+  const ts = new Date(`${fresh.date}T${fresh.time}`).getTime();
+  const elapsedH = (Date.now() - ts) / HOUR;
+  const expected = Math.round(Math.max(0, P - elapsedH * BAC_ELIM_RATE));
+  assert.ok(expected > 200, 'précondition : l\'épisode du soir est bien actif');
+  assert.ok(Math.abs(out.current - expected) <= 1, `current ${out.current} ≈ ${expected}`);
+  assert.equal(out.drinks.length, 2, 'les deux boissons restent comptées');
+
+  // Sobriété exacte : retour à 0 de l'épisode en cours, pas de dette héritée.
+  const expectedSober = Math.max(0, P / BAC_ELIM_RATE - elapsedH);
+  assert.ok(Math.abs(out.soberInH - expectedSober) < 0.02,
+    `soberInH ${out.soberInH} ≈ ${expectedSober}`);
+  assert.equal(out.legalInH, 0, 'une bière ne dépasse jamais 500 mg/L');
+
+  // La courbe affichée démarre au DERNIER épisode (≈ −1 h), pas à −20 h.
+  assert.ok(out.points[0].t > -1.5, `points[0].t ${out.points[0].t} > -1.5`);
+  assert.equal(out.points[0].bac, 0, 'départ à zéro au début de l\'épisode');
+});
+
+// La sobriété intègre l'absorption EN COURS : juste après une boisson le taux
+// va encore monter — l'ancienne division `current / élim` sous-estimait le
+// temps de toute la montée restante.
+test('computeBacOverTime — soberInH compte la montée d\'absorption restante', () => {
+  const justNow = new Date(Date.now() - 6 * 60_000); // il y a ~6 min
+  const d = beer(localDate(justNow), localTime(justNow));
+  const out = computeBacOverTime([d], 70, 'male');
+  const naive = out.current / BAC_ELIM_RATE;
+  assert.ok(out.soberInH > naive + 0.3,
+    `soberInH ${out.soberInH} doit dépasser largement la division naïve ${naive}`);
+  // Mono-épisode : zéro final exactement à firstT + P/élim.
+  assert.ok(Math.abs(out.soberInH - (out.firstT + P / BAC_ELIM_RATE)) < 1e-6);
+  assert.ok(Math.abs(out.sobrietyT - (out.firstT + P / BAC_ELIM_RATE)) < 1e-6);
+});
+
+// legalInH : heures avant de repasser sous BAC_LEGAL_LIMIT (500 mg/L).
+test('computeBacOverTime — legalInH au-dessus du seuil légal', () => {
+  const { BAC_LEGAL_LIMIT } = global;
+  assert.equal(BAC_LEGAL_LIMIT, 500);
+  const twoHoursAgo = new Date(Date.now() - 2 * HOUR);
+  const d1 = beer(localDate(twoHoursAgo), localTime(twoHoursAgo));
+  const d2 = beer(localDate(twoHoursAgo), localTime(twoHoursAgo));
+  const out = computeBacOverTime([d1, d2], 70, 'male');
+  const ts = new Date(`${d1.date}T${d1.time}`).getTime();
+  const elapsedH = (Date.now() - ts) / HOUR;
+  const bacNow = 2 * P - elapsedH * BAC_ELIM_RATE; // absorption finie depuis longtemps
+  assert.ok(bacNow > BAC_LEGAL_LIMIT, 'précondition : au-dessus du seuil');
+  assert.ok(Math.abs(out.current - Math.round(bacNow)) <= 1);
+  assert.ok(Math.abs(out.legalInH - (bacNow - BAC_LEGAL_LIMIT) / BAC_ELIM_RATE) < 0.02,
+    `legalInH ${out.legalInH}`);
+  assert.ok(Math.abs(out.soberInH - bacNow / BAC_ELIM_RATE) < 0.02);
+});
+
+// Épisode terminé depuis longtemps : sobre, et la courbe n'étire plus une
+// ligne plate de plusieurs heures jusqu'à « maintenant ».
+test('computeBacOverTime — sobre depuis longtemps : courbe bornée à l\'épisode', () => {
+  const tenHoursAgo = new Date(Date.now() - 10 * HOUR);
+  const d = beer(localDate(tenHoursAgo), localTime(tenHoursAgo));
+  const out = computeBacOverTime([d], 70, 'male');
+  assert.equal(out.current, 0);
+  assert.equal(out.soberInH, 0);
+  assert.equal(out.legalInH, 0);
+  const lastT = out.points[out.points.length - 1].t;
+  assert.ok(lastT < 0, `la courbe s'arrête après l'épisode (${lastT}), pas à maintenant`);
+  assert.ok(Math.abs(lastT - (out.sobrietyT + 0.5)) < 0.05, '≈ 30 min après le retour à zéro');
+});
+
 // ── Temps bourré / streaks / formats ───────────────────────────────
 
 test('computeBourreTime — clamp aux bornes de la période', () => {

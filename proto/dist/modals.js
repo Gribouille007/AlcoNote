@@ -49,6 +49,7 @@ function AddDrinkSheet({
   const {
     categories
   } = useCategories();
+  const families = useFamilies();
   const [scan, setScan] = React.useState(false);
   const [name, setName] = React.useState('');
   const [cat, setCat] = React.useState('');
@@ -63,6 +64,12 @@ function AddDrinkSheet({
   // « + »). Décoché ⇒ prix exceptionnel, la référence ne bouge pas.
   const [price, setPrice] = React.useState('');
   const [priceIsReference, setPriceIsReference] = React.useState(true);
+  // Prix intelligent : tant que `priceAuto` est vrai, le champ Prix suit la
+  // suggestion dérivée du €/L de la famille homonyme (suggestPriceForVolume) —
+  // changer la quantité re-calcule le prix au prorata. La première saisie
+  // MANUELLE dans le champ coupe l'auto pour le reste de la session de la
+  // sheet (on n'écrase jamais un prix tapé par l'utilisateur).
+  const [priceAuto, setPriceAuto] = React.useState(true);
   // `loc` = position attachée à la boisson (objet location | null). `locTouched`
   // distingue « non touché » (→ auto-capture non bloquante à l'ajout, comme
   // avant) de « choisi/retiré explicitement via le champ Lieu » (→ on respecte
@@ -75,6 +82,8 @@ function AddDrinkSheet({
   // double-tap on Enregistrer would fire `submit` twice and create the same
   // drink twice before the button disables. Mirrors EditCategorySheet.
   const submittingRef = React.useRef(false);
+  // Fermeture animée (sortie de sheet) — ré-armée à chaque ouverture.
+  const [closing, close] = useSheetClose(onClose, open);
 
   // Reset on open / prefill changes.
   React.useEffect(() => {
@@ -87,6 +96,7 @@ function AddDrinkSheet({
     submittingRef.current = false;
     setLoc(null);
     setLocTouched(false);
+    setPriceAuto(true);
     if (prefill) {
       // NumberField state stays a string — coerce prefilled numbers so the
       // controlled input never flips number↔string mid-edit.
@@ -118,6 +128,19 @@ function AddDrinkSheet({
     if (!open || prefill) return;
     if (!cat && categories.length > 0) setCat(categories[0].name);
   }, [open, prefill, categories, cat]);
+
+  // Suggestion de prix au prorata du volume (cf. suggestPriceForVolume).
+  // Recalculée à chaque frappe sur nom / quantité / unité / degré ; appliquée
+  // au champ uniquement tant que `priceAuto` tient.
+  const suggestion = React.useMemo(() => {
+    const q = parseDecimal(qty) || 0;
+    const a = parseDecimal(alc) || 0;
+    return suggestPriceForVolume(families, name, toCl(q, unit), a);
+  }, [families, name, qty, unit, alc]);
+  React.useEffect(() => {
+    if (!open || !priceAuto) return;
+    setPrice(suggestion ? String(suggestion.price) : '');
+  }, [open, priceAuto, suggestion]);
   if (!open) return null;
 
   // parseDecimal accepts a comma OR a dot (see shared.jsx) — `Number()`
@@ -180,7 +203,7 @@ function AddDrinkSheet({
         }, priceNum);
       }
       Toast.show(`« ${drinkName} » ajoutée`);
-      onClose && onClose();
+      close();
       // Géolocalisation fiable et non bloquante (centralisée dans data.jsx :
       // survit à la fermeture, reverse-geocode borné + retry). Un lieu
       // choisi/retiré explicitement (`locTouched`) est respecté.
@@ -193,7 +216,8 @@ function AddDrinkSheet({
     }
   };
   return /*#__PURE__*/React.createElement(SheetOverlay, {
-    onClose: onClose,
+    onClose: close,
+    closing: closing,
     label: "Nouvelle boisson"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -206,7 +230,6 @@ function AddDrinkSheet({
       borderTop: `1px solid ${T.rule}`,
       borderLeft: `1px solid ${T.rule}`,
       borderRight: `1px solid ${T.rule}`,
-      animation: 'slideUp 0.25s ease',
       overflowX: 'hidden'
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -243,7 +266,7 @@ function AddDrinkSheet({
     }
   }, "Nouvelle boisson"), /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: onClose,
+    onClick: close,
     "aria-label": "Fermer",
     style: {
       width: 30,
@@ -375,11 +398,32 @@ function AddDrinkSheet({
     label: "Prix (optionnel)"
   }, /*#__PURE__*/React.createElement(NumberField, {
     value: price,
-    onChange: setPrice,
+    onChange: v => {
+      setPriceAuto(false);
+      setPrice(v);
+    },
     step: "0.1",
     suffix: "\u20AC",
     ariaLabel: "Prix"
-  }), /*#__PURE__*/React.createElement("div", {
+  }), priceAuto && suggestion && price !== '' && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 6,
+      color: T.muted,
+      fontSize: 11,
+      lineHeight: 1.4,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 5
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.check,
+    size: 11,
+    color: T.accent
+  }), suggestion.exact ? 'Prix habituel de cette boisson' : /*#__PURE__*/React.createElement(React.Fragment, null, "Sugg\xE9r\xE9 d'apr\xE8s ", suggestion.source.quantity, " ", suggestion.source.unit, " \xE0 ", fmtPrice(suggestion.source.referencePrice), " \xB7 ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: fontNum
+    }
+  }, fmtPrice(suggestion.perLiter), "/L"))), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
       background: T.surface,
@@ -481,7 +525,7 @@ function AddDrinkSheet({
     }
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: onClose,
+    onClick: close,
     style: {
       flex: 1,
       padding: '14px',
@@ -826,6 +870,9 @@ function DrinkDetailSheet({
   const {
     loading
   } = useDrinks();
+  // Fermeture animée. `onEdit` / `onAddAgain` restent des bascules
+  // instantanées : la sheet est REMPLACÉE par la suivante, pas fermée.
+  const [closing, close] = useSheetClose(onClose);
   // Inline "move to another category" affordance (applies to the whole
   // family via updateFamily).
   const [moving, setMoving] = React.useState(false);
@@ -870,9 +917,9 @@ function DrinkDetailSheet({
   React.useEffect(() => {
     if (loading) return;
     if (liveFamily && liveFamily.entries && liveFamily.entries.length === 0) {
-      onClose && onClose();
+      close();
     }
-  }, [liveFamily, loading, onClose]);
+  }, [liveFamily, loading, close]);
   const f = liveFamily || family || entry && entry.family;
   if (!f) return null;
   const color = catColor(f.category, 70);
@@ -884,7 +931,8 @@ function DrinkDetailSheet({
     } catch {}
   };
   return /*#__PURE__*/React.createElement(SheetOverlay, {
-    onClose: onClose,
+    onClose: close,
+    closing: closing,
     label: "D\xE9tail de la boisson"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -896,8 +944,7 @@ function DrinkDetailSheet({
       borderTop: `1px solid ${T.rule}`,
       borderLeft: `1px solid ${T.rule}`,
       borderRight: `1px solid ${T.rule}`,
-      overflow: 'hidden',
-      animation: 'slideUp 0.25s ease'
+      overflow: 'hidden'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -964,7 +1011,7 @@ function DrinkDetailSheet({
     }
   }, f.name)), /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: onClose,
+    onClick: close,
     "aria-label": "Fermer",
     style: {
       width: 32,
@@ -1292,6 +1339,8 @@ function EditEntrySheet({
   // the mutation twice (e.g. delete → second call throws "introuvable").
   const savingRef = React.useRef(false);
   const removingRef = React.useRef(false);
+  // Fermeture animée (sortie de sheet).
+  const [closing, close] = useSheetClose(onClose);
   const save = async () => {
     if (savingRef.current || removingRef.current) return;
     setErr('');
@@ -1340,7 +1389,7 @@ function EditEntrySheet({
         await saveRating(finalName, rating);
       }
       Toast.show('Boisson modifiée');
-      onClose && onClose();
+      close();
     } catch (e) {
       setErr(e && e.message ? e.message : 'Erreur');
     } finally {
@@ -1368,7 +1417,7 @@ function EditEntrySheet({
           }
         }
       });
-      onClose && onClose();
+      close();
     } catch (e) {
       console.warn('AlcoNote: deleteDrinkWithSnapshot failed', e);
       setErr(e && e.message ? e.message : 'Erreur');
@@ -1378,7 +1427,8 @@ function EditEntrySheet({
     }
   };
   return /*#__PURE__*/React.createElement(SheetOverlay, {
-    onClose: onClose,
+    onClose: close,
+    closing: closing,
     label: "Modifier l'entr\xE9e"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1390,7 +1440,6 @@ function EditEntrySheet({
       borderTop: `1px solid ${T.rule}`,
       borderLeft: `1px solid ${T.rule}`,
       borderRight: `1px solid ${T.rule}`,
-      animation: 'slideUp 0.25s ease',
       overflowX: 'hidden'
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -1427,7 +1476,7 @@ function EditEntrySheet({
     }
   }, "Modifier l'entr\xE9e"), /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: onClose,
+    onClick: close,
     "aria-label": "Fermer",
     style: {
       width: 30,
@@ -1599,7 +1648,7 @@ function EditEntrySheet({
     }
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: onClose,
+    onClick: close,
     style: {
       flex: 1,
       padding: '14px',
@@ -1668,6 +1717,8 @@ function EditFamilySheet({
   // (the second deleteFamily matches nothing → a misleading empty undo).
   const savingRef = React.useRef(false);
   const removingRef = React.useRef(false);
+  // Fermeture animée (sortie de sheet).
+  const [closing, close] = useSheetClose(onClose);
   const save = async () => {
     if (savingRef.current || removingRef.current) return;
     setErr('');
@@ -1750,7 +1801,7 @@ function EditFamilySheet({
         if (!stillUsed) await saveRating(family.name, 0);
       }
       Toast.show('Boisson mise à jour');
-      onClose && onClose();
+      close();
     } catch (e) {
       setErr(e && e.message ? e.message : 'Erreur');
     } finally {
@@ -1783,7 +1834,7 @@ function EditFamilySheet({
           }
         }
       });
-      onClose && onClose();
+      close();
     } catch (e) {
       console.warn('AlcoNote: deleteFamily failed', e);
       setErr(e && e.message ? e.message : 'Erreur');
@@ -1805,7 +1856,8 @@ function EditFamilySheet({
   const liveOldVal = family.referencePrice != null ? family.referencePrice : null;
   const refDirty = liveNewVal !== liveOldVal;
   return /*#__PURE__*/React.createElement(SheetOverlay, {
-    onClose: onClose,
+    onClose: close,
+    closing: closing,
     label: "Modifier la boisson"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1816,8 +1868,7 @@ function EditFamilySheet({
       flexDirection: 'column',
       borderTop: `1px solid ${T.rule}`,
       borderLeft: `1px solid ${T.rule}`,
-      borderRight: `1px solid ${T.rule}`,
-      animation: 'slideUp 0.25s ease'
+      borderRight: `1px solid ${T.rule}`
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1853,7 +1904,7 @@ function EditFamilySheet({
     }
   }, "Modifier la boisson"), /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: onClose,
+    onClick: close,
     "aria-label": "Fermer",
     style: {
       width: 30,
@@ -2004,7 +2055,7 @@ function EditFamilySheet({
     }
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: onClose,
+    onClick: close,
     style: {
       flex: 1,
       padding: '14px',
@@ -2049,6 +2100,8 @@ function SettingsDrawer({
   // matches the cache actually shipping. Falls back to "—" when no
   // SW is registered (browser preview, file://).
   const swVersion = useSWVersion();
+  // Fermeture animée (le tiroir repart vers la gauche) — ré-armée à l'ouverture.
+  const [closing, close] = useSheetClose(onClose, open);
   if (!open) return null;
   const onExport = async () => {
     try {
@@ -2094,13 +2147,14 @@ function SettingsDrawer({
     try {
       await clearAllData();
       Toast.show('Données effacées');
-      onClose && onClose();
+      close();
     } catch (e) {
       Toast.show('Erreur lors de l\'effacement');
     }
   };
   return /*#__PURE__*/React.createElement(SheetOverlay, {
-    onClose: onClose,
+    onClose: close,
+    closing: closing,
     side: "left",
     label: "Param\xE8tres"
   }, /*#__PURE__*/React.createElement("div", {
@@ -2110,8 +2164,7 @@ function SettingsDrawer({
       height: '100%',
       borderRight: `1px solid ${T.rule}`,
       display: 'flex',
-      flexDirection: 'column',
-      animation: 'slideRight 0.22s ease'
+      flexDirection: 'column'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2131,7 +2184,7 @@ function SettingsDrawer({
     }
   }, "Param\xE8tres"), /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: onClose,
+    onClick: close,
     "aria-label": "Fermer les param\xE8tres",
     style: {
       width: 32,

@@ -20,15 +20,20 @@ function FriendRow({
   bac,
   onOpen,
   favorite,
-  onToggleFav
+  onToggleFav,
+  index = 0
 }) {
   const press = usePressScale();
+  const reduced = useReducedMotion();
   const name = member.displayName || 'Anonyme';
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       alignItems: 'stretch',
-      borderBottom: `1px solid ${T.rule}`
+      borderBottom: `1px solid ${T.rule}`,
+      ...staggerStyle(index, {
+        reduced
+      })
     }
   }, member.shareBac && /*#__PURE__*/React.createElement("button", {
     type: "button",
@@ -443,11 +448,12 @@ function FriendsTab({
       borderRadius: 14,
       overflow: 'hidden'
     }
-  }, members.map(m => /*#__PURE__*/React.createElement(FriendRow, {
+  }, members.map((m, i) => /*#__PURE__*/React.createElement(FriendRow, {
     key: m.userId,
     member: m,
     bac: bacMap[m.userId],
     onOpen: onOpenFriend,
+    index: i,
     favorite: s.favoriteId === m.userId,
     onToggleFav: () => shareEngine.toggleFavorite(m.userId)
   }))), hasGroup && /*#__PURE__*/React.createElement(GroupFooter, null)));
@@ -463,11 +469,18 @@ function fmtRelTime(ts) {
 }
 
 // Vue plein écran : stats d'un ami via StatsTab + contextes surchargés.
+// Transition « page » : pousse depuis la droite à l'ouverture (pageIn),
+// ressort vers la droite à la fermeture (pageOut) — cohérent avec le geste
+// système « revenir en arrière », qu'elle gère elle-même via useBackButton
+// (montée = piège posé, fermée = piège retiré, comme une sheet).
 function FriendStatsView({
   friend,
   onClose
 }) {
   const s = useShare();
+  const reduced = useReducedMotion();
+  const [closing, close] = useSheetClose(onClose);
+  useBackButton(true, close);
   const isFav = s.favoriteId === friend.userId;
   const friendDrinks = useSharedDrinks(friend.userId);
   const friendRatings = useSharedRatings(friend.userId);
@@ -487,7 +500,7 @@ function FriendStatsView({
     try {
       await shareEngine.removeMember(friend.userId);
       Toast.show(`${name} retiré du groupe`);
-      onClose();
+      close();
     } catch (e) {
       Toast.show(shareErrorMessage(e));
     }
@@ -509,7 +522,8 @@ function FriendStatsView({
       color: T.ink,
       display: 'flex',
       flexDirection: 'column',
-      animation: `slideUp ${MOTION.base}ms ${MOTION.ease}`
+      animation: reduced ? undefined : closing ? `pageOut ${MOTION.fast}ms ${MOTION.ease} forwards` : `pageIn ${MOTION.base}ms ${MOTION.ease}`,
+      pointerEvents: closing ? 'none' : undefined
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -522,7 +536,7 @@ function FriendStatsView({
     }
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: onClose,
+    onClick: close,
     "aria-label": "Retour",
     style: {
       width: 38,

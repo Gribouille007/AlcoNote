@@ -549,6 +549,8 @@ function EditCategorySheet({
   // before React has flipped `busy` and disabled the buttons.
   const savingRef = React.useRef(false);
   const removingRef = React.useRef(false);
+  // Fermeture animée (sortie de sheet).
+  const [closing, close] = useSheetClose(onClose);
 
   // What the picker should highlight. After "Réinitialiser" we fall
   // back to the same logic <CategoryGlyph> uses when there's no
@@ -668,7 +670,7 @@ function EditCategorySheet({
         }
       }
       Toast.show(`Catégorie « ${finalName} » mise à jour`);
-      onClose && onClose();
+      close();
     } catch (e) {
       setErr(e && e.message ? e.message : 'Erreur lors de l\'enregistrement');
     } finally {
@@ -738,7 +740,7 @@ function EditCategorySheet({
         name: category
       });
       Toast.show(`Catégorie supprimée`);
-      onClose && onClose();
+      close();
     } catch (e) {
       setErr(e && e.message ? e.message : 'Erreur lors de la suppression');
     } finally {
@@ -749,7 +751,8 @@ function EditCategorySheet({
   const hasOverride = !!icons[canonicalCat(category)];
   const showResetTile = hasOverride || glyph === '__reset__';
   return /*#__PURE__*/React.createElement(SheetOverlay, {
-    onClose: onClose,
+    onClose: close,
+    closing: closing,
     label: isCreate ? 'Nouvelle catégorie' : 'Modifier la catégorie'
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -759,7 +762,6 @@ function EditCategorySheet({
       borderTop: `1px solid ${T.rule}`,
       borderLeft: `1px solid ${T.rule}`,
       borderRight: `1px solid ${T.rule}`,
-      animation: 'slideUp 0.25s ease',
       overflowX: 'hidden',
       overflowY: 'auto',
       maxHeight: '92dvh'
