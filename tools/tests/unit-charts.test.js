@@ -128,3 +128,26 @@ test('bacChartRange — capRunaway plafonne un pic pathologique sans écraser le
   );
   assert.ok(keepExtras.maxB >= 2000, 'le cap ne descend jamais sous un extra');
 });
+
+// keepRiseFocus reste supporté (utilisé ailleurs), mais SvgBACForecast ne le
+// passe PLUS : la fenêtre X doit aller jusqu'à la FIN de la courbe (dernier
+// point) pour que toute la projection rentre dans le graphe.
+test('bacChartRange — sans keepRiseFocus : maxT = dernier point (courbe entière)', () => {
+  const pts = [{ t: 0, bac: 100 }, { t: 1, bac: 600 }, { t: 6, bac: 0 }];
+  const full = bacChartRange(pts);                       // défaut : pas de focus
+  assert.equal(full.maxT, 6, 'fenêtre jusqu’au retour à 0');
+  const focused = bacChartRange(pts, { keepRiseFocus: true });
+  assert.ok(focused.maxT < 6, 'keepRiseFocus tronque encore (option conservée)');
+});
+
+// ── heatmapBand (intensité de cellule du calendrier) ────────────────
+
+test('heatmapBand — 0 vide, bandes 1..4 par quartile du ratio', () => {
+  const { heatmapBand } = global;
+  assert.equal(heatmapBand(0, 100), 0, 'aucun gramme → bande 0 (vide)');
+  assert.equal(heatmapBand(10, 100), 1, '10 % → bande 1');
+  assert.equal(heatmapBand(40, 100), 2, '40 % → bande 2');
+  assert.equal(heatmapBand(70, 100), 3, '70 % → bande 3');
+  assert.equal(heatmapBand(100, 100), 4, '100 % → bande 4');
+  assert.equal(heatmapBand(500, 100), 4, 'au-delà de l’échelle → bande max');
+});

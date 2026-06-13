@@ -462,20 +462,10 @@ function AddDrinkSheet({
     }
   })), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Heure"
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "time",
+  }, /*#__PURE__*/React.createElement(TimeField, {
     value: time,
-    onChange: e => setTime(e.target.value),
-    "aria-label": "Heure",
-    style: {
-      ...inputS(),
-      padding: '10px 12px',
-      minWidth: 0,
-      maxWidth: '100%',
-      width: '100%',
-      WebkitAppearance: 'none',
-      appearance: 'none'
-    }
+    onChange: setTime,
+    ariaLabel: "Heure"
   }))), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Note (optionnelle)"
   }, /*#__PURE__*/React.createElement(RatingField, {
@@ -1579,20 +1569,10 @@ function EditEntrySheet({
     }
   })), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Heure"
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "time",
+  }, /*#__PURE__*/React.createElement(TimeField, {
     value: time,
-    onChange: e => setTime(e.target.value),
-    "aria-label": "Heure",
-    style: {
-      ...inputS(),
-      padding: '10px 12px',
-      minWidth: 0,
-      maxWidth: '100%',
-      width: '100%',
-      WebkitAppearance: 'none',
-      appearance: 'none'
-    }
+    onChange: setTime,
+    ariaLabel: "Heure"
   }))), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Note"
   }, /*#__PURE__*/React.createElement(RatingField, {

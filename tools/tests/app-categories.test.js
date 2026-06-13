@@ -101,6 +101,43 @@ test('supprimer avec réassignation : boissons migrées, icône purgée', async 
   assert.equal(await db().getSetting(`cat.icon.id.${mead.id}`), null, 'icône override purgée');
 });
 
+test('couleur : slider au clavier → setting cat.color.id.<id> + carte recolorée', async () => {
+  const biere = await db().getCategoryByName('Bière');
+  assert.ok(biere, 'catégorie Bière présente');
+
+  await ctx.clickAria(/Modifier Bière/, 300);
+  await ctx.waitFor(() => ctx.qa('[role="slider"]').length > 0, { label: 'slider couleur présent' });
+  const slider = ctx.qa('[role="slider"]').find((el) => /Teinte/.test(el.getAttribute('aria-label') || ''));
+  assert.ok(slider, 'slider de teinte présent');
+
+  // « End » → teinte 359 (déterministe, indépendant du layout jsdom).
+  await ctx.act(async () => {
+    slider.dispatchEvent(new ctx.window.KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    await ctx.sleep(120);
+  });
+  assert.equal(slider.getAttribute('aria-valuenow'), '359', 'aria-valuenow mis à jour');
+
+  await ctx.clickText(/^Enregistrer$/, 450);
+  assert.equal(await db().getSetting(`cat.color.id.${biere.id}`), '359', 'teinte persistée en setting');
+  // La carte se repeint : catColor lit le CAT muté par applyCatHueOverrides.
+  await ctx.waitFor(() => (ctx.window.catColor('Bière', 60) || '').includes('359'),
+    { label: 'CAT recoloré' });
+});
+
+test('couleur : « Auto » supprime la surcharge (retour au défaut)', async () => {
+  const biere = await db().getCategoryByName('Bière');
+  await ctx.clickAria(/Modifier Bière/, 300);
+  await ctx.waitFor(() => ctx.buttons().some((b) => /Couleur automatique/.test(b.getAttribute('aria-label') || '')),
+    { label: 'bouton Auto présent' });
+  const auto = ctx.buttons().find((b) => /Couleur automatique/.test(b.getAttribute('aria-label') || ''));
+  await ctx.act(async () => { ctx.click(auto); await ctx.sleep(120); });
+  await ctx.clickText(/^Enregistrer$/, 450);
+  assert.equal(await db().getSetting(`cat.color.id.${biere.id}`), null, 'surcharge supprimée (Auto)');
+  // Retour à la teinte par défaut de Bière (hue 80).
+  await ctx.waitFor(() => (ctx.window.catColor('Bière', 60) || '').includes('80'),
+    { label: 'teinte par défaut restaurée' });
+});
+
 test('drill-down dans une catégorie et retour', async () => {
   await ctx.clickAria(/Ouvrir la catégorie Bière/, 300);
   assert.ok(ctx.text().includes('Chouffe'), 'famille listée dans la catégorie');

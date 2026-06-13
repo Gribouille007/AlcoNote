@@ -14,6 +14,7 @@ const {
   ethanolGrams, drinkAlcoholGrams, ETHANOL_DENSITY_G_PER_ML,
   fmtPrice, localDate, localTime, fmtDateMedium, fmtDayHeader,
   catColor, catBg, withAlpha,
+  applyCatHueOverrides, defaultCatHue, wheelIndexForOffset, wheelOffsetForIndex,
 } = global;
 
 test('canonicalCat — trim + normalisation NFC', () => {
@@ -105,4 +106,49 @@ test('withAlpha — ajoute l’alpha aux couleurs oklch, passthrough sinon', () 
   assert.equal(withAlpha('oklch(70% 0.1 65)', 0.4), 'oklch(70% 0.1 65 / 0.4)');
   assert.equal(withAlpha('#fff', 0.4), '#fff', 'non-oklch renvoyé tel quel');
   assert.equal(withAlpha(null, 0.4), null);
+});
+
+// ── applyCatHueOverrides (couleur de catégorie) ─────────────────────
+
+test('applyCatHueOverrides — surcharge la teinte, conserve chroma/clarté', () => {
+  // Teinte par défaut de "Bière" (depuis CAT_DEFAULT).
+  const before = catColor('Bière', 60);
+  applyCatHueOverrides({ 'Bière': 200 });
+  const after = catColor('Bière', 60);
+  assert.notEqual(after, before, 'la couleur change');
+  assert.ok(after.includes('200'), 'la teinte 200 est appliquée');
+  // Le chroma (2e composante OKLCH) reste celui du défaut (0.16 pour Bière).
+  assert.ok(after.includes('0.16'), 'chroma par défaut conservé');
+  // Reset → retour au défaut.
+  applyCatHueOverrides({});
+  assert.equal(catColor('Bière', 60), before, 'sans surcharge → teinte par défaut');
+});
+
+test('applyCatHueOverrides — idempotent, indépendant de l’ordre, normalise', () => {
+  applyCatHueOverrides({ 'Vin': 400 });           // 400 → 40 (mod 360)
+  assert.ok(catColor('Vin', 60).includes('40'), '400 normalisé en 40');
+  applyCatHueOverrides({ 'Vin': 400 });           // idempotent
+  assert.ok(catColor('Vin', 60).includes('40'));
+  // Retrait de la surcharge → repli sur le défaut nommé.
+  applyCatHueOverrides({});
+  assert.equal(catColor('Vin', 60), `oklch(60% 0.18 15)`, 'défaut Vin (hue 15) restauré');
+});
+
+test('applyCatHueOverrides — catégorie inconnue prend la teinte donnée', () => {
+  applyCatHueOverrides({ 'Kombucha': 123 });
+  assert.ok(catColor('Kombucha', 60).includes('123'), 'teinte custom sur nom inconnu');
+  applyCatHueOverrides({});
+  // Après reset, repli sur le hash déterministe (= defaultCatHue).
+  assert.ok(catColor('Kombucha', 60).includes(String(defaultCatHue('Kombucha'))));
+});
+
+// ── Maths de la roue horaire ────────────────────────────────────────
+
+test('wheelOffsetForIndex / wheelIndexForOffset — aller-retour + clamp', () => {
+  assert.equal(wheelOffsetForIndex(5, 36), 180);
+  assert.equal(wheelIndexForOffset(180, 36, 24), 5, 'offset exact → index');
+  assert.equal(wheelIndexForOffset(180 + 17, 36, 24), 5, 'arrondi vers le plus proche (bas)');
+  assert.equal(wheelIndexForOffset(180 + 19, 36, 24), 6, 'arrondi vers le plus proche (haut)');
+  assert.equal(wheelIndexForOffset(-100, 36, 24), 0, 'clamp bas');
+  assert.equal(wheelIndexForOffset(99999, 36, 24), 23, 'clamp haut (count-1)');
 });

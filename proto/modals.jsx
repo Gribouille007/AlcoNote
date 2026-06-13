@@ -283,11 +283,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
                 }}/>
             </FieldGroup>
             <FieldGroup label="Heure">
-              <input type="time" value={time} onChange={e => setTime(e.target.value)} aria-label="Heure"
-                style={{
-                  ...inputS(), padding: '10px 12px', minWidth: 0, maxWidth: '100%',
-                  width: '100%', WebkitAppearance: 'none', appearance: 'none',
-                }}/>
+              <TimeField value={time} onChange={setTime} ariaLabel="Heure" />
             </FieldGroup>
           </div>
 
@@ -992,11 +988,7 @@ function EditEntrySheet({ entry, onClose }) {
                 }}/>
             </FieldGroup>
             <FieldGroup label="Heure">
-              <input type="time" value={time} onChange={e => setTime(e.target.value)} aria-label="Heure"
-                style={{
-                  ...inputS(), padding: '10px 12px', minWidth: 0, maxWidth: '100%',
-                  width: '100%', WebkitAppearance: 'none', appearance: 'none',
-                }}/>
+              <TimeField value={time} onChange={setTime} ariaLabel="Heure" />
             </FieldGroup>
           </div>
 

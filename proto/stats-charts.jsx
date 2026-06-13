@@ -534,12 +534,28 @@ function SvgDonut({ data, size = 140, thickness = 22 }) {
 }
 
 // ── Line chart (monthly trend, dual axis) ─────────────────────────
-function SvgLineChart({ series, labels, width = 320, height = 170 }) {
-  const pad = { t: 16, r: 38, b: 26, l: 36 };
+// Dual-series line chart. By default the two series use INDEPENDENT axes
+// (left = accent, right = accent2) — the Évolution mensuelle use case
+// (verres vs g). `singleAxis` puts both on ONE shared scale (max of both)
+// and hides the right axis + right caption — the cumulative-comparison use
+// case (g actuel vs g précédent). `leftLabel`/`rightLabel`/`tooltipUnits`
+// override the captions; their defaults keep the legacy call unchanged.
+function SvgLineChart({
+  series, labels, width = 320, height = 170,
+  singleAxis = false, leftLabel = 'verres', rightLabel = 'g/mois',
+  tooltipUnits = ['verres', 'g'],
+}) {
+  const idSuffix = React.useId().replace(/:/g, '');
+  const pad = { t: 16, r: singleAxis ? 14 : 38, b: 26, l: 36 };
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
-  const yL = chartTicks(Math.max(1, ...series[0].data), 2);
-  const yR = chartTicks(Math.max(1, ...series[1].data), 2);
+  // Shared scale when singleAxis: both series read the same max so the
+  // cumulative curves are directly comparable.
+  const shared = singleAxis
+    ? chartTicks(Math.max(1, ...series[0].data, ...series[1].data), 2)
+    : null;
+  const yL = shared || chartTicks(Math.max(1, ...series[0].data), 2);
+  const yR = shared || chartTicks(Math.max(1, ...series[1].data), 2);
   const maxL = yL.max;
   const maxR = yR.max;
   const n = labels.length;
@@ -567,13 +583,9 @@ function SvgLineChart({ series, labels, width = 320, height = 170 }) {
       style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
       <rect x="0" y="0" width={width} height={height} fill="transparent" />
       <defs>
-        <linearGradient id="lg-a" x1="0" x2="0" y1="0" y2="1">
+        <linearGradient id={`lg-a-${idSuffix}`} x1="0" x2="0" y1="0" y2="1">
           <stop offset="0" stopColor={T.accent} stopOpacity={0.35} />
           <stop offset="1" stopColor={T.accent} stopOpacity={0} />
-        </linearGradient>
-        <linearGradient id="lg-b" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stopColor={T.accent2} stopOpacity={0.3} />
-          <stop offset="1" stopColor={T.accent2} stopOpacity={0} />
         </linearGradient>
       </defs>
       {[0, 0.5, 1].map((f, i) => (
@@ -587,13 +599,13 @@ function SvgLineChart({ series, labels, width = 320, height = 170 }) {
           {fmtTick(v)}
         </text>
       ))}
-      {yR.values.map((v, i) => (
+      {!singleAxis && yR.values.map((v, i) => (
         <text key={`yr-${i}`} x={width - pad.r + 4} y={pad.t + h * (1 - v / maxR) + 3}
           fontSize={9} fill={T.muted} textAnchor="start" fontFamily={fontNum}>
           {fmtTick(v)}
         </text>
       ))}
-      <path d={areaFor(series[0].data, maxL)} fill="url(#lg-a)" />
+      <path d={areaFor(series[0].data, maxL)} fill={`url(#lg-a-${idSuffix})`} />
       <path d={pathFor(series[0].data, maxL)} fill="none"
         stroke={T.accent} strokeWidth={1.8} strokeLinejoin="round" />
       <path d={pathFor(series[1].data, maxR)} fill="none"
@@ -602,8 +614,10 @@ function SvgLineChart({ series, labels, width = 320, height = 170 }) {
         <text key={i} x={xs(i)} y={height - 8}
           fontSize={9} fill={T.muted} textAnchor="middle" fontFamily={fontNum}>{l}</text>
       ))}
-      <text x={4} y={pad.t + 4} fontSize={8} fill={T.accent} fontFamily={fontNum}>verres</text>
-      <text x={width - 4} y={pad.t + 4} fontSize={8} fill={T.accent2} fontFamily={fontNum} textAnchor="end">g/mois</text>
+      <text x={4} y={pad.t + 4} fontSize={8} fill={T.accent} fontFamily={fontNum}>{leftLabel}</text>
+      {!singleAxis && (
+        <text x={width - 4} y={pad.t + 4} fontSize={8} fill={T.accent2} fontFamily={fontNum} textAnchor="end">{rightLabel}</text>
+      )}
       {hover != null && (() => {
         const tx = xs(hover);
         const v0 = series[0].data[hover];
@@ -617,7 +631,7 @@ function SvgLineChart({ series, labels, width = 320, height = 170 }) {
             <circle cx={tx} cy={cy0} r={3.5} fill={T.accent} stroke={T.surface} strokeWidth={1.2} />
             <circle cx={tx} cy={cy1} r={3.5} fill={T.accent2} stroke={T.surface} strokeWidth={1.2} />
             <ChartTooltip x={tx} y={Math.min(cy0, cy1)} width={width} height={height}
-              lines={[`${labels[hover]}`, `${v0} verres`, `${v1} g`]} />
+              lines={[`${labels[hover]}`, `${v0} ${tooltipUnits[0]}`, `${v1} ${tooltipUnits[1]}`]} />
           </>
         );
       })()}
@@ -885,13 +899,19 @@ function SvgBACProjection({ points, width = 320, height = 200, nowMs = Date.now(
         <line x1={xs(0)} x2={xs(0)} y1={pad.t} y2={baseY}
           stroke={T.ink2} strokeWidth={1} strokeDasharray="3 3" opacity={0.5} />
       )}
-      {/* X-axis time labels (clock format) */}
-      {ticksX.map((t, i) => (
-        <text key={i} x={xs(t)} y={height - 10}
-          fontSize={9} fill={T.muted} textAnchor="middle" fontFamily={fontNum}>
-          {fmtClock(t)}
-        </text>
-      ))}
+      {/* X-axis time labels (clock format); end labels keep their anchor
+          inside the plot so "23:45" never spills past the SVG edge. */}
+      {ticksX.map((t, i) => {
+        const last = ticksX.length - 1;
+        const anchor = i === 0 ? 'start' : i === last ? 'end' : 'middle';
+        const dx = i === 0 ? 1 : i === last ? -1 : 0;
+        return (
+          <text key={i} x={xs(t) + dx} y={height - 10}
+            fontSize={9} fill={T.muted} textAnchor={anchor} fontFamily={fontNum}>
+            {fmtClock(t)}
+          </text>
+        );
+      })}
       {/* "maintenant" caption above the now line (when not scrubbing) */}
       {scrubT == null && 0 >= minT && 0 <= maxT && (
         <text x={xs(0)} y={pad.t - 6}
@@ -936,7 +956,7 @@ function SvgBACProjection({ points, width = 320, height = 200, nowMs = Date.now(
 // The scrubber sweeps across the merged real+projected series so the
 // tooltip follows the finger smoothly from past to future.
 function SvgBACForecast({
-  realPoints, projectedPoints, meanPeakBac, etaPeakHours,
+  realPoints, projectedPoints, meanPeakBac, etaPeakHours, truncated = false,
   width = 320, height = 200, nowMs = Date.now(),
 }) {
   const idSuffix = React.useId().replace(/:/g, '');
@@ -958,11 +978,14 @@ function SvgBACForecast({
 
   const pad = { t: 16, r: 14, b: 22, l: 36 };
   const w = width - pad.l - pad.r;
-  // Adaptive framing — focus the rise + peak (trim the long decay tail),
-  // keep the mean-peak line on-screen, and clamp a runaway projected peak.
-  // Computed before the scrubber, which closes over minT/maxT.
+  // Adaptive framing — show the WHOLE curve down to its return to 0 (no
+  // keepRiseFocus trim: the projected tail must fit, not end mid-air at the
+  // right edge), keep the mean-peak line on-screen, and clamp a runaway
+  // projected peak on Y. Computed before the scrubber, which closes over
+  // minT/maxT. `computeBacForecast` already bounds the curve length (and
+  // sets `truncated` when its safety horizon clipped the tail).
   const { minT, maxT, maxB } = bacChartRange(merged, {
-    extras: [meanPeakBac], keepRiseFocus: true, capRunaway: true,
+    extras: [meanPeakBac], capRunaway: true,
   });
 
   const scr = useChartScrubber(svgRef, null, (p) => {
@@ -1004,12 +1027,12 @@ function SvgBACForecast({
 
   // Clamp rendered Y to maxB so a runaway projected peak rides the top edge
   // instead of shooting past the title (the tooltip still shows the true
-  // value). clipT trims each series to the framed window so the dashed
-  // projection ends cleanly at the right edge with no overflow tail.
+  // value). The X window now spans the whole curve (maxT = last point), so
+  // no per-series X trimming is needed — the dashed projection runs to its
+  // own end (its return to 0, or the truncation marker).
   const yc = b => ys(Math.min(b, maxB));
-  const clipT = (pts) => pts ? pts.filter(p => p.t >= minT - 1e-6 && p.t <= maxT + 1e-6) : pts;
-  const realR = clipT(safeReal);
-  const projR = clipT(safeProj);
+  const realR = safeReal;
+  const projR = safeProj;
   const pathOf = (pts) => pts.map((p, i) =>
     `${i === 0 ? 'M' : 'L'}${xs(p.t)},${yc(p.bac)}`
   ).join(' ');
@@ -1148,6 +1171,17 @@ function SvgBACForecast({
         <line x1={xs(0)} x2={xs(0)} y1={pad.t} y2={baseY}
           stroke={T.ink2} strokeWidth={1} strokeDasharray="3 3" opacity={0.5} />
       )}
+      {/* Truncation marker: the safety horizon clipped the tail before the
+          curve returned to 0. A faded right-edge band + "…" tells the user
+          the curve continues rather than ending here. */}
+      {truncated && (
+        <g>
+          <line x1={pad.l + w} x2={pad.l + w} y1={pad.t} y2={baseY}
+            stroke={T.muted} strokeWidth={1} strokeDasharray="2 2" opacity={0.5} />
+          <text x={pad.l + w - 3} y={pad.t + 9} fontSize={8.5} fill={T.muted}
+            textAnchor="end" fontFamily={fontNum}>…</text>
+        </g>
+      )}
       {/* ETA peak marker (vertical) — always rendered, anchored at right
           edge when projection never reaches the historical peak. Label
           sits at the top of the marker, inside the plot area, with its
@@ -1161,13 +1195,19 @@ function SvgBACForecast({
             textAnchor={etaAnchor} fontFamily={fontNum}>{etaLabelText}</text>
         </g>
       )}
-      {/* X-axis time labels (clock format) */}
-      {ticksX.map((t, i) => (
-        <text key={i} x={xs(t)} y={height - 10}
-          fontSize={9} fill={T.muted} textAnchor="middle" fontFamily={fontNum}>
-          {fmtClock(t)}
-        </text>
-      ))}
+      {/* X-axis time labels (clock format); end labels keep their anchor
+          inside the plot so "23:45" never spills past the SVG edge. */}
+      {ticksX.map((t, i) => {
+        const last = ticksX.length - 1;
+        const anchor = i === 0 ? 'start' : i === last ? 'end' : 'middle';
+        const dx = i === 0 ? 1 : i === last ? -1 : 0;
+        return (
+          <text key={i} x={xs(t) + dx} y={height - 10}
+            fontSize={9} fill={T.muted} textAnchor={anchor} fontFamily={fontNum}>
+            {fmtClock(t)}
+          </text>
+        );
+      })}
       {/* "maintenant" caption above the now line (when not scrubbing) */}
       {scrubT == null && 0 >= minT && 0 <= maxT && (
         <text x={xs(0)} y={pad.t - 6}
@@ -1250,23 +1290,137 @@ function SvgHistogram({ buckets, width = 320, height = 150, color, valueLabel })
   );
 }
 
+// Intensité (0 vide, 1..4) d'une cellule de heatmap selon le ratio
+// grammes / échelle. Bandes discrètes (style GitHub) plutôt qu'un dégradé
+// continu : plus lisibles d'un coup d'œil. Exporté pour les tests.
+function heatmapBand(grams, scaleMax) {
+  if (!grams || grams <= 0) return 0;
+  const ratio = Math.min(1, grams / Math.max(1, scaleMax));
+  if (ratio <= 0.25) return 1;
+  if (ratio <= 0.5) return 2;
+  if (ratio <= 0.75) return 3;
+  return 4;
+}
+
+const HEATMAP_BAND_ALPHA = [0, 0.28, 0.5, 0.72, 1];
+
+// ── Calendrier (heatmap des grammes d'alcool par jour) ────────────
+// Grille type GitHub : 7 lignes (lun→dim), `cols` colonnes de semaines.
+// Intensité = bande de `withAlpha(T.accent, …)`, cases vides en T.surface3,
+// jours hors période (`blank`) transparents. Scrub/tap → ChartTooltip
+// (date, n boissons, g). Hauteur dérivée de la largeur (cellule carrée).
+function SvgCalendarHeatmap({ cells, cols = 1, scaleMax = 1, mode = 'monthGrid', width = 320 }) {
+  const svgRef = React.useRef(null);
+  const [hover, setHover] = React.useState(null);
+  const padL = 18, padT = 16, padB = 6;
+  const gapRatio = 0.16;
+  // La cellule s'adapte à la largeur pour que TOUTES les colonnes rentrent
+  // (une année ≈ 52 colonnes ne doit pas déborder du viewBox) ; plafonnée à
+  // 22 px (mois/semaine restent lisibles), plancher 4 px (visibilité mini).
+  const cell = Math.max(4, Math.min(22, (width - padL) / Math.max(1, cols) / (1 + gapRatio)));
+  const stepC = cell * (1 + gapRatio);
+  const height = padT + 7 * stepC + padB;
+
+  // Index (col,row) → cellule, pour le scrubber.
+  const byPos = React.useMemo(() => {
+    const m = new Map();
+    for (const c of cells) m.set(`${c.col},${c.weekday}`, c);
+    return m;
+  }, [cells]);
+
+  const colX = (col) => padL + col * stepC;
+  const rowY = (wd) => padT + wd * stepC;
+
+  const scr = useChartScrubber(svgRef, null, (p) => {
+    if (!p) { setHover(null); return; }
+    const col = Math.floor((p.x - padL) / stepC);
+    const row = Math.floor((p.y - padT) / stepC);
+    const c = byPos.get(`${col},${row}`);
+    setHover(c && !c.blank ? c : null);
+  });
+
+  if (!cells.length) return null;
+
+  const dayLetters = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+  // Étiquettes de mois : 1ʳᵉ colonne où apparaît le 1ᵉʳ d'un mois.
+  const monthTicks = [];
+  const seen = new Set();
+  for (const c of cells) {
+    if (c.blank) continue;
+    const [, m, d] = c.date.split('-');
+    if (d === '01' && !seen.has(`${c.col}-${m}`)) {
+      seen.add(`${c.col}-${m}`);
+      monthTicks.push({ col: c.col, label: FR_MONTHS_SHORT[Number(m) - 1].slice(0, 4) });
+    }
+  }
+
+  const fmtFrDate = (iso) => {
+    const [y, m, d] = iso.split('-').map(Number);
+    return `${d} ${FR_MONTHS_SHORT[m - 1]} ${y}`;
+  };
+
+  return (
+    <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" height={height}
+      style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
+      <rect x="0" y="0" width={width} height={height} fill="transparent" />
+      {/* Étiquettes jours (une ligne sur deux pour aérer) */}
+      {dayLetters.map((l, i) => (i % 2 === 0 && mode !== 'yearWall') ? (
+        <text key={`d-${i}`} x={padL - 5} y={rowY(i) + cell * 0.72}
+          fontSize={8} fill={T.muted} textAnchor="end" fontFamily={fontNum}>{l}</text>
+      ) : null)}
+      {/* Étiquettes mois */}
+      {monthTicks.map((t, i) => (
+        <text key={`m-${i}`} x={colX(t.col)} y={padT - 5}
+          fontSize={8} fill={T.muted} textAnchor="start" fontFamily={fontNum}>{t.label}</text>
+      ))}
+      {/* Cellules */}
+      {cells.map((c, i) => {
+        if (c.blank) return null;
+        const band = heatmapBand(c.grams, scaleMax);
+        const fill = band === 0 ? T.surface3 : withAlpha(T.accent, HEATMAP_BAND_ALPHA[band]);
+        const isHover = hover && hover.date === c.date;
+        return (
+          <rect key={i} x={colX(c.col)} y={rowY(c.weekday)}
+            width={cell} height={cell} rx={Math.max(1.5, cell * 0.18)}
+            fill={fill} stroke={isHover ? T.accent : T.rule}
+            strokeWidth={isHover ? 1.3 : 0.5} />
+        );
+      })}
+      {hover && (() => {
+        const tx = colX(hover.col) + cell / 2;
+        const ty = rowY(hover.weekday);
+        return (
+          <ChartTooltip x={tx} y={ty} width={width} height={height}
+            lines={[
+              fmtFrDate(hover.date),
+              `${hover.count} boisson${hover.count > 1 ? 's' : ''}`,
+              `${Math.round(hover.grams)} g d'alcool`,
+            ]} />
+        );
+      })()}
+    </svg>
+  );
+}
+
 // Memoize every chart at the export boundary: their data props come
 // from useMemo'd parents, so reference equality holds and a parent
 // re-render (e.g. a different stats section toggling open/closed)
 // doesn't force the chart's heavy SVG paths to recompute. Their own
 // internal state (scrub hover) still triggers re-renders normally.
-SvgBarChart      = React.memo(SvgBarChart);
-SvgRadar         = React.memo(SvgRadar);
-SvgDonut         = React.memo(SvgDonut);
-SvgLineChart     = React.memo(SvgLineChart);
-SvgPolarClock    = React.memo(SvgPolarClock);
-SvgBACProjection = React.memo(SvgBACProjection);
-SvgBACForecast   = React.memo(SvgBACForecast);
-SvgHistogram     = React.memo(SvgHistogram);
+SvgBarChart       = React.memo(SvgBarChart);
+SvgRadar          = React.memo(SvgRadar);
+SvgDonut          = React.memo(SvgDonut);
+SvgLineChart      = React.memo(SvgLineChart);
+SvgPolarClock     = React.memo(SvgPolarClock);
+SvgBACProjection  = React.memo(SvgBACProjection);
+SvgBACForecast    = React.memo(SvgBACForecast);
+SvgHistogram      = React.memo(SvgHistogram);
+SvgCalendarHeatmap = React.memo(SvgCalendarHeatmap);
 
 Object.assign(window, {
   chartNiceMax, chartTicks, fmtTick, chartTooltipLayout, bacChartRange,
   SvgBarChart, SvgRadar, SvgDonut, SvgLineChart,
   SvgPolarClock, SvgBACProjection, SvgBACForecast, SvgHistogram,
+  SvgCalendarHeatmap, heatmapBand,
   useChartScrubber, ChartTooltip, useMeasuredWidth, ChartAutoWidth,
 });
