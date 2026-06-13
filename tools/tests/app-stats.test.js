@@ -61,10 +61,34 @@ test('période vide : message + navigation conservée, sections masquées', asyn
   assert.ok(ctx.text().includes('Statistiques générales'), 'sections de retour');
 });
 
-// ── Réorganisation des sections ─────────────────────────────────────
-
 const sectionDomOrder = () =>
   ctx.qa('[id^="alco-section-"]').map((el) => el.id.replace('alco-section-', ''));
+
+test('nouvelles sections : Calendrier + Sessions rendues avec des données', async () => {
+  // On revient sur la semaine courante (test précédent y a laissé une boisson).
+  await ctx.waitFor(() => ctx.text().includes('Statistiques générales'), { label: 'sections visibles' });
+  const ids = sectionDomOrder();
+  assert.ok(ids.includes('heatmap'), 'section Calendrier (heatmap) montée');
+  assert.ok(ids.includes('sessions'), 'section Sessions montée');
+  assert.ok(ctx.text().includes('Calendrier'), 'titre Calendrier affiché');
+});
+
+test('comparaison cumulée : card présente quand la période précédente a des données', async () => {
+  // Une boisson il y a 7 jours (= même jour la semaine dernière → période
+  // précédente) débloque le cumul vs période précédente dans « Évolution ».
+  const lastWeek = new Date(Date.now() - 7 * 24 * 3600_000);
+  await ctx.act(async () => {
+    await ctx.window.addDrink({
+      name: 'Cumul Pils', category: 'Bière', quantity: 33, unit: 'cL',
+      alcoholContent: 5, date: ctx.window.localDate(lastWeek), time: '19:00',
+    });
+    await ctx.sleep(300);
+  });
+  await ctx.waitFor(() => ctx.text().includes('Cumul vs période précédente'),
+    { label: 'card cumulée affichée' });
+});
+
+// ── Réorganisation des sections ─────────────────────────────────────
 
 test('mode Réorganiser : flèche clavier déplace une section, ordre persisté en DB', async () => {
   assert.deepEqual(sectionDomOrder().slice(0, 2), ['general', 'temporal'], 'ordre par défaut au départ');
@@ -72,7 +96,7 @@ test('mode Réorganiser : flèche clavier déplace une section, ordre persisté 
   await ctx.clickAria(/Réorganiser les sections/, 300);
   assert.ok(ctx.text().includes('Terminé'), 'mode édition actif');
   const handles = ctx.qa('button').filter((b) => /^Déplacer «/.test(b.getAttribute('aria-label') || ''));
-  assert.equal(handles.length, 9, '9 lignes compactes (toutes les sections visibles)');
+  assert.equal(handles.length, 11, '11 lignes compactes (toutes les sections visibles)');
 
   // ↓ sur la première poignée : « Statistiques générales » passe en 2e.
   await ctx.act(async () => {

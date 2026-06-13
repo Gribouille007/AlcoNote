@@ -146,6 +146,15 @@ Définies dans `shared.jsx` (chargé en premier, donc disponibles partout) :
 - `CategoryChips({ categories, value, onChange })`,
   `UnitToggle({ value, onChange, units })`,
   `RatingField({ value, onChange, size })`, `FieldGroup({ label, children })`.
+- `TimeField({ value, onChange, ariaLabel })` : champ « Heure » (state
+  `'HH:MM'`) stylé comme un input, qui ouvre une **roue iOS**
+  (`TimeWheelSheet` → deux `WheelPicker` heures/minutes). Remplace
+  `<input type="time">` (peu fluide sur Android). Le `WheelPicker` utilise
+  l'accrochage CSS natif (`.alco-wheel`, scroll-snap) + `wheelIndexForOffset`
+  pour l'accrochage au relâchement ; **chaque item est un bouton
+  tap-to-select** (seul chemin testable sous jsdom — pas de scroll réel) et
+  les flèches clavier déplacent la sélection. La **date** reste un
+  `<input type="date">` natif.
 
 Les sheets d'add/édition (`AddDrinkSheet`, `EditEntrySheet`,
 `EditFamilySheet`) et le poids (Paramètres › `ProfileRow numeric`)
@@ -196,7 +205,14 @@ quand la cible change (évite des champs figés sur l'ancienne cible).
 
 `proto/stats-charts.jsx` expose des SVG primitives :
 `SvgBarChart`, `SvgRadar`, `SvgDonut`, `SvgLineChart`,
-`SvgPolarClock`, `SvgBACProjection`, `SvgHistogram`.
+`SvgPolarClock`, `SvgBACProjection`, `SvgBACForecast`, `SvgHistogram`,
+`SvgCalendarHeatmap` (heatmap calendrier — bandes d'intensité via
+`heatmapBand` + `withAlpha(T.accent, …)`).
+
+`SvgLineChart` accepte `singleAxis` (les deux séries sur une échelle
+commune, axe droit masqué) + `leftLabel`/`rightLabel`/`tooltipUnits` —
+défauts inchangés pour le chart Évolution mensuelle ; la card « Cumul vs
+période précédente » l'appelle en `singleAxis`.
 
 Tous utilisent le même `useChartScrubber(svgRef, _, onChange)` qui
 mappe le `pointermove` du conteneur SVG vers les coordonnées du
@@ -216,16 +232,20 @@ Pour ajouter un nouveau type de graphe interactif :
 `computeBacOverTime(drinks, weight, gender)` retourne :
 - `points: { t (heures relatives à maintenant), bac (mg/L) }[]` —
   la courbe affichée démarre au **dernier épisode** (dernier passage
-  0 → >0), pas à la première boisson des 24 h, et s'arrête ~30 min
+  0 → >0), pas à la première boisson de la fenêtre, et s'arrête ~30 min
   après le retour à 0 (sans s'étirer jusqu'à « maintenant » si la
   sobriété date de plus d'une heure).
 - `current: number` (mg/L arrondi)
-- `drinks: drinks pris en compte (≤ 24 h)`
+- `drinks: drinks pris en compte (≤ 48 h)` — **fenêtre 48 h** (et non 24)
+  pour qu'une session marathon à cheval sur plus d'une journée garde ses
+  premières boissons (sinon taux/sobriété faux).
 - `soberInH` / `legalInH` : heures avant le retour **final** à 0 /
   sous `BAC_LEGAL_LIMIT` (500 mg/L). Calculées sur la courbe exacte —
   elles intègrent l'absorption en cours (le taux peut encore monter).
   C'est la SEULE source des cellules « Sobriété » / « Conduite » de
-  `BACSection` ; ne jamais re-diviser `current / élimination`.
+  `BACSection` ; ne jamais re-diviser `current / élimination`. Les cellules
+  affichent la durée (`fmtDurationHM`) **et** l'heure d'horloge cible
+  (« → 23:45 ») pour lever l'ambiguïté durée/heure.
 
 Modèle : Widmark avec absorption linéaire sur `BAC_ABSORPTION_H`
 (0,5 h), élimination constante `BAC_ELIM_RATE` (150 mg/L/h), intégré
@@ -235,6 +255,21 @@ taux touche 0 : ne jamais revenir à une forme fermée
 `max(0, Σ absorbé − elim·Δt)`, qui accumule une « dette » virtuelle
 pendant les creux à zéro et écrase l'épisode suivant (bug historique :
 boire la veille + ce soir → taux du soir affiché 0).
+
+**Prévision de session** (`computeBacForecast(currentBac, allSessions,
+weight, gender, nowMs, futurePoints)`) : projette la courbe par la **même
+marche exacte** en partant de `currentBac` à t=0, alimentée par (a)
+l'absorption ENCORE en cours des verres déjà bus — la courbe monte donc
+après un verre récent au lieu de plonger — et (b) une injection constante
+au rythme courant jusqu'à `estStopMs` (durée moyenne des sessions
+passées), puis élimination jusqu'à 0. Toute la courbe (jusqu'à 0) est
+rendue ; `FORECAST_HORIZON_H` n'est qu'un garde-fou (`truncated`). Ne pas
+re-tronquer le graphe avec `keepRiseFocus`.
+
+**Unité d'affichage : mg/L partout** (seuil légal 500 mg/L = 0,5 g/L).
+Formateur de durée unique pour le BAC : `fmtDurationHM(h)` (« 2h16 »,
+« — » si ≤ 0) — distinct de `fmtH` (TemporalSection) et `fmtBourreTime`
+(jours).
 
 ### Sections statistiques
 
@@ -344,6 +379,20 @@ sous la clé `cat.icon.id.<id>` (les anciennes clés `cat.icon.<nom>` sont
 migrées une fois par `migrateCategoryIconsToId`). `loadCategoryIcons()`
 charge la map `id→glyph`, que `CategoryIconsProvider` rejoint avec
 `id→nom` et expose via `CategoryIconsContext` ; `<CategoryGlyph>` la lit.
+
+Les **couleurs personnalisées** (teinte choisie au slider d'`EditCategorySheet`)
+suivent EXACTEMENT le même schéma id-keyé : setting `cat.color.id.<id>`
+(entier 0-359 ; `null` SUPPRIME = « Auto »), `setCategoryColor(id, hue|null)` /
+`loadCategoryColors()`, seed boot `window.__alcoCatColorsInitial`, canal
+`dataBus.bump('cat-colors')`. `CategoryIconsProvider` charge AUSSI les
+couleurs, expose `id→hue`→`nom→hue` via `CategoryColorsContext` (lu par le
+sheet pour préremplir le slider) et **applique** les teintes au registre
+module `CAT` via `applyCatHueOverrides(byName)` dans un `useMemo` (avant le
+premier paint → pas de flash). `applyCatHueOverrides` ne touche QUE la
+teinte (`hue`) — chroma/clarté du défaut conservés (DA) — et **clone**
+chaque palette `CAT_DEFAULT` (le spread initial partage les refs : muter en
+place corromprait les défauts). Rename-safe (id-keyé, comme les icônes).
+`catColor`/`catBg` relisent `CAT` à chaque appel → repaint au bump.
 
 ## Service worker
 
@@ -518,6 +567,18 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
   le taux courant et la sobriété ne dépendent QUE de l'épisode en
   cours ; la projection démarre à l'épisode du soir. « Sobriété »
   juste après une boisson > `taux/150` (montée d'absorption comptée).
+- **BAC — cellules** : sous « Sobriété » / « Conduite » l'heure cible
+  « → HH:MM » s'affiche (et « — » quand déjà sobre/légal).
+- **BAC — prévision de session** : juste après un verre, la courbe
+  pointillée MONTE d'abord (absorption en vol) puis redescend ; toute la
+  courbe (jusqu'à 0) rentre dans le graphe, sans fin coupée au bord droit.
+- **Calendrier / Sessions** : la heatmap colore les jours selon les
+  grammes ; la liste Sessions montre date, durée, pic ; tap → tooltip.
+- **Heure (roue)** : le champ Heure ouvre une roue ; faire défiler/​taper
+  une heure et une minute, OK → l'heure est posée ; fluide sur Android.
+- **Couleur de catégorie** : « Modifier » → slider Teinte ; la pastille/
+  l'icône se recolorent en direct ; « Auto » revient au défaut ; la
+  couleur persiste au reload et survit à un renommage.
 - **Prix intelligent** : saisir un prix sur Jupiler 25 cL, rouvrir
   l'ajout avec Jupiler 50 cL → champ prérempli au double (hint €/L
   affiché) ; modifier la quantité re-calcule ; taper un prix manuel

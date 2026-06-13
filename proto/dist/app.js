@@ -713,6 +713,11 @@ async function mountAlcoNote() {
   try {
     window.__alcoCatIconsInitial = await loadCategoryIcons();
   } catch {}
+  // Same one-shot seed for custom category colors (hue overrides) so the
+  // first paint already shows them — no flash of default tint.
+  try {
+    window.__alcoCatColorsInitial = await loadCategoryColors();
+  } catch {}
   const root = document.getElementById('root');
   if (!root) {
     console.error('AlcoNote: #root not found');

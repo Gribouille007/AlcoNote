@@ -10,9 +10,12 @@ loadDist('shared', 'data', 'stats');
 
 const {
   getPeriodRange, shiftAnchor, periodLabel, filterDrinksInRange,
-  aggregateGeneral, computeBACSessions, computeBacOverTime,
-  computeBourreTime, computeStreak, computeStreakRecord, fmtBourreTime,
-  BAC_ELIM_RATE, BAC_ABSORPTION_H, DEFAULT_WEIGHT_KG, widmarkR,
+  aggregateGeneral, computeBACSessions, computeBacOverTime, computeBacForecast,
+  computeBourreTime, computeStreak, computeStreakRecord, fmtBourreTime, fmtDurationHM,
+  computeMonthlyTrends, computeRollingDaily, computeSessionDurationBuckets,
+  bucketDailyAlcohol, buildHeatmapCells, buildSessionList, buildSessionPeakHistogram,
+  buildCumulativeComparison, bucketSpend,
+  BAC_ELIM_RATE, BAC_ABSORPTION_H, BAC_LEGAL_LIMIT, DEFAULT_WEIGHT_KG, widmarkR,
   localDate, localTime, drinkAlcoholGrams,
 } = global;
 
@@ -190,11 +193,13 @@ test('computeBacOverTime — pas d’élimination avant la 1re boisson, courbe b
   assert.ok(Math.abs(out.sobrietyT - (out.firstT + P / BAC_ELIM_RATE)) < 1e-6);
 });
 
-test('computeBacOverTime — lookback 24 h et boissons futures exclues', () => {
-  const past = new Date(Date.now() - 25 * HOUR);
+test('computeBacOverTime — lookback 48 h et boissons futures exclues', () => {
+  // Fenêtre 48 h : une boisson à 50 h (hors fenêtre) ET une boisson future
+  // sont toutes deux exclues → aucune donnée.
+  const tooOld = new Date(Date.now() - 50 * HOUR);
   const future = new Date(Date.now() + 2 * HOUR);
   const out = computeBacOverTime(
-    [beer(localDate(past), localTime(past)), beer(localDate(future), localTime(future))],
+    [beer(localDate(tooOld), localTime(tooOld)), beer(localDate(future), localTime(future))],
     70, 'male'
   );
   assert.equal(out.drinks.length, 0);
@@ -203,6 +208,15 @@ test('computeBacOverTime — lookback 24 h et boissons futures exclues', () => {
   const empty = computeBacOverTime([], 70, 'male');
   assert.equal(empty.current, 0);
   assert.deepEqual(empty.points, []);
+});
+
+test('computeBacOverTime — lookback 48 h : une boisson à 30 h est incluse', () => {
+  // À 30 h elle dépasserait l'ancienne fenêtre de 24 h ; avec 48 h elle est
+  // bien prise en compte (drinks length = 1). Le taux courant est 0 (déjà
+  // éliminée) mais la boisson reste comptée dans la fenêtre.
+  const at30h = new Date(Date.now() - 30 * HOUR);
+  const out = computeBacOverTime([beer(localDate(at30h), localTime(at30h))], 70, 'male');
+  assert.equal(out.drinks.length, 1, 'boisson à 30 h incluse dans la fenêtre 48 h');
 });
 
 test('computeBacOverTime — poids/genre par défaut', () => {
@@ -378,4 +392,262 @@ test('dragTargetIndex — arrondi à la ligne la plus proche, clamp', () => {
   assert.equal(dragTargetIndex(3, -STEP * 1.4, STEP, N), 2, '−1.4 ligne → arrondi −1');
   assert.equal(dragTargetIndex(0, -500, STEP, N), 0, 'clamp haut');
   assert.equal(dragTargetIndex(8, 500, STEP, N), 8, 'clamp bas');
+});
+
+// ── fmtDurationHM (formateur unique des contextes BAC) ──────────────
+
+test('fmtDurationHM — "—" si ≤ 0, arrondi minute, pas de "h60"', () => {
+  assert.equal(fmtDurationHM(0), '—');
+  assert.equal(fmtDurationHM(-1), '—');
+  assert.equal(fmtDurationHM(2 + 16 / 60), '2h16');
+  assert.equal(fmtDurationHM(3.999), '4h00', '3.999 h → 4h00 (pas 3h60)');
+  assert.equal(fmtDurationHM(1), '1h00');
+});
+
+// ── ETA d'horloge (heure cible sous Sobriété/Conduite) ──────────────
+
+test('ETA horloge = localTime(now + soberInH) — cohérence sobriété', () => {
+  // Une bière maintenant → soberInH > 0 ; l'heure cible doit correspondre à
+  // localTime(now + soberInH h) à la minute près.
+  const now = new Date();
+  const d = beer(localDate(now), localTime(now));
+  const out = computeBacOverTime([d], 70, 'male');
+  assert.ok(out.soberInH > 0, 'pas encore sobre');
+  const eta = new Date(Date.now() + out.soberInH * HOUR);
+  // Reconstruit comme le composant : localTime(new Date(now + h*3600_000)).
+  assert.equal(localTime(eta).length, 5, 'format HH:MM');
+});
+
+// ── computeBourreTime — clamp sur la période ────────────────────────
+
+test('computeBourreTime — clamp aux bornes + session hors plage = 0', () => {
+  const range = { start: new Date(2026, 5, 8, 0, 0, 0), end: new Date(2026, 5, 8, 0, 0, 0) };
+  const dayStart = range.start.getTime();
+  // Session entièrement le lendemain (hors plage, même avec +24 h de marge) → 0.
+  const far = [{ startTs: dayStart + 3 * 24 * HOUR, endTs: dayStart + 3 * 24 * HOUR + HOUR }];
+  assert.equal(computeBourreTime(far, range), 0, 'session hors plage → 0');
+  // Session à cheval sur le début : seule la partie dans la plage compte.
+  const straddle = [{ startTs: dayStart - HOUR, endTs: dayStart + HOUR }];
+  assert.equal(computeBourreTime(straddle, range), HOUR, 'partie avant le début exclue');
+  assert.equal(computeBourreTime([], range), 0, 'pas de session → 0');
+  assert.equal(computeBourreTime(null, range), 0, 'sessions null → 0');
+});
+
+// ── DST : un jour de changement d'heure garde minuit + bon index ────
+
+test('getPeriodRange — jour de changement d’heure (DST) : start à minuit', () => {
+  // Dernier dimanche d'octobre 2026 (recul d'heure en Europe) = 25 oct.
+  const dst = new Date(2026, 9, 25, 12, 0);
+  const r = getPeriodRange('today', dst);
+  assert.equal(r.start.getHours(), 0, 'start ramené à minuit local malgré la journée de 25 h');
+  assert.deepEqual(ymd(r.start), [2026, 9, 25]);
+});
+
+// ── bucketSpend — 4 granularités ────────────────────────────────────
+
+test('bucketSpend — heure (today) : 24 buckets, somme par heure', () => {
+  const range = getPeriodRange('today', new Date(2026, 5, 9));
+  const priced = [
+    { date: '2026-06-09', time: '18:30', price: 3 },
+    { date: '2026-06-09', time: '18:45', price: 2 },
+    { date: '2026-06-09', time: '20:00', price: 5 },
+  ];
+  const { data, unitLabel } = bucketSpend(priced, 'today', range);
+  assert.equal(data.length, 24, '24 heures');
+  assert.equal(data[18].v, 5, '18h = 3 + 2');
+  assert.equal(data[20].v, 5, '20h = 5');
+  assert.equal(unitLabel, 'par heure');
+});
+
+test('bucketSpend — jour (week) : pas de jours futurs, zero-fill', () => {
+  // Semaine contenant aujourd'hui : le dernier bucket ne dépasse pas today.
+  const anchor = new Date();
+  const range = getPeriodRange('week', anchor);
+  const { data } = bucketSpend([], 'week', range);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = new Date(range.start); start.setHours(0, 0, 0, 0);
+  const expected = Math.min(7, Math.round((today - start) / (24 * HOUR)) + 1);
+  assert.equal(data.length, expected, 'jours jusqu’à aujourd’hui seulement');
+  assert.ok(data.every(d => d.v === 0), 'aucune dépense → tout à 0');
+});
+
+test('bucketSpend — mois (year) et année (all)', () => {
+  const yr = getPeriodRange('year', new Date(2026, 5, 9));
+  const m = bucketSpend([{ date: '2026-03-15', price: 10 }], 'year', yr);
+  assert.equal(m.unitLabel, 'par mois');
+  assert.equal(m.data.length, 12, '12 mois');
+  assert.equal(m.data[2].v, 10, 'mars = 10');
+
+  const all = bucketSpend([
+    { date: '2024-01-01', price: 4 }, { date: '2026-01-01', price: 6 },
+  ], 'all', { start: new Date(2000, 0, 1), end: new Date() });
+  assert.equal(all.unitLabel, 'par année');
+  assert.equal(all.data[0].v, 4, '2024 = 4');
+  assert.equal(all.data[all.data.length - 1].v, 6, '2026 = 6');
+});
+
+// ── computeMonthlyTrends ────────────────────────────────────────────
+
+test('computeMonthlyTrends — < 2 mois → vide ; sinon fenêtre 6 mois + trous à 0', () => {
+  assert.deepEqual(computeMonthlyTrends([beer('2026-06-01', '20:00')]).labels, [], '1 mois → vide');
+  const drinks = [
+    beer('2026-01-10', '20:00'),
+    beer('2026-04-10', '20:00'), // trou février/mars
+    beer('2026-04-12', '20:00'),
+  ];
+  const t = computeMonthlyTrends(drinks);
+  assert.equal(t.labels.length, 4, 'jan→avr = 4 mois contigus');
+  assert.equal(t.drinks[0], 1, 'janvier = 1');
+  assert.equal(t.drinks[1], 0, 'février = 0 (trou rempli)');
+  assert.equal(t.drinks[3], 2, 'avril = 2');
+});
+
+test('computeMonthlyTrends — fenêtre plafonnée à 6 mois', () => {
+  const drinks = [];
+  for (let m = 1; m <= 9; m++) drinks.push(beer(`2026-${String(m).padStart(2, '0')}-10`, '20:00'));
+  const t = computeMonthlyTrends(drinks);
+  assert.equal(t.labels.length, 6, 'au plus 6 mois finissant au dernier mois avec données');
+});
+
+// ── computeRollingDaily ─────────────────────────────────────────────
+
+test('computeRollingDaily — moyennes 7/30 j et slice(-30)', () => {
+  const out = computeRollingDaily([beer(localDate(new Date()), '20:00')]);
+  assert.ok(out.length >= 1);
+  const last = out[out.length - 1];
+  assert.ok(last.r7 > 0, 'moyenne 7 j > 0 le jour de la boisson');
+  assert.ok(last.daily > 0, 'brut > 0');
+  assert.ok(out.length <= 30, 'au plus 30 jours');
+  assert.deepEqual(computeRollingDaily([]), [], 'aucune donnée → []');
+});
+
+// ── computeSessionDurationBuckets ───────────────────────────────────
+
+test('computeSessionDurationBuckets — bornes ouvertes à droite', () => {
+  const S = (h) => ({ startTs: 0, endTs: h * HOUR });
+  const b = computeSessionDurationBuckets([S(0.99), S(1.0), S(2.5), S(6.0), S(9)]);
+  assert.equal(b[0].v, 1, '0.99 h → <1h');
+  assert.equal(b[1].v, 1, '1.0 h → 1-2h');
+  assert.equal(b[2].v, 1, '2.5 h → 2-3h');
+  assert.equal(b[6].v, 2, '6.0 h et 9 h → 6h+');
+});
+
+// ── bucketDailyAlcohol / buildHeatmapCells ──────────────────────────
+
+test('bucketDailyAlcohol — somme grammes + nombre par jour', () => {
+  const map = bucketDailyAlcohol([
+    beer('2026-06-09', '18:00'), beer('2026-06-09', '20:00'), beer('2026-06-10', '21:00'),
+  ]);
+  assert.equal(map.get('2026-06-09').count, 2);
+  assert.ok(map.get('2026-06-09').grams > map.get('2026-06-10').grams, 'deux verres > un verre');
+});
+
+test('buildHeatmapCells — mode selon période, cellules + scaleMax', () => {
+  const range = getPeriodRange('month', new Date(2026, 5, 15));
+  const drinks = [beer('2026-06-09', '18:00'), beer('2026-06-09', '20:00'), beer('2026-06-12', '21:00')];
+  const hm = buildHeatmapCells(drinks, 'month', range, new Date(2026, 5, 15));
+  assert.equal(hm.mode, 'monthGrid');
+  const c9 = hm.cells.find(c => c.date === '2026-06-09');
+  assert.ok(c9 && c9.count === 2, 'jour avec 2 boissons');
+  assert.ok(hm.scaleMax > 0);
+  assert.ok(hm.cells.every(c => c.weekday >= 0 && c.weekday <= 6), 'weekday 0..6 (lundi=0)');
+  // Année → mur de mois.
+  const yr = getPeriodRange('year', new Date(2026, 5, 15));
+  assert.equal(buildHeatmapCells(drinks, 'year', yr, new Date(2026, 5, 15)).mode, 'yearWall');
+  // Aujourd'hui → 5 dernières semaines.
+  const td = getPeriodRange('today', new Date(2026, 5, 15));
+  assert.equal(buildHeatmapCells(drinks, 'today', td, new Date(2026, 5, 15)).mode, 'today');
+});
+
+// ── buildSessionList / buildSessionPeakHistogram ────────────────────
+
+test('buildSessionList — plus récente d’abord, cap n, champs aplatis', () => {
+  const sess = [
+    { id: 'a', startTs: 1000, endTs: 1000 + 2 * HOUR, drinks: [1, 2], peakBac: 300 },
+    { id: 'b', startTs: 5000, endTs: 5000 + HOUR, drinks: [1], peakBac: 150 },
+  ];
+  const list = buildSessionList(sess, 8);
+  assert.equal(list[0].id, 'b', 'plus récente (startTs plus grand) en premier');
+  assert.equal(list[0].drinkCount, 1);
+  assert.equal(list[1].durationMs, 2 * HOUR);
+  assert.equal(buildSessionList(sess, 1).length, 1, 'cap n');
+});
+
+test('buildSessionPeakHistogram — tranches de pic', () => {
+  const sess = [
+    { peakBac: 150 }, { peakBac: 250 }, { peakBac: 250 }, { peakBac: 1200 },
+  ];
+  const h = buildSessionPeakHistogram(sess);
+  assert.equal(h[0].v, 1, '<200');
+  assert.equal(h[1].v, 2, '200-400');
+  assert.equal(h[5].v, 1, '1k+');
+});
+
+// ── buildCumulativeComparison ───────────────────────────────────────
+
+test('buildCumulativeComparison — cumul monotone, longueurs égales, alignement', () => {
+  const range = { start: new Date(2026, 5, 8), end: new Date(2026, 5, 10) };       // 3 jours
+  const prevRange = { start: new Date(2026, 5, 1), end: new Date(2026, 5, 3) };    // 3 jours
+  const cur = [beer('2026-06-08', '20:00'), beer('2026-06-10', '20:00')];
+  const prev = [beer('2026-06-01', '20:00')];
+  const c = buildCumulativeComparison(cur, prev, range, prevRange, 'grams');
+  assert.equal(c.cur.length, c.prev.length, 'longueurs égales');
+  assert.equal(c.cur.length, 3, '3 jours');
+  // Cumul monotone non décroissant.
+  for (let i = 1; i < c.cur.length; i++) {
+    assert.ok(c.cur[i] >= c.cur[i - 1], 'cur monotone');
+    assert.ok(c.prev[i] >= c.prev[i - 1], 'prev monotone');
+  }
+  assert.ok(c.cur[2] > c.prev[2], 'période actuelle (2 verres) > précédente (1 verre)');
+});
+
+// ── computeBacForecast (forme 6-args, courbe réelle en baseline) ─────
+
+const mkNow = (msAgo, qty = 50, abv = 5) => {
+  const d = new Date(Date.now() - msAgo);
+  return { name: 'Pils', category: 'Bière', quantity: qty, unit: 'cL', alcoholContent: abv,
+           date: localDate(d), time: localTime(d) };
+};
+
+test('computeBacForecast — continuité à t=0 avec la courbe de projection', () => {
+  const drinks = [mkNow(2 * HOUR), mkNow(1 * HOUR), mkNow(10 * 60 * 1000)];
+  const bac = computeBacOverTime(drinks, 70, 'male');
+  const sessions = computeBACSessions(drinks, 70, 'male');
+  const future = bac.points.filter(p => p.t >= -1e-9);
+  const fc = computeBacForecast(bac.current, sessions, 70, 'male', Date.now(), future);
+  assert.ok(fc.hasCurrentSession, 'session en cours');
+  assert.ok(fc.projectedPoints.length > 0);
+  // Le 1er point projeté = taux courant (continuité avec la jauge / projection).
+  assert.ok(Math.abs(fc.projectedPoints[0].bac - bac.current) <= 2, 'projection démarre à current');
+});
+
+test('computeBacForecast — verre récent : la courbe MONTE d’abord (absorption en vol)', () => {
+  // Un seul verre il y a 4 min : l'absorption (30 min) n'est pas finie → la
+  // prévision doit d'abord grimper au-dessus du taux courant, pas plonger.
+  const drinks = [mkNow(4 * 60 * 1000)];
+  const bac = computeBacOverTime(drinks, 70, 'male');
+  const sessions = computeBACSessions(drinks, 70, 'male');
+  const future = bac.points.filter(p => p.t >= -1e-9);
+  const fc = computeBacForecast(bac.current, sessions, 70, 'male', Date.now(), future);
+  const maxProj = Math.max(...fc.projectedPoints.map(p => p.bac));
+  assert.ok(maxProj > bac.current + 5, 'la projection grimpe (absorption restante comptée)');
+});
+
+test('computeBacForecast — la courbe redescend jusqu’à 0 (non tronquée)', () => {
+  const drinks = [mkNow(30 * 60 * 1000), mkNow(10 * 60 * 1000)];
+  const bac = computeBacOverTime(drinks, 70, 'male');
+  const sessions = computeBACSessions(drinks, 70, 'male');
+  const future = bac.points.filter(p => p.t >= -1e-9);
+  const fc = computeBacForecast(bac.current, sessions, 70, 'male', Date.now(), future);
+  const last = fc.projectedPoints[fc.projectedPoints.length - 1];
+  // Le dernier échantillon (pas de 1 min) tombe au plus une marche
+  // d'élimination (150 mg/L/h × 1/60 h ≈ 2,5 mg/L) avant le zéro exact.
+  if (!fc.truncated) assert.ok(last.bac <= 3, `fin de courbe ≈ 0 (obtenu ${last.bac.toFixed(2)})`);
+});
+
+test('computeBacForecast — pas de session en cours → vide', () => {
+  const fc = computeBacForecast(0, [], 70, 'male', Date.now(), []);
+  assert.equal(fc.hasCurrentSession, false);
+  assert.deepEqual(fc.projectedPoints, []);
+  assert.equal(fc.truncated, false);
 });

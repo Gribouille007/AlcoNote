@@ -459,6 +459,18 @@ function fmtBourreTime(ms) {
   if (h === 24) return `${days + 1}j`;
   return h === 0 ? `${days}j` : `${days}j ${h}h`;
 }
+
+// Durée en heures → "2h16" (formateur UNIQUE des contextes BAC : cellules
+// Sobriété/Conduite, mini-stats de prévision). Arrondi à la minute d'abord
+// pour éviter "3h60" (3.999 h → "4h00"). "—" si ≤ 0 (déjà sobre/légal).
+// Distinct de fmtH (TemporalSection, style "2h 16") et fmtBourreTime (jours).
+function fmtDurationHM(h) {
+  if (!h || h <= 0) return '—';
+  const totalMin = Math.round(h * 60);
+  const hh = Math.floor(totalMin / 60),
+    mm = totalMin % 60;
+  return `${hh}h${String(mm).padStart(2, '0')}`;
+}
 // ── Main StatsTab ─────────────────────────────────────────────────
 // `storageScope` namespaces the persisted period/collapsed state; `hideMap` /
 // `hideBac` drop the sections that have no shared data for a friend's view
@@ -931,6 +943,10 @@ const STATS_SECTIONS = [{
   title: 'Analyse temporelle',
   Comp: TemporalSection
 }, {
+  id: 'heatmap',
+  title: 'Calendrier',
+  Comp: HeatmapSection
+}, {
   id: 'category',
   title: 'Analyse par catégorie',
   Comp: CategorySection
@@ -942,6 +958,11 @@ const STATS_SECTIONS = [{
   id: 'bac',
   title: 'Alcoolémie',
   Comp: BACSection,
+  hide: f => f.hideBac
+}, {
+  id: 'sessions',
+  title: 'Sessions',
+  Comp: SessionsSection,
   hide: f => f.hideBac
 }, {
   id: 'map',
@@ -1169,6 +1190,292 @@ function Card({
       ...style
     }
   }, rest), children);
+}
+
+// ── Helpers Calendrier / Sessions (purs, testables) ───────────────
+// Somme d'alcool pur (g) et nombre de boissons par jour ISO.
+function bucketDailyAlcohol(drinks) {
+  const map = new Map();
+  for (const d of drinks || []) {
+    if (!d.date) continue;
+    const cur = map.get(d.date) || {
+      grams: 0,
+      count: 0
+    };
+    cur.grams += drinkAlcoholGrams(d);
+    cur.count += 1;
+    map.set(d.date, cur);
+  }
+  return map;
+}
+
+// Construit les cellules d'une heatmap calendrier (style GitHub) pour la
+// période visible. `mode` ∈ { 'monthGrid' (semaine/mois), 'yearWall'
+// (année/scolaire/tout), 'today' (5 dernières semaines) } gouverne le
+// nombre de jours couverts. Chaque cellule : { date, grams, count, weekday
+// (0=lundi), col (index de semaine) }. `scaleMax` = p90 des jours non nuls
+// (un gros soir n'écrase pas l'échelle ; toujours ≥ au plus grand jour pour
+// que l'intensité max corresponde au pire jour). DOM-free.
+function buildHeatmapCells(drinks, period, range, anchor) {
+  const byDay = bucketDailyAlcohol(drinks);
+  const mode = period === 'year' || period === 'school' || period === 'all' ? 'yearWall' : period === 'today' ? 'today' : 'monthGrid';
+
+  // Fenêtre de jours [first, last] selon le mode.
+  let first, last;
+  const midnight = d => {
+    const x = new Date(d);
+    x.setHours(0, 0, 0, 0);
+    return x;
+  };
+  if (mode === 'today') {
+    last = midnight(anchor || new Date());
+    first = _addDays(last, -34); // 5 semaines
+  } else if (mode === 'yearWall') {
+    first = midnight(range.start);
+    last = midnight(range.end);
+    const today = midnight(new Date());
+    if (last > today) last = today; // pas de jours futurs
+  } else {
+    first = midnight(range.start);
+    last = midnight(range.end);
+    const today = midnight(new Date());
+    if (last > today) last = today;
+  }
+  // Aligner `first` au lundi de sa semaine pour des colonnes propres.
+  const mondayIdx = d => (d.getDay() + 6) % 7; // 0 = lundi
+  const gridStart = _addDays(first, -mondayIdx(first));
+  const cells = [];
+  let maxGrams = 0;
+  const nonZero = [];
+  for (let d = new Date(gridStart); d <= last; d = _addDays(d, 1)) {
+    const iso = _fmtIso(d);
+    const inWindow = d >= first;
+    const rec = inWindow ? byDay.get(iso) || {
+      grams: 0,
+      count: 0
+    } : null;
+    const grams = rec ? rec.grams : 0;
+    const col = Math.floor((d - gridStart) / (7 * 86400_000));
+    cells.push({
+      date: iso,
+      grams,
+      count: rec ? rec.count : 0,
+      weekday: mondayIdx(d),
+      col,
+      blank: !inWindow
+    });
+    if (grams > 0) {
+      nonZero.push(grams);
+      maxGrams = Math.max(maxGrams, grams);
+    }
+  }
+  // p90 des jours bus (au moins le max si peu de données).
+  let scaleMax = maxGrams;
+  if (nonZero.length >= 5) {
+    const sorted = nonZero.slice().sort((a, b) => a - b);
+    const p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
+    scaleMax = Math.max(p90, 1);
+  }
+  if (scaleMax <= 0) scaleMax = 1;
+  return {
+    cells,
+    scaleMax,
+    mode,
+    cols: cells.length ? cells[cells.length - 1].col + 1 : 0
+  };
+}
+
+// Les N sessions les plus récentes (plus récente d'abord), aplaties pour
+// l'affichage : { id, startTs, durationMs, drinkCount, peakBac }.
+function buildSessionList(sessions, n = 8) {
+  return (sessions || []).slice().sort((a, b) => b.startTs - a.startTs).slice(0, n).map(s => ({
+    id: s.id,
+    startTs: s.startTs,
+    durationMs: Math.max(0, s.endTs - s.startTs),
+    drinkCount: s.drinks ? s.drinks.length : 0,
+    peakBac: s.peakBac || 0
+  }));
+}
+
+// Distribution des pics d'alcoolémie par session (mg/L), prête pour
+// SvgHistogram : { label, v }[].
+function buildSessionPeakHistogram(sessions) {
+  const buckets = [{
+    label: '<200',
+    v: 0
+  }, {
+    label: '200-400',
+    v: 0
+  }, {
+    label: '400-600',
+    v: 0
+  }, {
+    label: '600-800',
+    v: 0
+  }, {
+    label: '800-1k',
+    v: 0
+  }, {
+    label: '1k+',
+    v: 0
+  }];
+  for (const s of sessions || []) {
+    const p = s.peakBac || 0;
+    const idx = p < 200 ? 0 : p < 400 ? 1 : p < 600 ? 2 : p < 800 ? 3 : p < 1000 ? 4 : 5;
+    buckets[idx].v++;
+  }
+  return buckets;
+}
+
+// ── Calendrier (heatmap des grammes d'alcool par jour) ────────────
+function HeatmapSection({
+  drinks,
+  period,
+  range,
+  anchor,
+  collapsed,
+  toggleSection
+}) {
+  const hm = React.useMemo(() => buildHeatmapCells(drinks, period, range, anchor), [drinks, period, range, anchor]);
+  const hasData = hm.cells.some(c => c.grams > 0);
+  return /*#__PURE__*/React.createElement(StatSection, {
+    id: "heatmap",
+    title: "Calendrier",
+    collapsed: collapsed,
+    toggleSection: toggleSection,
+    sub: "Grammes d'alcool pur par jour"
+  }, /*#__PURE__*/React.createElement(Card, null, hasData ? /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 140
+  }, w => /*#__PURE__*/React.createElement(SvgCalendarHeatmap, {
+    cells: hm.cells,
+    cols: hm.cols,
+    scaleMax: hm.scaleMax,
+    mode: hm.mode,
+    width: w
+  })) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 12,
+      padding: '8px 0',
+      textAlign: 'center',
+      fontStyle: 'italic',
+      fontFamily: fontSerif
+    }
+  }, "Aucune donn\xE9e pour cette p\xE9riode")));
+}
+
+// ── Historique des sessions (liste + distribution des pics) ───────
+function SessionsSection({
+  sessions,
+  collapsed,
+  toggleSection
+}) {
+  const list = React.useMemo(() => buildSessionList(sessions, 8), [sessions]);
+  const hist = React.useMemo(() => buildSessionPeakHistogram(sessions), [sessions]);
+  const total = (sessions || []).length;
+  return /*#__PURE__*/React.createElement(StatSection, {
+    id: "sessions",
+    title: "Sessions",
+    collapsed: collapsed,
+    toggleSection: toggleSection,
+    sub: "Vos derni\xE8res sessions \xB7 pic d'alcool\xE9mie"
+  }, total === 0 ? /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 12,
+      padding: '8px 0',
+      textAlign: 'center',
+      fontStyle: 'italic',
+      fontFamily: fontSerif
+    }
+  }, "Aucune session sur cette p\xE9riode")) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: '4px 4px',
+      marginBottom: 10
+    }
+  }, list.map((s, i) => {
+    const d = new Date(s.startTs);
+    const lvl = bacLevel(s.peakBac);
+    return /*#__PURE__*/React.createElement("div", {
+      key: s.id,
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '11px 12px',
+        borderBottom: i === list.length - 1 ? 'none' : `1px solid ${T.rule}`
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 10,
+        height: 10,
+        borderRadius: 99,
+        background: lvl.color,
+        flexShrink: 0,
+        boxShadow: `0 0 8px ${withAlpha(lvl.color, 0.5)}`
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: T.ink,
+        fontSize: 13,
+        letterSpacing: -0.1,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap'
+      }
+    }, fmtDateMedium(_fmtIso(d)), " \xB7 ", localTime(d)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: T.muted,
+        fontSize: 10.5,
+        fontFamily: fontNum,
+        marginTop: 2
+      }
+    }, fmtDurationHM(s.durationMs / 3600_000), " \xB7 ", s.drinkCount, " conso", s.drinkCount > 1 ? 's' : '')), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontFamily: fontSerif,
+        fontSize: 17,
+        color: T.ink,
+        letterSpacing: -0.3,
+        whiteSpace: 'nowrap',
+        flexShrink: 0
+      }
+    }, Math.round(s.peakBac), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 9.5,
+        color: T.muted,
+        fontFamily: fontSans,
+        marginLeft: 2
+      }
+    }, "mg/L")));
+  })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.ink,
+      fontSize: 12.5,
+      fontWeight: 500,
+      marginBottom: 3,
+      letterSpacing: -0.1
+    }
+  }, "Distribution des pics"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 10,
+      marginBottom: 12,
+      fontStyle: 'italic',
+      fontFamily: fontSerif
+    }
+  }, "Pic d'alcool\xE9mie par session (mg/L)"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 150
+  }, w => /*#__PURE__*/React.createElement(SvgHistogram, {
+    buckets: hist,
+    width: w,
+    height: 150,
+    color: T.accent
+  })))));
 }
 // ── 1. Général ────────────────────────────────────────────────────
 function GeneralSection({
@@ -2061,7 +2368,7 @@ function TopDrinksSection({
 // nommée du moteur BAC, partagée par la cellule « Conduite » et les calculs.
 const BAC_LEGAL_LIMIT = 500;
 
-// Courbe BAC temps réel (fenêtre 24 h) — MÊME modèle que computeBACSessions :
+// Courbe BAC temps réel (fenêtre 48 h) — MÊME modèle que computeBACSessions :
 // absorption linéaire sur BAC_ABSORPTION_H, élimination constante, et marche
 // exacte des points de rupture avec CLAMP À ZÉRO (l'élimination s'arrête quand
 // le taux touche 0). L'ancienne forme fermée
@@ -2085,7 +2392,11 @@ function computeBacOverTime(drinks, weight, gender) {
   const w = weight || DEFAULT_WEIGHT_KG;
   const elimRate = BAC_ELIM_RATE; // mg/L/h elimination (constante partagée du moteur BAC)
   const now = Date.now();
-  const lookback = 24 * 3600_000;
+  // 48 h (et non 24) : une session marathon à cheval sur plus d'une journée
+  // (festival…) serait tronquée par une fenêtre de 24 h — l'épisode courant
+  // perdrait ses premières boissons et le taux/la sobriété seraient faux.
+  // Le coût reste négligeable : l'échantillonnage démarre au DERNIER épisode.
+  const lookback = 48 * 3600_000;
   const recent = drinks.filter(d => d.date && d.time).map(d => ({
     ...d,
     _ts: new Date(`${d.date}T${d.time}`).getTime()
@@ -2251,16 +2562,25 @@ function computeBacOverTime(drinks, weight, gender) {
 // drinking span (first → last drink) is reached, then declines at the
 // standard Widmark elimination rate down to 0.
 //
-//   currentRateGph  = grams_so_far / max(5min, elapsed_in_session)
+//   currentRateGph  = grams_so_far / max(30min, elapsed_in_session)
 //   estStopMs       = sessionStart + mean(past drinking spans)
-//   bac(t≤tStop)    = currentBac + (consumptionSlope − elimRate) · t
-//   bac(t>tStop)    = bacAtStop − elimRate · (t − tStop)
+//
+// La courbe projetée est intégrée par la MÊME marche exacte de points de
+// rupture que le moteur BAC (absorption linéaire, élimination constante,
+// clamp à zéro) en partant de `currentBac` à t=0 avec :
+//   • l'absorption RESTANTE des verres déjà bus (fenêtres d'absorption qui
+//     dépassent « maintenant ») — l'ancien modèle l'ignorait : juste après
+//     l'ajout d'un verre, la prévision plongeait alors que la projection
+//     montait encore (+300 mg/L d'absorption en vol) ;
+//   • une injection constante au rythme courant jusqu'à `estStopMs`.
+// La courbe va jusqu'à son retour à 0 ; FORECAST_HORIZON_H n'est plus
+// qu'un garde-fou (flag `truncated` quand il tronque réellement).
 //
 // The function also returns the mean historical peak BAC and the ETA at
 // which the projected curve first reaches that peak — `null` if the
 // projection never gets there (which the chart renders as an "∞" marker
 // pinned to the right edge).
-function computeBacForecast(currentBac, allSessions, weight, gender, nowMs) {
+function computeBacForecast(currentBac, allSessions, weight, gender, nowMs, futurePoints = []) {
   const r = widmarkR(gender);
   const w = weight || DEFAULT_WEIGHT_KG;
   const elimRate = BAC_ELIM_RATE; // mg/L/h, shared with the rest of the BAC engine
@@ -2270,7 +2590,7 @@ function computeBacForecast(currentBac, allSessions, weight, gender, nowMs) {
   // (first drink ≤ now ≤ sober-up end). Sessions are chronological and
   // never overlap, so there is at most one. Deriving it from the same
   // gap-based model as the records keeps the forecast consistent with
-  // the rest of the BAC tab: a stray drink earlier in the 24 h window no
+  // the rest of the BAC tab: a stray drink earlier in the window no
   // longer drags the session start hours into the past and tanks the rate.
   const ongoing = sessions.find(s => s.startTs <= nowMs && s.endTs >= nowMs) || null;
   const past = sessions.filter(s => s !== ongoing && s.endTs <= nowMs);
@@ -2291,6 +2611,7 @@ function computeBacForecast(currentBac, allSessions, weight, gender, nowMs) {
       meanPeakBac,
       projectedPoints: [],
       etaPeakHours: null,
+      truncated: false,
       hasHistory,
       hasCurrentSession: false,
       sessionStartMs: nowMs
@@ -2315,32 +2636,132 @@ function computeBacForecast(currentBac, allSessions, weight, gender, nowMs) {
   // stop (current session start + mean historical drinking span). No
   // history → assume they stop now and only the elimination tail shows.
   const estStopMs = meanDrinkingMs != null ? Math.max(nowMs, sessionStartMs + meanDrinkingMs) : nowMs;
-  const consumptionSlope = currentRateGph * 1000 / (w * r); // mg/L/h injected by drinking
-  const netSlope = consumptionSlope - elimRate;
+
+  // Injection rate of the EXTRA (still-to-come) drinking, at the current pace.
+  const consumptionSlope = currentRateGph * 1000 / (w * r); // mg/L/h
   const tStopH = Math.max(0, (estStopMs - nowMs) / 3600_000);
-  const bacAtStop = Math.max(0, currentBac + netSlope * tStopH);
-  const tEndH = tStopH + bacAtStop / elimRate; // projected curve reaches 0 here
-  // Cap the rendered horizon so a tall projected peak can't trail a
-  // multi-hour flat tail that compresses the interesting part of the curve.
-  const tLastH = Math.min(tEndH, FORECAST_HORIZON_H);
+
+  // Projection by the SAME exact breakpoint walk as the BAC engine, starting
+  // at t=0 from `currentBac`. Two contributions feed the rate:
+  //   • the absorption STILL in flight from drinks already logged (their
+  //     absorption window extends past now) — this is why the curve rises
+  //     after a just-poured drink instead of plunging; and
+  //   • a constant injection `consumptionSlope` over [0, tStopH] for the
+  //     drinking still to come at the current pace.
+  // Elimination is applied ONCE on the total with a clamp at zero — never a
+  // closed form (which would double-count or accumulate debt). `futurePoints`
+  // (the realized curve) is accepted for API symmetry but the walk rebuilds
+  // the baseline from the drink peaks for an exact t=0 continuity.
+  void futurePoints;
+  const fbps = [];
+  let rate0 = 0; // active absorption rate at t=0 (mg/L/h)
+  for (const d of poured) {
+    const peak = (d._grams || 0) * 1000 / (w * r);
+    const endRelH = (d._ts - nowMs) / 3600_000 + BAC_ABSORPTION_H; // absorption end
+    if (endRelH > 1e-9) {
+      // still absorbing at now
+      rate0 += peak / BAC_ABSORPTION_H;
+      fbps.push({
+        h: endRelH,
+        dr: -peak / BAC_ABSORPTION_H
+      });
+    }
+    // fully absorbed before now → already baked into currentBac.
+  }
+  if (tStopH > 1e-9 && consumptionSlope > 0) {
+    rate0 += consumptionSlope;
+    fbps.push({
+      h: tStopH,
+      dr: -consumptionSlope
+    });
+  }
+  fbps.sort((a, b) => a.h - b.h);
+  const fverts = [{
+    h: 0,
+    bac: Math.max(0, currentBac)
+  }];
+  let fbac = Math.max(0, currentBac),
+    frate = rate0,
+    fh = 0;
+  const femit = (hh, bb) => {
+    const l = fverts[fverts.length - 1];
+    if (Math.abs(l.h - hh) < 1e-9 && Math.abs(l.bac - bb) < 1e-9) return;
+    fverts.push({
+      h: hh,
+      bac: bb
+    });
+  };
+  const fAdvance = hEnd => {
+    while (fh < hEnd - 1e-12) {
+      const net = frate - elimRate;
+      if (fbac <= 1e-9 && net <= 0) {
+        fbac = 0;
+        fh = hEnd;
+        femit(fh, 0);
+        return;
+      }
+      if (fbac > 1e-9 && net < 0) {
+        const hZero = fbac / -net;
+        if (fh + hZero <= hEnd + 1e-12) {
+          fh += hZero;
+          fbac = 0;
+          femit(fh, 0);
+          continue;
+        }
+      }
+      fbac = Math.max(0, fbac + net * (hEnd - fh));
+      fh = hEnd;
+      femit(fh, fbac);
+    }
+    fh = hEnd;
+  };
+  for (const bp of fbps) {
+    fAdvance(bp.h);
+    frate += bp.dr;
+    if (frate < 1e-9) frate = 0;
+  }
+  if (fbac > 1e-9) {
+    fAdvance(fh + fbac / elimRate);
+  } // final elimination to 0
+
+  const fBacAt = x => {
+    if (x <= fverts[0].h) return fverts[0].bac;
+    if (x >= fverts[fverts.length - 1].h) return fverts[fverts.length - 1].bac;
+    let lo = 0,
+      hi = fverts.length - 1;
+    while (hi - lo > 1) {
+      const mid = lo + hi >> 1;
+      if (fverts[mid].h <= x) lo = mid;else hi = mid;
+    }
+    const a = fverts[lo],
+      b = fverts[hi];
+    const f = (x - a.h) / Math.max(1e-12, b.h - a.h);
+    return a.bac + (b.bac - a.bac) * f;
+  };
+  const tEndH = fverts[fverts.length - 1].h; // curve returns to 0 here
+  // The whole curve (down to 0) should fit the chart; FORECAST_HORIZON_H is
+  // only a safety so a pathological pace can't trail a multi-hour array.
+  // `truncated` lets the chart flag that the tail was clipped.
+  const truncated = tEndH > FORECAST_HORIZON_H;
+  const tLastH = Math.min(Math.max(tEndH, 1 / 60), FORECAST_HORIZON_H);
   const projectedPoints = [];
   const step = 1 / 60; // 1-min resolution, matches SvgBACForecast scrub granularity
   for (let t = 0; t <= tLastH + 1e-6; t += step) {
-    const bac = t <= tStopH ? currentBac + netSlope * t // phase 1: drinking at current pace
-    : bacAtStop - elimRate * (t - tStopH); // phase 2: elimination only
     projectedPoints.push({
       t: +t.toFixed(4),
-      bac: Math.max(0, bac)
+      bac: fBacAt(t)
     });
   }
 
   // ETA peak: first time the projection crosses the historical peak.
-  // null when the projection never reaches it (peak too high vs. rate).
+  // Scan the actual curve (it can rise even when netSlope ≤ 0, thanks to the
+  // baseline's in-flight absorption), so a simple slope test would miss it.
+  // null when the projection never reaches it (peak too high vs. the curve).
   let etaPeakHours = null;
   if (meanPeakBac != null && projectedPoints.length > 0) {
     if (currentBac >= meanPeakBac) {
       etaPeakHours = 0;
-    } else if (netSlope > 0) {
+    } else {
       for (const p of projectedPoints) {
         if (p.bac >= meanPeakBac) {
           etaPeakHours = p.t;
@@ -2356,6 +2777,7 @@ function computeBacForecast(currentBac, allSessions, weight, gender, nowMs) {
     meanPeakBac,
     projectedPoints,
     etaPeakHours,
+    truncated,
     hasHistory,
     hasCurrentSession,
     sessionStartMs
@@ -2454,7 +2876,8 @@ function BACForecastResponsive({
   realPoints,
   projectedPoints,
   meanPeakBac,
-  etaPeakHours
+  etaPeakHours,
+  truncated
 }) {
   return /*#__PURE__*/React.createElement(ChartAutoWidth, {
     minHeight: 180
@@ -2463,6 +2886,7 @@ function BACForecastResponsive({
     projectedPoints: projectedPoints,
     meanPeakBac: meanPeakBac,
     etaPeakHours: etaPeakHours,
+    truncated: truncated,
     width: width,
     height: bacChartHeight(width),
     nowMs: Date.now()
@@ -2617,8 +3041,10 @@ function BACSection({
 
   // Forecast is always computed (the toggle only governs visibility),
   // so other panels could reuse the same memo without forcing the user
-  // to enable display.
-  const forecast = React.useMemo(() => computeBacForecast(currentBAC, allSessions, weight, gender, Date.now()), [currentBAC, allSessions, weight, gender]);
+  // to enable display. Seeded with the REAL future curve of already-logged
+  // drinks (bacInfo.points, t ≥ 0) so the projection follows the genuine
+  // in-flight absorption instead of plunging right after a drink is logged.
+  const forecast = React.useMemo(() => computeBacForecast(currentBAC, allSessions, weight, gender, Date.now(), (bacInfo.points || []).filter(p => p.t >= -1e-9)), [currentBAC, allSessions, weight, gender, bacInfo.points]);
   // Clip the realized curve to the ongoing session so "Prévision de
   // session" shows only the current episode + its projection, not the
   // last 24 h of unrelated (already-sober) sessions.
@@ -2633,14 +3059,11 @@ function BACSection({
   // sous-estimée de toute la montée restante juste après une boisson).
   const hoursToSober = bacInfo.soberInH != null ? bacInfo.soberInH : currentBAC / BAC_ELIM_RATE;
   const hoursToLegal = bacInfo.legalInH != null ? bacInfo.legalInH : Math.max(0, (currentBAC - BAC_LEGAL_LIMIT) / BAC_ELIM_RATE);
-  const fmtTime = h => {
-    if (h <= 0) return '—';
-    // Round to whole minutes first so e.g. 3.999h → "4h00", not "3h60".
-    const totalMin = Math.round(h * 60);
-    const hh = Math.floor(totalMin / 60),
-      mm = totalMin % 60;
-    return `${hh}h${String(mm).padStart(2, '0')}`;
-  };
+  const fmtTime = fmtDurationHM;
+  // Heure d'horloge cible (« → 23:45 ») sous la durée : lève l'ambiguïté entre
+  // une DURÉE restante ("2h16") et une heure ("2h16" se lit comme 02:16).
+  // null quand déjà sobre/légal (la cellule affiche alors "—").
+  const fmtEtaClock = h => h > 0 ? localTime(new Date(Date.now() + h * 3600_000)) : null;
   const relevantDrinks = React.useMemo(() => {
     const now = Date.now();
     return bacInfo.drinks.slice(-3).reverse().map(d => ({
@@ -2742,7 +3165,14 @@ function BACSection({
       color: T.ink,
       letterSpacing: -0.3
     }
-  }, fmtTime(hoursToSober))), /*#__PURE__*/React.createElement("div", {
+  }, fmtTime(hoursToSober)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 10.5,
+      fontFamily: fontNum,
+      marginTop: 3
+    }
+  }, fmtEtaClock(hoursToSober) ? `→ ${fmtEtaClock(hoursToSober)}` : '—')), /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.surface3,
       borderRadius: 12,
@@ -2779,7 +3209,14 @@ function BACSection({
       color: T.ink,
       letterSpacing: -0.3
     }
-  }, fmtTime(hoursToLegal))))), periodAvgSession != null && /*#__PURE__*/React.createElement(Card, {
+  }, fmtTime(hoursToLegal)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 10.5,
+      fontFamily: fontNum,
+      marginTop: 3
+    }
+  }, fmtEtaClock(hoursToLegal) ? `→ ${fmtEtaClock(hoursToLegal)}` : '—')))), periodAvgSession != null && /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 14,
       marginBottom: 10,
@@ -2880,7 +3317,8 @@ function BACSection({
     realPoints: realPastPoints,
     projectedPoints: forecast.projectedPoints,
     meanPeakBac: forecast.meanPeakBac,
-    etaPeakHours: forecast.etaPeakHours
+    etaPeakHours: forecast.etaPeakHours,
+    truncated: forecast.truncated
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
@@ -3344,7 +3782,7 @@ function MapDrinksSheet({
       color: T.muted,
       marginTop: 2
     }
-  }, g.quantity, " ", g.unit, " \xB7 ", g.alcohol, "\xB0")), /*#__PURE__*/React.createElement("div", {
+  }, g.quantity, " ", g.unit, " \xB7 ", g.alcohol, "%")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       alignItems: 'baseline',
@@ -3741,61 +4179,115 @@ function MapSection({
 }
 
 // ── 7. Évolution mensuelle ────────────────────────────────────────
+// Évolution mensuelle (helper pur, testable) : fenêtre contiguë d'au plus 6
+// mois calendaires finissant au dernier mois avec données ; les mois vides
+// sont remplis à 0 (la courbe reflète la vraie évolution mois par mois et ne
+// relie pas des mois non adjacents comme s'ils se suivaient). `< 2 mois` de
+// données → renvoie des séries vides (la section affiche son état partiel).
+function computeMonthlyTrends(allDrinks) {
+  const buckets = {};
+  for (const d of allDrinks) {
+    if (!d.date) continue;
+    const k = d.date.slice(0, 7);
+    if (!buckets[k]) buckets[k] = {
+      drinks: 0,
+      alcohol: 0
+    };
+    buckets[k].drinks++;
+    buckets[k].alcohol += drinkAlcoholGrams(d);
+  }
+  const dataMonths = Object.keys(buckets).sort();
+  if (dataMonths.length < 2) return {
+    labels: [],
+    drinks: [],
+    alcoholG: []
+  };
+  const parse = k => {
+    const [y, m] = k.split('-').map(Number);
+    return new Date(y, m - 1, 1);
+  };
+  const endD = parse(dataMonths[dataMonths.length - 1]);
+  const firstD = parse(dataMonths[0]);
+  const startD = new Date(endD);
+  startD.setMonth(startD.getMonth() - 5);
+  if (startD < firstD) startD.setTime(firstD.getTime());
+  const keys = [];
+  for (let d = new Date(startD); d <= endD; d.setMonth(d.getMonth() + 1)) {
+    keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  // Append a 2-digit year only when the window straddles two calendar
+  // years, so "Déc 24" / "Janv 25" don't read as the same month.
+  const multiYear = new Set(keys.map(k => k.slice(0, 4))).size > 1;
+  const label = k => {
+    const [y, m] = k.split('-').map(Number);
+    const base = FR_MONTHS_SHORT[m - 1].replace(/^[a-zà]/, c => c.toUpperCase());
+    return multiYear ? `${base} ${String(y).slice(2)}` : base;
+  };
+  return {
+    labels: keys.map(label),
+    drinks: keys.map(k => buckets[k] ? buckets[k].drinks : 0),
+    alcoholG: keys.map(k => buckets[k] ? Math.round(buckets[k].alcohol) : 0)
+  };
+}
+
+// Comparaison cumulée période courante vs précédente (helper pur, testable).
+// Cumule jour par jour (alcool pur en g, plus honnête que le nombre de verres)
+// le long de chaque plage, ALIGNÉ par index de jour (J1, J2, …) — pas par date
+// calendaire — pour répondre à « suis-je au-dessus de mon rythme d'avant ? ».
+// Les deux séries sont paddées à la même longueur (la plus courte tient sa
+// dernière valeur cumulée) car SvgLineChart exige des longueurs égales. Les
+// libellés d'axe X sont éclaircis (≈ 8 visibles, le reste vide).
+function buildCumulativeComparison(curDrinks, prevDrinks, range, prevRange, metric = 'grams') {
+  const valOf = d => metric === 'count' ? 1 : drinkAlcoholGrams(d);
+  const daySpan = rg => rg ? Math.max(1, Math.round((rg.end - rg.start) / 86400_000) + 1) : 0;
+  const cumulate = (drinks, rg, len) => {
+    const per = new Array(len).fill(0);
+    if (rg) {
+      const startMid = new Date(rg.start);
+      startMid.setHours(0, 0, 0, 0);
+      for (const d of drinks || []) {
+        if (!d.date) continue;
+        const dt = new Date(d.date + 'T00:00:00');
+        const idx = Math.round((dt - startMid) / 86400_000);
+        if (idx >= 0 && idx < len) per[idx] += valOf(d);
+      }
+    }
+    const cum = [];
+    let acc = 0;
+    for (let i = 0; i < len; i++) {
+      acc += per[i];
+      cum.push(metric === 'grams' ? Math.round(acc) : acc);
+    }
+    return cum;
+  };
+  const len = Math.max(daySpan(range), daySpan(prevRange), 1);
+  const cur = cumulate(curDrinks, range, len);
+  const prev = cumulate(prevDrinks, prevRange, len);
+  const everyN = Math.max(1, Math.ceil(len / 8));
+  const labels = Array.from({
+    length: len
+  }, (_, i) => i % everyN === 0 || i === len - 1 ? `J${i + 1}` : '');
+  return {
+    labels,
+    cur,
+    prev
+  };
+}
 function TrendsSection({
   allDrinks,
+  drinks,
+  prevDrinks,
+  range,
+  prevRange,
   collapsed,
   toggleSection
 }) {
-  const trends = React.useMemo(() => {
-    const buckets = {};
-    for (const d of allDrinks) {
-      if (!d.date) continue;
-      const k = d.date.slice(0, 7);
-      if (!buckets[k]) buckets[k] = {
-        drinks: 0,
-        alcohol: 0
-      };
-      buckets[k].drinks++;
-      buckets[k].alcohol += drinkAlcoholGrams(d);
-    }
-    const dataMonths = Object.keys(buckets).sort();
-    if (dataMonths.length < 2) return {
-      labels: [],
-      drinks: [],
-      alcoholG: []
-    };
-    // Contiguous window of up to 6 calendar months ending at the most
-    // recent month with data; empty months are filled with 0 so the line
-    // reflects real month-to-month evolution instead of connecting
-    // non-adjacent months as if they were consecutive.
-    const parse = k => {
-      const [y, m] = k.split('-').map(Number);
-      return new Date(y, m - 1, 1);
-    };
-    const endD = parse(dataMonths[dataMonths.length - 1]);
-    const firstD = parse(dataMonths[0]);
-    const startD = new Date(endD);
-    startD.setMonth(startD.getMonth() - 5);
-    if (startD < firstD) startD.setTime(firstD.getTime());
-    const keys = [];
-    for (let d = new Date(startD); d <= endD; d.setMonth(d.getMonth() + 1)) {
-      keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
-    }
-    // Append a 2-digit year only when the window straddles two calendar
-    // years, so "Déc 24" / "Janv 25" don't read as the same month.
-    const multiYear = new Set(keys.map(k => k.slice(0, 4))).size > 1;
-    const label = k => {
-      const [y, m] = k.split('-').map(Number);
-      const base = FR_MONTHS_SHORT[m - 1].replace(/^[a-zà]/, c => c.toUpperCase());
-      return multiYear ? `${base} ${String(y).slice(2)}` : base;
-    };
-    return {
-      labels: keys.map(label),
-      drinks: keys.map(k => buckets[k] ? buckets[k].drinks : 0),
-      alcoholG: keys.map(k => buckets[k] ? Math.round(buckets[k].alcohol) : 0)
-    };
-  }, [allDrinks]);
-  if (trends.labels.length < 2) {
+  const trends = React.useMemo(() => computeMonthlyTrends(allDrinks), [allDrinks]);
+  const cum = React.useMemo(() => prevDrinks && prevDrinks.length >= 0 && prevRange ? buildCumulativeComparison(drinks, prevDrinks, range, prevRange, 'grams') : null, [drinks, prevDrinks, range, prevRange]);
+  // Ne pas montrer la comparaison cumulée si les deux périodes sont vides.
+  const cumHasData = cum && (cum.cur.some(v => v > 0) || cum.prev.some(v => v > 0));
+  const enoughTrend = trends.labels.length >= 2;
+  if (!enoughTrend && !cumHasData) {
     return /*#__PURE__*/React.createElement(StatSection, {
       id: "trends",
       title: "\xC9volution mensuelle",
@@ -3819,7 +4311,11 @@ function TrendsSection({
     collapsed: collapsed,
     toggleSection: toggleSection,
     sub: "Tendances de consommation mois par mois"
-  }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(ChartAutoWidth, {
+  }, enoughTrend && /*#__PURE__*/React.createElement(Card, {
+    style: cumHasData ? {
+      marginBottom: 10
+    } : undefined
+  }, /*#__PURE__*/React.createElement(ChartAutoWidth, {
     minHeight: 170
   }, w => /*#__PURE__*/React.createElement(SvgLineChart, {
     labels: trends.labels,
@@ -3864,10 +4360,143 @@ function TrendsSection({
       background: 'transparent',
       backgroundImage: `repeating-linear-gradient(90deg, ${T.accent2} 0 3px, transparent 3px 5px)`
     }
-  }), " Alcool (g)"))));
+  }), " Alcool (g)"))), cumHasData && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.ink,
+      fontSize: 12.5,
+      fontWeight: 500,
+      marginBottom: 3,
+      letterSpacing: -0.1
+    }
+  }, "Cumul vs p\xE9riode pr\xE9c\xE9dente"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 10,
+      marginBottom: 10,
+      fontStyle: 'italic',
+      fontFamily: fontSerif
+    }
+  }, "Grammes d'alcool cumul\xE9s, jour par jour"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 170
+  }, w => /*#__PURE__*/React.createElement(SvgLineChart, {
+    labels: cum.labels,
+    series: [{
+      data: cum.cur
+    }, {
+      data: cum.prev
+    }],
+    width: w,
+    height: 170,
+    singleAxis: true,
+    leftLabel: "Cumul (g)",
+    tooltipUnits: ['g · actuel', 'g · précédent']
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 14,
+      justifyContent: 'center',
+      marginTop: 8,
+      fontSize: 10.5,
+      color: T.ink2
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 5
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 14,
+      height: 2,
+      background: T.accent
+    }
+  }), " Actuelle"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 5
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 14,
+      height: 2,
+      background: 'transparent',
+      backgroundImage: `repeating-linear-gradient(90deg, ${T.accent2} 0 3px, transparent 3px 5px)`
+    }
+  }), " Pr\xE9c\xE9dente"))));
 }
 
 // ── 7. Analyses avancées ─────────────────────────────────────────
+// Moyennes mobiles 7 j / 30 j de l'alcool quotidien (helper pur, testable).
+// Accumulateur glissant : chaque somme courante gagne le jour courant et perd
+// le jour qui sort de sa fenêtre → O(jours) au lieu de O(jours × 30). Renvoie
+// les 30 derniers jours `{ date, daily, r7, r30 }`.
+function computeRollingDaily(allDrinks) {
+  const byDay = {};
+  for (const d of allDrinks) {
+    if (!d.date) continue;
+    byDay[d.date] = (byDay[d.date] || 0) + drinkAlcoholGrams(d);
+  }
+  const days = Object.keys(byDay).sort();
+  if (days.length === 0) return [];
+  const start = new Date(days[0]);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date();
+  end.setHours(0, 0, 0, 0);
+  const out = [];
+  for (let d = new Date(start); d <= end; d = _addDays(d, 1)) {
+    const k = _fmtIso(d);
+    out.push({
+      date: `${d.getDate()}/${d.getMonth() + 1}`,
+      daily: byDay[k] || 0
+    });
+  }
+  let sum7 = 0,
+    sum30 = 0;
+  for (let i = 0; i < out.length; i++) {
+    sum7 += out[i].daily;
+    sum30 += out[i].daily;
+    if (i >= 7) sum7 -= out[i - 7].daily;
+    if (i >= 30) sum30 -= out[i - 30].daily;
+    out[i].r7 = sum7 / Math.min(i + 1, 7);
+    out[i].r30 = sum30 / Math.min(i + 1, 30);
+  }
+  return out.slice(-30);
+}
+
+// Répartition des sessions par tranche de durée (helper pur, testable).
+// Bornes ouvertes à droite : 0.99 h → "<1h", 1.0 h → "1-2h", 6.0 h → "6h+".
+function computeSessionDurationBuckets(sessions) {
+  const buckets = [{
+    label: '<1h',
+    v: 0
+  }, {
+    label: '1-2h',
+    v: 0
+  }, {
+    label: '2-3h',
+    v: 0
+  }, {
+    label: '3-4h',
+    v: 0
+  }, {
+    label: '4-5h',
+    v: 0
+  }, {
+    label: '5-6h',
+    v: 0
+  }, {
+    label: '6h+',
+    v: 0
+  }];
+  for (const s of sessions || []) {
+    const h = (s.endTs - s.startTs) / 3600_000;
+    const idx = h < 1 ? 0 : h < 2 ? 1 : h < 3 ? 2 : h < 4 ? 3 : h < 5 ? 4 : h < 6 ? 5 : 6;
+    buckets[idx].v++;
+  }
+  return buckets;
+}
 function AdvancedSection({
   drinks,
   allDrinks,
@@ -3877,72 +4506,8 @@ function AdvancedSection({
   sessions,
   bacAvailable = true
 }) {
-  const rolling = React.useMemo(() => {
-    const byDay = {};
-    for (const d of allDrinks) {
-      if (!d.date) continue;
-      byDay[d.date] = (byDay[d.date] || 0) + drinkAlcoholGrams(d);
-    }
-    const days = Object.keys(byDay).sort();
-    if (days.length === 0) return [];
-    const start = new Date(days[0]);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date();
-    end.setHours(0, 0, 0, 0);
-    const out = [];
-    for (let d = new Date(start); d <= end; d = _addDays(d, 1)) {
-      const k = _fmtIso(d);
-      out.push({
-        date: `${d.getDate()}/${d.getMonth() + 1}`,
-        daily: byDay[k] || 0
-      });
-    }
-    // Moving averages via a sliding-window accumulator: each running sum
-    // gains the current day and drops the day that just left its 7-/30-day
-    // window, so this is O(days) instead of O(days × 30) of re-summing a
-    // fresh slice per day. Same windowed means as before.
-    let sum7 = 0,
-      sum30 = 0;
-    for (let i = 0; i < out.length; i++) {
-      sum7 += out[i].daily;
-      sum30 += out[i].daily;
-      if (i >= 7) sum7 -= out[i - 7].daily;
-      if (i >= 30) sum30 -= out[i - 30].daily;
-      out[i].r7 = sum7 / Math.min(i + 1, 7);
-      out[i].r30 = sum30 / Math.min(i + 1, 30);
-    }
-    return out.slice(-30);
-  }, [allDrinks]);
-  const sessionDuration = React.useMemo(() => {
-    const buckets = [{
-      label: '<1h',
-      v: 0
-    }, {
-      label: '1-2h',
-      v: 0
-    }, {
-      label: '2-3h',
-      v: 0
-    }, {
-      label: '3-4h',
-      v: 0
-    }, {
-      label: '4-5h',
-      v: 0
-    }, {
-      label: '5-6h',
-      v: 0
-    }, {
-      label: '6h+',
-      v: 0
-    }];
-    for (const s of sessions) {
-      const h = (s.endTs - s.startTs) / 3600_000;
-      const idx = h < 1 ? 0 : h < 2 ? 1 : h < 3 ? 2 : h < 4 ? 3 : h < 5 ? 4 : h < 6 ? 5 : 6;
-      buckets[idx].v++;
-    }
-    return buckets;
-  }, [sessions]);
+  const rolling = React.useMemo(() => computeRollingDaily(allDrinks), [allDrinks]);
+  const sessionDuration = React.useMemo(() => computeSessionDurationBuckets(sessions), [sessions]);
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "advanced",
     title: "Analyses avanc\xE9es",
@@ -4512,6 +5077,8 @@ Object.assign(window, {
   MapSection,
   TrendsSection,
   AdvancedSection,
+  HeatmapSection,
+  SessionsSection,
   SpendingSection,
   bucketSpend,
   BACGauge,
@@ -4535,9 +5102,18 @@ Object.assign(window, {
   computeBourreTime,
   computeStreak,
   fmtBourreTime,
+  fmtDurationHM,
   aggregateGeneral,
   computeStreakRecord,
   filterDrinksInRange,
+  computeMonthlyTrends,
+  computeRollingDaily,
+  computeSessionDurationBuckets,
+  bucketDailyAlcohol,
+  buildHeatmapCells,
+  buildSessionList,
+  buildSessionPeakHistogram,
+  buildCumulativeComparison,
   BAC_ELIM_RATE,
   BAC_RECORD_MIN,
   BAC_ABSORPTION_H,

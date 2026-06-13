@@ -72,6 +72,36 @@ test('ajout — unité EcoCup (25 cL pièce)', async () => {
   assert.equal(d.quantityInCL, 50, '2 EcoCup → 50 cL');
 });
 
+async function tapWheelOption(listboxLabel, value) {
+  const box = ctx.qa('[role="listbox"]').find((el) => (el.getAttribute('aria-label') || '') === listboxLabel);
+  assert.ok(box, `roue « ${listboxLabel} » présente`);
+  const opt = ctx.qa('[role="option"]').find((b) => b.parentElement === box && b.textContent === value)
+    || ctx.qa('[role="option"]').find((b) => box.contains(b) && b.textContent === value);
+  assert.ok(opt, `option ${value} présente dans ${listboxLabel}`);
+  await ctx.act(async () => { ctx.click(opt); await ctx.sleep(80); });
+}
+
+test('heure — la roue (tap) définit l’heure, OK valide', async () => {
+  await openAddSheet();
+  await ctx.setInput(ctx.findInputByAria(/^Boisson$/), 'Wheel Pils');
+  await pickRadio('Bière');
+  await ctx.setInput(ctx.findInputByAria(/^Quantité$/), '33');
+  await ctx.setInput(ctx.findInputByAria(/^Degré d'alcool$/), '5');
+
+  // Ouvre la roue via le champ Heure (bouton aria-label="Heure").
+  await ctx.clickAria(/^Heure$/, 250);
+  await ctx.waitFor(() => ctx.qa('[role="listbox"]').some((el) => (el.getAttribute('aria-label') || '') === 'Heures'),
+    { label: 'roue horaire ouverte' });
+  await tapWheelOption('Heures', '07');
+  await tapWheelOption('Minutes', '30');
+  await ctx.clickText(/^OK$/, 250);
+
+  await ctx.clickText(/^Enregistrer$/, 400);
+  const d = (await db().getAllDrinks()).find((x) => x.name === 'Wheel Pils');
+  assert.ok(d, 'boisson en DB');
+  assert.equal(d.time, '07:30', 'heure choisie à la roue enregistrée');
+});
+
 test('« Ajouter à nouveau » depuis la fiche détail — prefill complet', async () => {
   // Catégories → Bière → détail de la famille Test Pils.
   await ctx.clickAria(/^Catégories$/, 250);

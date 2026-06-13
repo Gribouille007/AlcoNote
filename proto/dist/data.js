@@ -142,8 +142,15 @@ const _CH_SETTINGS = ['settings'];
 // CategoryIconsProvider — avoids re-fetching the entire settings table
 // on every theme toggle or unrelated setting write.
 const _CH_CAT_ICONS = ['cat-icons'];
+// Dedicated channel for category color (hue) overrides, sibling of icons.
+const _CH_CAT_COLORS = ['cat-colors'];
+// Le provider d'apparence des catégories réagit aux deux canaux (icône +
+// couleur) — un seul bump repeint la grille.
+const _CH_CAT_APPEARANCE = ['cat-icons', 'cat-colors'];
 // Settings-key prefix for id-based icon overrides: `cat.icon.id.<id>`.
 const _ICON_ID_PREFIX = 'cat.icon.id.';
+// Settings-key prefix for id-based color (hue 0-359) overrides.
+const _COLOR_ID_PREFIX = 'cat.color.id.';
 
 // Single DB fetch per relevant dataBus.bump. The four providers below
 // each own one async load + one state cell; their children read via
@@ -735,6 +742,39 @@ async function setCategoryIcon(id, glyph) {
   dataBus.bump('cat-icons');
 }
 
+// id → hue (0-359), persisté en `cat.color.id.<id>`. Miroir exact de
+// loadCategoryIcons : même garde d'id positif, valeurs parsées en entier.
+async function loadCategoryColors() {
+  const db = await waitForDb();
+  if (!db) return {};
+  const settings = await db.getAllSettings();
+  const out = {};
+  for (const [k, v] of Object.entries(settings)) {
+    if (k.startsWith(_COLOR_ID_PREFIX) && v != null && v !== '') {
+      const id = Number(k.slice(_COLOR_ID_PREFIX.length));
+      const hue = Number(v);
+      if (Number.isInteger(id) && id > 0 && Number.isFinite(hue)) {
+        out[id] = (Math.round(hue) % 360 + 360) % 360;
+      }
+    }
+  }
+  return out;
+}
+
+// Surcharge de teinte d'une catégorie (id-keyée, donc rename-safe comme les
+// icônes). `hue == null` SUPPRIME la clé → retour à la teinte par défaut/hash
+// (option « Auto »). Throw en cas d'échec d'écriture (même contrat que
+// setCategoryIcon) pour que EditCategorySheet affiche une vraie erreur.
+async function setCategoryColor(id, hue) {
+  const db = await waitForDb();
+  if (!db) throw new Error('Base de données indisponible');
+  if (id == null || id === '') throw new Error('Catégorie invalide');
+  const val = hue == null || !Number.isFinite(Number(hue)) ? null : String((Math.round(Number(hue)) % 360 + 360) % 360);
+  const ok = await db.setSetting(`${_COLOR_ID_PREFIX}${id}`, val);
+  if (ok === false) throw new Error('Échec de la sauvegarde de la couleur');
+  dataBus.bump('cat-colors');
+}
+
 // Provider for category icon overrides. Seeds initial state from the
 // optional one-shot global `window.__alcoCatIconsInitial` (populated
 // by mountAlcoNote before the React mount, read exactly once at the
@@ -744,7 +784,7 @@ async function setCategoryIcon(id, glyph) {
 function CategoryIconsProvider({
   children
 }) {
-  const v = useDataVersion(_CH_CAT_ICONS);
+  const v = useDataVersion(_CH_CAT_APPEARANCE);
   const {
     categories
   } = useCategories();
@@ -756,14 +796,27 @@ function CategoryIconsProvider({
     const seed = window.__alcoCatIconsInitial;
     return seed && typeof seed === 'object' ? seed : {};
   });
+  // id → hue (0-359), persisted as `cat.color.id.<id>`. Same boot-preload
+  // pattern so the first paint already shows custom hues (no flash).
+  const [colorMap, setColorMap] = React.useState(() => {
+    if (typeof window === 'undefined') return {};
+    const seed = window.__alcoCatColorsInitial;
+    return seed && typeof seed === 'object' ? seed : {};
+  });
   React.useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const out = await loadCategoryIcons();
-        if (alive) setIdMap(out);
+        const [icons, colors] = await Promise.all([loadCategoryIcons(), loadCategoryColors()]);
+        if (alive) {
+          setIdMap(icons);
+          setColorMap(colors);
+        }
       } catch {
-        if (alive) setIdMap({});
+        if (alive) {
+          setIdMap({});
+          setColorMap({});
+        }
       }
     })();
     return () => {
@@ -782,9 +835,31 @@ function CategoryIconsProvider({
     }
     return out;
   }, [idMap, categories]);
-  return React.createElement(CategoryIconsContext.Provider, {
+  // name → hue, joined the same way; consumed by EditCategorySheet to seed
+  // the slider. The actual card repaint goes through `CAT` (mutated below),
+  // not this context.
+  const colorByName = React.useMemo(() => {
+    const out = {};
+    for (const c of categories) {
+      const hue = colorMap[c.id];
+      if (hue != null) out[canonicalCat(c.name)] = hue;
+    }
+    return out;
+  }, [colorMap, categories]);
+  // Apply the hue overrides to the module `CAT` registry. `useMemo` runs
+  // DURING render (before children paint) so the very first frame — seeded
+  // from the boot preload — already shows custom hues without a flash.
+  // applyCatHueOverrides is idempotent and resets to defaults first, so a
+  // removed override falls back to the default/hash hue.
+  React.useMemo(() => {
+    applyCatHueOverrides(colorByName);
+    return null;
+  }, [colorByName]);
+  return React.createElement(CategoryColorsContext.Provider, {
+    value: colorByName
+  }, React.createElement(CategoryIconsContext.Provider, {
     value: map
-  }, children);
+  }, children));
 }
 
 // Apply same updates to every drink that shares (name + qty + unit + abv)
@@ -1204,5 +1279,7 @@ Object.assign(window, {
   drinkPlaceLabel,
   loadCategoryIcons,
   setCategoryIcon,
-  migrateCategoryIconsToId
+  migrateCategoryIconsToId,
+  loadCategoryColors,
+  setCategoryColor
 });

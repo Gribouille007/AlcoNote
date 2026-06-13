@@ -532,6 +532,7 @@ function EditCategorySheet({
   // re-subscribing locally — keeps the sheet in sync with whatever the
   // grid is painting without a second DB round-trip on every bump.
   const icons = React.useContext(CategoryIconsContext);
+  const colors = React.useContext(CategoryColorsContext);
   const [name, setName] = React.useState(isCreate ? '' : category);
   // `glyph` holds the user's *explicit* choice in this sheet. `null`
   // means "no explicit pick yet" (use whatever's currently persisted)
@@ -543,6 +544,20 @@ function EditCategorySheet({
     userTouchedRef.current = true;
     setGlyphState(g);
   };
+  // `hue` : choix explicite de teinte (0-359) dans ce sheet ; `null` = pas de
+  // choix → couleur persistée / défaut (« Auto »). Même schéma touched que
+  // l'icône : une saisie utilisateur n'est jamais écrasée par un refresh.
+  const [hue, setHueState] = React.useState(() => {
+    if (isCreate) return null;
+    const h = colors[canonicalCat(category)];
+    return h == null ? null : h;
+  });
+  const userTouchedColorRef = React.useRef(false);
+  const setHue = h => {
+    userTouchedColorRef.current = true;
+    setHueState(h);
+  };
+  const trackRef = React.useRef(null);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   // Re-entry guards — protect against double-tap on Save/Supprimer
@@ -571,6 +586,16 @@ function EditCategorySheet({
     if (!userTouchedRef.current) setGlyphState(icons[canonicalCat(category)] || null);
   }, [icons, category, isCreate]);
 
+  // Adopte la couleur persistée au chargement / si modifiée ailleurs — sans
+  // jamais écraser un choix déjà fait dans ce sheet.
+  React.useEffect(() => {
+    if (isCreate) return;
+    if (!userTouchedColorRef.current) {
+      const h = colors[canonicalCat(category)];
+      setHueState(h == null ? null : h);
+    }
+  }, [colors, category, isCreate]);
+
   // Use the category row's maintained `drinkCount` instead of fetching
   // every drink and filtering — `useDrinks()` would re-run on every
   // dataBus bump and is overkill when all we need is one tally.
@@ -598,6 +623,10 @@ function EditCategorySheet({
         const row = await addCategory(trimmed);
         const pick = glyph && glyph !== '__reset__' ? glyph : null;
         if (row && row.id != null && pick) await setCategoryIcon(row.id, pick);
+        // Persiste la teinte choisie (le cas « Auto »/null = pas d'écriture).
+        if (row && row.id != null && userTouchedColorRef.current && hue != null) {
+          await setCategoryColor(row.id, hue);
+        }
         Toast.show(`Catégorie « ${trimmed} » créée`);
         onClose && onClose();
       } catch (e) {
@@ -613,12 +642,14 @@ function EditCategorySheet({
     // Capture override existence BEFORE any mutation: a rename below bumps
     // the bus and the refreshed `icons` map gets re-keyed by the new name.
     const hadOverride = !!icons[canonicalCat(category)];
+    const hadColorOverride = colors[canonicalCat(category)] != null;
     const userTouched = userTouchedRef.current;
+    const userTouchedColor = userTouchedColorRef.current;
     const nameChanged = trimmed !== category;
-    // If neither the name nor the icon was touched, this is a no-op
-    // save. Surfacing a toast in that case used to mislead users into
+    // If neither the name, the icon nor the color was touched, this is a
+    // no-op save. Surfacing a toast in that case used to mislead users into
     // thinking something changed when nothing did.
-    if (!nameChanged && !userTouched) {
+    if (!nameChanged && !userTouched && !userTouchedColor) {
       onClose && onClose();
       return;
     }
@@ -667,6 +698,14 @@ function EditCategorySheet({
         if (next || glyph === '__reset__' && hadOverride) {
           if (!row) throw new Error('Catégorie introuvable pour enregistrer l\'icône');
           await setCategoryIcon(row.id, next);
+        }
+      }
+      if (userTouchedColor) {
+        // `hue === null` = « Auto » → supprime la surcharge (repli défaut).
+        // Skip si Auto sur une catégorie sans surcharge (rien à supprimer).
+        if (hue != null || hadColorOverride) {
+          if (!row) throw new Error('Catégorie introuvable pour enregistrer la couleur');
+          await setCategoryColor(row.id, hue);
         }
       }
       Toast.show(`Catégorie « ${finalName} » mise à jour`);
@@ -750,6 +789,39 @@ function EditCategorySheet({
   };
   const hasOverride = !!icons[canonicalCat(category)];
   const showResetTile = hasOverride || glyph === '__reset__';
+
+  // ── Couleur (slider de teinte) ──────────────────────────────────
+  const clampHue = h => Math.max(0, Math.min(359, Math.round(h)));
+  // Nom servant à dériver la teinte par défaut + l'aperçu (le nom tapé en
+  // création, la catégorie en édition).
+  const colorName = ((isCreate ? name : category) || '').trim() || 'Autre';
+  const defHue = defaultCatHue(colorName);
+  const effHue = hue != null ? hue : defHue; // teinte affichée
+  const isAuto = hue == null;
+  // L/C représentatifs de la palette (catColor utilisera les vrais c/l du
+  // défaut après save ; ici on n'a besoin que d'un aperçu fidèle).
+  const pL = T.isDark ? 72 : 52;
+  const pC = 0.14;
+  const previewColor = `oklch(${pL}% ${pC} ${effHue})`;
+  const previewBg = T.isDark ? `oklch(32% ${pC * 0.5} ${effHue})` : `oklch(94% ${pC * 0.25} ${effHue})`;
+  // Piste dégradée : stops aux teintes 0,30,…,330 (interpolation en TÊTE →
+  // lint couleur OK ; aucune valeur oklch en dur).
+  const hueTrack = `linear-gradient(90deg, ${Array.from({
+    length: 13
+  }, (_, i) => `oklch(${pL}% ${pC} ${i * 30}) ${(i / 12 * 100).toFixed(1)}%`).join(', ')})`;
+  const hueFromClientX = clientX => {
+    const el = trackRef.current;
+    if (!el || !el.getBoundingClientRect) return null;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width) return null;
+    return clampHue((clientX - rect.left) / rect.width * 359);
+  };
+  const onTrackKey = e => {
+    let h = effHue;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') h = effHue - 1;else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') h = effHue + 1;else if (e.key === 'Home') h = 0;else if (e.key === 'End') h = 359;else if (e.key === 'PageUp') h = effHue + 15;else if (e.key === 'PageDown') h = effHue - 15;else return;
+    e.preventDefault();
+    setHue(clampHue(h));
+  };
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: close,
     closing: closing,
@@ -883,7 +955,129 @@ function EditCategorySheet({
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.refresh,
     size: 18
-  }))), err && /*#__PURE__*/React.createElement("div", {
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 10,
+      letterSpacing: 1.2,
+      textTransform: 'uppercase'
+    }
+  }, "Couleur"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setHue(null),
+    "aria-label": "Couleur automatique",
+    "aria-pressed": isAuto,
+    title: "Revenir \xE0 la couleur par d\xE9faut",
+    style: {
+      ...ghostButton,
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 5,
+      padding: '3px 9px',
+      borderRadius: 99,
+      cursor: 'pointer',
+      border: `1px solid ${isAuto ? T.accent : T.rule}`,
+      background: isAuto ? T.accentSoft : 'transparent',
+      color: isAuto ? T.accent : T.muted,
+      fontSize: 10,
+      letterSpacing: 0.3,
+      textTransform: 'uppercase'
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.refresh,
+    size: 11
+  }), " Auto")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      marginBottom: 22
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 44,
+      height: 44,
+      borderRadius: 12,
+      flexShrink: 0,
+      background: previewBg,
+      border: `1px solid ${T.rule}`,
+      display: 'grid',
+      placeItems: 'center',
+      color: previewColor
+    }
+  }, /*#__PURE__*/React.createElement(CategoryGlyph, {
+    glyph: displayedGlyph,
+    size: 22
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    ref: trackRef,
+    role: "slider",
+    tabIndex: 0,
+    "aria-label": "Teinte de la cat\xE9gorie",
+    "aria-valuemin": 0,
+    "aria-valuemax": 359,
+    "aria-valuenow": effHue,
+    "aria-valuetext": isAuto ? `Auto (${effHue})` : String(effHue),
+    onKeyDown: onTrackKey,
+    onPointerDown: e => {
+      if (e.currentTarget.setPointerCapture) {
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {}
+      }
+      const h = hueFromClientX(e.clientX);
+      if (h != null) setHue(h);
+    },
+    onPointerMove: e => {
+      if (e.buttons !== 1) return;
+      const h = hueFromClientX(e.clientX);
+      if (h != null) setHue(h);
+    },
+    style: {
+      position: 'relative',
+      height: 22,
+      borderRadius: 99,
+      background: hueTrack,
+      border: `1px solid ${T.rule}`,
+      cursor: 'pointer',
+      touchAction: 'none',
+      outline: 'none'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    "aria-hidden": "true",
+    style: {
+      position: 'absolute',
+      top: '50%',
+      left: `${effHue / 359 * 100}%`,
+      width: 18,
+      height: 18,
+      borderRadius: 99,
+      transform: 'translate(-50%, -50%)',
+      background: previewColor,
+      border: `2px solid ${T.bg}`,
+      boxShadow: `0 0 0 1px ${T.rule}, 0 1px 4px ${T.scrim}`,
+      opacity: isAuto ? 0.7 : 1
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 10,
+      marginTop: 6,
+      fontFamily: fontNum,
+      letterSpacing: 0.2
+    }
+  }, isAuto ? `Auto · teinte ${effHue}°` : `Teinte ${effHue}°`))), err && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.accent2,
       background: T.dangerSoftBg,
