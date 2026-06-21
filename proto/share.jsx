@@ -213,8 +213,9 @@ function MockShareTransport() {
   return {
     kind: 'mock',
     async ensureIdentity() {
-      let id = localStorage.getItem('alconote.mock.uid');
-      if (!id) { id = _uid(); localStorage.setItem('alconote.mock.uid', id); }
+      let id = null;
+      try { id = localStorage.getItem('alconote.mock.uid'); } catch {}
+      if (!id) { id = _uid(); try { localStorage.setItem('alconote.mock.uid', id); } catch {} }
       return { userId: id };
     },
     async setProfile() { /* no-op en mock (profil local) */ },

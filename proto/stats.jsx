@@ -178,8 +178,10 @@ function aggregateGeneral(drinks) {
     stats.byCategory[cat] = (stats.byCategory[cat] || 0) + 1;
     const hour = parseInt((d.time || '00:00').split(':')[0], 10);
     if (!isNaN(hour) && hour >= 0 && hour < 24) stats.byHour[hour] = (stats.byHour[hour] || 0) + 1;
-    const dow = new Date((d.date || '') + 'T00:00:00').getDay();
-    if (!isNaN(dow)) stats.byDow[dow] += 1;
+    if (d.date) {
+      const dow = new Date(d.date + 'T00:00:00').getDay();
+      if (!isNaN(dow)) stats.byDow[dow] += 1;
+    }
   }
   stats.uniqueCount = stats.unique.size;
   return stats;
@@ -418,7 +420,9 @@ function fmtDurationHM(h) {
 function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePrice = false, bacAvailable = true, reorderRef } = {}) {
   const { drinks, loading } = useDrinks();
   const settings = useSettings();
-  const [period, setPeriod] = React.useState(() => localStorage.getItem(_statsKey('alconote.stats.period', storageScope)) || 'week');
+  const [period, setPeriod] = React.useState(() => {
+    try { return localStorage.getItem(_statsKey('alconote.stats.period', storageScope)) || 'week'; } catch { return 'week'; }
+  });
   const [anchor, setAnchor] = React.useState(() => new Date());
   const [collapsed, setCollapsed] = React.useState(() => loadCollapsedSections(storageScope));
   const [sectionOrder, saveSectionOrder] = useSectionOrder();

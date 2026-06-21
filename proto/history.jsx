@@ -209,7 +209,7 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
             marginLeft: -24,
           }}>
             {entries.map((e, i) => (
-              <EntryRow key={e.id || i} entry={e} onOpenEntry={onOpenEntry}
+              <EntryRow key={e.id || e.uid || i} entry={e} onOpenEntry={onOpenEntry}
                 onDirectAdd={onDirectAdd}
                 onDelete={onDelete}
                 first={i === 0}

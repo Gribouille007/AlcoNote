@@ -67,7 +67,9 @@ function AppShell() {
     if (splash && splash.parentNode) splash.parentNode.removeChild(splash);
   }, []);
 
-  const [tab, setTab] = React.useState(() => localStorage.getItem('alconote.tab') || 'categories');
+  const [tab, setTab] = React.useState(() => {
+    try { return localStorage.getItem('alconote.tab') || 'categories'; } catch { return 'categories'; }
+  });
   // Lazy-sticky mount: only the active tab is rendered on launch, then
   // every tab the user visits stays mounted (display:none when hidden)
   // so subsequent switches don't pay the StatsTab remount cost.
@@ -159,7 +161,7 @@ function AppShell() {
     };
   }, []);
 
-  React.useEffect(() => { localStorage.setItem('alconote.tab', tab); }, [tab]);
+  React.useEffect(() => { try { localStorage.setItem('alconote.tab', tab); } catch {} }, [tab]);
 
   // Geste/bouton Retour système, du plus profond au plus superficiel :
   // les sheets/dialogs/vue ami enregistrent leur propre handler (SheetOverlay,

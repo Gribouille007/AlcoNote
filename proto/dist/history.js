@@ -292,7 +292,7 @@ const DayGroup = React.memo(function DayGroup({
       marginLeft: -24
     }
   }, entries.map((e, i) => /*#__PURE__*/React.createElement(EntryRow, {
-    key: e.id || i,
+    key: e.id || e.uid || i,
     entry: e,
     onOpenEntry: onOpenEntry,
     onDirectAdd: onDirectAdd,
