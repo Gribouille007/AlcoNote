@@ -163,6 +163,29 @@ test('export / import — round-trip complet, import invalide → rollback', asy
   assert.equal((await dbManager.getAllDrinks()).length, before.drinks.length);
 });
 
+test('import d’un export pré-v5 (sans uid) — uid rétro-rempli sur chaque boisson', async () => {
+  // Un export d'avant la v5 n'a pas de uid sur les drinks ; sans backfill,
+  // le moteur de partage saute ces lignes pour toujours (reconcile ignore
+  // les boissons sans uid).
+  const legacy = JSON.stringify({
+    version: '1.0',
+    categories: [{ name: 'Bière', drinkCount: 2 }],
+    drinks: [
+      { name: 'Vieille pils', category: 'Bière', quantity: 33, unit: 'cL',
+        quantityInCL: 33, alcoholContent: 5, date: '2020-01-01', time: '20:00' },
+      { name: 'Vieille blonde', category: 'Bière', quantity: 25, unit: 'cL',
+        quantityInCL: 25, alcoholContent: 6, date: '2020-01-02', time: '21:00' },
+    ],
+  });
+  assert.equal(await dbManager.importData(legacy), true);
+  const drinks = await dbManager.getAllDrinks();
+  assert.equal(drinks.length, 2);
+  for (const d of drinks) {
+    assert.ok(d.uid, `uid rétro-rempli sur ${d.name}`);
+  }
+  assert.notEqual(drinks[0].uid, drinks[1].uid, 'uids distincts');
+});
+
 test('clearAllData — ne touche PAS sharedPool / shareOutbox / backups', async () => {
   // Seed des tables de partage + backup.
   await dbManager.upsertSharedDrinks([{

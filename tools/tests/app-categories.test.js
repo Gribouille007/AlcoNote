@@ -144,3 +144,21 @@ test('drill-down dans une catégorie et retour', async () => {
   await ctx.clickAria(/Retour/, 300);
   assert.ok(ctx.text().includes('Vos catégories'), 'retour à la grille');
 });
+
+test('renommer la catégorie OUVERTE garde le drill-down (pas d’éjection vers la grille)', async () => {
+  await ctx.clickAria(/Ouvrir la catégorie Bière/, 300);
+  assert.ok(ctx.text().includes('Chouffe'), 'drill-down ouvert');
+
+  // « Modifier » de l'en-tête du drill-down → sheet d'édition → rename.
+  await ctx.clickAria(/Modifier la catégorie Bière/, 300);
+  await ctx.waitFor(() => ctx.findInputByAria(/Nom de la catégorie/), { label: 'sheet édition' });
+  await ctx.setInput(ctx.findInputByAria(/Nom de la catégorie/), 'Mousses');
+  await ctx.clickText(/^Enregistrer$/, 500);
+
+  assert.ok(await db().getCategoryByName('Mousses'), 'catégorie renommée en DB');
+  // Toujours DANS le drill-down, désormais titré du nouveau nom.
+  await ctx.waitFor(() => ctx.text().includes('Mousses') && ctx.text().includes('Chouffe'),
+    { label: 'drill-down conservé sous le nouveau nom' });
+  assert.ok(!ctx.text().includes('Vos catégories'), 'pas d’éjection vers la grille');
+  await ctx.clickAria(/Retour/, 300);
+});

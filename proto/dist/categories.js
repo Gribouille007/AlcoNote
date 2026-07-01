@@ -24,19 +24,41 @@ function CategoriesTab({
 
   // If the open category was just deleted, drop back to the grid so the
   // user isn't stranded inside an empty FamilyList for a missing cat.
+  // IMPORTANT : la vérification ne court QUE quand une NOUVELLE liste de
+  // catégories arrive (deps [categories] ; openCat/editCat lus via ref),
+  // jamais quand openCat/editCat changent. Sinon, re-pointer le drill-down
+  // vers le nouveau nom pendant un rename (cf. onCatRenamed) éjecterait
+  // aussitôt : le nouveau nom n'est pas encore dans la liste pas encore
+  // rafraîchie.
+  const openCatRef = React.useRef(openCat);
+  openCatRef.current = openCat;
+  const editCatRef = React.useRef(editCat);
+  editCatRef.current = editCat;
   React.useEffect(() => {
-    if (openCat && categories.length > 0 && !categories.some(c => canonicalCat(c.name) === canonicalCat(openCat))) {
+    const o = openCatRef.current;
+    if (o && categories.length > 0 && !categories.some(c => canonicalCat(c.name) === canonicalCat(o))) {
       setOpenCat(null);
     }
-  }, [openCat, categories, setOpenCat]);
+  }, [categories, setOpenCat]);
+
+  // A rename is NOT a delete: re-point the drill-down (and the edit sheet)
+  // at the new name so the user stays inside the renamed category instead
+  // of being kicked back to the grid by the watcher effects above/below.
+  // Called synchronously by EditCategorySheet right after renameCategory
+  // succeeds — before the refreshed categories list lands.
+  const onCatRenamed = React.useCallback((oldName, newName) => {
+    setOpenCat(o => o && canonicalCat(o) === canonicalCat(oldName) ? newName : o);
+    setEditCat(e => e && canonicalCat(e) === canonicalCat(oldName) ? newName : e);
+  }, [setOpenCat]);
 
   // Same idea for the edit sheet — close it if the underlying category
   // vanished (deleted from elsewhere) so it doesn't operate on stale data.
   React.useEffect(() => {
-    if (editCat && categories.length > 0 && !categories.some(c => canonicalCat(c.name) === canonicalCat(editCat))) {
+    const e = editCatRef.current;
+    if (e && categories.length > 0 && !categories.some(c => canonicalCat(c.name) === canonicalCat(e))) {
       setEditCat(null);
     }
-  }, [editCat, categories]);
+  }, [categories]);
   const cats = React.useMemo(() => computeCategoryStats(categories, families), [categories, families]);
   const filtered = React.useMemo(() => {
     if (!openCat) return [];
@@ -77,7 +99,8 @@ function CategoriesTab({
     onEditFamily: onEditFamily
   }), editCat && /*#__PURE__*/React.createElement(EditCategorySheet, {
     category: editCat,
-    onClose: () => setEditCat(null)
+    onClose: () => setEditCat(null),
+    onRenamed: onCatRenamed
   }), creatingCat && /*#__PURE__*/React.createElement(EditCategorySheet, {
     mode: "create",
     onClose: () => setCreatingCat(false)
@@ -522,7 +545,8 @@ const FamilyRow = React.memo(function FamilyRow({
 function EditCategorySheet({
   category,
   onClose,
-  mode = 'edit'
+  mode = 'edit',
+  onRenamed
 }) {
   const isCreate = mode === 'create';
   const {
@@ -688,6 +712,15 @@ function EditCategorySheet({
         // touching the icon; the sheet stays open with the error.
         if (row) await renameCategory(row.name, trimmed);
         finalName = trimmed;
+        // Let the parent re-point its name-keyed state (open drill-down,
+        // this sheet's own key) at the new name BEFORE the refreshed
+        // categories list lands — otherwise its watcher effects treat the
+        // rename as a delete and kick the user back to the grid.
+        if (onRenamed) {
+          try {
+            onRenamed(category, trimmed);
+          } catch {}
+        }
       }
       if (userTouched) {
         // '__reset__' wipes the override so the category falls back to its

@@ -26,6 +26,17 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
   const families = useFamilies();
   const allEntries = React.useMemo(() => flattenEntries(families), [families]);
 
+  // Un filtre pointant une catégorie renommée/supprimée devient orphelin :
+  // plus aucune pilule active et « Aucune entrée trouvée » sans explication.
+  // On retombe sur « Tous » dès que la catégorie filtrée n'existe plus
+  // (guard sur la liste chargée pour ne pas reset pendant le boot).
+  React.useEffect(() => {
+    if (filter !== 'all' && categories.length > 0 &&
+        !categories.some(c => canonicalCat(c.name) === canonicalCat(filter))) {
+      setFilter('all');
+    }
+  }, [filter, categories]);
+
   // Delete immediately, no modal — surface an "Annuler" toast for 5s
   // so a mistaken swipe is reversible. Mirrors the legacy bar-app UX
   // and avoids a confirmation dialog stalling the swipe gesture.
