@@ -631,6 +631,11 @@ class DatabaseManager {
                 throw new Error('Format de données invalide');
             }
 
+            // Backfill a stable uid on drinks coming from a pre-v5 export:
+            // without one the sharing engine silently skips the row forever
+            // (reconcile ignores drinks lacking a uid).
+            const drinks = data.drinks.map(d => (d && !d.uid) ? { ...d, uid: genUid() } : d);
+
             // Clear existing data
             await this.db.transaction('rw', this.db.categories, this.db.drinks, this.db.settings, this.db.drinkRatings, async () => {
                 await this.db.categories.clear();
@@ -640,7 +645,7 @@ class DatabaseManager {
 
                 // Import data
                 await this.db.categories.bulkAdd(data.categories);
-                await this.db.drinks.bulkAdd(data.drinks);
+                await this.db.drinks.bulkAdd(drinks);
                 if (data.settings) {
                     await this.db.settings.bulkAdd(data.settings);
                 }

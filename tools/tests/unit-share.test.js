@@ -60,3 +60,26 @@ test('tsFromDateTime — instant absolu et fallback', () => {
   assert.equal(ts, new Date('2026-06-09T21:30').getTime());
   assert.ok(Number.isFinite(tsFromDateTime('', '')), 'fallback fini sur entrée vide');
 });
+
+test('pullFullHistory — hors-ligne : message franc, cursor jamais remis à zéro', async () => {
+  const { shareEngine } = global;
+  // Régression : hors-ligne, pull() sortait sans errorDetail et le bouton
+  // concluait « Historique à jour » alors que rien n'avait été tiré.
+  shareEngine.state.groupId = 'grp-test';
+  let cursorWrites = 0;
+  global.dbManager.setSetting = async (k) => {
+    if (String(k).startsWith('share.cursor.')) cursorWrites++;
+  };
+  global.navigator.onLine = false;
+  try {
+    const msg = await shareEngine.pullFullHistory();
+    assert.match(String(msg), /connecté/i, 'message hors-ligne explicite');
+    assert.equal(cursorWrites, 0, 'le cursor n’est pas remis à zéro pour rien');
+    assert.equal(shareEngine.state.online, false, 'état réseau reflété');
+  } finally {
+    global.navigator.onLine = true;
+    shareEngine.state.groupId = null;
+    shareEngine.state.online = true;
+    delete global.dbManager.setSetting;
+  }
+});

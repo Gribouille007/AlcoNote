@@ -229,7 +229,9 @@ function aggregateGeneral(drinks) {
     const cl = toCl(d.quantity, d.unit);
     stats.volumeCl += cl;
     stats.grams += ethanolGrams(cl, d.alcoholContent); // réutilise `cl` déjà calculé
-    stats.unique.add((d.name || '').toLowerCase());
+    // Même normalisation que familyKey/ratingKey (trim + lowercase) : une
+    // « Pilsner » saisie avec un espace parasite ne compte pas double.
+    stats.unique.add((d.name || '').trim().toLowerCase());
     const cat = canonicalCat(d.category) || 'Autre';
     stats.byCategory[cat] = (stats.byCategory[cat] || 0) + 1;
     const hour = parseInt((d.time || '00:00').split(':')[0], 10);

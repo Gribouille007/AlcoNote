@@ -97,6 +97,31 @@ test('suppression (couche danger) + undo via le toast', async () => {
   assert.deepEqual(names(after), names(before));
 });
 
+test('filtre orphelin : renommer la catégorie filtrée re-bascule sur « Tous »', async () => {
+  // Active le filtre « Vin »…
+  const pill = ctx.buttons().find((b) =>
+    b.hasAttribute('aria-pressed') && (b.textContent || '').trim().endsWith('Vin'));
+  assert.ok(pill, 'pill de filtre Vin');
+  await ctx.act(async () => { ctx.click(pill); await ctx.sleep(250); });
+  assert.ok(!ctx.text().includes('Histo A'), 'filtre Vin actif (Bière masquée)');
+
+  // … puis renomme la catégorie sous le filtre : sans reset, la liste
+  // resterait vide sans aucune pilule active.
+  await ctx.act(async () => {
+    await ctx.window.renameCategory('Vin', 'Vinasse');
+    await ctx.sleep(350);
+  });
+  await ctx.waitFor(() => ctx.text().includes('Histo A'), { label: 'retour à « Tous »' });
+  const tous = ctx.buttons().find((b) =>
+    b.hasAttribute('aria-pressed') && (b.textContent || '').trim() === 'Tous');
+  assert.equal(tous.getAttribute('aria-pressed'), 'true', 'pilule « Tous » redevenue active');
+  // Remet le nom d'origine pour les tests suivants.
+  await ctx.act(async () => {
+    await ctx.window.renameCategory('Vinasse', 'Vin');
+    await ctx.sleep(350);
+  });
+});
+
 test('recherche dans l’historique', async () => {
   const search = ctx.findInputByAria(/Rechercher dans l/);
   assert.ok(search);

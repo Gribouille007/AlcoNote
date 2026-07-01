@@ -766,6 +766,14 @@ const shareEngine = {
   // curseur a déjà dépassé d'anciennes boissons d'un membre.
   pullFullHistory: async () => {
     if (!shareState.groupId) return shareState.errorDetail;
+    // Hors-ligne, pull() sort immédiatement SANS poser d'errorDetail : le
+    // bouton concluait « Historique à jour » alors que rien n'a été tiré.
+    // On répond franchement (et on ne remet pas le cursor à zéro pour rien).
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      shareState.online = false;
+      _emit();
+      return "Vous n'êtes pas connecté·e à Internet";
+    }
     clearTimeout(_pullRetry);
     await _sset(`share.cursor.${shareState.groupId}`, 0);
     await reconcile();   // pousse aussi mon back-catalog au passage (auto-réparateur)
