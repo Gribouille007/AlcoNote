@@ -2554,18 +2554,19 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
 }
 
 function BACGauge({ bac, level }) {
-  const size = 140, thickness = 10;
+  const { size, thickness } = CHART.gauge;
   const cx = size / 2, cy = size / 2;
   const r = size / 2 - thickness / 2 - 2;
   const circ = 2 * Math.PI * r;
   // Fixed full-scale: a level-relative cap makes the ring shrink when BAC
   // crosses a band boundary upward (e.g. 480→96 %, 520→52 %), which reads
-  // as "drinking more empties the gauge". 1500 keeps the arc monotonic.
-  const cap = 1500;
-  const frac = Math.min(1, bac / cap);
+  // as "drinking more empties the gauge". BAC_CHART_CAP (= le plafond des
+  // charts BAC) keeps the arc monotonic and the family consistent.
+  const frac = Math.min(1, bac / BAC_CHART_CAP);
   return (
     <div style={{ position: 'relative', width: size, height: size }}>
-      <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
+      <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}
+        role="img" aria-label={`Alcoolémie estimée : ${bac} milligrammes par litre`}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke={T.rule} strokeWidth={thickness} />
         <circle cx={cx} cy={cy} r={r} fill="none" stroke={level.color}
           strokeWidth={thickness} strokeLinecap="round"
@@ -3183,32 +3184,23 @@ function TrendsSection({ allDrinks, drinks, prevDrinks, range, prevRange, period
             }}>Par mois</div>
             <ScopeChip label="6 derniers mois" />
           </div>
+          {/* UNE série tracée (grammes — la mesure d'intensité, cohérente
+              avec heatmap/cumul/moyennes mobiles) ; les verres vivent dans
+              la tooltip. L'ancien double axe verres/grammes superposait
+              deux échelles incomparables (anti-pattern dataviz) — supprimé.
+              Une seule série → pas de légende (le titre de la card nomme). */}
           <ChartAutoWidth minHeight={170}>
             {(w) => (
               <SvgLineChart
                 labels={trends.labels}
-                series={[
-                  { data: trends.drinks },
-                  { data: trends.alcoholG },
-                ]}
+                series={[{ data: trends.alcoholG.map(v => Math.round(v)) }]}
+                tooltipUnits={["g d'alcool"]}
+                extraLines={(i) => [`${trends.drinks[i]} verre${trends.drinks[i] > 1 ? 's' : ''}`]}
+                ariaLabel="Alcool pur par mois, six derniers mois"
                 width={w} height={170}
               />
             )}
           </ChartAutoWidth>
-          <div style={{
-            display: 'flex', gap: 14, justifyContent: 'center', marginTop: 8,
-            fontSize: 10.5, color: T.ink2,
-          }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 14, height: 2, background: T.accent }}/> Verres
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{
-                width: 14, height: 2, background: 'transparent',
-                backgroundImage: `repeating-linear-gradient(90deg, ${T.accent2} 0 3px, transparent 3px 5px)`,
-              }}/> Alcool (g)
-            </span>
-          </div>
         </Card>
       )}
 
@@ -3226,25 +3218,15 @@ function TrendsSection({ allDrinks, drinks, prevDrinks, range, prevRange, period
                 labels={cum.labels}
                 series={[{ data: cum.cur }, { data: cum.prev }]}
                 width={w} height={170}
-                singleAxis leftLabel="Cumul (g)"
                 tooltipUnits={['g · actuel', 'g · précédent']}
+                ariaLabel="Grammes d'alcool cumulés, période courante et précédente"
               />
             )}
           </ChartAutoWidth>
-          <div style={{
-            display: 'flex', gap: 14, justifyContent: 'center', marginTop: 8,
-            fontSize: 10.5, color: T.ink2,
-          }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 14, height: 2, background: T.accent }}/> Actuelle
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{
-                width: 14, height: 2, background: 'transparent',
-                backgroundImage: `repeating-linear-gradient(90deg, ${T.accent2} 0 3px, transparent 3px 5px)`,
-              }}/> Précédente
-            </span>
-          </div>
+          <ChartLegend items={[
+            { label: 'Actuelle', color: T.accent },
+            { label: 'Précédente', color: T.accent2, dashed: true },
+          ]} />
         </Card>
       )}
     </StatSection>
@@ -3333,14 +3315,11 @@ function AdvancedSection({ drinks, allDrinks, period, hasPeriodData = true, coll
           ) : (
             <div style={{ color: T.muted, fontSize: 11, padding: '12px 0', textAlign: 'center' }}>Aucune donnée</div>
           )}
-          <div style={{
-            display: 'flex', gap: 14, justifyContent: 'center', marginTop: 6,
-            fontSize: 10.5, color: T.ink2,
-          }}>
-            <LegendDot color={withAlpha(T.accent, 0.25)} label="Brut" />
-            <LegendDot color={T.accent} label="7j" />
-            <LegendDot color={T.ink2} label="30j" dashed />
-          </div>
+          <ChartLegend items={[
+            { label: 'Brut', color: withAlpha(T.accent, 0.25) },
+            { label: '7j', color: T.accent },
+            { label: '30j', color: T.ink2, dashed: true },
+          ]} />
         </Card>
       )}
 
@@ -3408,17 +3387,26 @@ function RollingChart({ data, width = 320 }) {
     setHover(i);
   });
 
+  // Labels X anti-collision (l'ancien triplet fixe premier/milieu/dernier
+  // en anchor middle clippait aux bords).
+  const xLabels = data.map((r, i) =>
+    (i === 0 || i === Math.floor(n / 2) || i === n - 1) ? r.date : '');
+  const xCenters = data.map((_, i) => xs(i));
+  const shownLabels = thinnedAxisLabels(xLabels, xCenters, { lo: pad.l, hi: width - pad.r });
+
   return (
     <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" height={height}
-      style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
+      role="img" aria-label="Moyenne mobile de l'alcool quotidien"
+      className={CHART.anim.className}
+      style={{ display: 'block', touchAction: CHART.touchAction }} {...scr.handlers}>
       <rect x="0" y="0" width={width} height={height} fill="transparent" />
       {yT.values.map((v, i) => (
         <g key={i}>
           <line x1={pad.l} x2={pad.l + w}
             y1={pad.t + h * (1 - v / max)} y2={pad.t + h * (1 - v / max)}
-            stroke={T.rule} strokeDasharray="2 3" strokeWidth={0.6} />
+            stroke={T.rule} strokeDasharray={CHART.grid.dash} strokeWidth={CHART.grid.width} />
           <text x={pad.l - 4} y={pad.t + h * (1 - v / max) + 3}
-            fontSize={9} fill={T.muted} textAnchor="end" fontFamily={fontNum}>
+            fontSize={CHART.font.tick} fill={T.muted} textAnchor="end" fontFamily={fontNum}>
             {fmtTick(v)}g
           </text>
         </g>
@@ -3430,12 +3418,13 @@ function RollingChart({ data, width = 320 }) {
           opacity={hover === i ? 0.55 : 0.25} rx={1} />;
       })}
       <path d={pathR7} fill="none" stroke={T.accent} strokeWidth={2} strokeLinejoin="round" />
-      <path d={pathR30} fill="none" stroke={T.ink2} strokeWidth={1.4} strokeDasharray="3 2" strokeLinejoin="round" />
-      {[0, Math.floor(n / 2), n - 1].map((i, k) => (
-        data[i] && (
-          <text key={k} x={xs(i)} y={height - 8}
-            fontSize={9} fill={T.muted} textAnchor="middle" fontFamily={fontNum}>{data[i].date}</text>
-        )
+      <path d={pathR30} fill="none" stroke={T.ink2} strokeWidth={1.4}
+        strokeDasharray={CHART.dash.secondary} strokeLinejoin="round" />
+      {shownLabels.map(({ i, x, anchor }) => (
+        <text key={`xl-${i}`} x={x} y={height - 8}
+          fontSize={CHART.font.tick} fill={T.muted} textAnchor={anchor} fontFamily={fontNum}>
+          {xLabels[i]}
+        </text>
       ))}
       {hover != null && (() => {
         const r = data[hover];
@@ -3444,7 +3433,8 @@ function RollingChart({ data, width = 320 }) {
         return (
           <>
             <line x1={tx} x2={tx} y1={pad.t} y2={pad.t + h}
-              stroke={T.ink2} strokeDasharray="2 3" strokeWidth={0.8} opacity={0.7} />
+              stroke={T.ink2} strokeDasharray={CHART.dash.hair}
+              strokeWidth={CHART.stroke.hair} opacity={0.7} />
             <circle cx={tx} cy={ys(r.daily)} r={3} fill={T.accent} />
             <circle cx={tx} cy={cy7} r={3} fill={T.accent} stroke={T.bg} strokeWidth={1} />
             <circle cx={tx} cy={ys(r.r30)} r={3} fill={T.ink2} stroke={T.bg} strokeWidth={1} />
@@ -3458,18 +3448,6 @@ function RollingChart({ data, width = 320 }) {
   );
 }
 
-function LegendDot({ color, label, dashed }) {
-  return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-      <span style={{
-        width: 14, height: 2, background: dashed ? 'transparent' : color,
-        ...(dashed ? {
-          backgroundImage: `repeating-linear-gradient(90deg, ${color} 0 3px, transparent 3px 5px)`,
-        } : {}),
-      }}/> {label}
-    </span>
-  );
-}
 
 // ── 8. Dépenses ───────────────────────────────────────────────────
 // Une entrée « tarifée » porte un prix saisi exploitable.
@@ -3654,7 +3632,7 @@ Object.assign(window, {
   HeatmapSection, SessionsSection,
   SpendingSection, bucketSpend,
   BACGauge, BACRecordRow, bacLevel, BAC_LEVELS,
-  RollingChart, LegendDot, MiniStat, StatRow, Card, StatSection,
+  RollingChart, MiniStat, StatRow, Card, StatSection,
   DeltaBadge, StatCell, HeroStatCard,
   getPeriodRange, shiftAnchor, periodLabel, computeBacOverTime,
   computeBACSessions, computeBourreTime, computeStreak, fmtBourreTime, fmtDurationHM,

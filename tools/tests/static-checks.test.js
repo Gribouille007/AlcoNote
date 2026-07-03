@@ -57,8 +57,6 @@ test('DA : aucune couleur en dur hors tokens/constantes nommées', () => {
       if (/^\s*const [A-Z][A-Z0-9_]* = /.test(line)) return;
       // CSS Leaflet ligne à ligne (var(--alco-…)) si hors bloc détecté.
       if (f === 'shared.jsx' && line.includes('var(--alco-')) return;
-      // Paires warn/danger dérivées du thème dans les charts (nommées).
-      if (f === 'stats-charts.jsx' && /^\s*const (warn|danger)\w* = T\.isDark/.test(line)) return;
       offenders.push(`proto/${f}:${i + 1}  ${line.trim().slice(0, 90)}`);
     });
   }
@@ -203,4 +201,23 @@ test('gel — déclarations littérales des constantes de formules', () => {
       `${file} : ${re} introuvable — FORMULE GELÉE (CLAUDE.md § Formules gelées). ` +
       'Changement voulu ? Mettre à jour CE test ET unit-formulas.test.js dans le même commit.');
   }
+});
+
+// ── Tokens de figures : géométrie/typo des charts via CHART uniquement ──
+// (cf. CLAUDE.md § « Construire une figure ») : dans stats-charts.jsx, les
+// tailles de police et les pointillés sont des tokens `CHART.*` — un
+// littéral `fontSize={9}` ou `strokeDasharray="2 3"` hors du bloc CHART est
+// une régression du système de figures.
+test('figures : aucune taille/dash en dur dans stats-charts.jsx (tokens CHART)', () => {
+  const src = read('proto/stats-charts.jsx');
+  const lines = src.split('\n');
+  const chartBlock = blockRanges(lines, /^const CHART = Object\.freeze\(\{/, /^\}\);/);
+  const offenders = [];
+  lines.forEach((line, i) => {
+    if (inRanges(chartBlock, i)) return;
+    if (/^\s*(\/\/|\*)/.test(line)) return;
+    if (/fontSize=\{[0-9]/.test(line)) offenders.push(`fontSize littéral — proto/stats-charts.jsx:${i + 1}`);
+    if (/strokeDasharray="[0-9]/.test(line)) offenders.push(`dash littéral — proto/stats-charts.jsx:${i + 1}`);
+  });
+  assert.deepEqual(offenders, [], `Littéraux hors CHART :\n${offenders.join('\n')}`);
 });

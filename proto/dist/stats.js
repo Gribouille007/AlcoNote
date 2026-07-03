@@ -3553,17 +3553,19 @@ function BACGauge({
   bac,
   level
 }) {
-  const size = 140,
-    thickness = 10;
+  const {
+    size,
+    thickness
+  } = CHART.gauge;
   const cx = size / 2,
     cy = size / 2;
   const r = size / 2 - thickness / 2 - 2;
   const circ = 2 * Math.PI * r;
   // Fixed full-scale: a level-relative cap makes the ring shrink when BAC
   // crosses a band boundary upward (e.g. 480→96 %, 520→52 %), which reads
-  // as "drinking more empties the gauge". 1500 keeps the arc monotonic.
-  const cap = 1500;
-  const frac = Math.min(1, bac / cap);
+  // as "drinking more empties the gauge". BAC_CHART_CAP (= le plafond des
+  // charts BAC) keeps the arc monotonic and the family consistent.
+  const frac = Math.min(1, bac / BAC_CHART_CAP);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'relative',
@@ -3573,7 +3575,9 @@ function BACGauge({
   }, /*#__PURE__*/React.createElement("svg", {
     viewBox: `0 0 ${size} ${size}`,
     width: size,
-    height: size
+    height: size,
+    role: "img",
+    "aria-label": `Alcoolémie estimée : ${bac} milligrammes par litre`
   }, /*#__PURE__*/React.createElement("circle", {
     cx: cx,
     cy: cy,
@@ -4490,47 +4494,14 @@ function TrendsSection({
   }, w => /*#__PURE__*/React.createElement(SvgLineChart, {
     labels: trends.labels,
     series: [{
-      data: trends.drinks
-    }, {
-      data: trends.alcoholG
+      data: trends.alcoholG.map(v => Math.round(v))
     }],
+    tooltipUnits: ["g d'alcool"],
+    extraLines: i => [`${trends.drinks[i]} verre${trends.drinks[i] > 1 ? 's' : ''}`],
+    ariaLabel: "Alcool pur par mois, six derniers mois",
     width: w,
     height: 170
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 14,
-      justifyContent: 'center',
-      marginTop: 8,
-      fontSize: 10.5,
-      color: T.ink2
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 5
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      width: 14,
-      height: 2,
-      background: T.accent
-    }
-  }), " Verres"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 5
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      width: 14,
-      height: 2,
-      background: 'transparent',
-      backgroundImage: `repeating-linear-gradient(90deg, ${T.accent2} 0 3px, transparent 3px 5px)`
-    }
-  }), " Alcool (g)"))), cumHasData && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+  }))), cumHasData && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
       fontSize: 12.5,
@@ -4557,44 +4528,18 @@ function TrendsSection({
     }],
     width: w,
     height: 170,
-    singleAxis: true,
-    leftLabel: "Cumul (g)",
-    tooltipUnits: ['g · actuel', 'g · précédent']
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 14,
-      justifyContent: 'center',
-      marginTop: 8,
-      fontSize: 10.5,
-      color: T.ink2
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 5
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      width: 14,
-      height: 2,
-      background: T.accent
-    }
-  }), " Actuelle"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 5
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      width: 14,
-      height: 2,
-      background: 'transparent',
-      backgroundImage: `repeating-linear-gradient(90deg, ${T.accent2} 0 3px, transparent 3px 5px)`
-    }
-  }), " Pr\xE9c\xE9dente"))));
+    tooltipUnits: ['g · actuel', 'g · précédent'],
+    ariaLabel: "Grammes d'alcool cumul\xE9s, p\xE9riode courante et pr\xE9c\xE9dente"
+  })), /*#__PURE__*/React.createElement(ChartLegend, {
+    items: [{
+      label: 'Actuelle',
+      color: T.accent
+    }, {
+      label: 'Précédente',
+      color: T.accent2,
+      dashed: true
+    }]
+  })));
 }
 
 // ── 7. Analyses avancées ─────────────────────────────────────────
@@ -4735,26 +4680,19 @@ function AdvancedSection({
       padding: '12px 0',
       textAlign: 'center'
     }
-  }, "Aucune donn\xE9e"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 14,
-      justifyContent: 'center',
-      marginTop: 6,
-      fontSize: 10.5,
-      color: T.ink2
-    }
-  }, /*#__PURE__*/React.createElement(LegendDot, {
-    color: withAlpha(T.accent, 0.25),
-    label: "Brut"
-  }), /*#__PURE__*/React.createElement(LegendDot, {
-    color: T.accent,
-    label: "7j"
-  }), /*#__PURE__*/React.createElement(LegendDot, {
-    color: T.ink2,
-    label: "30j",
-    dashed: true
-  }))), showPeriodCards && /*#__PURE__*/React.createElement(Card, {
+  }, "Aucune donn\xE9e"), /*#__PURE__*/React.createElement(ChartLegend, {
+    items: [{
+      label: 'Brut',
+      color: withAlpha(T.accent, 0.25)
+    }, {
+      label: '7j',
+      color: T.accent
+    }, {
+      label: '30j',
+      color: T.ink2,
+      dashed: true
+    }]
+  })), showPeriodCards && /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 10
     }
@@ -4846,14 +4784,26 @@ function RollingChart({
     const i = Math.max(0, Math.min(n - 1, Math.round(rel * (n - 1))));
     setHover(i);
   });
+
+  // Labels X anti-collision (l'ancien triplet fixe premier/milieu/dernier
+  // en anchor middle clippait aux bords).
+  const xLabels = data.map((r, i) => i === 0 || i === Math.floor(n / 2) || i === n - 1 ? r.date : '');
+  const xCenters = data.map((_, i) => xs(i));
+  const shownLabels = thinnedAxisLabels(xLabels, xCenters, {
+    lo: pad.l,
+    hi: width - pad.r
+  });
   return /*#__PURE__*/React.createElement("svg", _extends({
     ref: svgRef,
     viewBox: `0 0 ${width} ${height}`,
     width: "100%",
     height: height,
+    role: "img",
+    "aria-label": "Moyenne mobile de l'alcool quotidien",
+    className: CHART.anim.className,
     style: {
       display: 'block',
-      touchAction: 'pan-y'
+      touchAction: CHART.touchAction
     }
   }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
     x: "0",
@@ -4869,12 +4819,12 @@ function RollingChart({
     y1: pad.t + h * (1 - v / max),
     y2: pad.t + h * (1 - v / max),
     stroke: T.rule,
-    strokeDasharray: "2 3",
-    strokeWidth: 0.6
+    strokeDasharray: CHART.grid.dash,
+    strokeWidth: CHART.grid.width
   }), /*#__PURE__*/React.createElement("text", {
     x: pad.l - 4,
     y: pad.t + h * (1 - v / max) + 3,
-    fontSize: 9,
+    fontSize: CHART.font.tick,
     fill: T.muted,
     textAnchor: "end",
     fontFamily: fontNum
@@ -4901,17 +4851,21 @@ function RollingChart({
     fill: "none",
     stroke: T.ink2,
     strokeWidth: 1.4,
-    strokeDasharray: "3 2",
+    strokeDasharray: CHART.dash.secondary,
     strokeLinejoin: "round"
-  }), [0, Math.floor(n / 2), n - 1].map((i, k) => data[i] && /*#__PURE__*/React.createElement("text", {
-    key: k,
-    x: xs(i),
+  }), shownLabels.map(({
+    i,
+    x,
+    anchor
+  }) => /*#__PURE__*/React.createElement("text", {
+    key: `xl-${i}`,
+    x: x,
     y: height - 8,
-    fontSize: 9,
+    fontSize: CHART.font.tick,
     fill: T.muted,
-    textAnchor: "middle",
+    textAnchor: anchor,
     fontFamily: fontNum
-  }, data[i].date)), hover != null && (() => {
+  }, xLabels[i])), hover != null && (() => {
     const r = data[hover];
     const tx = xs(hover);
     const cy7 = ys(r.r7);
@@ -4921,8 +4875,8 @@ function RollingChart({
       y1: pad.t,
       y2: pad.t + h,
       stroke: T.ink2,
-      strokeDasharray: "2 3",
-      strokeWidth: 0.8,
+      strokeDasharray: CHART.dash.hair,
+      strokeWidth: CHART.stroke.hair,
       opacity: 0.7
     }), /*#__PURE__*/React.createElement("circle", {
       cx: tx,
@@ -4951,28 +4905,6 @@ function RollingChart({
       lines: [`${r.date}`, `${Math.round(r.daily)} g brut`, `${r.r7.toFixed(1)} g · 7j`, `${r.r30.toFixed(1)} g · 30j`]
     }));
   })());
-}
-function LegendDot({
-  color,
-  label,
-  dashed
-}) {
-  return /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 5
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      width: 14,
-      height: 2,
-      background: dashed ? 'transparent' : color,
-      ...(dashed ? {
-        backgroundImage: `repeating-linear-gradient(90deg, ${color} 0 3px, transparent 3px 5px)`
-      } : {})
-    }
-  }), " ", label);
 }
 
 // ── 8. Dépenses ───────────────────────────────────────────────────
@@ -5282,7 +5214,6 @@ Object.assign(window, {
   bacLevel,
   BAC_LEVELS,
   RollingChart,
-  LegendDot,
   MiniStat,
   StatRow,
   Card,

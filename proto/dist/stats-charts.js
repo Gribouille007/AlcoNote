@@ -87,6 +87,348 @@ function fmtTick(v) {
   return Number.isInteger(v) ? String(v) : String(Math.round(v * 10) / 10).replace('.', ',');
 }
 
+// ── CHART : spec unique de la famille de figures ───────────────────
+// TOUTE géométrie/typo/trait des primitives SVG vient d'ici — jamais de
+// littéral dans un composant (static-checks le vérifie). Les COULEURS ne
+// vivent pas ici : elles se lisent `T.*` au render (proxy vivant, suit le
+// thème). Modifier une valeur ici repeint toute la famille d'un coup.
+const CHART = Object.freeze({
+  font: Object.freeze({
+    tick: 9,
+    // labels d'axe (fontNum)
+    ref: 8.5,
+    // annotations/références (seuils, ETA, peak moyen, mois)
+    spoke: 11,
+    // labels radiaux (radar, horloge)
+    tooltip: 10,
+    // lignes de ChartTooltip
+    center: 11,
+    // kicker central du donut
+    centerValue: 20,
+    // valeur centrale du donut (fontSerif italique)
+    centerSub: 9,
+    // ligne secondaire sous la valeur centrale
+    charW: 5.4 // ≈ px/caractère (Geist Mono à 9 px) — mesure des labels
+  }),
+  pad: Object.freeze({
+    cartesian: Object.freeze({
+      t: 16,
+      r: 14,
+      b: 24,
+      l: 36
+    }),
+    // courbes BAC/lignes
+    bar: Object.freeze({
+      t: 14,
+      r: 6,
+      b: 22,
+      l: 28
+    }),
+    // barres/histogrammes
+    radar: 32,
+    spokeLabel: 12,
+    clockOuter: 22,
+    clockInnerRatio: 0.38
+  }),
+  grid: Object.freeze({
+    width: 0.6,
+    dash: '2 3'
+  }),
+  dash: Object.freeze({
+    future: '5 4',
+    // segment projeté d'une courbe
+    threshold: '3 3',
+    // ligne de seuil (200/500 mg/L)
+    reference: '4 4',
+    // ligne de référence (peak moyen)
+    marker: '1 3',
+    // marqueur vertical fin (ETA)
+    now: '3 3',
+    // marqueur « maintenant »
+    truncation: '2 2',
+    // bord de troncature
+    hair: '2 3',
+    // hairline de scrub
+    secondary: '3 2',
+    // série secondaire d'un line chart
+    ringMinor: '1 2' // anneaux intermédiaires (horloge polaire)
+  }),
+  stroke: Object.freeze({
+    line: 1.8,
+    lineSecondary: 1.5,
+    bacPast: 2.4,
+    bacFuture: 1.8,
+    spoke: 0.5,
+    radar: 1.5,
+    hair: 0.8,
+    threshold: 0.8,
+    reference: 1
+  }),
+  bar: Object.freeze({
+    inset: 0.16,
+    widthFrac: 0.68,
+    rx: 2,
+    minH: 2,
+    restOpacity: 0.85
+  }),
+  focus: Object.freeze({
+    halo: 11,
+    ring: 6,
+    dot: 3.5
+  }),
+  tooltip: Object.freeze({
+    minW: 72,
+    charW: 5.8,
+    lineH: 14,
+    headH: 16,
+    padX: 8,
+    offset: 8,
+    edgePad: 8
+  }),
+  label: Object.freeze({
+    minGapX: 8,
+    minGapY: 11
+  }),
+  heatmap: Object.freeze({
+    bandAlpha: Object.freeze([0, 0.28, 0.5, 0.72, 1]),
+    gapRatio: 0.16,
+    cellMin: 4,
+    cellMax: 22,
+    padL: 18,
+    padT: 16,
+    padB: 6
+  }),
+  donut: Object.freeze({
+    size: 130,
+    thickness: 20
+  }),
+  gauge: Object.freeze({
+    size: 140,
+    thickness: 10
+  }),
+  rings: Object.freeze([0.33, 0.66, 1]),
+  anim: Object.freeze({
+    className: 'alco-chart-in'
+  }),
+  touchAction: 'pan-y'
+});
+
+// Plafond d'affichage BAC (mg/L) : cadre des charts (bacChartRange) ET cap
+// de la jauge — un pic projeté pathologique ne doit jamais écraser le reste.
+const BAC_CHART_CAP = 1500;
+// Seuils d'affichage BAC (mg/L) — mêmes valeurs que BAC_RECORD_MIN /
+// BAC_LEGAL_LIMIT (stats.jsx, chargé après ce fichier) ; le gel des
+// formules verrouille les deux côtés.
+const BAC_ZONE_LIGHT = 200;
+const BAC_ZONE_LEGAL = 500;
+
+// Couleur de zone BAC (sobre / léger / au-delà) — lit les tokens du thème à
+// L'APPEL (T est un proxy vivant). Source unique pour les deux charts BAC,
+// leurs dégradés et tout futur indicateur de niveau.
+function bacZoneColor(bac) {
+  return bac > BAC_ZONE_LEGAL ? T.bacDanger : bac > BAC_ZONE_LIGHT ? T.bacWarn : T.good;
+}
+
+// ── Anti-collision : deux textes ne se chevauchent JAMAIS ──────────
+// Trois helpers purs (testés) couvrent tous les cas : labels d'axe X
+// (thinnedAxisLabels), annotations sur une dimension (resolveLaneLabels),
+// texte libre dans un espace borné (fitLabel). Aucun <text> de chart ne se
+// positionne « à la main » hors de ces chemins.
+
+// Sélectionne les labels d'axe X à rendre pour qu'AUCUNE paire ne se
+// chevauche ni ne déborde de [lo, hi]. `labels[i]` = '' → jamais rendu ;
+// `xs[i]` = x du centre du label i. Renvoie [{ i, x, anchor }].
+// Invariant (property-testé) : les extents rendus sont espacés ≥ minGap.
+// Le DERNIER label de l'axe est prioritaire (il ancre la lecture).
+function thinnedAxisLabels(labels, xs, {
+  charW = CHART.font.charW,
+  minGap = CHART.label.minGapX,
+  lo = -Infinity,
+  hi = Infinity
+} = {}) {
+  const cand = [];
+  for (let i = 0; i < (labels || []).length; i++) {
+    if (labels[i] != null && String(labels[i]) !== '') cand.push(i);
+  }
+  if (!cand.length) return [];
+  const width = i => String(labels[i]).length * charW;
+  const maxW = Math.max(...cand.map(width));
+  const need = maxW + minGap;
+  // Pas uniforme : combien de candidats sauter pour garantir `need` px
+  // entre centres (les candidats sont quasi équirépartis sur l'axe).
+  let minSlot = Infinity;
+  for (let k = 1; k < cand.length; k++) {
+    minSlot = Math.min(minSlot, Math.abs(xs[cand[k]] - xs[cand[k - 1]]));
+  }
+  const step = Number.isFinite(minSlot) && minSlot > 0 ? Math.max(1, Math.ceil(need / minSlot)) : cand.length;
+  const picked = [];
+  for (let k = 0; k < cand.length; k += step) picked.push(cand[k]);
+  const last = cand[cand.length - 1];
+  if (picked[picked.length - 1] !== last) picked.push(last);
+
+  // Ancres : centrées par défaut, rabattues au bord si le texte déborde.
+  const place = i => {
+    const w2 = width(i) / 2;
+    let anchor = 'middle';
+    if (xs[i] - w2 < lo) anchor = 'start';else if (xs[i] + w2 > hi) anchor = 'end';
+    const x0 = anchor === 'start' ? Math.max(lo, xs[i]) : anchor === 'end' ? Math.min(hi, xs[i]) : xs[i];
+    const ext = anchor === 'start' ? [x0, x0 + width(i)] : anchor === 'end' ? [x0 - width(i), x0] : [x0 - w2, x0 + w2];
+    return {
+      i,
+      x: x0,
+      anchor,
+      ext
+    };
+  };
+  // Passe finale de sûreté : l'invariant tient par construction — un label
+  // n'est conservé que si son extent ne mord pas le précédent ; le dernier
+  // de l'axe évince ses voisins en cas de conflit.
+  const out = [];
+  for (const k of picked) {
+    const it = place(k);
+    let ok = true;
+    while (out.length) {
+      const prev = out[out.length - 1];
+      if (it.ext[0] >= prev.ext[1] + minGap) break;
+      if (k === last) out.pop();else {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) out.push(it);
+  }
+  return out.map(({
+    i,
+    x,
+    anchor
+  }) => ({
+    i,
+    x,
+    anchor
+  }));
+}
+
+// Alloue des annotations sur UNE dimension (« lane ») sans chevauchement.
+// items: [{ pos, size, priority, ...libre }] — traités par priorité
+// décroissante ; chacun est clampé dans [lo, hi] puis décalé au plus près
+// s'il mord un item déjà posé ; ABANDONNÉ si aucun emplacement ne convient
+// (mieux vaut un label absent que deux illisibles). Renvoie les items
+// acceptés avec leur `pos` finale, dans l'ordre d'entrée.
+// Invariant (testé) : |posᵢ − posⱼ| ≥ (sizeᵢ + sizeⱼ)/2 + minGap.
+function resolveLaneLabels(items, {
+  minGap = CHART.label.minGapY,
+  lo = -Infinity,
+  hi = Infinity
+} = {}) {
+  const sorted = (items || []).map((it, idx) => ({
+    ...it,
+    _idx: idx
+  })).sort((a, b) => (b.priority || 0) - (a.priority || 0));
+  const placed = [];
+  for (const it of sorted) {
+    const size = it.size || 0;
+    const min = lo + size / 2,
+      max = hi - size / 2;
+    if (min > max) continue;
+    const conflict = p => placed.find(o => Math.abs(p - o.pos) < (size + o.size) / 2 + minGap);
+    let pos = Math.max(min, Math.min(max, it.pos));
+    if (conflict(pos)) {
+      // Emplacements candidats : juste au-dessus / en dessous de chaque item
+      // posé ; on garde le plus proche de la position souhaitée.
+      const options = [];
+      for (const o of placed) {
+        const before = o.pos - (size + o.size) / 2 - minGap;
+        const after = o.pos + (size + o.size) / 2 + minGap;
+        if (before >= min && !conflict(before)) options.push(before);
+        if (after <= max && !conflict(after)) options.push(after);
+      }
+      if (!options.length) continue;
+      pos = options.reduce((best, p) => Math.abs(p - it.pos) < Math.abs(best - it.pos) ? p : best);
+    }
+    placed.push({
+      ...it,
+      pos,
+      size
+    });
+  }
+  return placed.sort((a, b) => a._idx - b._idx).map(({
+    _idx,
+    ...it
+  }) => it);
+}
+
+// Ancre + décalage vertical d'un label radial selon son angle (rad, 0 = à
+// droite de l'horloge trigonométrique) : le texte s'ÉLOIGNE du polygone au
+// lieu de dériver dessus (l'ancien anchor="middle" pour tous faisait mordre
+// les labels gauche/droite sur la figure).
+function radarLabelLayout(a) {
+  const c = Math.cos(a),
+    s = Math.sin(a);
+  const anchor = c > 0.35 ? 'start' : c < -0.35 ? 'end' : 'middle';
+  const dy = s > 0.8 ? 9 : s < -0.8 ? -3 : 4;
+  return {
+    anchor,
+    dy
+  };
+}
+
+// Tronque un texte libre avec « … » pour tenir dans `maxPx` (approximation
+// monospace `charW` px/caractère). Tout texte non contraint par l'axe
+// (centre du donut, libellés arbitraires) passe par ici.
+function fitLabel(text, maxPx, charW = CHART.font.charW) {
+  const s = String(text == null ? '' : text);
+  const maxChars = Math.floor(maxPx / charW);
+  if (s.length <= maxChars) return s;
+  if (maxChars <= 1) return '…';
+  return s.slice(0, maxChars - 1).trimEnd() + '…';
+}
+
+// Légende partagée sous un chart multi-séries (≥ 2 séries — une série
+// seule n'a pas de légende, le titre de la card la nomme). Pastille ou
+// segment COLORÉ + libellé en encre : le texte ne porte jamais la couleur
+// de série (DA). items: [{ label, color, dashed?, dot? }].
+function ChartLegend({
+  items
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 14,
+      justifyContent: 'center',
+      marginTop: 8,
+      fontSize: 10.5,
+      color: T.ink2,
+      flexWrap: 'wrap'
+    }
+  }, items.map(it => /*#__PURE__*/React.createElement("span", {
+    key: it.label,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 5
+    }
+  }, it.dot ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 8,
+      height: 8,
+      borderRadius: 99,
+      background: it.color
+    }
+  }) : it.dashed ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 14,
+      height: 2,
+      backgroundImage: `repeating-linear-gradient(90deg, ${it.color} 0 3px, transparent 3px 5px)`
+    }
+  }) : /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 14,
+      height: 2,
+      background: it.color
+    }
+  }), it.label)));
+}
+
 // Adaptive framing for the two BAC curves so they always fill the view
 // ("meilleure vue possible"), shared by SvgBACProjection and SvgBACForecast.
 //   points        : [{ t (hours rel. now), bac (mg/L) }]
@@ -104,12 +446,11 @@ function bacChartRange(points, {
 } = {}) {
   const pts = points && points.length ? points : [];
   const safeExtras = extras.filter(v => v != null && v > 0);
-  const RUNAWAY_CAP = 1500; // mg/L — ceiling for a pathological projected peak
 
   // Y: peak of the data + any forced extras, with anti-runaway clamp.
   const dataPeak = pts.length ? Math.max(...pts.map(p => p.bac)) : 0;
   let peak = Math.max(0, dataPeak, ...safeExtras);
-  if (capRunaway) peak = Math.min(peak, Math.max(RUNAWAY_CAP, ...safeExtras));
+  if (capRunaway) peak = Math.min(peak, Math.max(BAC_CHART_CAP, ...safeExtras));
   // 15 % headroom; 80 mg/L floor so a tiny curve fills the height instead
   // of sitting as a flat line at the bottom.
   const maxB = chartNiceMax(Math.max(80, peak * 1.15), 4);
@@ -290,18 +631,25 @@ function chartTooltipLayout({
   lines,
   width,
   height = null,
-  pad = 8
+  pad = CHART.tooltip.edgePad
 }) {
+  const {
+    minW,
+    charW,
+    lineH,
+    headH,
+    offset
+  } = CHART.tooltip;
   const maxChars = Math.max(0, ...lines.map(l => String(l).length));
-  const w = Math.max(72, Math.min(width - 2 * pad, 16 + maxChars * 5.8));
-  const h = 16 + lines.length * 14;
-  let tx = x + 8;
-  if (tx + w > width - pad) tx = x - w - 8;
+  const w = Math.max(minW, Math.min(width - 2 * pad, headH + maxChars * charW));
+  const h = headH + lines.length * lineH;
+  let tx = x + offset;
+  if (tx + w > width - pad) tx = x - w - offset;
   // Flipping left near the left edge can push tx negative (tooltip clips
   // the SVG edge); clamp it back inside the viewBox.
   tx = Math.max(pad, Math.min(tx, width - w - pad));
   let ty = y - h - 6;
-  if (ty < pad) ty = y + 14;
+  if (ty < pad) ty = y + lineH;
   if (height != null) ty = Math.max(pad, Math.min(ty, height - h - pad));
   return {
     tx,
@@ -319,7 +667,7 @@ function ChartTooltip({
   lines,
   width = 320,
   height = null,
-  pad = 8
+  pad = CHART.tooltip.edgePad
 }) {
   const {
     tx,
@@ -334,6 +682,10 @@ function ChartTooltip({
     height,
     pad
   });
+  const {
+    lineH,
+    padX
+  } = CHART.tooltip;
   return /*#__PURE__*/React.createElement("g", {
     pointerEvents: "none"
   }, /*#__PURE__*/React.createElement("rect", {
@@ -344,13 +696,13 @@ function ChartTooltip({
     rx: 6,
     fill: T.surface3 || T.surface2,
     stroke: T.rule,
-    strokeWidth: 0.6,
+    strokeWidth: CHART.grid.width,
     opacity: 0.95
   }), lines.map((l, i) => /*#__PURE__*/React.createElement("text", {
     key: i,
-    x: tx + 8,
-    y: ty + 14 + i * 14,
-    fontSize: 10,
+    x: tx + padX,
+    y: ty + lineH + i * lineH,
+    fontSize: CHART.font.tooltip,
     fill: i === 0 ? T.ink : T.ink2,
     fontFamily: fontNum
   }, l)));
@@ -364,14 +716,10 @@ function SvgBarChart({
   color,
   formatX,
   formatTooltip,
-  valueLabel
+  valueLabel,
+  ariaLabel = 'Diagramme en barres'
 }) {
-  const pad = {
-    t: 14,
-    r: 6,
-    b: 22,
-    l: 28
-  };
+  const pad = CHART.pad.bar;
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
   const yT = chartTicks(Math.max(1, ...data.map(d => d.v)), 2);
@@ -389,14 +737,25 @@ function SvgBarChart({
   });
   // After the hooks so a later render with data keeps the hook order.
   if (!data.length) return null;
+  // Labels X : `formatX` choisit le TEXTE ('' pour proposer de cacher),
+  // puis thinnedAxisLabels garantit zéro chevauchement quoi qu'il arrive.
+  const xLabels = data.map((d, i) => String((formatX ? formatX(d, i) : d.label) || ''));
+  const xCenters = data.map((_, i) => pad.l + i * bw + bw / 2);
+  const shownLabels = thinnedAxisLabels(xLabels, xCenters, {
+    lo: pad.l,
+    hi: width - pad.r
+  });
   return /*#__PURE__*/React.createElement("svg", _extends({
     ref: svgRef,
     viewBox: `0 0 ${width} ${height}`,
     width: "100%",
     height: height,
+    role: "img",
+    "aria-label": ariaLabel,
+    className: CHART.anim.className,
     style: {
       display: 'block',
-      touchAction: 'pan-y'
+      touchAction: CHART.touchAction
     }
   }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
     x: "0",
@@ -412,43 +771,43 @@ function SvgBarChart({
     y1: pad.t + h * (1 - v / max),
     y2: pad.t + h * (1 - v / max),
     stroke: T.rule,
-    strokeDasharray: "2 3",
-    strokeWidth: 0.6
+    strokeDasharray: CHART.grid.dash,
+    strokeWidth: CHART.grid.width
   }), /*#__PURE__*/React.createElement("text", {
     x: pad.l - 4,
     y: pad.t + h * (1 - v / max) + 3,
-    fontSize: 9,
+    fontSize: CHART.font.tick,
     fill: T.muted,
     textAnchor: "end",
     fontFamily: fontNum
   }, fmtTick(v)))), data.map((d, i) => {
-    const bh = d.v > 0 ? Math.max(2, d.v / max * h) : 0;
-    const x = pad.l + i * bw + bw * 0.18;
+    const bh = d.v > 0 ? Math.max(CHART.bar.minH, d.v / max * h) : 0;
+    if (bh <= 0) return null;
+    const x = pad.l + i * bw + bw * CHART.bar.inset;
     const y = pad.t + h - bh;
-    const lbl = formatX ? formatX(d, i) : d.label;
-    // When a custom formatX is supplied it already decides which
-    // labels to show (returns '' to hide); don't double-thin it.
-    const showLbl = formatX ? !!lbl : lbl && i % Math.ceil(data.length / 8) === 0;
-    const isHover = hover === i;
-    return /*#__PURE__*/React.createElement("g", {
-      key: i
-    }, bh > 0 && /*#__PURE__*/React.createElement("rect", {
+    return /*#__PURE__*/React.createElement("rect", {
+      key: i,
       x: x,
       y: y,
-      width: bw * 0.64,
+      width: bw * CHART.bar.widthFrac,
       height: bh,
       fill: color || T.accent,
-      rx: 1.5,
-      opacity: isHover ? 1 : 0.85
-    }), showLbl && /*#__PURE__*/React.createElement("text", {
-      x: x + bw * 0.32,
-      y: height - 8,
-      fontSize: 9,
-      fill: T.muted,
-      textAnchor: "middle",
-      fontFamily: fontNum
-    }, lbl));
-  }), hover != null && (() => {
+      rx: CHART.bar.rx,
+      opacity: hover === i ? 1 : CHART.bar.restOpacity
+    });
+  }), shownLabels.map(({
+    i,
+    x,
+    anchor
+  }) => /*#__PURE__*/React.createElement("text", {
+    key: `xl-${i}`,
+    x: x,
+    y: height - 8,
+    fontSize: CHART.font.tick,
+    fill: T.muted,
+    textAnchor: anchor,
+    fontFamily: fontNum
+  }, xLabels[i])), hover != null && (() => {
     const d = data[hover];
     const tx = pad.l + hover * bw + bw / 2;
     const ty = pad.t + h - d.v / max * h;
@@ -459,13 +818,13 @@ function SvgBarChart({
       y1: pad.t,
       y2: pad.t + h,
       stroke: T.accent,
-      strokeDasharray: "2 3",
-      strokeWidth: 0.8,
+      strokeDasharray: CHART.dash.hair,
+      strokeWidth: CHART.stroke.hair,
       opacity: 0.6
     }), /*#__PURE__*/React.createElement("circle", {
       cx: tx,
       cy: ty,
-      r: 3,
+      r: CHART.focus.dot,
       fill: T.accent
     }), /*#__PURE__*/React.createElement(ChartTooltip, {
       x: tx,
@@ -482,20 +841,23 @@ function SvgRadar({
   data,
   size = 220,
   color,
-  valueLabel
+  valueLabel,
+  ariaLabel = 'Radar par jour'
 }) {
   const cx = size / 2,
     cy = size / 2;
-  const r = size / 2 - 32;
+  const r = size / 2 - CHART.pad.radar;
   const n = data.length;
   const max = Math.max(1, ...data.map(d => d.v));
-  const angle = i => i / n * Math.PI * 2 - Math.PI / 2;
+  // n = 0 ferait diviser `angle` par zéro (NaN partout) — géré après les
+  // hooks, plus bas.
+  const angle = i => i / Math.max(1, n) * Math.PI * 2 - Math.PI / 2;
   const pt = (i, v) => {
     const a = angle(i);
     const rad = v / max * r;
     return [cx + Math.cos(a) * rad, cy + Math.sin(a) * rad];
   };
-  const rings = [0.33, 0.66, 1];
+  const rings = CHART.rings;
   const gridPath = frac => data.map((_, i) => {
     const a = angle(i);
     return `${i === 0 ? 'M' : 'L'}${cx + Math.cos(a) * r * frac},${cy + Math.sin(a) * r * frac}`;
@@ -507,7 +869,7 @@ function SvgRadar({
   const svgRef = React.useRef(null);
   const [hover, setHover] = React.useState(null);
   const scr = useChartScrubber(svgRef, null, p => {
-    if (!p) {
+    if (!p || !n) {
       setHover(null);
       return;
     }
@@ -518,14 +880,20 @@ function SvgRadar({
     const idx = Math.round(a / (2 * Math.PI) * n) % n;
     setHover(idx);
   });
+
+  // Après les hooks : sans donnée le radar est NaN de bout en bout.
+  if (!n) return null;
   return /*#__PURE__*/React.createElement("svg", _extends({
     ref: svgRef,
     viewBox: `0 0 ${size} ${size}`,
     width: "100%",
     height: size,
+    role: "img",
+    "aria-label": ariaLabel,
+    className: CHART.anim.className,
     style: {
       display: 'block',
-      touchAction: 'pan-y'
+      touchAction: CHART.touchAction
     }
   }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
     x: "0",
@@ -538,8 +906,8 @@ function SvgRadar({
     d: gridPath(f),
     fill: "none",
     stroke: T.rule,
-    strokeWidth: 0.6,
-    strokeDasharray: i === rings.length - 1 ? 'none' : '2 3'
+    strokeWidth: CHART.grid.width,
+    strokeDasharray: i === rings.length - 1 ? 'none' : CHART.grid.dash
   })), data.map((_, i) => {
     const a = angle(i);
     return /*#__PURE__*/React.createElement("line", {
@@ -549,14 +917,14 @@ function SvgRadar({
       x2: cx + Math.cos(a) * r,
       y2: cy + Math.sin(a) * r,
       stroke: T.rule,
-      strokeWidth: 0.5
+      strokeWidth: CHART.stroke.spoke
     });
   }), /*#__PURE__*/React.createElement("path", {
     d: dataPath,
     fill: color || T.accent,
     fillOpacity: 0.2,
     stroke: color || T.accent,
-    strokeWidth: 1.5,
+    strokeWidth: CHART.stroke.radar,
     strokeLinejoin: "round"
   }), data.map((d, i) => {
     const [x, y] = pt(i, d.v);
@@ -572,17 +940,24 @@ function SvgRadar({
     });
   }), data.map((d, i) => {
     const a = angle(i);
-    const lx = cx + Math.cos(a) * (r + 14);
-    const ly = cy + Math.sin(a) * (r + 14) + 3;
+    // Ancre/dy selon le quadrant : le label s'éloigne du polygone au
+    // lieu de dériver dessus (anti-collision radiale).
+    const {
+      anchor,
+      dy
+    } = radarLabelLayout(a);
+    const lx = cx + Math.cos(a) * (r + CHART.pad.spokeLabel);
+    const ly = cy + Math.sin(a) * (r + CHART.pad.spokeLabel) + dy;
     const today = d.today;
     return /*#__PURE__*/React.createElement("text", {
       key: i,
       x: lx,
       y: ly,
-      fontSize: 11,
+      fontSize: CHART.font.spoke,
       fill: today ? T.accent : T.ink2,
       fontWeight: today ? 600 : 400,
-      textAnchor: "middle"
+      fontFamily: fontSans,
+      textAnchor: anchor
     }, d.label);
   }), hover != null && (() => {
     const d = data[hover];
@@ -597,18 +972,16 @@ function SvgRadar({
   })());
 }
 // ── Donut chart (category distribution) ───────────────────────────
-function SvgDonut({
-  data,
-  size = 140,
-  thickness = 22
-}) {
-  const cx = size / 2,
-    cy = size / 2;
-  const r = size / 2 - thickness / 2 - 2;
-  const total = data.reduce((s, d) => s + d.v, 0) || 1;
-  // Pre-compute arc segments and angle ranges so the scrubber can
-  // figure out which segment the pointer hits.
+// Géométrie des segments extraite (pure, testable) : angles + chemins SVG.
+// `total` = 0 → aucun segment (l'ancien `|| 1` affichait un faux « 1 » au
+// centre d'un donut vide).
+function donutSegments(data, cx, cy, r) {
+  const total = (data || []).reduce((s, d) => s + d.v, 0);
   const segments = [];
+  if (!(total > 0)) return {
+    total: 0,
+    segments
+  };
   let acc = 0;
   for (const d of data) {
     const a0 = acc / total * Math.PI * 2 - Math.PI / 2;
@@ -626,10 +999,28 @@ function SvgDonut({
     });
     acc += d.v;
   }
+  return {
+    total,
+    segments
+  };
+}
+function SvgDonut({
+  data,
+  size = CHART.donut.size,
+  thickness = CHART.donut.thickness,
+  ariaLabel = 'Répartition par catégorie'
+}) {
+  const cx = size / 2,
+    cy = size / 2;
+  const r = size / 2 - thickness / 2 - 2;
+  const {
+    total,
+    segments
+  } = donutSegments(data, cx, cy, r);
   const svgRef = React.useRef(null);
   const [hover, setHover] = React.useState(null);
   const scr = useChartScrubber(svgRef, null, p => {
-    if (!p) {
+    if (!p || !segments.length) {
       setHover(null);
       return;
     }
@@ -648,113 +1039,131 @@ function SvgDonut({
     const idx = segments.findIndex(s => a >= s.a0 && a <= s.a1);
     setHover(idx >= 0 ? idx : null);
   });
+
+  // Après les hooks : un donut sans donnée affiche un état vide honnête.
+  if (!segments.length) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: T.muted,
+        fontSize: 11,
+        padding: '20px 0',
+        textAlign: 'center',
+        fontStyle: 'italic',
+        fontFamily: fontSerif
+      }
+    }, "Aucune donn\xE9e");
+  }
   const focused = hover != null ? segments[hover] : null;
   const focusedPct = focused ? Math.round(focused.d.v / total * 100) : null;
-  return /*#__PURE__*/React.createElement("svg", _extends({
-    ref: svgRef,
-    viewBox: `0 0 ${size} ${size}`,
-    width: size,
-    height: size,
-    style: {
-      display: 'block',
-      touchAction: 'pan-y'
-    }
-  }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
-    x: "0",
-    y: "0",
-    width: size,
-    height: size,
-    fill: "transparent"
-  }), /*#__PURE__*/React.createElement("circle", {
-    cx: cx,
-    cy: cy,
-    r: r,
-    fill: "none",
-    stroke: T.rule,
-    strokeWidth: thickness
-  }), segments.map((s, i) => {
-    // A lone segment spans the whole circle: its arc start/end points
-    // coincide and render as nothing, so draw a full ring instead.
-    // (A 99.9% slice alongside others still draws fine as an arc.)
-    const common = {
-      stroke: catColor(s.d.name, 65),
-      strokeWidth: thickness * (hover === i ? 1.12 : 1),
-      opacity: hover != null && hover !== i ? 0.45 : 1
-    };
-    return segments.length === 1 ? /*#__PURE__*/React.createElement("circle", _extends({
-      key: i,
+  // Le label central vit dans le TROU du donut : tronqué à son diamètre
+  // utile pour ne jamais passer sous l'anneau (fitLabel, anti-collision).
+  const centerMaxPx = 2 * (r - thickness / 2) - 6;
+  const centerLabel = fitLabel((focused ? focused.d.name : 'Total').toUpperCase(), centerMaxPx);
+  return (
+    /*#__PURE__*/
+    // Seul chart à taille FIXE assumée : c'est un glyphe carré posé à côté
+    // de sa légende (flexShrink:0), pas un chart pleine largeur — un width
+    // 100% s'effondrerait dans ce conteneur sans largeur propre.
+    React.createElement("svg", _extends({
+      ref: svgRef,
+      viewBox: `0 0 ${size} ${size}`,
+      width: size,
+      height: size,
+      role: "img",
+      "aria-label": ariaLabel,
+      className: CHART.anim.className,
+      style: {
+        display: 'block',
+        touchAction: CHART.touchAction
+      }
+    }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
+      x: "0",
+      y: "0",
+      width: size,
+      height: size,
+      fill: "transparent"
+    }), /*#__PURE__*/React.createElement("circle", {
       cx: cx,
       cy: cy,
       r: r,
-      fill: "none"
-    }, common)) : /*#__PURE__*/React.createElement("path", _extends({
-      key: i,
-      d: s.path,
       fill: "none",
-      strokeLinecap: "butt"
-    }, common));
-  }), /*#__PURE__*/React.createElement("text", {
-    x: cx,
-    y: cy - 4,
-    fontSize: 11,
-    fill: T.muted,
-    textAnchor: "middle",
-    letterSpacing: "1"
-  }, focused ? focused.d.name.toUpperCase() : 'TOTAL'), /*#__PURE__*/React.createElement("text", {
-    x: cx,
-    y: cy + 14,
-    fontSize: 20,
-    fill: T.ink,
-    textAnchor: "middle",
-    fontFamily: fontSerif,
-    fontStyle: "italic"
-  }, focused ? `${focused.d.v}` : Math.round(total)), focused && /*#__PURE__*/React.createElement("text", {
-    x: cx,
-    y: cy + 28,
-    fontSize: 9,
-    fill: T.muted,
-    textAnchor: "middle",
-    fontFamily: fontNum
-  }, focusedPct, "%"));
+      stroke: T.rule,
+      strokeWidth: thickness
+    }), segments.map((s, i) => {
+      // A lone segment spans the whole circle: its arc start/end points
+      // coincide and render as nothing, so draw a full ring instead.
+      // (A 99.9% slice alongside others still draws fine as an arc.)
+      const common = {
+        stroke: catColor(s.d.name, 65),
+        strokeWidth: thickness * (hover === i ? 1.12 : 1),
+        opacity: hover != null && hover !== i ? 0.45 : 1
+      };
+      return segments.length === 1 ? /*#__PURE__*/React.createElement("circle", _extends({
+        key: i,
+        cx: cx,
+        cy: cy,
+        r: r,
+        fill: "none"
+      }, common)) : /*#__PURE__*/React.createElement("path", _extends({
+        key: i,
+        d: s.path,
+        fill: "none",
+        strokeLinecap: "butt"
+      }, common));
+    }), /*#__PURE__*/React.createElement("text", {
+      x: cx,
+      y: cy - 4,
+      fontSize: CHART.font.center,
+      fill: T.muted,
+      textAnchor: "middle",
+      letterSpacing: "1",
+      fontFamily: fontSans
+    }, centerLabel), /*#__PURE__*/React.createElement("text", {
+      x: cx,
+      y: cy + 14,
+      fontSize: CHART.font.centerValue,
+      fill: T.ink,
+      textAnchor: "middle",
+      fontFamily: fontSerif,
+      fontStyle: "italic"
+    }, focused ? `${focused.d.v}` : Math.round(total)), focused && /*#__PURE__*/React.createElement("text", {
+      x: cx,
+      y: cy + 28,
+      fontSize: CHART.font.centerSub,
+      fill: T.muted,
+      textAnchor: "middle",
+      fontFamily: fontNum
+    }, focusedPct, "%"))
+  );
 }
 
-// ── Line chart (monthly trend, dual axis) ─────────────────────────
-// Dual-series line chart. By default the two series use INDEPENDENT axes
-// (left = accent, right = accent2) — the Évolution mensuelle use case
-// (verres vs g). `singleAxis` puts both on ONE shared scale (max of both)
-// and hides the right axis + right caption — the cumulative-comparison use
-// case (g actuel vs g précédent). `leftLabel`/`rightLabel`/`tooltipUnits`
-// override the captions; their defaults keep the legacy call unchanged.
+// ── Line chart (une échelle commune, 1 ou 2 séries) ───────────────
+// UN SEUL axe Y, toujours : deux mesures d'échelles différentes ne
+// partagent jamais un chart (règle dataviz — l'ancien mode double axe a
+// été retiré). Série 0 : trait plein + aire dégradée (T.accent) ; série 1
+// (optionnelle) : pointillée (T.accent2), sur la MÊME échelle. La légende
+// vit HORS du SVG (ChartLegend, ≥ 2 séries seulement). `extraLines(i)`
+// ajoute des lignes de contexte à la tooltip (ex. « N verres »).
 function SvgLineChart({
   series,
   labels,
   width = 320,
   height = 170,
-  singleAxis = false,
-  leftLabel = 'verres',
-  rightLabel = 'g/mois',
-  tooltipUnits = ['verres', 'g']
+  tooltipUnits = [],
+  extraLines = null,
+  ariaLabel = 'Courbe d\'évolution'
 }) {
   const idSuffix = React.useId().replace(/:/g, '');
-  const pad = {
-    t: 16,
-    r: singleAxis ? 14 : 38,
-    b: 26,
-    l: 36
-  };
+  const pad = CHART.pad.cartesian;
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
-  // Shared scale when singleAxis: both series read the same max so the
-  // cumulative curves are directly comparable.
-  const shared = singleAxis ? chartTicks(Math.max(1, ...series[0].data, ...series[1].data), 2) : null;
-  const yL = shared || chartTicks(Math.max(1, ...series[0].data), 2);
-  const yR = shared || chartTicks(Math.max(1, ...series[1].data), 2);
-  const maxL = yL.max;
-  const maxR = yR.max;
-  const n = labels.length;
+  const allSeries = (series || []).filter(s => s && Array.isArray(s.data));
+  const yT = chartTicks(Math.max(1, ...allSeries.flatMap(s => s.data)), 2);
+  const max = yT.max;
+  const n = (labels || []).length;
   const xs = i => pad.l + i / Math.max(1, n - 1) * w;
-  const pathFor = (data, max) => data.map((v, i) => `${i === 0 ? 'M' : 'L'}${xs(i)},${pad.t + h * (1 - v / max)}`).join(' ');
-  const areaFor = (data, max) => pathFor(data, max) + ` L${xs(n - 1)},${pad.t + h} L${xs(0)},${pad.t + h} Z`;
+  const pathFor = data => data.map((v, i) => `${i === 0 ? 'M' : 'L'}${xs(i)},${pad.t + h * (1 - v / max)}`).join(' ');
+  const areaFor = data => pathFor(data) + ` L${xs(n - 1)},${pad.t + h} L${xs(0)},${pad.t + h} Z`;
   const svgRef = React.useRef(null);
   const [hover, setHover] = React.useState(null);
   const scr = useChartScrubber(svgRef, null, p => {
@@ -768,15 +1177,28 @@ function SvgLineChart({
   });
 
   // A single point can't form a line — render nothing (after the hooks).
-  if (n < 2) return null;
+  if (n < 2 || !allSeries.length) return null;
+  const s0 = allSeries[0];
+  const s1 = allSeries[1] || null;
+  // Labels X : sélection anti-collision (l'ancien code rendait TOUS les
+  // labels — 30 jours de cumul = bouillie illisible garantie).
+  const xLabels = labels.map(l => String(l == null ? '' : l));
+  const xCenters = labels.map((_, i) => xs(i));
+  const shownLabels = thinnedAxisLabels(xLabels, xCenters, {
+    lo: pad.l,
+    hi: width - pad.r
+  });
   return /*#__PURE__*/React.createElement("svg", _extends({
     ref: svgRef,
     viewBox: `0 0 ${width} ${height}`,
     width: "100%",
     height: height,
+    role: "img",
+    "aria-label": ariaLabel,
+    className: CHART.anim.className,
     style: {
       display: 'block',
-      touchAction: 'pan-y'
+      touchAction: CHART.touchAction
     }
   }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
     x: "0",
@@ -798,115 +1220,100 @@ function SvgLineChart({
     offset: "1",
     stopColor: T.accent,
     stopOpacity: 0
-  }))), [0, 0.5, 1].map((f, i) => /*#__PURE__*/React.createElement("line", {
-    key: i,
+  }))), yT.values.map((v, i) => /*#__PURE__*/React.createElement("g", {
+    key: i
+  }, /*#__PURE__*/React.createElement("line", {
     x1: pad.l,
     x2: pad.l + w,
-    y1: pad.t + h * f,
-    y2: pad.t + h * f,
+    y1: pad.t + h * (1 - v / max),
+    y2: pad.t + h * (1 - v / max),
     stroke: T.rule,
-    strokeDasharray: "2 3",
-    strokeWidth: 0.6
-  })), yL.values.map((v, i) => /*#__PURE__*/React.createElement("text", {
-    key: `yl-${i}`,
+    strokeDasharray: CHART.grid.dash,
+    strokeWidth: CHART.grid.width
+  }), /*#__PURE__*/React.createElement("text", {
     x: pad.l - 4,
-    y: pad.t + h * (1 - v / maxL) + 3,
-    fontSize: 9,
+    y: pad.t + h * (1 - v / max) + 3,
+    fontSize: CHART.font.tick,
     fill: T.muted,
     textAnchor: "end",
     fontFamily: fontNum
-  }, fmtTick(v))), !singleAxis && yR.values.map((v, i) => /*#__PURE__*/React.createElement("text", {
-    key: `yr-${i}`,
-    x: width - pad.r + 4,
-    y: pad.t + h * (1 - v / maxR) + 3,
-    fontSize: 9,
-    fill: T.muted,
-    textAnchor: "start",
-    fontFamily: fontNum
-  }, fmtTick(v))), /*#__PURE__*/React.createElement("path", {
-    d: areaFor(series[0].data, maxL),
+  }, fmtTick(v)))), /*#__PURE__*/React.createElement("path", {
+    d: areaFor(s0.data),
     fill: `url(#lg-a-${idSuffix})`
   }), /*#__PURE__*/React.createElement("path", {
-    d: pathFor(series[0].data, maxL),
+    d: pathFor(s0.data),
     fill: "none",
     stroke: T.accent,
-    strokeWidth: 1.8,
+    strokeWidth: CHART.stroke.line,
     strokeLinejoin: "round"
-  }), /*#__PURE__*/React.createElement("path", {
-    d: pathFor(series[1].data, maxR),
+  }), s1 && /*#__PURE__*/React.createElement("path", {
+    d: pathFor(s1.data),
     fill: "none",
     stroke: T.accent2,
-    strokeWidth: 1.5,
-    strokeDasharray: "3 2",
+    strokeWidth: CHART.stroke.lineSecondary,
+    strokeDasharray: CHART.dash.secondary,
     strokeLinejoin: "round"
-  }), labels.map((l, i) => /*#__PURE__*/React.createElement("text", {
-    key: i,
-    x: xs(i),
+  }), shownLabels.map(({
+    i,
+    x,
+    anchor
+  }) => /*#__PURE__*/React.createElement("text", {
+    key: `xl-${i}`,
+    x: x,
     y: height - 8,
-    fontSize: 9,
+    fontSize: CHART.font.tick,
     fill: T.muted,
-    textAnchor: "middle",
+    textAnchor: anchor,
     fontFamily: fontNum
-  }, l)), /*#__PURE__*/React.createElement("text", {
-    x: 4,
-    y: pad.t + 4,
-    fontSize: 8,
-    fill: T.accent,
-    fontFamily: fontNum
-  }, leftLabel), !singleAxis && /*#__PURE__*/React.createElement("text", {
-    x: width - 4,
-    y: pad.t + 4,
-    fontSize: 8,
-    fill: T.accent2,
-    fontFamily: fontNum,
-    textAnchor: "end"
-  }, rightLabel), hover != null && (() => {
+  }, xLabels[i])), hover != null && (() => {
     const tx = xs(hover);
-    const v0 = series[0].data[hover];
-    const v1 = series[1].data[hover];
-    const cy0 = pad.t + h * (1 - v0 / maxL);
-    const cy1 = pad.t + h * (1 - v1 / maxR);
+    const v0 = s0.data[hover];
+    const cy0 = pad.t + h * (1 - v0 / max);
+    const v1 = s1 ? s1.data[hover] : null;
+    const cy1 = s1 ? pad.t + h * (1 - v1 / max) : null;
+    const lines = [`${labels[hover]}`, `${v0}${tooltipUnits[0] ? ' ' + tooltipUnits[0] : ''}`, ...(s1 ? [`${v1}${tooltipUnits[1] ? ' ' + tooltipUnits[1] : ''}`] : []), ...(extraLines ? extraLines(hover) : [])];
     return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("line", {
       x1: tx,
       x2: tx,
       y1: pad.t,
       y2: pad.t + h,
       stroke: T.ink2,
-      strokeDasharray: "2 3",
-      strokeWidth: 0.8,
+      strokeDasharray: CHART.dash.hair,
+      strokeWidth: CHART.stroke.hair,
       opacity: 0.7
     }), /*#__PURE__*/React.createElement("circle", {
       cx: tx,
       cy: cy0,
-      r: 3.5,
+      r: CHART.focus.dot,
       fill: T.accent,
       stroke: T.surface,
       strokeWidth: 1.2
-    }), /*#__PURE__*/React.createElement("circle", {
+    }), s1 && /*#__PURE__*/React.createElement("circle", {
       cx: tx,
       cy: cy1,
-      r: 3.5,
+      r: CHART.focus.dot,
       fill: T.accent2,
       stroke: T.surface,
       strokeWidth: 1.2
     }), /*#__PURE__*/React.createElement(ChartTooltip, {
       x: tx,
-      y: Math.min(cy0, cy1),
+      y: s1 ? Math.min(cy0, cy1) : cy0,
       width: width,
       height: height,
-      lines: [`${labels[hover]}`, `${v0} ${tooltipUnits[0]}`, `${v1} ${tooltipUnits[1]}`]
+      lines: lines
     }));
   })());
 }
 // ── Polar clock (24h consumption distribution) ───────────────────
 function SvgPolarClock({
   hours,
-  size = 260
+  size = 260,
+  ariaLabel = 'Horloge des consommations sur 24 heures'
 }) {
   const cx = size / 2,
     cy = size / 2;
-  const rOuter = size / 2 - 22;
-  const rInner = size / 2 * 0.38;
+  const rOuter = size / 2 - CHART.pad.clockOuter;
+  const rInner = size / 2 * CHART.pad.clockInnerRatio;
   const max = Math.max(1, ...hours);
   const wedge = i => {
     const a0 = i / 24 * Math.PI * 2 - Math.PI / 2;
@@ -981,9 +1388,12 @@ function SvgPolarClock({
     viewBox: `0 0 ${size} ${size}`,
     width: "100%",
     height: size,
+    role: "img",
+    "aria-label": ariaLabel,
+    className: CHART.anim.className,
     style: {
       display: 'block',
-      touchAction: 'pan-y'
+      touchAction: CHART.touchAction
     }
   }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
     x: "0",
@@ -997,15 +1407,15 @@ function SvgPolarClock({
     r: rOuter,
     fill: "none",
     stroke: T.rule,
-    strokeWidth: 0.5,
-    strokeDasharray: "2 3"
+    strokeWidth: CHART.stroke.spoke,
+    strokeDasharray: CHART.grid.dash
   }), /*#__PURE__*/React.createElement("circle", {
     cx: cx,
     cy: cy,
     r: rInner,
     fill: "none",
     stroke: T.rule,
-    strokeWidth: 0.5
+    strokeWidth: CHART.stroke.spoke
   }), [0.33, 0.66].map((f, i) => /*#__PURE__*/React.createElement("circle", {
     key: i,
     cx: cx,
@@ -1014,21 +1424,25 @@ function SvgPolarClock({
     fill: "none",
     stroke: T.rule,
     strokeWidth: 0.4,
-    strokeDasharray: "1 2"
+    strokeDasharray: CHART.dash.ringMinor
   })), arcs, labels.map(({
     h,
     txt
   }) => {
     const a = h / 24 * Math.PI * 2 - Math.PI / 2;
-    const lx = cx + Math.cos(a) * (rOuter + 12);
-    const ly = cy + Math.sin(a) * (rOuter + 12) + 3;
+    const {
+      anchor,
+      dy
+    } = radarLabelLayout(a);
+    const lx = cx + Math.cos(a) * (rOuter + CHART.pad.spokeLabel);
+    const ly = cy + Math.sin(a) * (rOuter + CHART.pad.spokeLabel) + dy;
     return /*#__PURE__*/React.createElement("text", {
       key: h,
       x: lx,
       y: ly,
-      fontSize: 11,
+      fontSize: CHART.font.spoke,
       fill: T.ink2,
-      textAnchor: "middle",
+      textAnchor: anchor,
       fontFamily: fontNum
     }, txt);
   }), hover != null && (() => {
@@ -1070,24 +1484,18 @@ function SvgBACProjection({
   const svgRef = React.useRef(null);
   const [scrubT, setScrubT] = React.useState(null);
   const safePoints = points && points.length > 0 ? points : null;
-  // Tightened paddings give the curve more vertical room on small
-  // screens while still fitting 4-digit y-axis labels (worst case
-  // ~"1500" at fontSize 9 ≈ 22 px wide; 36 px keeps a ~12 px breathing
-  // gap from the plot area).
-  const pad = {
-    t: 16,
-    r: 14,
-    b: 22,
-    l: 36
-  };
+  const pad = CHART.pad.cartesian;
   const w = width - pad.l - pad.r;
   // Adaptive framing — full span to sobriety; a small curve still fills the
-  // height. Computed before the scrubber, which closes over minT/maxT.
+  // height ; un pic pathologique est plafonné (BAC_CHART_CAP) comme sur la
+  // prévision. Computed before the scrubber, which closes over minT/maxT.
   const {
     minT,
     maxT,
     maxB
-  } = bacChartRange(safePoints);
+  } = bacChartRange(safePoints, {
+    capRunaway: true
+  });
 
   // The scrubber is a hook (uses useState internally), so it must be
   // called every render — even when `safePoints` is null. We close over
@@ -1120,33 +1528,38 @@ function SvgBACProjection({
   const h = height - pad.t - pad.b;
   const xs = t => pad.l + (t - minT) / Math.max(0.001, maxT - minT) * w;
   const ys = b => pad.t + h * (1 - b / maxB);
+  // Clamp rendu : un pic au-delà du cadre (capRunaway) longe le bord haut
+  // au lieu de sortir du viewBox (la tooltip garde la vraie valeur).
+  const yc = b => ys(Math.min(b, maxB));
   const baseY = pad.t + h;
+
+  // Couleurs de zone : tokens du thème (T.bacWarn / T.bacDanger), source
+  // unique via bacZoneColor — plus AUCUN littéral oklch ici.
   const safe = T.good;
-  const warn = T.isDark ? 'oklch(72% 0.16 60)' : 'oklch(58% 0.16 55)';
-  const danger = T.isDark ? 'oklch(68% 0.20 25)' : 'oklch(54% 0.20 25)';
-  const bacColor = b => b > 500 ? danger : b > 200 ? warn : safe;
+  const warn = T.bacWarn;
+  const danger = T.bacDanger;
   const gradStrokeId = `bac-stroke-${idSuffix}`;
   const gradAreaId = `bac-area-${idSuffix}`;
 
   // Build a vertical gradient that matches the threshold colors. Stops
-  // are placed exactly at 200 and 500 mg/L so the colour transitions
+  // are placed exactly at the zone thresholds so the colour transitions
   // line up with the threshold lines. y goes 0 (top, max BAC) → 1 (bottom, 0).
-  const stop500 = 1 - Math.min(1, 500 / maxB);
-  const stop200 = 1 - Math.min(1, 200 / maxB);
+  const stopLegal = 1 - Math.min(1, BAC_ZONE_LEGAL / maxB);
+  const stopLight = 1 - Math.min(1, BAC_ZONE_LIGHT / maxB);
   const gradStops = (alpha = 1) => /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("stop", {
-    offset: `${(stop500 * 100).toFixed(2)}%`,
+    offset: `${(stopLegal * 100).toFixed(2)}%`,
     stopColor: danger,
     stopOpacity: alpha
   }), /*#__PURE__*/React.createElement("stop", {
-    offset: `${(stop500 * 100).toFixed(2)}%`,
+    offset: `${(stopLegal * 100).toFixed(2)}%`,
     stopColor: warn,
     stopOpacity: alpha
   }), /*#__PURE__*/React.createElement("stop", {
-    offset: `${(stop200 * 100).toFixed(2)}%`,
+    offset: `${(stopLight * 100).toFixed(2)}%`,
     stopColor: warn,
     stopOpacity: alpha
   }), /*#__PURE__*/React.createElement("stop", {
-    offset: `${(stop200 * 100).toFixed(2)}%`,
+    offset: `${(stopLight * 100).toFixed(2)}%`,
     stopColor: safe,
     stopOpacity: alpha
   }), /*#__PURE__*/React.createElement("stop", {
@@ -1163,17 +1576,31 @@ function SvgBACProjection({
   })();
   const past = safePoints.slice(0, Math.max(1, nowIdx + 1));
   const future = safePoints.slice(nowIdx);
-  const pathOf = pts => pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${xs(p.t)},${ys(p.bac)}`).join(' ');
+  const pathOf = pts => pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${xs(p.t)},${yc(p.bac)}`).join(' ');
   const areaOf = pts => pathOf(pts) + ` L${xs(pts[pts.length - 1].t)},${baseY} L${xs(pts[0].t)},${baseY} Z`;
+
+  // Labels de seuil : posés dans une « lane » verticale au bord droit via
+  // resolveLaneLabels — deux seuils proches (petit cadre) ne se chevauchent
+  // jamais, le moins prioritaire saute (sa ligne reste).
   const thresh = [{
-    y: 200,
-    label: '200 mg/L',
-    color: warn
+    y: BAC_ZONE_LIGHT,
+    label: `${BAC_ZONE_LIGHT} mg/L`,
+    color: warn,
+    priority: 1
   }, {
-    y: 500,
-    label: '500 légal',
-    color: danger
+    y: BAC_ZONE_LEGAL,
+    label: `${BAC_ZONE_LEGAL} légal`,
+    color: danger,
+    priority: 2
   }].filter(l => l.y <= maxB);
+  const threshLabels = resolveLaneLabels(thresh.map(l => ({
+    ...l,
+    pos: ys(l.y) - 3,
+    size: CHART.font.ref
+  })), {
+    lo: pad.t,
+    hi: baseY
+  });
 
   // Linear interpolation between adjacent samples → smooth ball motion.
   const interpAt = t => {
@@ -1201,7 +1628,7 @@ function SvgBACProjection({
   };
   const focusT = scrubT != null ? scrubT : 0;
   const focus = interpAt(focusT);
-  const focusColor = bacColor(focus.bac);
+  const focusColor = bacZoneColor(focus.bac);
   const fmtClock = t => {
     const d = new Date(nowMs + t * 3600_000);
     const hh = String(d.getHours()).padStart(2, '0');
@@ -1221,15 +1648,18 @@ function SvgBACProjection({
     const phrase = hh === 0 ? `${mm}min` : mm === 0 ? `${hh}h` : `${hh}h${String(mm).padStart(2, '0')}`;
     return t < 0 ? `il y a ${phrase}` : `dans ${phrase}`;
   };
-  const fmtStatus = b => b > 500 ? 'Au-delà' : b > 200 ? 'Léger' : 'Sobre';
+  const fmtStatus = b => b > BAC_ZONE_LEGAL ? 'Au-delà' : b > BAC_ZONE_LIGHT ? 'Léger' : 'Sobre';
   return /*#__PURE__*/React.createElement("svg", _extends({
     ref: svgRef,
     viewBox: `0 0 ${width} ${height}`,
     width: "100%",
     height: height,
+    role: "img",
+    "aria-label": "Projection d'alcool\xE9mie dans le temps",
+    className: CHART.anim.className,
     style: {
       display: 'block',
-      touchAction: 'none'
+      touchAction: CHART.touchAction
     }
   }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
     x: "0",
@@ -1261,51 +1691,51 @@ function SvgBACProjection({
     y1: pad.t + h * (1 - f),
     y2: pad.t + h * (1 - f),
     stroke: T.rule,
-    strokeDasharray: "2 3",
-    strokeWidth: 0.5,
+    strokeDasharray: CHART.grid.dash,
+    strokeWidth: CHART.grid.width,
     opacity: 0.6
   }), /*#__PURE__*/React.createElement("text", {
     x: pad.l - 4,
     y: pad.t + h * (1 - f) + 3,
-    fontSize: 9,
+    fontSize: CHART.font.tick,
     fill: T.muted,
     textAnchor: "end",
     fontFamily: fontNum
-  }, Math.round(maxB * f)))), thresh.map((l, i) => /*#__PURE__*/React.createElement("g", {
-    key: `th-${i}`
-  }, /*#__PURE__*/React.createElement("line", {
+  }, fmtTick(Math.round(maxB * f))))), thresh.map((l, i) => /*#__PURE__*/React.createElement("line", {
+    key: `th-${i}`,
     x1: pad.l,
     x2: pad.l + w,
     y1: ys(l.y),
     y2: ys(l.y),
     stroke: l.color,
-    strokeDasharray: "3 3",
-    strokeWidth: 0.8,
+    strokeDasharray: CHART.dash.threshold,
+    strokeWidth: CHART.stroke.threshold,
     opacity: 0.55
-  }), /*#__PURE__*/React.createElement("text", {
+  })), threshLabels.map((l, i) => /*#__PURE__*/React.createElement("text", {
+    key: `thl-${i}`,
     x: pad.l + w - 2,
-    y: ys(l.y) - 3,
-    fontSize: 8,
+    y: l.pos,
+    fontSize: CHART.font.ref,
     fill: l.color,
     textAnchor: "end",
     fontFamily: fontNum
-  }, l.label))), past.length > 1 && /*#__PURE__*/React.createElement("path", {
+  }, l.label)), past.length > 1 && /*#__PURE__*/React.createElement("path", {
     d: areaOf(past),
     fill: `url(#${gradAreaId})`
   }), past.length > 1 && /*#__PURE__*/React.createElement("path", {
     d: pathOf(past),
     fill: "none",
     stroke: `url(#${gradStrokeId})`,
-    strokeWidth: 2.4,
+    strokeWidth: CHART.stroke.bacPast,
     strokeLinejoin: "round",
     strokeLinecap: "round"
   }), future.length > 1 && /*#__PURE__*/React.createElement("path", {
     d: pathOf(future),
     fill: "none",
     stroke: `url(#${gradStrokeId})`,
-    strokeWidth: 1.8,
+    strokeWidth: CHART.stroke.bacFuture,
     strokeOpacity: 0.75,
-    strokeDasharray: "5 4",
+    strokeDasharray: CHART.dash.future,
     strokeLinejoin: "round",
     strokeLinecap: "round"
   }), 0 >= minT && 0 <= maxT && /*#__PURE__*/React.createElement("line", {
@@ -1314,8 +1744,8 @@ function SvgBACProjection({
     y1: pad.t,
     y2: baseY,
     stroke: T.ink2,
-    strokeWidth: 1,
-    strokeDasharray: "3 3",
+    strokeWidth: CHART.stroke.reference,
+    strokeDasharray: CHART.dash.now,
     opacity: 0.5
   }), ticksX.map((t, i) => {
     const last = ticksX.length - 1;
@@ -1325,7 +1755,7 @@ function SvgBACProjection({
       key: i,
       x: xs(t) + dx,
       y: height - 10,
-      fontSize: 9,
+      fontSize: CHART.font.tick,
       fill: T.muted,
       textAnchor: anchor,
       fontFamily: fontNum
@@ -1333,39 +1763,39 @@ function SvgBACProjection({
   }), scrubT == null && 0 >= minT && 0 <= maxT && /*#__PURE__*/React.createElement("text", {
     x: xs(0),
     y: pad.t - 6,
-    fontSize: 9,
+    fontSize: CHART.font.tick,
     fill: T.ink2,
     textAnchor: "middle",
     fontFamily: fontNum
   }, "maintenant"), focus && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("line", {
     x1: xs(focus.t),
     x2: xs(focus.t),
-    y1: ys(focus.bac),
+    y1: yc(focus.bac),
     y2: baseY,
     stroke: focusColor,
     strokeWidth: 1,
     opacity: 0.35
   }), /*#__PURE__*/React.createElement("circle", {
     cx: xs(focus.t),
-    cy: ys(focus.bac),
-    r: 11,
+    cy: yc(focus.bac),
+    r: CHART.focus.halo,
     fill: focusColor,
     fillOpacity: 0.2
   }), /*#__PURE__*/React.createElement("circle", {
     cx: xs(focus.t),
-    cy: ys(focus.bac),
-    r: 6,
+    cy: yc(focus.bac),
+    r: CHART.focus.ring,
     fill: T.bg,
     stroke: focusColor,
     strokeWidth: 1.5
   }), /*#__PURE__*/React.createElement("circle", {
     cx: xs(focus.t),
-    cy: ys(focus.bac),
-    r: 3.5,
+    cy: yc(focus.bac),
+    r: CHART.focus.dot,
     fill: focusColor
   }), /*#__PURE__*/React.createElement(ChartTooltip, {
     x: xs(focus.t),
-    y: ys(focus.bac),
+    y: yc(focus.bac),
     width: width,
     height: height,
     lines: [`${Math.round(focus.bac)} mg/L`, fmtStatus(focus.bac), fmtRel(focus.t)]
@@ -1411,12 +1841,7 @@ function SvgBACForecast({
     }
     return a.concat(b);
   }, [safeReal, safeProj]);
-  const pad = {
-    t: 16,
-    r: 14,
-    b: 22,
-    l: 36
-  };
+  const pad = CHART.pad.cartesian;
   const w = width - pad.l - pad.r;
   // Adaptive framing — show the WHOLE curve down to its return to 0 (no
   // keepRiseFocus trim: the projected tail must fit, not end mid-air at the
@@ -1455,28 +1880,29 @@ function SvgBACForecast({
   const xs = t => pad.l + (t - minT) / Math.max(0.001, maxT - minT) * w;
   const ys = b => pad.t + h * (1 - b / maxB);
   const baseY = pad.t + h;
+
+  // Couleurs de zone : tokens du thème — plus AUCUN littéral oklch ici.
   const safe = T.good;
-  const warn = T.isDark ? 'oklch(72% 0.16 60)' : 'oklch(58% 0.16 55)';
-  const danger = T.isDark ? 'oklch(68% 0.20 25)' : 'oklch(54% 0.20 25)';
-  const bacColor = b => b > 500 ? danger : b > 200 ? warn : safe;
+  const warn = T.bacWarn;
+  const danger = T.bacDanger;
   const gradStrokeId = `bacf-stroke-${idSuffix}`;
   const gradAreaId = `bacf-area-${idSuffix}`;
-  const stop500 = 1 - Math.min(1, 500 / maxB);
-  const stop200 = 1 - Math.min(1, 200 / maxB);
+  const stopLegal = 1 - Math.min(1, BAC_ZONE_LEGAL / maxB);
+  const stopLight = 1 - Math.min(1, BAC_ZONE_LIGHT / maxB);
   const gradStops = (alpha = 1) => /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("stop", {
-    offset: `${(stop500 * 100).toFixed(2)}%`,
+    offset: `${(stopLegal * 100).toFixed(2)}%`,
     stopColor: danger,
     stopOpacity: alpha
   }), /*#__PURE__*/React.createElement("stop", {
-    offset: `${(stop500 * 100).toFixed(2)}%`,
+    offset: `${(stopLegal * 100).toFixed(2)}%`,
     stopColor: warn,
     stopOpacity: alpha
   }), /*#__PURE__*/React.createElement("stop", {
-    offset: `${(stop200 * 100).toFixed(2)}%`,
+    offset: `${(stopLight * 100).toFixed(2)}%`,
     stopColor: warn,
     stopOpacity: alpha
   }), /*#__PURE__*/React.createElement("stop", {
-    offset: `${(stop200 * 100).toFixed(2)}%`,
+    offset: `${(stopLight * 100).toFixed(2)}%`,
     stopColor: safe,
     stopOpacity: alpha
   }), /*#__PURE__*/React.createElement("stop", {
@@ -1495,14 +1921,20 @@ function SvgBACForecast({
   const projR = safeProj;
   const pathOf = pts => pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${xs(p.t)},${yc(p.bac)}`).join(' ');
   const areaOf = pts => pathOf(pts) + ` L${xs(pts[pts.length - 1].t)},${baseY} L${xs(pts[0].t)},${baseY} Z`;
+
+  // Lane Y (bord droit) : seuils + « peak moyen » — résolue d'un bloc pour
+  // que trois références proches ne s'écrivent jamais l'une sur l'autre
+  // (priorités : 500 légal > peak moyen > 200).
   const thresh = [{
-    y: 200,
-    label: '200 mg/L',
-    color: warn
+    y: BAC_ZONE_LIGHT,
+    label: `${BAC_ZONE_LIGHT} mg/L`,
+    color: warn,
+    priority: 1
   }, {
-    y: 500,
-    label: '500 légal',
-    color: danger
+    y: BAC_ZONE_LEGAL,
+    label: `${BAC_ZONE_LEGAL} légal`,
+    color: danger,
+    priority: 3
   }].filter(l => l.y <= maxB);
   const interpAt = t => {
     if (merged.length === 0) return {
@@ -1533,7 +1965,7 @@ function SvgBACForecast({
   };
   const focusT = scrubT != null ? scrubT : 0;
   const focus = interpAt(focusT);
-  const focusColor = bacColor(focus.bac);
+  const focusColor = bacZoneColor(focus.bac);
   const fmtClock = t => {
     const d = new Date(nowMs + t * 3600_000);
     const hh = String(d.getHours()).padStart(2, '0');
@@ -1553,7 +1985,7 @@ function SvgBACForecast({
     const phrase = hh === 0 ? `${mm}min` : mm === 0 ? `${hh}h` : `${hh}h${String(mm).padStart(2, '0')}`;
     return t < 0 ? `il y a ${phrase}` : `dans ${phrase}`;
   };
-  const fmtStatus = b => b > 500 ? 'Au-delà' : b > 200 ? 'Léger' : 'Sobre';
+  const fmtStatus = b => b > BAC_ZONE_LEGAL ? 'Au-delà' : b > BAC_ZONE_LIGHT ? 'Léger' : 'Sobre';
 
   // ETA marker, three states (contract: shown even if never reached):
   //   • etaKnown=false (eta == null) → peak never reached → "∞", pinned right.
@@ -1572,19 +2004,59 @@ function SvgBACForecast({
     const mm = totalMin - hh * 60;
     return `peak · ${hh}h${String(mm).padStart(2, '0')}`;
   })();
-  // Anchor the label on the side of the marker that has room — flips
-  // to "end" once the marker enters the right half of the plot area so
-  // the text never clips the SVG edge.
-  const etaAnchor = etaX > pad.l + w * 0.62 ? 'end' : 'start';
-  const etaTextX = etaX + (etaAnchor === 'end' ? -4 : 4);
+  // ── Lanes anti-collision ─────────────────────────────────────────
+  // Lane Y droite : labels de seuils (le « peak moyen » vit à GAUCHE, ses
+  // extents ne croisent jamais ceux des seuils).
+  const threshLabels = resolveLaneLabels(thresh.map(l => ({
+    ...l,
+    pos: ys(l.y) - 3,
+    size: CHART.font.ref
+  })), {
+    lo: pad.t,
+    hi: baseY
+  });
+  // Lane haute (y = pad.t + 9) : label ETA + « … » de troncature — les deux
+  // vivaient au même endroit quand l'ETA était épinglé à droite. Résolus en
+  // X (centres) ; l'ETA est prioritaire, le « … » se décale ou saute.
+  const labelW = s => String(s).length * CHART.font.charW;
+  const topLaneItems = [];
+  if (meanPeakBac != null && meanPeakBac > 0) {
+    // Centre souhaité : côté du marqueur qui a de la place.
+    const side = etaX > pad.l + w * 0.62 ? -1 : 1;
+    topLaneItems.push({
+      id: 'eta',
+      pos: etaX + side * (4 + labelW(etaLabelText) / 2),
+      size: labelW(etaLabelText),
+      priority: 3
+    });
+  }
+  if (truncated) {
+    topLaneItems.push({
+      id: 'trunc',
+      pos: pad.l + w - 3 - labelW('…') / 2,
+      size: labelW('…'),
+      priority: 1
+    });
+  }
+  const topLane = resolveLaneLabels(topLaneItems, {
+    minGap: CHART.label.minGapX,
+    lo: pad.l,
+    hi: pad.l + w
+  });
+  const etaLane = topLane.find(l => l.id === 'eta');
+  const truncLane = topLane.find(l => l.id === 'trunc');
+  const meanPeakY = meanPeakBac != null ? ys(Math.min(meanPeakBac, maxB)) : null;
   return /*#__PURE__*/React.createElement("svg", _extends({
     ref: svgRef,
     viewBox: `0 0 ${width} ${height}`,
     width: "100%",
     height: height,
+    role: "img",
+    "aria-label": "Pr\xE9vision d'alcool\xE9mie de la session en cours",
+    className: CHART.anim.className,
     style: {
       display: 'block',
-      touchAction: 'none'
+      touchAction: CHART.touchAction
     }
   }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
     x: "0",
@@ -1616,47 +2088,47 @@ function SvgBACForecast({
     y1: pad.t + h * (1 - f),
     y2: pad.t + h * (1 - f),
     stroke: T.rule,
-    strokeDasharray: "2 3",
-    strokeWidth: 0.5,
+    strokeDasharray: CHART.grid.dash,
+    strokeWidth: CHART.grid.width,
     opacity: 0.6
   }), /*#__PURE__*/React.createElement("text", {
     x: pad.l - 4,
     y: pad.t + h * (1 - f) + 3,
-    fontSize: 9,
+    fontSize: CHART.font.tick,
     fill: T.muted,
     textAnchor: "end",
     fontFamily: fontNum
-  }, Math.round(maxB * f)))), thresh.map((l, i) => /*#__PURE__*/React.createElement("g", {
-    key: `th-${i}`
-  }, /*#__PURE__*/React.createElement("line", {
+  }, fmtTick(Math.round(maxB * f))))), thresh.map((l, i) => /*#__PURE__*/React.createElement("line", {
+    key: `th-${i}`,
     x1: pad.l,
     x2: pad.l + w,
     y1: ys(l.y),
     y2: ys(l.y),
     stroke: l.color,
-    strokeDasharray: "3 3",
-    strokeWidth: 0.8,
+    strokeDasharray: CHART.dash.threshold,
+    strokeWidth: CHART.stroke.threshold,
     opacity: 0.55
-  }), /*#__PURE__*/React.createElement("text", {
+  })), threshLabels.map((l, i) => /*#__PURE__*/React.createElement("text", {
+    key: `thl-${i}`,
     x: pad.l + w - 2,
-    y: ys(l.y) - 3,
-    fontSize: 8,
+    y: l.pos,
+    fontSize: CHART.font.ref,
     fill: l.color,
     textAnchor: "end",
     fontFamily: fontNum
-  }, l.label))), meanPeakBac != null && meanPeakBac > 0 && /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("line", {
+  }, l.label)), meanPeakBac != null && meanPeakBac > 0 && /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("line", {
     x1: pad.l,
     x2: pad.l + w,
-    y1: ys(Math.min(meanPeakBac, maxB)),
-    y2: ys(Math.min(meanPeakBac, maxB)),
+    y1: meanPeakY,
+    y2: meanPeakY,
     stroke: T.ink2,
-    strokeDasharray: "4 4",
-    strokeWidth: 1,
+    strokeDasharray: CHART.dash.reference,
+    strokeWidth: CHART.stroke.reference,
     opacity: 0.65
   }), /*#__PURE__*/React.createElement("text", {
     x: pad.l + 4,
-    y: ys(Math.min(meanPeakBac, maxB)) - 3,
-    fontSize: 8.5,
+    y: meanPeakY - 3,
+    fontSize: CHART.font.ref,
     fill: T.ink2,
     textAnchor: "start",
     fontFamily: fontNum
@@ -1667,16 +2139,16 @@ function SvgBACForecast({
     d: pathOf(realR),
     fill: "none",
     stroke: `url(#${gradStrokeId})`,
-    strokeWidth: 2.4,
+    strokeWidth: CHART.stroke.bacPast,
     strokeLinejoin: "round",
     strokeLinecap: "round"
   }), projR && projR.length > 1 && /*#__PURE__*/React.createElement("path", {
     d: pathOf(projR),
     fill: "none",
     stroke: `url(#${gradStrokeId})`,
-    strokeWidth: 1.8,
+    strokeWidth: CHART.stroke.bacFuture,
     strokeOpacity: 0.75,
-    strokeDasharray: "5 4",
+    strokeDasharray: CHART.dash.future,
     strokeLinejoin: "round",
     strokeLinecap: "round"
   }), 0 >= minT && 0 <= maxT && /*#__PURE__*/React.createElement("line", {
@@ -1685,8 +2157,8 @@ function SvgBACForecast({
     y1: pad.t,
     y2: baseY,
     stroke: T.ink2,
-    strokeWidth: 1,
-    strokeDasharray: "3 3",
+    strokeWidth: CHART.stroke.reference,
+    strokeDasharray: CHART.dash.now,
     opacity: 0.5
   }), truncated && /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("line", {
     x1: pad.l + w,
@@ -1694,15 +2166,15 @@ function SvgBACForecast({
     y1: pad.t,
     y2: baseY,
     stroke: T.muted,
-    strokeWidth: 1,
-    strokeDasharray: "2 2",
+    strokeWidth: CHART.stroke.reference,
+    strokeDasharray: CHART.dash.truncation,
     opacity: 0.5
-  }), /*#__PURE__*/React.createElement("text", {
-    x: pad.l + w - 3,
+  }), truncLane && /*#__PURE__*/React.createElement("text", {
+    x: truncLane.pos,
     y: pad.t + 9,
-    fontSize: 8.5,
+    fontSize: CHART.font.ref,
     fill: T.muted,
-    textAnchor: "end",
+    textAnchor: "middle",
     fontFamily: fontNum
   }, "\u2026")), meanPeakBac != null && meanPeakBac > 0 && /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("line", {
     x1: etaX,
@@ -1710,15 +2182,15 @@ function SvgBACForecast({
     y1: pad.t,
     y2: baseY,
     stroke: T.ink,
-    strokeWidth: 1,
-    strokeDasharray: "1 3",
+    strokeWidth: CHART.stroke.reference,
+    strokeDasharray: CHART.dash.marker,
     opacity: etaWithin ? 0.55 : 0.3
-  }), /*#__PURE__*/React.createElement("text", {
-    x: etaTextX,
+  }), etaLane && /*#__PURE__*/React.createElement("text", {
+    x: etaLane.pos,
     y: pad.t + 9,
-    fontSize: 8.5,
+    fontSize: CHART.font.ref,
     fill: etaKnown ? T.ink2 : T.muted,
-    textAnchor: etaAnchor,
+    textAnchor: "middle",
     fontFamily: fontNum
   }, etaLabelText)), ticksX.map((t, i) => {
     const last = ticksX.length - 1;
@@ -1728,7 +2200,7 @@ function SvgBACForecast({
       key: i,
       x: xs(t) + dx,
       y: height - 10,
-      fontSize: 9,
+      fontSize: CHART.font.tick,
       fill: T.muted,
       textAnchor: anchor,
       fontFamily: fontNum
@@ -1736,7 +2208,7 @@ function SvgBACForecast({
   }), scrubT == null && 0 >= minT && 0 <= maxT && /*#__PURE__*/React.createElement("text", {
     x: xs(0),
     y: pad.t - 6,
-    fontSize: 9,
+    fontSize: CHART.font.tick,
     fill: T.ink2,
     textAnchor: "middle",
     fontFamily: fontNum
@@ -1751,20 +2223,20 @@ function SvgBACForecast({
   }), /*#__PURE__*/React.createElement("circle", {
     cx: xs(focus.t),
     cy: yc(focus.bac),
-    r: 11,
+    r: CHART.focus.halo,
     fill: focusColor,
     fillOpacity: 0.2
   }), /*#__PURE__*/React.createElement("circle", {
     cx: xs(focus.t),
     cy: yc(focus.bac),
-    r: 6,
+    r: CHART.focus.ring,
     fill: T.bg,
     stroke: focusColor,
     strokeWidth: 1.5
   }), /*#__PURE__*/React.createElement("circle", {
     cx: xs(focus.t),
     cy: yc(focus.bac),
-    r: 3.5,
+    r: CHART.focus.dot,
     fill: focusColor
   }), /*#__PURE__*/React.createElement(ChartTooltip, {
     x: xs(focus.t),
@@ -1775,22 +2247,24 @@ function SvgBACForecast({
   })));
 }
 // ── Histogram (session duration / session BAC) ───────────────────
+// Même anatomie que SvgBarChart (axe Y gradué via chartTicks, géométrie de
+// barres CHART.bar) : l'ancienne variante sans axe posait la valeur sur
+// CHAQUE barre — un nombre par point est un anti-pattern dataviz, et deux
+// rangées de textes se chevauchaient dès que les buckets se resserraient.
+// Les valeurs exactes vivent dans la tooltip.
 function SvgHistogram({
   buckets,
   width = 320,
   height = 150,
   color,
-  valueLabel
+  valueLabel,
+  ariaLabel = 'Histogramme de distribution'
 }) {
-  const pad = {
-    t: 14,
-    r: 8,
-    b: 24,
-    l: 8
-  };
+  const pad = CHART.pad.bar;
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
-  const max = Math.max(1, ...buckets.map(b => b.v));
+  const yT = chartTicks(Math.max(1, ...buckets.map(b => b.v)), 2);
+  const max = yT.max;
   const bw = w / Math.max(1, buckets.length);
   const svgRef = React.useRef(null);
   const [hover, setHover] = React.useState(null);
@@ -1804,14 +2278,23 @@ function SvgHistogram({
   });
   // After the hooks so a later render with data keeps the hook order.
   if (!buckets.length) return null;
+  const xLabels = buckets.map(b => String(b.label || ''));
+  const xCenters = buckets.map((_, i) => pad.l + i * bw + bw / 2);
+  const shownLabels = thinnedAxisLabels(xLabels, xCenters, {
+    lo: pad.l,
+    hi: width - pad.r
+  });
   return /*#__PURE__*/React.createElement("svg", _extends({
     ref: svgRef,
     viewBox: `0 0 ${width} ${height}`,
     width: "100%",
     height: height,
+    role: "img",
+    "aria-label": ariaLabel,
+    className: CHART.anim.className,
     style: {
       display: 'block',
-      touchAction: 'pan-y'
+      touchAction: CHART.touchAction
     }
   }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
     x: "0",
@@ -1819,37 +2302,51 @@ function SvgHistogram({
     width: width,
     height: height,
     fill: "transparent"
-  }), buckets.map((b, i) => {
-    const bh = b.v > 0 ? Math.max(2, b.v / max * h) : 0;
-    const x = pad.l + i * bw + bw * 0.12;
+  }), yT.values.map((v, i) => /*#__PURE__*/React.createElement("g", {
+    key: `y-${i}`
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: pad.l,
+    x2: width - pad.r,
+    y1: pad.t + h * (1 - v / max),
+    y2: pad.t + h * (1 - v / max),
+    stroke: T.rule,
+    strokeDasharray: CHART.grid.dash,
+    strokeWidth: CHART.grid.width
+  }), /*#__PURE__*/React.createElement("text", {
+    x: pad.l - 4,
+    y: pad.t + h * (1 - v / max) + 3,
+    fontSize: CHART.font.tick,
+    fill: T.muted,
+    textAnchor: "end",
+    fontFamily: fontNum
+  }, fmtTick(v)))), buckets.map((b, i) => {
+    const bh = b.v > 0 ? Math.max(CHART.bar.minH, b.v / max * h) : 0;
+    if (bh <= 0) return null;
+    const x = pad.l + i * bw + bw * CHART.bar.inset;
     const y = pad.t + h - bh;
-    const isHover = hover === i;
-    return /*#__PURE__*/React.createElement("g", {
-      key: i
-    }, bh > 0 && /*#__PURE__*/React.createElement("rect", {
+    return /*#__PURE__*/React.createElement("rect", {
+      key: i,
       x: x,
       y: y,
-      width: bw * 0.76,
+      width: bw * CHART.bar.widthFrac,
       height: bh,
       fill: color || T.accent,
-      rx: 2,
-      opacity: isHover ? 1 : 0.85
-    }), /*#__PURE__*/React.createElement("text", {
-      x: x + bw * 0.5,
-      y: height - 8,
-      fontSize: 9.5,
-      fill: T.muted,
-      textAnchor: "middle",
-      fontFamily: fontNum
-    }, b.label), b.v > 0 && /*#__PURE__*/React.createElement("text", {
-      x: x + bw * 0.5,
-      y: y - 4,
-      fontSize: 9,
-      fill: T.ink2,
-      textAnchor: "middle",
-      fontFamily: fontNum
-    }, b.v));
-  }), hover != null && (() => {
+      rx: CHART.bar.rx,
+      opacity: hover === i ? 1 : CHART.bar.restOpacity
+    });
+  }), shownLabels.map(({
+    i,
+    x,
+    anchor
+  }) => /*#__PURE__*/React.createElement("text", {
+    key: `xl-${i}`,
+    x: x,
+    y: height - 8,
+    fontSize: CHART.font.tick,
+    fill: T.muted,
+    textAnchor: anchor,
+    fontFamily: fontNum
+  }, xLabels[i])), hover != null && (() => {
     const b = buckets[hover];
     const tx = pad.l + hover * bw + bw / 2;
     const ty = pad.t + h - b.v / max * h;
@@ -1874,7 +2371,9 @@ function heatmapBand(grams, scaleMax) {
   if (ratio <= 0.75) return 3;
   return 4;
 }
-const HEATMAP_BAND_ALPHA = [0, 0.28, 0.5, 0.72, 1];
+
+// Alias vers le token CHART (source unique) — conservé pour compat tests.
+const HEATMAP_BAND_ALPHA = CHART.heatmap.bandAlpha;
 
 // ── Calendrier (heatmap des grammes d'alcool par jour) ────────────
 // Grille type GitHub : 7 lignes (lun→dim), `cols` colonnes de semaines.
@@ -1886,18 +2385,23 @@ function SvgCalendarHeatmap({
   cols = 1,
   scaleMax = 1,
   mode = 'monthGrid',
-  width = 320
+  width = 320,
+  ariaLabel = 'Calendrier de consommation'
 }) {
   const svgRef = React.useRef(null);
   const [hover, setHover] = React.useState(null);
-  const padL = 18,
-    padT = 16,
-    padB = 6;
-  const gapRatio = 0.16;
+  const {
+    padL,
+    padT,
+    padB,
+    gapRatio,
+    cellMin,
+    cellMax
+  } = CHART.heatmap;
   // La cellule s'adapte à la largeur pour que TOUTES les colonnes rentrent
-  // (une année ≈ 52 colonnes ne doit pas déborder du viewBox) ; plafonnée à
-  // 22 px (mois/semaine restent lisibles), plancher 4 px (visibilité mini).
-  const cell = Math.max(4, Math.min(22, (width - padL) / Math.max(1, cols) / (1 + gapRatio)));
+  // (une année ≈ 52 colonnes ne doit pas déborder du viewBox) ; plafonnée
+  // (mois/semaine restent lisibles), plancher = visibilité minimale.
+  const cell = Math.max(cellMin, Math.min(cellMax, (width - padL) / Math.max(1, cols) / (1 + gapRatio)));
   const stepC = cell * (1 + gapRatio);
   const height = padT + 7 * stepC + padB;
 
@@ -1921,7 +2425,9 @@ function SvgCalendarHeatmap({
   });
   if (!cells.length) return null;
   const dayLetters = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-  // Étiquettes de mois : 1ʳᵉ colonne où apparaît le 1ᵉʳ d'un mois.
+  // Étiquettes de mois : 1ʳᵉ colonne où apparaît le 1ᵉʳ d'un mois, PUIS
+  // passe anti-collision — deux mois dont les colonnes de départ sont trop
+  // proches (cellules étroites, mois courts) se chevauchaient.
   const monthTicks = [];
   const seen = new Set();
   for (const c of cells) {
@@ -1935,6 +2441,18 @@ function SvgCalendarHeatmap({
       });
     }
   }
+  const shownMonthTicks = [];
+  for (const t of monthTicks) {
+    const x = padL + t.col * cell * (1 + gapRatio);
+    const prev = shownMonthTicks[shownMonthTicks.length - 1];
+    const wLbl = t.label.length * CHART.font.charW;
+    if (prev && x < prev.x + prev.w + CHART.label.minGapX) continue; // saute le mois qui mordrait
+    shownMonthTicks.push({
+      ...t,
+      x,
+      w: wLbl
+    });
+  }
   const fmtFrDate = iso => {
     const [y, m, d] = iso.split('-').map(Number);
     return `${d} ${FR_MONTHS_SHORT[m - 1]} ${y}`;
@@ -1944,9 +2462,12 @@ function SvgCalendarHeatmap({
     viewBox: `0 0 ${width} ${height}`,
     width: "100%",
     height: height,
+    role: "img",
+    "aria-label": ariaLabel,
+    className: CHART.anim.className,
     style: {
       display: 'block',
-      touchAction: 'pan-y'
+      touchAction: CHART.touchAction
     }
   }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
     x: "0",
@@ -1958,15 +2479,15 @@ function SvgCalendarHeatmap({
     key: `d-${i}`,
     x: padL - 5,
     y: rowY(i) + cell * 0.72,
-    fontSize: 8,
+    fontSize: CHART.font.ref,
     fill: T.muted,
     textAnchor: "end",
     fontFamily: fontNum
-  }, l) : null), monthTicks.map((t, i) => /*#__PURE__*/React.createElement("text", {
+  }, l) : null), shownMonthTicks.map((t, i) => /*#__PURE__*/React.createElement("text", {
     key: `m-${i}`,
     x: colX(t.col),
     y: padT - 5,
-    fontSize: 8,
+    fontSize: CHART.font.ref,
     fill: T.muted,
     textAnchor: "start",
     fontFamily: fontNum
@@ -2019,6 +2540,17 @@ Object.assign(window, {
   fmtTick,
   chartTooltipLayout,
   bacChartRange,
+  CHART,
+  BAC_CHART_CAP,
+  BAC_ZONE_LIGHT,
+  BAC_ZONE_LEGAL,
+  bacZoneColor,
+  thinnedAxisLabels,
+  resolveLaneLabels,
+  radarLabelLayout,
+  fitLabel,
+  donutSegments,
+  ChartLegend,
   SvgBarChart,
   SvgRadar,
   SvgDonut,
@@ -2029,6 +2561,7 @@ Object.assign(window, {
   SvgHistogram,
   SvgCalendarHeatmap,
   heatmapBand,
+  HEATMAP_BAND_ALPHA,
   useChartScrubber,
   ChartTooltip,
   useMeasuredWidth,
