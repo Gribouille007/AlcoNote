@@ -343,12 +343,19 @@ class DatabaseManager {
 
     async addDrink(drinkData) {
         try {
-            // Convert quantity based on unit
+            // Convert quantity based on unit — MUST mirror `toCl` (shared.jsx):
+            // EcoCup ×25, L ×100, mL ÷10, sinon déjà en cL. Comparaison
+            // insensible à la casse comme `toCl` (les stats recalculent via
+            // `toCl`, mais ce champ stocké est exporté/partagé : il doit dire
+            // la même chose).
+            const unitLc = String(drinkData.unit || '').toLowerCase();
             let quantityInCL = drinkData.quantity;
-            if (drinkData.unit === 'EcoCup') {
+            if (unitLc === 'ecocup') {
                 quantityInCL = drinkData.quantity * 25; // EcoCup = 25cL each
-            } else if (drinkData.unit === 'L') {
+            } else if (unitLc === 'l') {
                 quantityInCL = drinkData.quantity * 100; // Convert L to cL
+            } else if (unitLc === 'ml') {
+                quantityInCL = drinkData.quantity / 10; // Convert mL to cL
             }
 
             const drinkToAdd = {
@@ -396,11 +403,15 @@ class DatabaseManager {
                 const quantity = updates.quantity !== undefined ? updates.quantity : oldDrink.quantity;
                 const unit = updates.unit !== undefined ? updates.unit : oldDrink.unit;
 
+                // Même conversion que addDrink / `toCl` (shared.jsx).
+                const unitLc = String(unit || '').toLowerCase();
                 let quantityInCL = quantity;
-                if (unit === 'EcoCup') {
+                if (unitLc === 'ecocup') {
                     quantityInCL = quantity * 25;
-                } else if (unit === 'L') {
+                } else if (unitLc === 'l') {
                     quantityInCL = quantity * 100;
+                } else if (unitLc === 'ml') {
+                    quantityInCL = quantity / 10;
                 }
                 updates.quantityInCL = quantityInCL;
             }

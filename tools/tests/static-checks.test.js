@@ -177,3 +177,30 @@ test('zoom verrouillé : meta viewport + touch-action + guards gesture*', () => 
   assert.ok(shared.includes("'gesturestart'"), 'guard gesturestart (pinch Safari iOS)');
   assert.ok(shared.includes('installZoomGuards'), 'installZoomGuards présent dans shared.jsx');
 });
+
+// ── Gel textuel des formules (cf. CLAUDE.md § « Formules gelées ») ──
+// Deuxième verrou (avec unit-formulas.test.js) : les déclarations littérales
+// des constantes du modèle doivent exister VERBATIM dans les sources. Toute
+// modification échoue ici — si le changement est voulu, mettre à jour les
+// deux verrous dans le même commit.
+test('gel — déclarations littérales des constantes de formules', () => {
+  const statsSrc = read('proto/stats.jsx');
+  const sharedSrc = read('proto/shared.jsx');
+  const frozen = [
+    [statsSrc, 'proto/stats.jsx', /const BAC_ELIM_RATE = 150;/],
+    [statsSrc, 'proto/stats.jsx', /const BAC_ABSORPTION_H = 0\.5;/],
+    [statsSrc, 'proto/stats.jsx', /const DEFAULT_WEIGHT_KG = 70;/],
+    [statsSrc, 'proto/stats.jsx', /const WIDMARK_R_MALE = 0\.68;/],
+    [statsSrc, 'proto/stats.jsx', /const WIDMARK_R_FEMALE = 0\.55;/],
+    [statsSrc, 'proto/stats.jsx', /const BAC_LEGAL_LIMIT = 500;/],
+    [statsSrc, 'proto/stats.jsx', /const BAC_RECORD_MIN = 200;/],
+    [statsSrc, 'proto/stats.jsx', /const FORECAST_MAX_RATE_GPH = 60;/],
+    [statsSrc, 'proto/stats.jsx', /const FORECAST_HORIZON_H = 12;/],
+    [sharedSrc, 'proto/shared.jsx', /const ETHANOL_DENSITY_G_PER_ML = 0\.789;/],
+  ];
+  for (const [src, file, re] of frozen) {
+    assert.match(src, re,
+      `${file} : ${re} introuvable — FORMULE GELÉE (CLAUDE.md § Formules gelées). ` +
+      'Changement voulu ? Mettre à jour CE test ET unit-formulas.test.js dans le même commit.');
+  }
+});

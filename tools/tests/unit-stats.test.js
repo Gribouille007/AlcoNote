@@ -559,6 +559,27 @@ test('buildHeatmapCells — mode selon période, cellules + scaleMax', () => {
   assert.equal(buildHeatmapCells(drinks, 'today', td, new Date(2026, 5, 15)).mode, 'today');
 });
 
+test('buildHeatmapCells — mode today : 35 jours finissant à min(ancre, aujourd\'hui)', () => {
+  // Ancre passée : la fenêtre couvre [ancre−34 j, ancre] — les boissons de
+  // TOUT l'historique comptent (la section passe allDrinks, pas la période).
+  const anchor = new Date(2026, 5, 15);
+  const td = getPeriodRange('today', anchor);
+  const drinks = [beer('2026-06-09', '18:00'), beer('2026-05-20', '20:00')];
+  const hm = buildHeatmapCells(drinks, 'today', td, anchor);
+  const inWin = hm.cells.filter(c => !c.blank);
+  assert.equal(inWin.length, 35, '5 semaines pleines');
+  assert.equal(inWin[0].date, '2026-05-12');
+  assert.equal(inWin[inWin.length - 1].date, '2026-06-15');
+  const c20 = inWin.find(c => c.date === '2026-05-20');
+  assert.ok(c20 && c20.count === 1, 'une boisson hors du jour ancre est comptée');
+  // Ancre future : clamp à aujourd'hui — aucune cellule au-delà du présent.
+  const future = new Date(Date.now() + 40 * 86400_000);
+  const hf = buildHeatmapCells([], 'today', td, future);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const winF = hf.cells.filter(c => !c.blank);
+  assert.equal(winF[winF.length - 1].date, localDate(today), 'pas de jours futurs');
+});
+
 // ── buildSessionList / buildSessionPeakHistogram ────────────────────
 
 test('buildSessionList — plus récente d’abord, cap n, champs aplatis', () => {

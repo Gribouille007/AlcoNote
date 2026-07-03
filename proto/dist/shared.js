@@ -1021,6 +1021,12 @@ const FR_MONTHS_LONG = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', '
 const FR_MONTHS_DOTTED = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 function fmtDateMedium(iso) {
   if (!iso) return '—';
+  // `new Date('YYYY-MM-DD')` parse en UTC minuit : dans un fuseau négatif la
+  // date rendue recule d'un jour. Découper les champs garde le jour calendaire.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (m && Number(m[2]) >= 1 && Number(m[2]) <= 12) {
+    return `${Number(m[3])} ${FR_MONTHS_DOTTED[Number(m[2]) - 1]}`;
+  }
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '—';
   return `${d.getDate()} ${FR_MONTHS_DOTTED[d.getMonth()]}`;

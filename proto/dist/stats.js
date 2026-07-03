@@ -212,6 +212,35 @@ function filterDrinksInRange(drinks, start, end) {
   return drinks.filter(d => d.date >= sIso && d.date <= eIso);
 }
 
+// Clé canonique d'un nom de boisson (trim + lowercase, comme familyKey/
+// ratingKey) : TOUT regroupement par nom dans les stats (unicité, Top
+// boissons, favori par catégorie) passe par elle — sinon « Pilsner » et
+// « pilsner  » divergent d'une section à l'autre.
+function drinkNameKey(name) {
+  return (name || '').trim().toLowerCase();
+}
+
+// Index du max d'un histogramme, ou null si tout est à zéro — évite de
+// désigner « 0h » / « Dimanche » comme pointe en l'absence de données
+// exploitables (indexOf(0) === 0 mentait).
+function peakIndex(arr) {
+  let best = null,
+    bestV = 0;
+  for (let i = 0; i < (arr || []).length; i++) {
+    if (arr[i] > bestV) {
+      bestV = arr[i];
+      best = i;
+    }
+  }
+  return best;
+}
+
+// Gate de pertinence : une card/section ne se rend que pour les périodes
+// où elle a du sens (cf. matrice « Pertinence par période », CLAUDE.md).
+function inPeriods(period, list) {
+  return list.includes(period);
+}
+
 // Roll up totals (drink count, cL of liquid, grams of pure alcohol,
 // unique-name set) plus per-category / per-hour / per-day-of-week
 // histograms used by every section above the BAC block.
@@ -231,7 +260,7 @@ function aggregateGeneral(drinks) {
     stats.grams += ethanolGrams(cl, d.alcoholContent); // réutilise `cl` déjà calculé
     // Même normalisation que familyKey/ratingKey (trim + lowercase) : une
     // « Pilsner » saisie avec un espace parasite ne compte pas double.
-    stats.unique.add((d.name || '').trim().toLowerCase());
+    stats.unique.add(drinkNameKey(d.name));
     const cat = canonicalCat(d.category) || 'Autre';
     stats.byCategory[cat] = (stats.byCategory[cat] || 0) + 1;
     const hour = parseInt((d.time || '00:00').split(':')[0], 10);
@@ -441,6 +470,61 @@ function computeStreakRecord(drinks) {
     if (run > best) best = run;
   }
   return best;
+}
+
+// Durée moyenne d'une session (h) et écart moyen entre sessions consécutives
+// (jours) : Σ (start[i] − end[i−1]) / (N−1) — le par-paire, pas l'étendue
+// totale (qui dérive dès que l'espacement varie). Helper pur, testable.
+function sessionGapStats(sessions) {
+  const xs = sessions || [];
+  const avgDurationH = xs.length ? xs.reduce((s, x) => s + (x.endTs - x.startTs), 0) / xs.length / 3600_000 : 0;
+  let meanGapDays = 0;
+  if (xs.length >= 2) {
+    let totalGap = 0;
+    for (let i = 1; i < xs.length; i++) totalGap += xs[i].startTs - xs[i - 1].endTs;
+    meanGapDays = totalGap / (xs.length - 1) / 86400_000;
+  }
+  return {
+    avgDurationH,
+    meanGapDays
+  };
+}
+
+// Nombre de jours SANS boisson dans [range.start, min(range.end, clampEnd)].
+// `clampEnd` (minuit local) évite de compter les jours futurs de la période
+// courante ; null = couvrir la période entière (période déjà passée).
+function soberDaysInRange(drinks, range, clampEnd = null) {
+  const drinkDays = new Set((drinks || []).map(d => d.date));
+  let last = range.end;
+  if (clampEnd != null && clampEnd < last) last = clampEnd;
+  if (last < range.start) return 0;
+  let count = 0;
+  for (let d = new Date(range.start); d <= last; d = _addDays(d, 1)) {
+    if (!drinkDays.has(_fmtIso(d))) count++;
+  }
+  return count;
+}
+
+// Part de vie passée bourré depuis la première boisson (%) : temps BAC>0
+// strictement jusqu'à `nowMs` (pas la queue projetée) sur (now − first).
+function pctBourreAllTime(sessions, firstTs, nowMs) {
+  if (firstTs == null) return 0;
+  let bourreToNow = 0;
+  for (const s of sessions || []) {
+    const a = Math.max(s.startTs, firstTs);
+    const b = Math.min(s.endTs, nowMs);
+    if (b > a) bourreToNow += b - a;
+  }
+  const span = nowMs - firstTs;
+  return span > 0 ? Math.min(100, bourreToNow / span * 100) : 0;
+}
+
+// Taux moyen PAR SESSION : moyenne des taux intra-session (∫ bac dt / durée,
+// `avgBac` de computeBACSessions) sur les sessions fournies. En mg/L.
+// null quand aucune session exploitable. Helper pur, testable.
+function meanSessionBac(sessions) {
+  const xs = (sessions || []).filter(s => s.avgBac > 0);
+  return xs.length ? xs.reduce((s, x) => s + x.avgBac, 0) / xs.length : null;
 }
 
 // Render a duration in ms as "Xj Yh", "Xh Ymm", "Xm" — picks the
@@ -1231,6 +1315,8 @@ function buildHeatmapCells(drinks, period, range, anchor) {
   };
   if (mode === 'today') {
     last = midnight(anchor || new Date());
+    const today = midnight(new Date());
+    if (last > today) last = today; // pas de jours futurs (nav en avant)
     first = _addDays(last, -34); // 5 semaines
   } else if (mode === 'yearWall') {
     first = midnight(range.start);
@@ -1332,13 +1418,18 @@ function buildSessionPeakHistogram(sessions) {
 // ── Calendrier (heatmap des grammes d'alcool par jour) ────────────
 function HeatmapSection({
   drinks,
+  allDrinks,
   period,
   range,
   anchor,
   collapsed,
   toggleSection
 }) {
-  const hm = React.useMemo(() => buildHeatmapCells(drinks, period, range, anchor), [drinks, period, range, anchor]);
+  // Le mode « Aujourd'hui » affiche les 5 dernières semaines : il lui faut
+  // tout l'historique — les drinks de la période ne couvrent qu'UN jour,
+  // les 34 autres cellules resteraient vides à tort.
+  const source = period === 'today' ? allDrinks || drinks : drinks;
+  const hm = React.useMemo(() => buildHeatmapCells(source, period, range, anchor), [source, period, range, anchor]);
   const hasData = hm.cells.some(c => c.grams > 0);
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "heatmap",
@@ -1512,27 +1603,10 @@ function GeneralSection({
   // today), so it's only meaningful when the viewed period contains
   // today — hide it when navigating to a past/future period.
   const periodIncludesToday = today >= range.start && today <= range.end;
-  const sober = React.useMemo(() => {
-    const drinkDays = new Set(drinks.map(d => d.date));
-    const lastInclusive = range.end < today ? range.end : today;
-    if (lastInclusive < range.start) return 0;
-    let count = 0;
-    for (let d = new Date(range.start); d <= lastInclusive; d = _addDays(d, 1)) {
-      if (!drinkDays.has(_fmtIso(d))) count++;
-    }
-    return count;
-  }, [drinks, range, today]);
+  const sober = React.useMemo(() => soberDaysInRange(drinks, range, today), [drinks, range, today]);
   // Same calculation, but the previous period's window is fully past
   // so we always go to its real end.
-  const prevSober = React.useMemo(() => {
-    if (!hasPrev) return null;
-    const drinkDays = new Set(prevDrinks.map(d => d.date));
-    let count = 0;
-    for (let d = new Date(prevRange.start); d <= prevRange.end; d = _addDays(d, 1)) {
-      if (!drinkDays.has(_fmtIso(d))) count++;
-    }
-    return count;
-  }, [prevDrinks, prevRange, hasPrev]);
+  const prevSober = React.useMemo(() => hasPrev ? soberDaysInRange(prevDrinks, prevRange) : null, [prevDrinks, prevRange, hasPrev]);
 
   // Δ% helper — `null` baseline means we don't show a badge (e.g. no
   // previous period or it had zero of this metric).
@@ -1582,16 +1656,7 @@ function GeneralSection({
         if (!Number.isFinite(t)) return min;
         return min == null || t < min ? t : min;
       }, null);
-      let bourreToNow = 0;
-      if (firstTs != null) {
-        for (const s of sessions) {
-          const a = Math.max(s.startTs, firstTs);
-          const b = Math.min(s.endTs, now);
-          if (b > a) bourreToNow += b - a;
-        }
-      }
-      const span = firstTs != null ? now - firstTs : 0;
-      const pct = span > 0 ? Math.min(100, bourreToNow / span * 100) : 0;
+      const pct = pctBourreAllTime(sessions, firstTs, now);
       out.push({
         v: `${pct.toFixed(1)}%`,
         l: '% bourré',
@@ -1886,27 +1951,20 @@ function TemporalSection({
   bacAvailable = true
 }) {
   const dayNames = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
+  // `peakIndex` renvoie null quand l'histogramme est entièrement à zéro
+  // (heures/dates invalides) — la cellule affiche alors « — » au lieu de
+  // désigner faussement « 0h » / « Dim. ».
   const {
     peakHour,
     peakDow
   } = React.useMemo(() => ({
-    peakHour: agg.byHour.indexOf(Math.max(...agg.byHour)),
-    peakDow: agg.byDow.indexOf(Math.max(...agg.byDow))
+    peakHour: peakIndex(agg.byHour),
+    peakDow: peakIndex(agg.byDow)
   }), [agg]);
-  const avgDuration = React.useMemo(() => sessions.length > 0 ? sessions.reduce((s, x) => s + (x.endTs - x.startTs), 0) / sessions.length / 3600_000 : 0, [sessions]);
-  // Mean gap between consecutive sessions: Σ (sessions[i+1].start −
-  // sessions[i].end) / (N − 1). The previous formula computed
-  // (last.start − first.end) / (N−1), which conflates total elapsed
-  // time with the per-pair gap and drifts whenever sessions overlap or
-  // the spacing varies.
-  const between = React.useMemo(() => {
-    if (sessions.length < 2) return 0;
-    let totalGap = 0;
-    for (let i = 1; i < sessions.length; i++) {
-      totalGap += sessions[i].startTs - sessions[i - 1].endTs;
-    }
-    return totalGap / (sessions.length - 1) / 86400_000;
-  }, [sessions]);
+  const {
+    avgDurationH: avgDuration,
+    meanGapDays: between
+  } = React.useMemo(() => sessionGapStats(sessions), [sessions]);
   const fmtH = h => {
     if (!h) return '—';
     // Round to whole minutes first so e.g. 0.999h → "1h", not "0h 60".
@@ -1966,10 +2024,10 @@ function TemporalSection({
       marginBottom: 10
     }
   }, /*#__PURE__*/React.createElement(MiniStat, {
-    big: drinks.length > 0 ? `${peakHour}h` : '—',
+    big: peakHour != null ? `${peakHour}h` : '—',
     label: "Heure de pointe"
   }), /*#__PURE__*/React.createElement(MiniStat, {
-    big: drinks.length > 0 ? dayNames[peakDow] : '—',
+    big: peakDow != null ? dayNames[peakDow] : '—',
     label: "Jour de pointe"
   }), bacAvailable && /*#__PURE__*/React.createElement(MiniStat, {
     big: fmtH(avgDuration),
@@ -2115,13 +2173,20 @@ function CategorySection({
         e.abvSum += d.alcoholContent;
         e.abvN++;
       }
-      e.names[d.name] = (e.names[d.name] || 0) + 1;
+      // Clé normalisée (comme Top boissons / « Boissons diff. ») : la
+      // favorite ne se scinde pas sur une variante de casse/espaces.
+      const k = drinkNameKey(d.name);
+      const rec = e.names[k] || (e.names[k] = {
+        name: (d.name || '').trim(),
+        count: 0
+      });
+      rec.count++;
     }
     // Precompute each category's most-logged drink here (once per data
     // change) instead of re-sorting `names` inside the render loop below.
     const out = Object.values(map);
     for (const e of out) {
-      e.fav = Object.entries(e.names).sort((a, b) => b[1] - a[1])[0];
+      e.fav = Object.values(e.names).sort((a, b) => b.count - a.count)[0];
     }
     return out.sort((a, b) => b.count - a.count);
   }, [drinks]);
@@ -2208,7 +2273,7 @@ function CategorySection({
       value: `${avgAbv.toFixed(1)}%`
     }), /*#__PURE__*/React.createElement(StatRow, {
       label: "Favorite",
-      value: fav ? fav[0] : '—',
+      value: fav ? fav.name : '—',
       truncate: true
     })));
   })));
@@ -2256,10 +2321,13 @@ function TopDrinksSection({
   const top = React.useMemo(() => {
     const map = {};
     for (const d of drinks) {
-      const key = d.name;
+      // Même clé normalisée que `aggregateGeneral` (« Boissons diff. ») :
+      // « Pilsner » et « pilsner  » forment UNE ligne. Le nom affiché est
+      // la première casse rencontrée.
+      const key = drinkNameKey(d.name);
       if (!map[key]) {
         map[key] = {
-          name: d.name,
+          name: (d.name || '').trim(),
           count: 0,
           volumeCl: 0,
           lastDate: null
@@ -3021,13 +3089,8 @@ function BACSection({
   const currentBAC = bacInfo.current || 0;
   const level = bacLevel(currentBAC);
 
-  // Taux moyen PAR SESSION sur la période : moyenne du taux intra-session
-  // (∫ bac dt / durée, calculé dans computeBACSessions), puis moyenne de ces
-  // moyennes sur les sessions de la période. En mg/L (comme le reste du BAC).
-  const meanSessionBac = arr => {
-    const xs = (arr || []).filter(s => s.avgBac > 0);
-    return xs.length ? xs.reduce((s, x) => s + x.avgBac, 0) / xs.length : null;
-  };
+  // Taux moyen PAR SESSION sur la période — helper module `meanSessionBac`
+  // (moyenne des `avgBac` intra-session, mg/L), partagé et testé.
   const periodAvgSession = React.useMemo(() => meanSessionBac(sessions), [sessions]);
   const periodAvgDelta = React.useMemo(() => {
     const cur = meanSessionBac(sessions),
@@ -4281,11 +4344,16 @@ function TrendsSection({
   prevDrinks,
   range,
   prevRange,
+  period,
   collapsed,
   toggleSection
 }) {
   const trends = React.useMemo(() => computeMonthlyTrends(allDrinks), [allDrinks]);
-  const cum = React.useMemo(() => prevDrinks && prevDrinks.length >= 0 && prevRange ? buildCumulativeComparison(drinks, prevDrinks, range, prevRange, 'grams') : null, [drinks, prevDrinks, range, prevRange]);
+  // Le cumul jour par jour n'a de sens que sur une période multi-jours avec
+  // une période précédente comparable : sur « Aujourd'hui » la courbe se
+  // réduit à 1-2 points ('all' est déjà exclu via prevRange null).
+  const cumRelevant = inPeriods(period, ['week', 'month', 'year', 'school']);
+  const cum = React.useMemo(() => cumRelevant && prevDrinks && prevRange ? buildCumulativeComparison(drinks, prevDrinks, range, prevRange, 'grams') : null, [cumRelevant, drinks, prevDrinks, range, prevRange]);
   // Ne pas montrer la comparaison cumulée si les deux périodes sont vides.
   const cumHasData = cum && (cum.cur.some(v => v > 0) || cum.prev.some(v => v > 0));
   const enoughTrend = trends.labels.length >= 2;
@@ -4789,6 +4857,40 @@ function LegendDot({
 }
 
 // ── 8. Dépenses ───────────────────────────────────────────────────
+// Une entrée « tarifée » porte un prix saisi exploitable.
+function isPricedDrink(d) {
+  return d != null && d.price != null && Number.isFinite(Number(d.price));
+}
+
+// Résumé Dépenses (helper pur, testable) : n'agrège QUE les entrées tarifées.
+// → { total, avg (null si aucune), count, byCat: [{ name, total, count }] }
+// trié par total décroissant. Le composant ne fait plus que du rendu.
+function computeSpendingSummary(drinks) {
+  let total = 0,
+    count = 0;
+  const map = {};
+  for (const d of drinks || []) {
+    if (!isPricedDrink(d)) continue;
+    const p = Number(d.price);
+    total += p;
+    count++;
+    const cat = canonicalCat(d.category) || 'Autre';
+    if (!map[cat]) map[cat] = {
+      name: cat,
+      total: 0,
+      count: 0
+    };
+    map[cat].total += p;
+    map[cat].count++;
+  }
+  return {
+    total,
+    count,
+    avg: count ? total / count : null,
+    byCat: Object.values(map).sort((a, b) => b.total - a.total)
+  };
+}
+
 // Regroupe les prix réellement saisis par entrée (drink.price) en buckets
 // temporels adaptés à la période : heure (Aujourd'hui), jour (Semaine/Mois),
 // mois (Année/Année scolaire) ou année (Tout). Renvoie un tableau prêt pour
@@ -4900,44 +5002,17 @@ function SpendingSection({
   collapsed,
   toggleSection
 }) {
-  const isPriced = d => d && d.price != null && Number.isFinite(Number(d.price));
-  const priced = React.useMemo(() => drinks.filter(isPriced), [drinks]);
-  const total = React.useMemo(() => priced.reduce((s, d) => s + Number(d.price), 0), [priced]);
-  const avg = priced.length ? total / priced.length : null;
-  const prev = React.useMemo(() => {
-    if (!prevDrinks) return {
-      total: null,
-      count: 0
-    };
-    let t = 0,
-      n = 0;
-    for (const d of prevDrinks) {
-      if (isPriced(d)) {
-        t += Number(d.price);
-        n++;
-      }
-    }
-    return {
-      total: t,
-      count: n
-    };
-  }, [prevDrinks]);
-  const prevAvg = prev.count ? prev.total / prev.count : null;
+  const priced = React.useMemo(() => drinks.filter(isPricedDrink), [drinks]);
+  const summary = React.useMemo(() => computeSpendingSummary(drinks), [drinks]);
+  const {
+    total,
+    avg,
+    byCat
+  } = summary;
+  const prevSummary = React.useMemo(() => prevDrinks ? computeSpendingSummary(prevDrinks) : null, [prevDrinks]);
+  const prevTotal = prevSummary && prevSummary.count ? prevSummary.total : null;
+  const prevAvg = prevSummary ? prevSummary.avg : null;
   const pctChange = (cur, p) => p == null || p === 0 ? null : (cur - p) / p * 100;
-  const byCat = React.useMemo(() => {
-    const map = {};
-    for (const d of priced) {
-      const cat = canonicalCat(d.category) || 'Autre';
-      if (!map[cat]) map[cat] = {
-        name: cat,
-        total: 0,
-        count: 0
-      };
-      map[cat].total += Number(d.price);
-      map[cat].count++;
-    }
-    return Object.values(map).sort((a, b) => b.total - a.total);
-  }, [priced]);
   const catDonut = React.useMemo(() => byCat.map(c => ({
     name: c.name,
     v: Math.round(c.total * 100) / 100
@@ -4977,7 +5052,7 @@ function SpendingSection({
   }, /*#__PURE__*/React.createElement(StatCell, {
     value: fmtPrice(total),
     label: "Total d\xE9pens\xE9",
-    delta: pctChange(total, prev.total),
+    delta: pctChange(total, prevTotal),
     period: period,
     index: 0
   }), /*#__PURE__*/React.createElement(StatCell, {
@@ -5108,6 +5183,15 @@ Object.assign(window, {
   aggregateGeneral,
   computeStreakRecord,
   filterDrinksInRange,
+  drinkNameKey,
+  peakIndex,
+  inPeriods,
+  sessionGapStats,
+  soberDaysInRange,
+  pctBourreAllTime,
+  meanSessionBac,
+  isPricedDrink,
+  computeSpendingSummary,
   computeMonthlyTrends,
   computeRollingDaily,
   computeSessionDurationBuckets,

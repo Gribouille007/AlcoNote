@@ -87,6 +87,10 @@ test('localDate / localTime — composantes locales paddées', () => {
 
 test('fmtDateMedium / fmtDayHeader — formats français', () => {
   assert.equal(fmtDateMedium('2026-02-03'), '3 févr.');
+  // Indépendant du fuseau : un ISO nu ne recule JAMAIS d'un jour (l'ancien
+  // `new Date(iso)` parsait en UTC minuit → « 31 déc. » en fuseau UTC−x).
+  assert.equal(fmtDateMedium('2026-01-01'), '1 janv.');
+  assert.equal(fmtDateMedium('2026-12-31'), '31 déc.');
   assert.equal(fmtDateMedium(null), '—');
   assert.equal(fmtDateMedium('not-a-date'), '—');
   // 9 juin 2026 = mardi.
