@@ -672,3 +672,31 @@ test('computeBacForecast — pas de session en cours → vide', () => {
   assert.deepEqual(fc.projectedPoints, []);
   assert.equal(fc.truncated, false);
 });
+
+// ── Matrice de pertinence par période ────────────────────────────────
+// (cf. CLAUDE.md § « Pertinence par période ») : chaque section déclare où
+// elle se rend (`periods`) et où elle survit à une période vide
+// (`keepWhenEmpty`). Ce test fige les décisions structurantes.
+test('STATS_PERIOD_MATRIX — couverture, validité et décisions clés', () => {
+  const { STATS_PERIOD_MATRIX, ALL_PERIODS } = global;
+  const ids = Object.keys(STATS_PERIOD_MATRIX);
+  assert.equal(ids.length, 11, 'les 11 sections déclarées');
+  const valid = new Set(['today', 'week', 'month', 'year', 'school', 'all']);
+  for (const [id, m] of Object.entries(STATS_PERIOD_MATRIX)) {
+    assert.ok(m.periods.length > 0, `${id} : au moins une période`);
+    for (const p of m.periods) assert.ok(valid.has(p), `${id} : période inconnue « ${p} »`);
+    for (const p of m.keepWhenEmpty) {
+      assert.ok(m.periods.includes(p), `${id} : keepWhenEmpty ⊆ periods (« ${p} »)`);
+    }
+  }
+  // Les charts globaux (historique complet) ne s'affichent pas sur « Jour ».
+  assert.ok(!STATS_PERIOD_MATRIX.trends.periods.includes('today'));
+  assert.ok(!STATS_PERIOD_MATRIX.advanced.periods.includes('today'));
+  // Les contenus en direct / globaux survivent à une période vide.
+  assert.deepEqual(STATS_PERIOD_MATRIX.bac.keepWhenEmpty, ALL_PERIODS);
+  assert.deepEqual(STATS_PERIOD_MATRIX.map.keepWhenEmpty, ALL_PERIODS);
+  // Les sections purement période-scopées disparaissent sur période vide.
+  for (const id of ['general', 'temporal', 'category', 'top', 'sessions', 'spending', 'heatmap']) {
+    assert.deepEqual(STATS_PERIOD_MATRIX[id].keepWhenEmpty, [], `${id} : période-scopée`);
+  }
+});

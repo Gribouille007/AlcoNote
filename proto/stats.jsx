@@ -647,19 +647,23 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
   }
 
   // Période sélectionnée vide : le sélecteur et la navigation restent
-  // (pour aller voir ailleurs), les sections laissent place au message.
+  // (pour aller voir ailleurs), le message remplace les sections
+  // PÉRIODE-scopées — les sections `keepWhenEmpty` (BAC en direct, carte,
+  // charts globaux) restent rendues sous le message, elles ne dépendent
+  // pas des boissons de la période.
   const hasPeriodData = inRange.length > 0;
+  const shownSections = visibleSections
+    .filter(s => (s.periods || ALL_PERIODS).includes(period))
+    .filter(s => hasPeriodData || (s.keepWhenEmpty || []).includes(period));
+  sp.hasPeriodData = hasPeriodData;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PeriodSwitcher period={period} onChange={(p) => { setPeriod(p); setAnchor(new Date()); }} />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 120px' }}>
         <PeriodNav period={period} anchor={anchor} onShift={(d) => setAnchor(shiftAnchor(period, anchor, d))} />
-        {!hasPeriodData ? <StatsEmptyState scope="period" /> : (
-          <>
-            {visibleSections.map(({ id, Comp }) => <Comp key={id} {...sp} />)}
-          </>
-        )}
+        {!hasPeriodData && <StatsEmptyState scope="period" />}
+        {shownSections.map(({ id, Comp }) => <Comp key={id} {...sp} />)}
       </div>
     </div>
   );
@@ -800,19 +804,39 @@ function StatSection({ id, title, action, children, sub, collapsed, toggleSectio
 // section = ajouter une entrée ici — l'ordre par défaut suit ce tableau.
 // Les déclarations `function` plus bas sont hoistées : les références
 // sont valides dès l'évaluation du module.
+//
+// Pertinence par période (cf. CLAUDE.md § « Pertinence par période ») :
+// - `periods`  : périodes où la section se rend (absent = toutes).
+// - `keepWhenEmpty` : périodes où la section reste rendue MÊME quand la
+//   période sélectionnée est vide — pour les contenus globaux/en direct
+//   (BAC live, carte « Tout », chart mensuel, moyenne mobile 30 j) qui ne
+//   dépendent pas des boissons de la période.
+const ALL_PERIODS = ['today', 'week', 'month', 'year', 'school', 'all'];
+const GLOBAL_CHART_PERIODS = ['month', 'year', 'school', 'all'];
 const STATS_SECTIONS = [
   { id: 'general',  title: 'Statistiques générales',  Comp: GeneralSection },
   { id: 'temporal', title: 'Analyse temporelle',      Comp: TemporalSection },
   { id: 'heatmap',  title: 'Calendrier',              Comp: HeatmapSection },
   { id: 'category', title: 'Analyse par catégorie',   Comp: CategorySection },
   { id: 'top',      title: 'Top boissons',            Comp: TopDrinksSection },
-  { id: 'bac',      title: 'Alcoolémie',              Comp: BACSection,      hide: (f) => f.hideBac },
+  { id: 'bac',      title: 'Alcoolémie',              Comp: BACSection,      hide: (f) => f.hideBac,
+    keepWhenEmpty: ALL_PERIODS },
   { id: 'sessions', title: 'Sessions',                Comp: SessionsSection, hide: (f) => f.hideBac },
-  { id: 'map',      title: 'Carte des consommations', Comp: MapSection,      hide: (f) => f.hideMap },
-  { id: 'trends',   title: 'Évolution mensuelle',     Comp: TrendsSection },
-  { id: 'advanced', title: 'Analyses avancées',       Comp: AdvancedSection },
+  { id: 'map',      title: 'Carte des consommations', Comp: MapSection,      hide: (f) => f.hideMap,
+    keepWhenEmpty: ALL_PERIODS },
+  // Chart mensuel et moyenne mobile 30 j lisent TOUT l'historique : sans
+  // objet sur « Jour » (déjà couvert par les sections du dessus), gardés
+  // sur période vide dès qu'ils portent une vue globale.
+  { id: 'trends',   title: 'Tendances',     Comp: TrendsSection,
+    periods: ['week', 'month', 'year', 'school', 'all'], keepWhenEmpty: GLOBAL_CHART_PERIODS },
+  { id: 'advanced', title: 'Analyses avancées',       Comp: AdvancedSection,
+    periods: ['week', 'month', 'year', 'school', 'all'], keepWhenEmpty: GLOBAL_CHART_PERIODS },
   { id: 'spending', title: 'Dépenses',                Comp: SpendingSection, hide: (f) => f.hidePrice },
 ];
+// Matrice exportée pour les tests : id → { periods, keepWhenEmpty }.
+const STATS_PERIOD_MATRIX = Object.fromEntries(STATS_SECTIONS.map(s => [
+  s.id, { periods: s.periods || ALL_PERIODS, keepWhenEmpty: s.keepWhenEmpty || [] },
+]));
 const DEFAULT_SECTION_ORDER = STATS_SECTIONS.map(s => s.id);
 const SECTION_ORDER_KEY = 'stats.sectionOrder';
 
@@ -972,6 +996,19 @@ function Card({ children, style, ...rest }) {
     }} {...rest}>
       {children}
     </div>
+  );
+}
+
+// Étiquette de portée : signale qu'une card affiche un contenu « en direct »
+// ou « tout l'historique », indépendant de la période sélectionnée — l'onglet
+// est période-scopé, ces cards ne le sont pas, et doivent le DIRE.
+function ScopeChip({ label }) {
+  return (
+    <span style={{
+      color: T.muted, fontSize: 9.5, letterSpacing: 0.3, textTransform: 'uppercase',
+      fontWeight: 600, border: `1px solid ${T.rule}`, borderRadius: 99,
+      padding: '2px 8px', background: T.surface3, flexShrink: 0, whiteSpace: 'nowrap',
+    }}>{label}</span>
   );
 }
 
@@ -1419,8 +1456,12 @@ const HeroStatCard = React.memo(function HeroStatCard({ icon, label, value, suff
 const hourlyFormatX = (d, i) => i % 4 === 0 ? d.label : '';
 
 // ── 2. Analyse temporelle ─────────────────────────────────────────
-function TemporalSection({ drinks, collapsed, toggleSection, agg, sessions, bacAvailable = true }) {
+function TemporalSection({ drinks, period, collapsed, toggleSection, agg, sessions, bacAvailable = true }) {
   const dayNames = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
+  // Sur « Jour », les métriques multi-jours n'ont pas de sens (un seul jour
+  // de données) : jour de pointe, écart entre sessions et radar hebdo sont
+  // masqués — restent l'heure de pointe, la durée de session et le bar horaire.
+  const multiDay = period !== 'today';
   // `peakIndex` renvoie null quand l'histogramme est entièrement à zéro
   // (heures/dates invalides) — la cellule affiche alors « — » au lieu de
   // désigner faussement « 0h » / « Dim. ».
@@ -1473,11 +1514,11 @@ function TemporalSection({ drinks, collapsed, toggleSection, agg, sessions, bacA
         display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 10,
       }}>
         <MiniStat big={peakHour != null ? `${peakHour}h` : '—'} label="Heure de pointe" />
-        <MiniStat big={peakDow != null ? dayNames[peakDow] : '—'} label="Jour de pointe" />
+        {multiDay && <MiniStat big={peakDow != null ? dayNames[peakDow] : '—'} label="Jour de pointe" />}
         {/* Durées de session = modèle BAC (poids/sexe) : masquées pour un ami
             qui ne partage pas son BAC (sinon poids par défaut → valeurs fausses). */}
         {bacAvailable && <MiniStat big={fmtH(avgDuration)} label="Durée moy. session" />}
-        {bacAvailable && <MiniStat big={between > 0 ? `${between.toFixed(1)}j` : '—'} label="Entre sessions" />}
+        {bacAvailable && multiDay && <MiniStat big={between > 0 ? `${between.toFixed(1)}j` : '—'} label="Entre sessions" />}
       </div>
 
       <Card style={{ marginBottom: 10 }}>
@@ -1496,14 +1537,16 @@ function TemporalSection({ drinks, collapsed, toggleSection, agg, sessions, bacA
         </ChartAutoWidth>
       </Card>
 
-      <Card>
-        <div style={{
-          color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 4, letterSpacing: -0.1,
-        }}>Par jour de la semaine</div>
-        <ChartAutoWidth minHeight={250} maxWidth={300}>
-          {(w) => <SvgRadar data={dailyData} size={w} color={T.good} valueLabel="boisson(s)" />}
-        </ChartAutoWidth>
-      </Card>
+      {multiDay && (
+        <Card>
+          <div style={{
+            color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 4, letterSpacing: -0.1,
+          }}>Par jour de la semaine</div>
+          <ChartAutoWidth minHeight={250} maxWidth={300}>
+            {(w) => <SvgRadar data={dailyData} size={w} color={T.good} valueLabel="boisson(s)" />}
+          </ChartAutoWidth>
+        </Card>
+      )}
     </StatSection>
   );
 }
@@ -2326,6 +2369,12 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
   return (
     <StatSection id="bac" title="Alcoolémie" collapsed={collapsed} toggleSection={toggleSection} sub="Estimation BAC · Formule de Widmark">
       <Card style={{ padding: 16, marginBottom: 10 }}>
+        {/* La jauge est du TEMPS RÉEL : elle ignore la période sélectionnée,
+            et le dit explicitement plutôt que de laisser croire à un taux
+            « de la période ». */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+          <ScopeChip label="En direct" />
+        </div>
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           gap: 18, marginBottom: 14,
@@ -2478,16 +2527,21 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
         <div>
           <div style={{
             display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
-            padding: '0 2px 8px',
+            gap: 8, padding: '0 2px 8px',
           }}>
             <div style={{
               color: T.ink, fontSize: 13, fontWeight: 500, letterSpacing: -0.1,
             }}>Records d'alcoolémie</div>
-            <div style={{
-              color: T.muted, fontSize: 10.5, fontFamily: fontNum,
-              background: T.surface2, padding: '2px 8px', borderRadius: 99,
-              border: `1px solid ${T.rule}`,
-            }}>{totalRecords}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {/* Records ABSOLUS (toutes sessions confondues), pas ceux de la
+                  période sélectionnée — l'étiquette lève l'ambiguïté. */}
+              <ScopeChip label="Records absolus" />
+              <div style={{
+                color: T.muted, fontSize: 10.5, fontFamily: fontNum,
+                background: T.surface2, padding: '2px 8px', borderRadius: 99,
+                border: `1px solid ${T.rule}`,
+              }}>{totalRecords}</div>
+            </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {highest && <BACRecordRow record={highest} isHighest />}
@@ -3096,10 +3150,18 @@ function TrendsSection({ allDrinks, drinks, prevDrinks, range, prevRange, period
   // Ne pas montrer la comparaison cumulée si les deux périodes sont vides.
   const cumHasData = cum && (cum.cur.some(v => v > 0) || cum.prev.some(v => v > 0));
 
+  // Le chart mensuel lit TOUT l'historique : sur « Semaine » il ferait
+  // doublon avec le libellé de période — seul le cumul y est proposé.
+  const monthlyRelevant = inPeriods(period, GLOBAL_CHART_PERIODS);
   const enoughTrend = trends.labels.length >= 2;
-  if (!enoughTrend && !cumHasData) {
+  const showMonthly = monthlyRelevant && enoughTrend;
+  if (!showMonthly && !cumHasData) {
+    // Rien de pertinent pour cette période : pas de section plutôt qu'un
+    // message hors sujet (le cas « pas assez d'historique » ne concerne
+    // que les périodes où le chart mensuel est proposé).
+    if (!monthlyRelevant) return null;
     return (
-      <StatSection id="trends" title="Évolution mensuelle" collapsed={collapsed} toggleSection={toggleSection} sub="Tendances de consommation mois par mois">
+      <StatSection id="trends" title="Tendances" collapsed={collapsed} toggleSection={toggleSection} sub="Consommation dans le temps">
         <Card><div style={{
           color: T.muted, fontSize: 12, padding: '8px 0', textAlign: 'center',
           fontStyle: 'italic', fontFamily: fontSerif,
@@ -3109,9 +3171,18 @@ function TrendsSection({ allDrinks, drinks, prevDrinks, range, prevRange, period
   }
 
   return (
-    <StatSection id="trends" title="Évolution mensuelle" collapsed={collapsed} toggleSection={toggleSection} sub="Tendances de consommation mois par mois">
-      {enoughTrend && (
+    <StatSection id="trends" title="Tendances" collapsed={collapsed} toggleSection={toggleSection} sub="Consommation dans le temps">
+      {showMonthly && (
         <Card style={cumHasData ? { marginBottom: 10 } : undefined}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 8, marginBottom: 8,
+          }}>
+            <div style={{
+              color: T.ink, fontSize: 12.5, fontWeight: 500, letterSpacing: -0.1,
+            }}>Par mois</div>
+            <ScopeChip label="6 derniers mois" />
+          </div>
           <ChartAutoWidth minHeight={170}>
             {(w) => (
               <SvgLineChart
@@ -3227,51 +3298,69 @@ function computeSessionDurationBuckets(sessions) {
   return buckets;
 }
 
-function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, sessions, bacAvailable = true }) {
+function AdvancedSection({ drinks, allDrinks, period, hasPeriodData = true, collapsed, toggleSection, agg, sessions, bacAvailable = true }) {
   const rolling = React.useMemo(() => computeRollingDaily(allDrinks), [allDrinks]);
   const sessionDuration = React.useMemo(() => computeSessionDurationBuckets(sessions), [sessions]);
+  // La moyenne mobile lit TOUT l'historique (30 derniers jours) : proposée
+  // seulement quand la période couvre au moins un mois, sinon elle contredit
+  // le libellé de période. Horloge et distribution sont période-scopées —
+  // masquées quand la période est vide (la section peut survivre via
+  // keepWhenEmpty pour la moyenne mobile seule).
+  const showRolling = inPeriods(period, GLOBAL_CHART_PERIODS);
+  const showPeriodCards = hasPeriodData;
+  if (!showRolling && !showPeriodCards) return null;
 
   return (
     <StatSection id="advanced" title="Analyses avancées" collapsed={collapsed} toggleSection={toggleSection} sub={bacAvailable ? 'Moyennes mobiles · Horloge · Distribution des sessions' : 'Moyennes mobiles · Horloge'}>
-      <Card style={{ marginBottom: 10 }}>
-        <div style={{
-          color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
-        }}>Moyenne mobile</div>
-        <div style={{
-          color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
-        }}>Alcool quotidien lissé sur 7 et 30 jours</div>
-        {rolling.length > 0 ? (
-          <ChartAutoWidth minHeight={160}>
-            {(w) => <RollingChart data={rolling} width={w} />}
-          </ChartAutoWidth>
-        ) : (
-          <div style={{ color: T.muted, fontSize: 11, padding: '12px 0', textAlign: 'center' }}>Aucune donnée</div>
-        )}
-        <div style={{
-          display: 'flex', gap: 14, justifyContent: 'center', marginTop: 6,
-          fontSize: 10.5, color: T.ink2,
-        }}>
-          <LegendDot color={withAlpha(T.accent, 0.25)} label="Brut" />
-          <LegendDot color={T.accent} label="7j" />
-          <LegendDot color={T.ink2} label="30j" dashed />
-        </div>
-      </Card>
+      {showRolling && (
+        <Card style={{ marginBottom: 10 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 8, marginBottom: 3,
+          }}>
+            <div style={{
+              color: T.ink, fontSize: 12.5, fontWeight: 500, letterSpacing: -0.1,
+            }}>Moyenne mobile</div>
+            <ScopeChip label="30 derniers jours" />
+          </div>
+          <div style={{
+            color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
+          }}>Alcool quotidien lissé sur 7 et 30 jours</div>
+          {rolling.length > 0 ? (
+            <ChartAutoWidth minHeight={160}>
+              {(w) => <RollingChart data={rolling} width={w} />}
+            </ChartAutoWidth>
+          ) : (
+            <div style={{ color: T.muted, fontSize: 11, padding: '12px 0', textAlign: 'center' }}>Aucune donnée</div>
+          )}
+          <div style={{
+            display: 'flex', gap: 14, justifyContent: 'center', marginTop: 6,
+            fontSize: 10.5, color: T.ink2,
+          }}>
+            <LegendDot color={withAlpha(T.accent, 0.25)} label="Brut" />
+            <LegendDot color={T.accent} label="7j" />
+            <LegendDot color={T.ink2} label="30j" dashed />
+          </div>
+        </Card>
+      )}
 
-      <Card style={{ marginBottom: 10 }}>
-        <div style={{
-          color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
-        }}>Horloge des consommations</div>
-        <div style={{
-          color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
-        }}>Répartition sur 24 heures</div>
-        <ChartAutoWidth minHeight={260} maxWidth={300}>
-          {(w) => <SvgPolarClock hours={agg.byHour} size={w} />}
-        </ChartAutoWidth>
-      </Card>
+      {showPeriodCards && (
+        <Card style={{ marginBottom: 10 }}>
+          <div style={{
+            color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
+          }}>Horloge des consommations</div>
+          <div style={{
+            color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
+          }}>Répartition sur 24 heures</div>
+          <ChartAutoWidth minHeight={260} maxWidth={300}>
+            {(w) => <SvgPolarClock hours={agg.byHour} size={w} />}
+          </ChartAutoWidth>
+        </Card>
+      )}
 
       {/* Distribution des sessions = modèle BAC (poids/sexe) : masquée pour un
           ami qui ne partage pas son BAC. */}
-      {bacAvailable && (
+      {showPeriodCards && bacAvailable && (
         <Card>
           <div style={{
             color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
@@ -3579,7 +3668,8 @@ Object.assign(window, {
   BacContext, useBacInfo, BacProvider, BACProjectionResponsive,
   computeBacForecast, BACForecastResponsive,
   ForecastToggle, ForecastMiniStats,
-  STATS_SECTIONS, DEFAULT_SECTION_ORDER, SECTION_ORDER_KEY,
+  STATS_SECTIONS, STATS_PERIOD_MATRIX, ALL_PERIODS, GLOBAL_CHART_PERIODS,
+  ScopeChip, DEFAULT_SECTION_ORDER, SECTION_ORDER_KEY,
   normalizeSectionOrder, moveInArray, dragTargetIndex,
   useSectionOrder, SectionReorderList, StatsEmptyState,
 });

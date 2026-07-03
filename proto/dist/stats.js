@@ -762,8 +762,13 @@ function StatsTab({
   }
 
   // Période sélectionnée vide : le sélecteur et la navigation restent
-  // (pour aller voir ailleurs), les sections laissent place au message.
+  // (pour aller voir ailleurs), le message remplace les sections
+  // PÉRIODE-scopées — les sections `keepWhenEmpty` (BAC en direct, carte,
+  // charts globaux) restent rendues sous le message, elles ne dépendent
+  // pas des boissons de la période.
   const hasPeriodData = inRange.length > 0;
+  const shownSections = visibleSections.filter(s => (s.periods || ALL_PERIODS).includes(period)).filter(s => hasPeriodData || (s.keepWhenEmpty || []).includes(period));
+  sp.hasPeriodData = hasPeriodData;
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -786,14 +791,14 @@ function StatsTab({
     period: period,
     anchor: anchor,
     onShift: d => setAnchor(shiftAnchor(period, anchor, d))
-  }), !hasPeriodData ? /*#__PURE__*/React.createElement(StatsEmptyState, {
+  }), !hasPeriodData && /*#__PURE__*/React.createElement(StatsEmptyState, {
     scope: "period"
-  }) : /*#__PURE__*/React.createElement(React.Fragment, null, visibleSections.map(({
+  }), shownSections.map(({
     id,
     Comp
   }) => /*#__PURE__*/React.createElement(Comp, _extends({
     key: id
-  }, sp))))));
+  }, sp)))));
 }
 
 // État vide de l'onglet Stats — remplace les sections quand il n'y a
@@ -1020,6 +1025,15 @@ function StatSection({
 // section = ajouter une entrée ici — l'ordre par défaut suit ce tableau.
 // Les déclarations `function` plus bas sont hoistées : les références
 // sont valides dès l'évaluation du module.
+//
+// Pertinence par période (cf. CLAUDE.md § « Pertinence par période ») :
+// - `periods`  : périodes où la section se rend (absent = toutes).
+// - `keepWhenEmpty` : périodes où la section reste rendue MÊME quand la
+//   période sélectionnée est vide — pour les contenus globaux/en direct
+//   (BAC live, carte « Tout », chart mensuel, moyenne mobile 30 j) qui ne
+//   dépendent pas des boissons de la période.
+const ALL_PERIODS = ['today', 'week', 'month', 'year', 'school', 'all'];
+const GLOBAL_CHART_PERIODS = ['month', 'year', 'school', 'all'];
 const STATS_SECTIONS = [{
   id: 'general',
   title: 'Statistiques générales',
@@ -1044,7 +1058,8 @@ const STATS_SECTIONS = [{
   id: 'bac',
   title: 'Alcoolémie',
   Comp: BACSection,
-  hide: f => f.hideBac
+  hide: f => f.hideBac,
+  keepWhenEmpty: ALL_PERIODS
 }, {
   id: 'sessions',
   title: 'Sessions',
@@ -1054,21 +1069,35 @@ const STATS_SECTIONS = [{
   id: 'map',
   title: 'Carte des consommations',
   Comp: MapSection,
-  hide: f => f.hideMap
-}, {
+  hide: f => f.hideMap,
+  keepWhenEmpty: ALL_PERIODS
+},
+// Chart mensuel et moyenne mobile 30 j lisent TOUT l'historique : sans
+// objet sur « Jour » (déjà couvert par les sections du dessus), gardés
+// sur période vide dès qu'ils portent une vue globale.
+{
   id: 'trends',
-  title: 'Évolution mensuelle',
-  Comp: TrendsSection
+  title: 'Tendances',
+  Comp: TrendsSection,
+  periods: ['week', 'month', 'year', 'school', 'all'],
+  keepWhenEmpty: GLOBAL_CHART_PERIODS
 }, {
   id: 'advanced',
   title: 'Analyses avancées',
-  Comp: AdvancedSection
+  Comp: AdvancedSection,
+  periods: ['week', 'month', 'year', 'school', 'all'],
+  keepWhenEmpty: GLOBAL_CHART_PERIODS
 }, {
   id: 'spending',
   title: 'Dépenses',
   Comp: SpendingSection,
   hide: f => f.hidePrice
 }];
+// Matrice exportée pour les tests : id → { periods, keepWhenEmpty }.
+const STATS_PERIOD_MATRIX = Object.fromEntries(STATS_SECTIONS.map(s => [s.id, {
+  periods: s.periods || ALL_PERIODS,
+  keepWhenEmpty: s.keepWhenEmpty || []
+}]));
 const DEFAULT_SECTION_ORDER = STATS_SECTIONS.map(s => s.id);
 const SECTION_ORDER_KEY = 'stats.sectionOrder';
 
@@ -1276,6 +1305,29 @@ function Card({
       ...style
     }
   }, rest), children);
+}
+
+// Étiquette de portée : signale qu'une card affiche un contenu « en direct »
+// ou « tout l'historique », indépendant de la période sélectionnée — l'onglet
+// est période-scopé, ces cards ne le sont pas, et doivent le DIRE.
+function ScopeChip({
+  label
+}) {
+  return /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: T.muted,
+      fontSize: 9.5,
+      letterSpacing: 0.3,
+      textTransform: 'uppercase',
+      fontWeight: 600,
+      border: `1px solid ${T.rule}`,
+      borderRadius: 99,
+      padding: '2px 8px',
+      background: T.surface3,
+      flexShrink: 0,
+      whiteSpace: 'nowrap'
+    }
+  }, label);
 }
 
 // ── Helpers Calendrier / Sessions (purs, testables) ───────────────
@@ -1944,6 +1996,7 @@ const hourlyFormatX = (d, i) => i % 4 === 0 ? d.label : '';
 // ── 2. Analyse temporelle ─────────────────────────────────────────
 function TemporalSection({
   drinks,
+  period,
   collapsed,
   toggleSection,
   agg,
@@ -1951,6 +2004,10 @@ function TemporalSection({
   bacAvailable = true
 }) {
   const dayNames = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
+  // Sur « Jour », les métriques multi-jours n'ont pas de sens (un seul jour
+  // de données) : jour de pointe, écart entre sessions et radar hebdo sont
+  // masqués — restent l'heure de pointe, la durée de session et le bar horaire.
+  const multiDay = period !== 'today';
   // `peakIndex` renvoie null quand l'histogramme est entièrement à zéro
   // (heures/dates invalides) — la cellule affiche alors « — » au lieu de
   // désigner faussement « 0h » / « Dim. ».
@@ -2026,13 +2083,13 @@ function TemporalSection({
   }, /*#__PURE__*/React.createElement(MiniStat, {
     big: peakHour != null ? `${peakHour}h` : '—',
     label: "Heure de pointe"
-  }), /*#__PURE__*/React.createElement(MiniStat, {
+  }), multiDay && /*#__PURE__*/React.createElement(MiniStat, {
     big: peakDow != null ? dayNames[peakDow] : '—',
     label: "Jour de pointe"
   }), bacAvailable && /*#__PURE__*/React.createElement(MiniStat, {
     big: fmtH(avgDuration),
     label: "Dur\xE9e moy. session"
-  }), bacAvailable && /*#__PURE__*/React.createElement(MiniStat, {
+  }), bacAvailable && multiDay && /*#__PURE__*/React.createElement(MiniStat, {
     big: between > 0 ? `${between.toFixed(1)}j` : '—',
     label: "Entre sessions"
   })), /*#__PURE__*/React.createElement(Card, {
@@ -2056,7 +2113,7 @@ function TemporalSection({
     color: T.accent,
     formatX: hourlyFormatX,
     valueLabel: "boisson(s)"
-  }))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+  }))), multiDay && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
       fontSize: 12.5,
@@ -3170,6 +3227,14 @@ function BACSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
+      justifyContent: 'flex-end',
+      marginBottom: 4
+    }
+  }, /*#__PURE__*/React.createElement(ScopeChip, {
+    label: "En direct"
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 18,
@@ -3442,6 +3507,7 @@ function BACSection({
       display: 'flex',
       alignItems: 'baseline',
       justifyContent: 'space-between',
+      gap: 8,
       padding: '0 2px 8px'
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -3453,6 +3519,14 @@ function BACSection({
     }
   }, "Records d'alcool\xE9mie"), /*#__PURE__*/React.createElement("div", {
     style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(ScopeChip, {
+    label: "Records absolus"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
       color: T.muted,
       fontSize: 10.5,
       fontFamily: fontNum,
@@ -3461,7 +3535,7 @@ function BACSection({
       borderRadius: 99,
       border: `1px solid ${T.rule}`
     }
-  }, totalRecords)), /*#__PURE__*/React.createElement("div", {
+  }, totalRecords))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',
@@ -4356,14 +4430,23 @@ function TrendsSection({
   const cum = React.useMemo(() => cumRelevant && prevDrinks && prevRange ? buildCumulativeComparison(drinks, prevDrinks, range, prevRange, 'grams') : null, [cumRelevant, drinks, prevDrinks, range, prevRange]);
   // Ne pas montrer la comparaison cumulée si les deux périodes sont vides.
   const cumHasData = cum && (cum.cur.some(v => v > 0) || cum.prev.some(v => v > 0));
+
+  // Le chart mensuel lit TOUT l'historique : sur « Semaine » il ferait
+  // doublon avec le libellé de période — seul le cumul y est proposé.
+  const monthlyRelevant = inPeriods(period, GLOBAL_CHART_PERIODS);
   const enoughTrend = trends.labels.length >= 2;
-  if (!enoughTrend && !cumHasData) {
+  const showMonthly = monthlyRelevant && enoughTrend;
+  if (!showMonthly && !cumHasData) {
+    // Rien de pertinent pour cette période : pas de section plutôt qu'un
+    // message hors sujet (le cas « pas assez d'historique » ne concerne
+    // que les périodes où le chart mensuel est proposé).
+    if (!monthlyRelevant) return null;
     return /*#__PURE__*/React.createElement(StatSection, {
       id: "trends",
-      title: "\xC9volution mensuelle",
+      title: "Tendances",
       collapsed: collapsed,
       toggleSection: toggleSection,
-      sub: "Tendances de consommation mois par mois"
+      sub: "Consommation dans le temps"
     }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.muted,
@@ -4377,15 +4460,32 @@ function TrendsSection({
   }
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "trends",
-    title: "\xC9volution mensuelle",
+    title: "Tendances",
     collapsed: collapsed,
     toggleSection: toggleSection,
-    sub: "Tendances de consommation mois par mois"
-  }, enoughTrend && /*#__PURE__*/React.createElement(Card, {
+    sub: "Consommation dans le temps"
+  }, showMonthly && /*#__PURE__*/React.createElement(Card, {
     style: cumHasData ? {
       marginBottom: 10
     } : undefined
-  }, /*#__PURE__*/React.createElement(ChartAutoWidth, {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.ink,
+      fontSize: 12.5,
+      fontWeight: 500,
+      letterSpacing: -0.1
+    }
+  }, "Par mois"), /*#__PURE__*/React.createElement(ScopeChip, {
+    label: "6 derniers mois"
+  })), /*#__PURE__*/React.createElement(ChartAutoWidth, {
     minHeight: 170
   }, w => /*#__PURE__*/React.createElement(SvgLineChart, {
     labels: trends.labels,
@@ -4570,6 +4670,8 @@ function computeSessionDurationBuckets(sessions) {
 function AdvancedSection({
   drinks,
   allDrinks,
+  period,
+  hasPeriodData = true,
   collapsed,
   toggleSection,
   agg,
@@ -4578,25 +4680,42 @@ function AdvancedSection({
 }) {
   const rolling = React.useMemo(() => computeRollingDaily(allDrinks), [allDrinks]);
   const sessionDuration = React.useMemo(() => computeSessionDurationBuckets(sessions), [sessions]);
+  // La moyenne mobile lit TOUT l'historique (30 derniers jours) : proposée
+  // seulement quand la période couvre au moins un mois, sinon elle contredit
+  // le libellé de période. Horloge et distribution sont période-scopées —
+  // masquées quand la période est vide (la section peut survivre via
+  // keepWhenEmpty pour la moyenne mobile seule).
+  const showRolling = inPeriods(period, GLOBAL_CHART_PERIODS);
+  const showPeriodCards = hasPeriodData;
+  if (!showRolling && !showPeriodCards) return null;
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "advanced",
     title: "Analyses avanc\xE9es",
     collapsed: collapsed,
     toggleSection: toggleSection,
     sub: bacAvailable ? 'Moyennes mobiles · Horloge · Distribution des sessions' : 'Moyennes mobiles · Horloge'
-  }, /*#__PURE__*/React.createElement(Card, {
+  }, showRolling && /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+      marginBottom: 3
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
       fontSize: 12.5,
       fontWeight: 500,
-      marginBottom: 3,
       letterSpacing: -0.1
     }
-  }, "Moyenne mobile"), /*#__PURE__*/React.createElement("div", {
+  }, "Moyenne mobile"), /*#__PURE__*/React.createElement(ScopeChip, {
+    label: "30 derniers jours"
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
       fontSize: 10,
@@ -4635,7 +4754,7 @@ function AdvancedSection({
     color: T.ink2,
     label: "30j",
     dashed: true
-  }))), /*#__PURE__*/React.createElement(Card, {
+  }))), showPeriodCards && /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 10
     }
@@ -4661,7 +4780,7 @@ function AdvancedSection({
   }, w => /*#__PURE__*/React.createElement(SvgPolarClock, {
     hours: agg.byHour,
     size: w
-  }))), bacAvailable && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+  }))), showPeriodCards && bacAvailable && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
       fontSize: 12.5,
@@ -5215,6 +5334,10 @@ Object.assign(window, {
   ForecastToggle,
   ForecastMiniStats,
   STATS_SECTIONS,
+  STATS_PERIOD_MATRIX,
+  ALL_PERIODS,
+  GLOBAL_CHART_PERIODS,
+  ScopeChip,
   DEFAULT_SECTION_ORDER,
   SECTION_ORDER_KEY,
   normalizeSectionOrder,

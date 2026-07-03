@@ -45,13 +45,17 @@ test('avec une boisson aujourd’hui : sections et sélecteur de période visibl
   assert.ok(periodTablist, 'sélecteur de période de retour');
 });
 
-test('période vide : message + navigation conservée, sections masquées', async () => {
+test('période vide : message + sections période-scopées masquées, contenus globaux conservés', async () => {
   // Semaine précédente : aucune boisson — mais on doit pouvoir revenir.
   await ctx.clickAria(/Période précédente/, 300);
   const t = ctx.text();
   assert.ok(t.includes('Pas de données disponibles'), 'message sur période vide');
   assert.ok(t.includes('Aucune boisson enregistrée sur cette période'), 'sous-texte période');
-  assert.ok(!t.includes('Statistiques générales'), 'sections masquées sur période vide');
+  assert.ok(!t.includes('Statistiques générales'), 'sections période-scopées masquées');
+  // Les contenus qui ne dépendent PAS de la période (BAC en direct, carte
+  // avec bascule « Tout ») restent rendus sous le message.
+  assert.ok(t.includes('Alcoolémie'), 'section BAC (en direct) conservée');
+  assert.ok(t.includes('Carte des consommations'), 'section Carte conservée');
   const periodTablist = ctx.qa('[role="tablist"]')
     .find((el) => (el.getAttribute('aria-label') || '') === 'Période');
   assert.ok(periodTablist, 'sélecteur de période TOUJOURS là (navigation possible)');
@@ -59,6 +63,11 @@ test('période vide : message + navigation conservée, sections masquées', asyn
   // Retour sur la semaine courante : les sections réapparaissent.
   await ctx.clickAria(/Période suivante/, 300);
   assert.ok(ctx.text().includes('Statistiques générales'), 'sections de retour');
+});
+
+test('chips de portée : la jauge BAC est étiquetée « En direct »', async () => {
+  await ctx.waitFor(() => ctx.text().includes('Alcoolémie'), { label: 'section BAC' });
+  assert.ok(ctx.text().includes('En direct'), 'chip de portée sur la jauge');
 });
 
 const sectionDomOrder = () =>
@@ -86,6 +95,22 @@ test('comparaison cumulée : card présente quand la période précédente a des
   });
   await ctx.waitFor(() => ctx.text().includes('Cumul vs période précédente'),
     { label: 'card cumulée affichée' });
+});
+
+test('période « Jour » : les contenus multi-jours / globaux sont masqués', async () => {
+  await ctx.clickText(/^Jour$/, 350);
+  const t = ctx.text();
+  assert.ok(t.includes('Statistiques générales'), 'sections du jour rendues');
+  assert.ok(!t.includes('Cumul vs période précédente'), 'pas de cumul sur 1 jour');
+  assert.ok(!t.includes('Jour de pointe'), 'pas de jour de pointe sur 1 jour');
+  assert.ok(!t.includes('Entre sessions'), 'pas d\'écart inter-sessions sur 1 jour');
+  assert.ok(!t.includes('Par jour de la semaine'), 'pas de radar hebdo sur 1 jour');
+  assert.ok(!t.includes('Moyenne mobile'), 'pas de moyenne mobile 30 j sur 1 jour');
+  assert.ok(t.includes('Heure de pointe'), 'l\'heure de pointe reste');
+  // Retour sur « Semaine » pour les tests suivants.
+  await ctx.clickText(/^Semaine$/, 350);
+  await ctx.waitFor(() => ctx.text().includes('Moyenne mobile') || ctx.text().includes('Statistiques générales'),
+    { label: 'retour semaine' });
 });
 
 // ── Réorganisation des sections ─────────────────────────────────────
