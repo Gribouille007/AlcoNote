@@ -69,9 +69,12 @@ valeur en dur.
   démontage sec d'un overlay.
 - **Charts** : tous via les primitives de `stats-charts.jsx`
   (`SvgBarChart`, `SvgRadar`, `SvgDonut`, `SvgLineChart`,
-  `SvgPolarClock`, `SvgBACProjection`, `SvgHistogram`). Toujours
-  passer par `useChartScrubber` + `<ChartTooltip>` pour la
-  scrub/tooltip — jamais d'overlay HTML.
+  `SvgPolarClock`, `SvgBACProjection`, `SvgHistogram`). Géométrie/typo/
+  dash exclusivement via le spec **`CHART`** ; labels d'axe via
+  `thinnedAxisLabels`, annotations via `resolveLaneLabels` (deux textes
+  ne se chevauchent JAMAIS) ; toujours `useChartScrubber` +
+  `<ChartTooltip>` pour la scrub/tooltip — jamais d'overlay HTML.
+  Recette complète : § « Charts — construire une figure parfaite ».
 - **Confirmations** : `Confirm.ask({...})`, jamais `window.confirm`.
 - **Toasts** : `Toast.show(msg, { undo })`, jamais d'alerte custom.
 
@@ -201,7 +204,7 @@ quand la cible change (évite des champs figés sur l'ancienne cible).
   n'est JAMAIS écrasée. Toute évolution du prix passe par cet helper,
   pas par un calcul local.
 
-### Charts
+### Charts — construire une figure parfaite
 
 `proto/stats-charts.jsx` expose des SVG primitives :
 `SvgBarChart`, `SvgRadar`, `SvgDonut`, `SvgLineChart`,
@@ -209,23 +212,69 @@ quand la cible change (évite des champs figés sur l'ancienne cible).
 `SvgCalendarHeatmap` (heatmap calendrier — bandes d'intensité via
 `heatmapBand` + `withAlpha(T.accent, …)`).
 
-`SvgLineChart` accepte `singleAxis` (les deux séries sur une échelle
-commune, axe droit masqué) + `leftLabel`/`rightLabel`/`tooltipUnits` —
-défauts inchangés pour le chart Évolution mensuelle ; la card « Cumul vs
-période précédente » l'appelle en `singleAxis`.
+**Le spec `CHART`** (stats-charts.jsx, `Object.freeze`) est la SOURCE
+UNIQUE de toute géométrie/typo/trait de la famille : tailles de police
+(`font.tick/ref/spoke/tooltip/center*`), paddings (`pad.cartesian/bar/
+radar/clock*`), grille (`grid`), pointillés sémantiques (`dash.future/
+threshold/reference/marker/now/truncation/hair/secondary`), traits
+(`stroke`), géométrie de barres (`bar`), boule de scrub (`focus`),
+métriques de tooltip (`tooltip`), heatmap (`heatmap`), tailles donut/
+jauge, `anim`, `touchAction`. **Aucun littéral `fontSize={9}` ni
+`strokeDasharray="2 3"` dans une primitive** — static-checks échoue.
+Les COULEURS ne vivent pas dans `CHART` : toujours `T.*` lues au render
+(le proxy suit le thème). Zones BAC : `T.bacWarn`/`T.bacDanger` via
+`bacZoneColor(bac)` ; seuils nommés `BAC_ZONE_LIGHT`/`BAC_ZONE_LEGAL` ;
+plafond commun jauge+charts `BAC_CHART_CAP`.
 
-Tous utilisent le même `useChartScrubber(svgRef, _, onChange)` qui
-mappe le `pointermove` du conteneur SVG vers les coordonnées du
-viewBox, puis le composant traduit en index/temps. Les tooltips sont
-rendues par `<ChartTooltip>` (un `<g>` avec rect + textes), positionnée
-côté SVG.
+**Anti-collision — deux textes ne se chevauchent JAMAIS.** Aucun
+`<text>` de chart ne se positionne « à la main » ; quatre helpers purs
+(testés, invariants property-testés dans unit-charts) couvrent tous les
+cas :
+- `thinnedAxisLabels(labels, xs, { lo, hi })` : SEULE voie pour des
+  labels d'axe X — sélectionne les indices à rendre (espacement ≥
+  `CHART.label.minGapX`, ancres rabattues aux bords, dernier label
+  toujours rendu). `''` dans `labels` = jamais rendu.
+- `resolveLaneLabels(items, { minGap, lo, hi })` : annotations sur une
+  dimension (seuils BAC, ETA, « … » de troncature) — allocation par
+  priorité, décalage minimal, ABANDON si pas de place (un label absent
+  vaut mieux que deux illisibles).
+- `radarLabelLayout(angle)` : ancre/dy par quadrant pour les labels
+  radiaux d'un radar. (L'horloge polaire garde l'ancrage centré : ses
+  4 labels courts sont calibrés pour, cf. commentaire sur place.)
+- `fitLabel(text, maxPx)` : troncature « … » de tout texte libre dans
+  un espace borné (centre du donut…).
 
-Pour ajouter un nouveau type de graphe interactif :
-1. Recevoir `data` et un `width`/`height` en viewBox units.
-2. Utiliser `useRef` sur le `<svg>` et `useChartScrubber`.
-3. Calculer l'index en projetant `p.x`/`p.y` selon les paddings.
-4. Rendre la tooltip en passant `width` (= viewBox width) à
-   `ChartTooltip`.
+**Recette pour une nouvelle figure** :
+1. Données via un **helper pur exporté** (`Object.assign(window,…)`),
+   testable sous stub-globals — jamais de calcul enfoui dans le JSX.
+2. Monture : `<ChartAutoWidth minHeight={…}>{(w) => …}` (pleine
+   largeur, pixels réels) ; `maxWidth` pour les charts carrés. Seule
+   exception : le donut, glyphe carré à taille fixe posé à côté de sa
+   légende.
+3. Échelle Y : `chartTicks(max, 2)` + labels des `values` EXACTES via
+   `fmtTick` (jamais `Math.round(max × fraction)`). Labels X via
+   `thinnedAxisLabels` ; annotations via `resolveLaneLabels` ; texte
+   libre via `fitLabel`. **Un seul axe Y — jamais de double échelle**
+   (deux mesures d'échelles différentes = deux charts, pas un).
+4. Scrub : `useRef` sur le `<svg>` + `useChartScrubber(svgRef, _,
+   onChange)` (projette le pointeur en coordonnées viewBox) ; tooltip
+   via `<ChartTooltip>` avec TOUJOURS `width` ET `height` (clamp +
+   flip aux quatre bords). Jamais d'overlay HTML.
+5. Racine `<svg>` : `role="img"` + `aria-label` français +
+   `className={CHART.anim.className}` (entrée fondu/montée, CSS pur,
+   `prefers-reduced-motion` respecté — pas d'animation de tracé, elle
+   brouillerait les pointillés sémantiques) + `style.touchAction =
+   CHART.touchAction`.
+6. Légende : `<ChartLegend items={[{ label, color, dashed?, dot? }]}/>`
+   dès 2 séries — une série seule n'a PAS de légende (le titre de la
+   card la nomme). Le texte d'une légende reste en encre (`T.ink2`),
+   jamais teinté par la série. Pas de valeur posée sur chaque
+   barre/point : les valeurs exactes vivent dans la tooltip.
+7. États vides : gérés AVANT le rendu (retour `null` ou message stylé
+   `T.muted` italique serif) — jamais un chart NaN ni un faux total.
+8. Export : `React.memo` au boundary + `Object.assign(window, …)` ;
+   tests unitaires du helper de données + des cas limites (0 point,
+   1 point, tout-zéro, valeurs énormes).
 
 ### BAC
 
@@ -271,18 +320,44 @@ Formateur de durée unique pour le BAC : `fmtDurationHM(h)` (« 2h16 »,
 « — » si ≤ 0) — distinct de `fmtH` (TemporalSection) et `fmtBourreTime`
 (jours).
 
+### Formules gelées
+
+Les méthodes de calcul des stats sont **verrouillées par deux verrous**
+et ne changent JAMAIS silencieusement :
+1. `tools/tests/unit-formulas.test.js` — gel des constantes
+   (`BAC_ELIM_RATE` 150, `BAC_ABSORPTION_H` 0.5, `widmarkR` 0.68/0.55,
+   `BAC_LEGAL_LIMIT` 500, `BAC_RECORD_MIN` 200, `DEFAULT_WEIGHT_KG` 70,
+   `ETHANOL_DENSITY_G_PER_ML` 0.789, `toCl` 4 unités) + **valeurs en
+   or** sur scénarios fixes (grammes exacts, pic Widmark, session
+   scriptée à 3 verres, prévision avec ETA, bornes et messages verbatim
+   de `bacLevel`, résumé Dépenses…).
+2. `static-checks.test.js` — gel TEXTUEL : les déclarations littérales
+   (`const BAC_ELIM_RATE = 150;`…) doivent exister verbatim dans les
+   sources.
+
+Si un test de gel échoue : c'est soit un bug à corriger, soit un
+changement de formule VOULU — auquel cas mettre à jour **les deux
+verrous dans le même commit**, en expliquant le pourquoi dans le
+message. Les calculs affichés par les sections vivent dans des helpers
+purs exportés (`computeSpendingSummary`, `meanSessionBac`, `peakIndex`,
+`sessionGapStats`, `soberDaysInRange`, `pctBourreAllTime`…) — ne jamais
+ré-enfouir un calcul dans le JSX d'un composant (il deviendrait
+intestable).
+
 ### Sections statistiques
 
 Chaque section reçoit le bag `sp` depuis `StatsTab` :
 ```js
 { collapsed, toggleSection, period, drinks, allDrinks,
-  prevDrinks, prevRange, settings, range, anchor }
+  prevDrinks, prevRange, settings, range, anchor, hasPeriodData }
 ```
 - `drinks` est filtré sur la période courante (`range`).
 - `prevDrinks` pour le calcul des badges Δ% (passe à `null` quand
   `period === 'all'`).
 - `allDrinks` pour les sections qui veulent toute la chronologie
-  (Tendances, Moyennes mobiles, BAC).
+  (Tendances, Moyennes mobiles, BAC, Calendrier en mode « Jour »).
+- `hasPeriodData` pour masquer les cards période-scopées d'une section
+  qui survit à une période vide (cf. Pertinence par période).
 
 Pour ajouter une section :
 1. Écrire un composant `MaSection({ drinks, ..., collapsed,
@@ -291,9 +366,31 @@ Pour ajouter une section :
    toggleSection={...}>` autour du contenu.
 3. L'ajouter au **registry `STATS_SECTIONS`** (stats.jsx) — id stable
    (= clé du collapse, ne jamais renommer), titre (affiché en mode
-   « Réorganiser »), `Comp`, et éventuel `hide(flags)` pour la vue ami —
-   puis l'`Object.assign` global. **Ne pas insérer de JSX en dur dans
-   `StatsTab`** : le rendu suit le registry.
+   « Réorganiser »), `Comp`, éventuel `hide(flags)` pour la vue ami,
+   et sa **pertinence par période** (`periods`/`keepWhenEmpty`,
+   cf. ci-dessous) — puis l'`Object.assign` global. **Ne pas insérer
+   de JSX en dur dans `StatsTab`** : le rendu suit le registry.
+
+**Pertinence par période** : l'onglet est période-scopé, chaque section
+déclare dans le registry où elle a du sens.
+- `periods: [...]` (absent = toutes) : périodes où la section se rend.
+  Les charts globaux (`trends`, `advanced`) excluent `'today'` — un
+  chart « 6 derniers mois » sous le libellé « Vendredi 3 juillet » est
+  contre-intuitif.
+- `keepWhenEmpty: [...]` : périodes où la section reste rendue MÊME
+  quand la période est vide — pour les contenus en direct/globaux (BAC
+  live, Carte avec bascule « Tout », chart mensuel, moyenne mobile).
+- Gating par card à l'INTÉRIEUR d'une section : `inPeriods(period,
+  [...])` (ex. cumul masqué sur `'today'`, moyenne mobile réservée à
+  `GLOBAL_CHART_PERIODS`, radar hebdo/« Jour de pointe »/« Entre
+  sessions » masqués sur un seul jour).
+- Toute card dont le contenu IGNORE la période sélectionnée porte un
+  `<ScopeChip label="…"/>` qui le dit (« En direct », « Records
+  absolus », « 6 derniers mois », « 30 derniers jours ») — jamais de
+  contenu hors-période non étiqueté.
+- La matrice est exportée (`STATS_PERIOD_MATRIX`) et testée
+  (unit-stats) : toute nouvelle section doit y déclarer ses périodes
+  en conscience.
 
 **Ordre personnalisé** : l'utilisateur réordonne les sections (bouton
 « Réorganiser » → drag par poignée ou flèches clavier). Persisté en
@@ -308,17 +405,11 @@ La vue ami suit l'ordre perso sans pouvoir l'éditer.
 
 **États vides** : aucune boisson au global → `StatsEmptyState` seul
 (pas de sélecteur de période) ; période vide → sélecteur + navigation
-conservés, sections remplacées par le message. Une nouvelle section n'a
-plus besoin de gérer le cas « période vide » globale (mais garde ses
-états partiels internes, ex. « Aucun prix saisi »).
-
-**Charts** : toute échelle Y passe par `chartTicks(max, 2)` et étiquette
-les gridlines avec les `values` EXACTES via `fmtTick` (jamais
-`Math.round(max * fraction)` — labels médians faux). Tout chart pleine
-largeur se monte dans `<ChartAutoWidth minHeight={…}>{(w) => …}` pour
-un rendu aux pixels réels ; `maxWidth` pour les charts carrés
-(radar/horloge). `ChartTooltip` reçoit TOUJOURS `width` ET `height`
-(clamp + flip aux quatre bords).
+conservés, le message remplace les sections PÉRIODE-scopées et les
+sections `keepWhenEmpty` restent rendues dessous (BAC en direct,
+Carte, charts globaux). Une nouvelle section n'a plus besoin de gérer
+le cas « période vide » globale (mais garde ses états partiels
+internes, ex. « Aucun prix saisi »).
 
 **Zoom** : le zoom de page est définitivement désactivé (meta viewport +
 `touch-action: pan-x pan-y` sur html/body + guards `gesture*` /

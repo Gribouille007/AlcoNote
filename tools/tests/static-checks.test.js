@@ -57,8 +57,6 @@ test('DA : aucune couleur en dur hors tokens/constantes nommées', () => {
       if (/^\s*const [A-Z][A-Z0-9_]* = /.test(line)) return;
       // CSS Leaflet ligne à ligne (var(--alco-…)) si hors bloc détecté.
       if (f === 'shared.jsx' && line.includes('var(--alco-')) return;
-      // Paires warn/danger dérivées du thème dans les charts (nommées).
-      if (f === 'stats-charts.jsx' && /^\s*const (warn|danger)\w* = T\.isDark/.test(line)) return;
       offenders.push(`proto/${f}:${i + 1}  ${line.trim().slice(0, 90)}`);
     });
   }
@@ -176,4 +174,50 @@ test('zoom verrouillé : meta viewport + touch-action + guards gesture*', () => 
   const shared = read('proto/shared.jsx');
   assert.ok(shared.includes("'gesturestart'"), 'guard gesturestart (pinch Safari iOS)');
   assert.ok(shared.includes('installZoomGuards'), 'installZoomGuards présent dans shared.jsx');
+});
+
+// ── Gel textuel des formules (cf. CLAUDE.md § « Formules gelées ») ──
+// Deuxième verrou (avec unit-formulas.test.js) : les déclarations littérales
+// des constantes du modèle doivent exister VERBATIM dans les sources. Toute
+// modification échoue ici — si le changement est voulu, mettre à jour les
+// deux verrous dans le même commit.
+test('gel — déclarations littérales des constantes de formules', () => {
+  const statsSrc = read('proto/stats.jsx');
+  const sharedSrc = read('proto/shared.jsx');
+  const frozen = [
+    [statsSrc, 'proto/stats.jsx', /const BAC_ELIM_RATE = 150;/],
+    [statsSrc, 'proto/stats.jsx', /const BAC_ABSORPTION_H = 0\.5;/],
+    [statsSrc, 'proto/stats.jsx', /const DEFAULT_WEIGHT_KG = 70;/],
+    [statsSrc, 'proto/stats.jsx', /const WIDMARK_R_MALE = 0\.68;/],
+    [statsSrc, 'proto/stats.jsx', /const WIDMARK_R_FEMALE = 0\.55;/],
+    [statsSrc, 'proto/stats.jsx', /const BAC_LEGAL_LIMIT = 500;/],
+    [statsSrc, 'proto/stats.jsx', /const BAC_RECORD_MIN = 200;/],
+    [statsSrc, 'proto/stats.jsx', /const FORECAST_MAX_RATE_GPH = 60;/],
+    [statsSrc, 'proto/stats.jsx', /const FORECAST_HORIZON_H = 12;/],
+    [sharedSrc, 'proto/shared.jsx', /const ETHANOL_DENSITY_G_PER_ML = 0\.789;/],
+  ];
+  for (const [src, file, re] of frozen) {
+    assert.match(src, re,
+      `${file} : ${re} introuvable — FORMULE GELÉE (CLAUDE.md § Formules gelées). ` +
+      'Changement voulu ? Mettre à jour CE test ET unit-formulas.test.js dans le même commit.');
+  }
+});
+
+// ── Tokens de figures : géométrie/typo des charts via CHART uniquement ──
+// (cf. CLAUDE.md § « Construire une figure ») : dans stats-charts.jsx, les
+// tailles de police et les pointillés sont des tokens `CHART.*` — un
+// littéral `fontSize={9}` ou `strokeDasharray="2 3"` hors du bloc CHART est
+// une régression du système de figures.
+test('figures : aucune taille/dash en dur dans stats-charts.jsx (tokens CHART)', () => {
+  const src = read('proto/stats-charts.jsx');
+  const lines = src.split('\n');
+  const chartBlock = blockRanges(lines, /^const CHART = Object\.freeze\(\{/, /^\}\);/);
+  const offenders = [];
+  lines.forEach((line, i) => {
+    if (inRanges(chartBlock, i)) return;
+    if (/^\s*(\/\/|\*)/.test(line)) return;
+    if (/fontSize=\{[0-9]/.test(line)) offenders.push(`fontSize littéral — proto/stats-charts.jsx:${i + 1}`);
+    if (/strokeDasharray="[0-9]/.test(line)) offenders.push(`dash littéral — proto/stats-charts.jsx:${i + 1}`);
+  });
+  assert.deepEqual(offenders, [], `Littéraux hors CHART :\n${offenders.join('\n')}`);
 });

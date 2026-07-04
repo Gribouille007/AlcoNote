@@ -39,6 +39,10 @@ const THEMES = {
     deltaNeg: 'oklch(74% 0.20 30)',
     deltaPosBg: 'oklch(28% 0.05 155)',
     deltaNegBg: 'oklch(28% 0.06 30)',
+    // Zones BAC des charts (léger / au-delà du seuil légal) — consommées via
+    // `bacZoneColor` (stats-charts). `T.good` fournit la zone sobre.
+    bacWarn: 'oklch(72% 0.16 60)',
+    bacDanger: 'oklch(68% 0.20 25)',
     isDark: true
   },
   light: {
@@ -79,6 +83,10 @@ const THEMES = {
     deltaNeg: 'oklch(48% 0.20 30)',
     deltaPosBg: 'oklch(95% 0.04 155)',
     deltaNegBg: 'oklch(95% 0.04 30)',
+    // Zones BAC des charts (léger / au-delà du seuil légal) — consommées via
+    // `bacZoneColor` (stats-charts). `T.good` fournit la zone sobre.
+    bacWarn: 'oklch(58% 0.16 55)',
+    bacDanger: 'oklch(54% 0.20 25)',
     isDark: false
   }
 };
@@ -1021,6 +1029,12 @@ const FR_MONTHS_LONG = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', '
 const FR_MONTHS_DOTTED = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 function fmtDateMedium(iso) {
   if (!iso) return '—';
+  // `new Date('YYYY-MM-DD')` parse en UTC minuit : dans un fuseau négatif la
+  // date rendue recule d'un jour. Découper les champs garde le jour calendaire.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (m && Number(m[2]) >= 1 && Number(m[2]) <= 12) {
+    return `${Number(m[3])} ${FR_MONTHS_DOTTED[Number(m[2]) - 1]}`;
+  }
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '—';
   return `${d.getDate()} ${FR_MONTHS_DOTTED[d.getMonth()]}`;
@@ -2128,6 +2142,16 @@ function useSWVersion() {
     @keyframes toastOut { from { transform: translate(-50%, 0); opacity: 1 } to { transform: translate(-50%, 8px); opacity: 0 } }
     /* Balayage du viseur scanner (rapatrié de modals.jsx : plus aucun @keyframes inline). */
     @keyframes scanSweep { 0%{top:0} 100%{top:100%} }
+
+    /* Entrée des figures (stats-charts) : fondu + légère montée, CSS pur —
+       rejouée au (re)montage d'un chart (ouverture de section). Pas
+       d'animation de tracé : elle brouillerait les pointillés sémantiques
+       (futur/seuils). Durée/easing = MOTION. */
+    @keyframes alcoChartIn { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: translateY(0) } }
+    .alco-chart-in { animation: alcoChartIn ${MOTION.base}ms ${MOTION.ease}; }
+    @media (prefers-reduced-motion: reduce) {
+      .alco-chart-in { animation: none; }
+    }
 
     /* Carte (StatsTab › MapSection). Les couleurs sont pilotées par des
        variables CSS posées sur le conteneur, ce qui permet de rethémer la

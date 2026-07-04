@@ -8,8 +8,8 @@
     "watch": "node tools/build.js --watch",
     "pretest": "node tools/build.js",
     "test": "node --test tools/tests/*.test.js",
-    "test:unit": "npm run build && node --test tools/tests/unit-shared.test.js tools/tests/unit-data.test.js tools/tests/unit-stats.test.js tools/tests/db.test.js tools/tests/db-migration.test.js tools/tests/static-checks.test.js",
-    "test:app": "npm run build && node --test --test-concurrency=1 tools/tests/app-boot.test.js tools/tests/app-add-drink.test.js tools/tests/app-categories.test.js tools/tests/app-history.test.js tools/tests/app-header-stack.test.js tools/tests/app-friends.test.js tools/tests/app-settings.test.js"
+    "test:unit": "npm run build && node --test tools/tests/unit-shared.test.js tools/tests/unit-data.test.js tools/tests/unit-stats.test.js tools/tests/unit-formulas.test.js tools/tests/unit-charts.test.js tools/tests/db.test.js tools/tests/db-migration.test.js tools/tests/static-checks.test.js",
+    "test:app": "npm run build && node --test --test-concurrency=1 tools/tests/app-boot.test.js tools/tests/app-add-drink.test.js tools/tests/app-categories.test.js tools/tests/app-history.test.js tools/tests/app-stats.test.js tools/tests/app-header-stack.test.js tools/tests/app-friends.test.js tools/tests/app-settings.test.js"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

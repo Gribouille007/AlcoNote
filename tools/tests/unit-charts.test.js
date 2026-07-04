@@ -151,3 +151,135 @@ test('heatmapBand — 0 vide, bandes 1..4 par quartile du ratio', () => {
   assert.equal(heatmapBand(100, 100), 4, '100 % → bande 4');
   assert.equal(heatmapBand(500, 100), 4, 'au-delà de l’échelle → bande max');
 });
+
+// ── Système CHART + anti-collision (refonte des figures) ─────────────
+const {
+  CHART, BAC_CHART_CAP, BAC_ZONE_LIGHT, BAC_ZONE_LEGAL,
+  thinnedAxisLabels, resolveLaneLabels, radarLabelLayout, fitLabel,
+  donutSegments,
+} = global;
+
+test('CHART — spec gelée, valeurs numériques saines', () => {
+  assert.ok(Object.isFrozen(CHART), 'CHART est frozen');
+  assert.ok(Object.isFrozen(CHART.font) && Object.isFrozen(CHART.bar), 'sous-objets frozen');
+  assert.ok(CHART.font.tick > 0 && CHART.font.charW > 0);
+  assert.ok(CHART.label.minGapX > 0 && CHART.label.minGapY > 0);
+  assert.equal(CHART.heatmap.bandAlpha.length, 5);
+  // Seuils d'affichage BAC alignés sur les constantes du moteur (gel croisé
+  // avec unit-formulas : BAC_LEGAL_LIMIT = 500, BAC_RECORD_MIN = 200).
+  assert.equal(BAC_ZONE_LEGAL, 500);
+  assert.equal(BAC_ZONE_LIGHT, 200);
+  assert.equal(BAC_CHART_CAP, 1500);
+});
+
+// Extents réels d'un label rendu selon son ancre — l'invariant se vérifie
+// sur les extents, pas sur les centres.
+function labelExtent(item, labels, charW) {
+  const w = String(labels[item.i]).length * charW;
+  if (item.anchor === 'start') return [item.x, item.x + w];
+  if (item.anchor === 'end') return [item.x - w, item.x];
+  return [item.x - w / 2, item.x + w / 2];
+}
+
+test('thinnedAxisLabels — property : jamais deux labels qui se chevauchent, jamais de débord', () => {
+  const charW = CHART.font.charW, minGap = CHART.label.minGapX;
+  let rngState = 42;
+  const rng = () => (rngState = (rngState * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+  for (let trial = 0; trial < 200; trial++) {
+    const n = 2 + Math.floor(rng() * 58);            // 2..60 labels
+    const plotW = 240 + rng() * 180;                  // 240..420 px
+    const lo = 28, hi = lo + plotW;
+    const labels = Array.from({ length: n }, (_, i) =>
+      rng() < 0.15 ? '' : `${i}${rng() < 0.5 ? 'h' : '/12'}`);
+    const xs = labels.map((_, i) => lo + (i / Math.max(1, n - 1)) * plotW);
+    const out = thinnedAxisLabels(labels, xs, { lo, hi });
+    // 1. Tous les labels rendus étaient candidats (non vides).
+    for (const it of out) assert.ok(labels[it.i] !== '', 'jamais un label vide');
+    // 2. Aucun débord des bornes.
+    for (const it of out) {
+      const [a, b] = labelExtent(it, labels, charW);
+      assert.ok(a >= lo - 1e-9 && b <= hi + 1e-9,
+        `débord [${a},${b}] hors [${lo},${hi}] (essai ${trial})`);
+    }
+    // 3. Invariant central : extents consécutifs espacés ≥ minGap.
+    for (let k = 1; k < out.length; k++) {
+      const [, prevEnd] = labelExtent(out[k - 1], labels, charW);
+      const [curStart] = labelExtent(out[k], labels, charW);
+      assert.ok(curStart >= prevEnd + minGap - 1e-9,
+        `chevauchement au trial ${trial} : ${prevEnd} → ${curStart}`);
+    }
+    // 4. Le dernier candidat non vide est toujours rendu (ancre de lecture).
+    const lastCand = labels.map((l, i) => l ? i : -1).filter(i => i >= 0).pop();
+    if (lastCand != null && out.length) {
+      assert.equal(out[out.length - 1].i, lastCand, 'dernier label rendu');
+    }
+  }
+});
+
+test('thinnedAxisLabels — cas limites', () => {
+  assert.deepEqual(thinnedAxisLabels([], [], {}), []);
+  assert.deepEqual(thinnedAxisLabels(['', '', ''], [0, 10, 20], {}), []);
+  const one = thinnedAxisLabels(['9h'], [50], { lo: 0, hi: 100 });
+  assert.equal(one.length, 1);
+  assert.equal(one[0].anchor, 'middle');
+});
+
+test('resolveLaneLabels — priorité, décalage minimal, rejet, invariant de gap', () => {
+  const minGap = 4;
+  // Deux items en collision : le prioritaire garde sa place, l'autre se décale.
+  const out = resolveLaneLabels([
+    { id: 'a', pos: 50, size: 8, priority: 1 },
+    { id: 'b', pos: 52, size: 8, priority: 3 },
+  ], { minGap, lo: 0, hi: 100 });
+  assert.equal(out.length, 2);
+  const b = out.find(o => o.id === 'b'), a = out.find(o => o.id === 'a');
+  assert.equal(b.pos, 52, 'le prioritaire ne bouge pas');
+  assert.ok(Math.abs(a.pos - b.pos) >= 8 + minGap - 1e-9, 'gap respecté');
+  // Espace trop étroit : l'item le moins prioritaire est ABANDONNÉ.
+  const tight = resolveLaneLabels([
+    { id: 'a', pos: 5, size: 8, priority: 1 },
+    { id: 'b', pos: 5, size: 8, priority: 3 },
+  ], { minGap, lo: 0, hi: 12 });
+  assert.equal(tight.length, 1);
+  assert.equal(tight[0].id, 'b');
+  // Invariant pairwise sur un lot serré.
+  const many = resolveLaneLabels(
+    [0, 1, 2, 3, 4].map(i => ({ pos: 40 + i, size: 9, priority: 5 - i })),
+    { minGap, lo: 0, hi: 200 });
+  for (let i = 0; i < many.length; i++) {
+    for (let j = i + 1; j < many.length; j++) {
+      assert.ok(Math.abs(many[i].pos - many[j].pos) >= (many[i].size + many[j].size) / 2 + minGap - 1e-9);
+    }
+  }
+});
+
+test('radarLabelLayout — ancre selon le quadrant', () => {
+  assert.equal(radarLabelLayout(0).anchor, 'start');            // droite
+  assert.equal(radarLabelLayout(Math.PI).anchor, 'end');        // gauche
+  assert.equal(radarLabelLayout(-Math.PI / 2).anchor, 'middle'); // haut
+  assert.ok(radarLabelLayout(-Math.PI / 2).dy < 0, 'haut → texte au-dessus');
+  assert.equal(radarLabelLayout(Math.PI / 2).anchor, 'middle');  // bas
+  assert.ok(radarLabelLayout(Math.PI / 2).dy > 0, 'bas → texte en dessous');
+});
+
+test('fitLabel — troncature ellipsis dans un espace borné', () => {
+  assert.equal(fitLabel('Bière', 1000), 'Bière');
+  const cut = fitLabel('Une catégorie interminable', 60);
+  assert.ok(cut.endsWith('…'), 'ellipsis');
+  assert.ok(cut.length * CHART.font.charW <= 60 + CHART.font.charW, 'tient dans la borne');
+  assert.equal(fitLabel('abc', 2), '…');
+  assert.equal(fitLabel(null, 50), '');
+});
+
+test('donutSegments — vide → total 0 (plus de faux « 1 »), plein → angles cohérents', () => {
+  const empty = donutSegments([], 50, 50, 40);
+  assert.equal(empty.total, 0);
+  assert.deepEqual(empty.segments, []);
+  const zero = donutSegments([{ name: 'Bière', v: 0 }], 50, 50, 40);
+  assert.equal(zero.total, 0, 'tout-zéro = vide');
+  const two = donutSegments([{ name: 'A', v: 3 }, { name: 'B', v: 1 }], 50, 50, 40);
+  assert.equal(two.total, 4);
+  assert.equal(two.segments.length, 2);
+  // Les angles se suivent sans trou : fin du 1er = début du 2e.
+  assert.ok(Math.abs(two.segments[0].a1 - two.segments[1].a0) < 1e-9);
+});

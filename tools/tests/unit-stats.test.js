@@ -559,6 +559,27 @@ test('buildHeatmapCells — mode selon période, cellules + scaleMax', () => {
   assert.equal(buildHeatmapCells(drinks, 'today', td, new Date(2026, 5, 15)).mode, 'today');
 });
 
+test('buildHeatmapCells — mode today : 35 jours finissant à min(ancre, aujourd\'hui)', () => {
+  // Ancre passée : la fenêtre couvre [ancre−34 j, ancre] — les boissons de
+  // TOUT l'historique comptent (la section passe allDrinks, pas la période).
+  const anchor = new Date(2026, 5, 15);
+  const td = getPeriodRange('today', anchor);
+  const drinks = [beer('2026-06-09', '18:00'), beer('2026-05-20', '20:00')];
+  const hm = buildHeatmapCells(drinks, 'today', td, anchor);
+  const inWin = hm.cells.filter(c => !c.blank);
+  assert.equal(inWin.length, 35, '5 semaines pleines');
+  assert.equal(inWin[0].date, '2026-05-12');
+  assert.equal(inWin[inWin.length - 1].date, '2026-06-15');
+  const c20 = inWin.find(c => c.date === '2026-05-20');
+  assert.ok(c20 && c20.count === 1, 'une boisson hors du jour ancre est comptée');
+  // Ancre future : clamp à aujourd'hui — aucune cellule au-delà du présent.
+  const future = new Date(Date.now() + 40 * 86400_000);
+  const hf = buildHeatmapCells([], 'today', td, future);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const winF = hf.cells.filter(c => !c.blank);
+  assert.equal(winF[winF.length - 1].date, localDate(today), 'pas de jours futurs');
+});
+
 // ── buildSessionList / buildSessionPeakHistogram ────────────────────
 
 test('buildSessionList — plus récente d’abord, cap n, champs aplatis', () => {
@@ -650,4 +671,32 @@ test('computeBacForecast — pas de session en cours → vide', () => {
   assert.equal(fc.hasCurrentSession, false);
   assert.deepEqual(fc.projectedPoints, []);
   assert.equal(fc.truncated, false);
+});
+
+// ── Matrice de pertinence par période ────────────────────────────────
+// (cf. CLAUDE.md § « Pertinence par période ») : chaque section déclare où
+// elle se rend (`periods`) et où elle survit à une période vide
+// (`keepWhenEmpty`). Ce test fige les décisions structurantes.
+test('STATS_PERIOD_MATRIX — couverture, validité et décisions clés', () => {
+  const { STATS_PERIOD_MATRIX, ALL_PERIODS } = global;
+  const ids = Object.keys(STATS_PERIOD_MATRIX);
+  assert.equal(ids.length, 11, 'les 11 sections déclarées');
+  const valid = new Set(['today', 'week', 'month', 'year', 'school', 'all']);
+  for (const [id, m] of Object.entries(STATS_PERIOD_MATRIX)) {
+    assert.ok(m.periods.length > 0, `${id} : au moins une période`);
+    for (const p of m.periods) assert.ok(valid.has(p), `${id} : période inconnue « ${p} »`);
+    for (const p of m.keepWhenEmpty) {
+      assert.ok(m.periods.includes(p), `${id} : keepWhenEmpty ⊆ periods (« ${p} »)`);
+    }
+  }
+  // Les charts globaux (historique complet) ne s'affichent pas sur « Jour ».
+  assert.ok(!STATS_PERIOD_MATRIX.trends.periods.includes('today'));
+  assert.ok(!STATS_PERIOD_MATRIX.advanced.periods.includes('today'));
+  // Les contenus en direct / globaux survivent à une période vide.
+  assert.deepEqual(STATS_PERIOD_MATRIX.bac.keepWhenEmpty, ALL_PERIODS);
+  assert.deepEqual(STATS_PERIOD_MATRIX.map.keepWhenEmpty, ALL_PERIODS);
+  // Les sections purement période-scopées disparaissent sur période vide.
+  for (const id of ['general', 'temporal', 'category', 'top', 'sessions', 'spending', 'heatmap']) {
+    assert.deepEqual(STATS_PERIOD_MATRIX[id].keepWhenEmpty, [], `${id} : période-scopée`);
+  }
 });

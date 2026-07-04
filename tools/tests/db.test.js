@@ -68,9 +68,17 @@ test('addDrink — conversion quantityInCL par unité, uid auto, prix', async ()
   });
   assert.equal(cup.quantityInCL, 50);
 
+  // mL : même conversion que toCl (÷10) — régression : le champ stocké
+  // restait non converti (330 au lieu de 33).
+  const ml = await dbManager.addDrink({
+    name: 'Canette', category: 'Bière', quantity: 330, unit: 'mL',
+    alcoholContent: 5, date: '2026-06-02', time: '23:00',
+  });
+  assert.equal(ml.quantityInCL, 33);
+
   // drinkCount de la catégorie mis à jour.
   const cat = await dbManager.getCategoryByName('Bière');
-  assert.equal(cat.drinkCount, 3);
+  assert.equal(cat.drinkCount, 4);
 });
 
 test('getDrinkByUid — retrouve une boisson par uid stable', async () => {
@@ -90,7 +98,7 @@ test('updateDrink — recalcul quantityInCL et drinkCounts croisés', async () =
   await dbManager.updateDrink(pils.id, { category: 'Vin' });
   const biere = await dbManager.getCategoryByName('Bière');
   const vin = await dbManager.getCategoryByName('Vin');
-  assert.equal(biere.drinkCount, 2, 'l’ancienne catégorie décrémente');
+  assert.equal(biere.drinkCount, 3, 'l’ancienne catégorie décrémente');
   assert.equal(vin.drinkCount, 1, 'la nouvelle incrémente');
   await assert.rejects(() => dbManager.updateDrink(99999, { quantity: 1 }), /non trouvée/);
 });

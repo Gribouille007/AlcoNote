@@ -156,6 +156,31 @@ function filterDrinksInRange(drinks, start, end) {
   return drinks.filter(d => d.date >= sIso && d.date <= eIso);
 }
 
+// Clé canonique d'un nom de boisson (trim + lowercase, comme familyKey/
+// ratingKey) : TOUT regroupement par nom dans les stats (unicité, Top
+// boissons, favori par catégorie) passe par elle — sinon « Pilsner » et
+// « pilsner  » divergent d'une section à l'autre.
+function drinkNameKey(name) {
+  return (name || '').trim().toLowerCase();
+}
+
+// Index du max d'un histogramme, ou null si tout est à zéro — évite de
+// désigner « 0h » / « Dimanche » comme pointe en l'absence de données
+// exploitables (indexOf(0) === 0 mentait).
+function peakIndex(arr) {
+  let best = null, bestV = 0;
+  for (let i = 0; i < (arr || []).length; i++) {
+    if (arr[i] > bestV) { bestV = arr[i]; best = i; }
+  }
+  return best;
+}
+
+// Gate de pertinence : une card/section ne se rend que pour les périodes
+// où elle a du sens (cf. matrice « Pertinence par période », CLAUDE.md).
+function inPeriods(period, list) {
+  return list.includes(period);
+}
+
 // Roll up totals (drink count, cL of liquid, grams of pure alcohol,
 // unique-name set) plus per-category / per-hour / per-day-of-week
 // histograms used by every section above the BAC block.
@@ -175,7 +200,7 @@ function aggregateGeneral(drinks) {
     stats.grams += ethanolGrams(cl, d.alcoholContent); // réutilise `cl` déjà calculé
     // Même normalisation que familyKey/ratingKey (trim + lowercase) : une
     // « Pilsner » saisie avec un espace parasite ne compte pas double.
-    stats.unique.add((d.name || '').trim().toLowerCase());
+    stats.unique.add(drinkNameKey(d.name));
     const cat = canonicalCat(d.category) || 'Autre';
     stats.byCategory[cat] = (stats.byCategory[cat] || 0) + 1;
     const hour = parseInt((d.time || '00:00').split(':')[0], 10);
@@ -379,6 +404,60 @@ function computeStreakRecord(drinks) {
   return best;
 }
 
+// Durée moyenne d'une session (h) et écart moyen entre sessions consécutives
+// (jours) : Σ (start[i] − end[i−1]) / (N−1) — le par-paire, pas l'étendue
+// totale (qui dérive dès que l'espacement varie). Helper pur, testable.
+function sessionGapStats(sessions) {
+  const xs = sessions || [];
+  const avgDurationH = xs.length
+    ? xs.reduce((s, x) => s + (x.endTs - x.startTs), 0) / xs.length / 3600_000
+    : 0;
+  let meanGapDays = 0;
+  if (xs.length >= 2) {
+    let totalGap = 0;
+    for (let i = 1; i < xs.length; i++) totalGap += xs[i].startTs - xs[i - 1].endTs;
+    meanGapDays = (totalGap / (xs.length - 1)) / 86400_000;
+  }
+  return { avgDurationH, meanGapDays };
+}
+
+// Nombre de jours SANS boisson dans [range.start, min(range.end, clampEnd)].
+// `clampEnd` (minuit local) évite de compter les jours futurs de la période
+// courante ; null = couvrir la période entière (période déjà passée).
+function soberDaysInRange(drinks, range, clampEnd = null) {
+  const drinkDays = new Set((drinks || []).map(d => d.date));
+  let last = range.end;
+  if (clampEnd != null && clampEnd < last) last = clampEnd;
+  if (last < range.start) return 0;
+  let count = 0;
+  for (let d = new Date(range.start); d <= last; d = _addDays(d, 1)) {
+    if (!drinkDays.has(_fmtIso(d))) count++;
+  }
+  return count;
+}
+
+// Part de vie passée bourré depuis la première boisson (%) : temps BAC>0
+// strictement jusqu'à `nowMs` (pas la queue projetée) sur (now − first).
+function pctBourreAllTime(sessions, firstTs, nowMs) {
+  if (firstTs == null) return 0;
+  let bourreToNow = 0;
+  for (const s of (sessions || [])) {
+    const a = Math.max(s.startTs, firstTs);
+    const b = Math.min(s.endTs, nowMs);
+    if (b > a) bourreToNow += b - a;
+  }
+  const span = nowMs - firstTs;
+  return span > 0 ? Math.min(100, (bourreToNow / span) * 100) : 0;
+}
+
+// Taux moyen PAR SESSION : moyenne des taux intra-session (∫ bac dt / durée,
+// `avgBac` de computeBACSessions) sur les sessions fournies. En mg/L.
+// null quand aucune session exploitable. Helper pur, testable.
+function meanSessionBac(sessions) {
+  const xs = (sessions || []).filter(s => s.avgBac > 0);
+  return xs.length ? xs.reduce((s, x) => s + x.avgBac, 0) / xs.length : null;
+}
+
 // Render a duration in ms as "Xj Yh", "Xh Ymm", "Xm" — picks the
 // largest unit that gives a non-trivial number. Returns "—" for ≤ 0.
 function fmtBourreTime(ms) {
@@ -568,19 +647,23 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
   }
 
   // Période sélectionnée vide : le sélecteur et la navigation restent
-  // (pour aller voir ailleurs), les sections laissent place au message.
+  // (pour aller voir ailleurs), le message remplace les sections
+  // PÉRIODE-scopées — les sections `keepWhenEmpty` (BAC en direct, carte,
+  // charts globaux) restent rendues sous le message, elles ne dépendent
+  // pas des boissons de la période.
   const hasPeriodData = inRange.length > 0;
+  const shownSections = visibleSections
+    .filter(s => (s.periods || ALL_PERIODS).includes(period))
+    .filter(s => hasPeriodData || (s.keepWhenEmpty || []).includes(period));
+  sp.hasPeriodData = hasPeriodData;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PeriodSwitcher period={period} onChange={(p) => { setPeriod(p); setAnchor(new Date()); }} />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 120px' }}>
         <PeriodNav period={period} anchor={anchor} onShift={(d) => setAnchor(shiftAnchor(period, anchor, d))} />
-        {!hasPeriodData ? <StatsEmptyState scope="period" /> : (
-          <>
-            {visibleSections.map(({ id, Comp }) => <Comp key={id} {...sp} />)}
-          </>
-        )}
+        {!hasPeriodData && <StatsEmptyState scope="period" />}
+        {shownSections.map(({ id, Comp }) => <Comp key={id} {...sp} />)}
       </div>
     </div>
   );
@@ -721,19 +804,39 @@ function StatSection({ id, title, action, children, sub, collapsed, toggleSectio
 // section = ajouter une entrée ici — l'ordre par défaut suit ce tableau.
 // Les déclarations `function` plus bas sont hoistées : les références
 // sont valides dès l'évaluation du module.
+//
+// Pertinence par période (cf. CLAUDE.md § « Pertinence par période ») :
+// - `periods`  : périodes où la section se rend (absent = toutes).
+// - `keepWhenEmpty` : périodes où la section reste rendue MÊME quand la
+//   période sélectionnée est vide — pour les contenus globaux/en direct
+//   (BAC live, carte « Tout », chart mensuel, moyenne mobile 30 j) qui ne
+//   dépendent pas des boissons de la période.
+const ALL_PERIODS = ['today', 'week', 'month', 'year', 'school', 'all'];
+const GLOBAL_CHART_PERIODS = ['month', 'year', 'school', 'all'];
 const STATS_SECTIONS = [
   { id: 'general',  title: 'Statistiques générales',  Comp: GeneralSection },
   { id: 'temporal', title: 'Analyse temporelle',      Comp: TemporalSection },
   { id: 'heatmap',  title: 'Calendrier',              Comp: HeatmapSection },
   { id: 'category', title: 'Analyse par catégorie',   Comp: CategorySection },
   { id: 'top',      title: 'Top boissons',            Comp: TopDrinksSection },
-  { id: 'bac',      title: 'Alcoolémie',              Comp: BACSection,      hide: (f) => f.hideBac },
+  { id: 'bac',      title: 'Alcoolémie',              Comp: BACSection,      hide: (f) => f.hideBac,
+    keepWhenEmpty: ALL_PERIODS },
   { id: 'sessions', title: 'Sessions',                Comp: SessionsSection, hide: (f) => f.hideBac },
-  { id: 'map',      title: 'Carte des consommations', Comp: MapSection,      hide: (f) => f.hideMap },
-  { id: 'trends',   title: 'Évolution mensuelle',     Comp: TrendsSection },
-  { id: 'advanced', title: 'Analyses avancées',       Comp: AdvancedSection },
+  { id: 'map',      title: 'Carte des consommations', Comp: MapSection,      hide: (f) => f.hideMap,
+    keepWhenEmpty: ALL_PERIODS },
+  // Chart mensuel et moyenne mobile 30 j lisent TOUT l'historique : sans
+  // objet sur « Jour » (déjà couvert par les sections du dessus), gardés
+  // sur période vide dès qu'ils portent une vue globale.
+  { id: 'trends',   title: 'Tendances',     Comp: TrendsSection,
+    periods: ['week', 'month', 'year', 'school', 'all'], keepWhenEmpty: GLOBAL_CHART_PERIODS },
+  { id: 'advanced', title: 'Analyses avancées',       Comp: AdvancedSection,
+    periods: ['week', 'month', 'year', 'school', 'all'], keepWhenEmpty: GLOBAL_CHART_PERIODS },
   { id: 'spending', title: 'Dépenses',                Comp: SpendingSection, hide: (f) => f.hidePrice },
 ];
+// Matrice exportée pour les tests : id → { periods, keepWhenEmpty }.
+const STATS_PERIOD_MATRIX = Object.fromEntries(STATS_SECTIONS.map(s => [
+  s.id, { periods: s.periods || ALL_PERIODS, keepWhenEmpty: s.keepWhenEmpty || [] },
+]));
 const DEFAULT_SECTION_ORDER = STATS_SECTIONS.map(s => s.id);
 const SECTION_ORDER_KEY = 'stats.sectionOrder';
 
@@ -896,6 +999,19 @@ function Card({ children, style, ...rest }) {
   );
 }
 
+// Étiquette de portée : signale qu'une card affiche un contenu « en direct »
+// ou « tout l'historique », indépendant de la période sélectionnée — l'onglet
+// est période-scopé, ces cards ne le sont pas, et doivent le DIRE.
+function ScopeChip({ label }) {
+  return (
+    <span style={{
+      color: T.muted, fontSize: 9.5, letterSpacing: 0.3, textTransform: 'uppercase',
+      fontWeight: 600, border: `1px solid ${T.rule}`, borderRadius: 99,
+      padding: '2px 8px', background: T.surface3, flexShrink: 0, whiteSpace: 'nowrap',
+    }}>{label}</span>
+  );
+}
+
 // ── Helpers Calendrier / Sessions (purs, testables) ───────────────
 // Somme d'alcool pur (g) et nombre de boissons par jour ISO.
 function bucketDailyAlcohol(drinks) {
@@ -928,6 +1044,8 @@ function buildHeatmapCells(drinks, period, range, anchor) {
   const midnight = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
   if (mode === 'today') {
     last = midnight(anchor || new Date());
+    const today = midnight(new Date());
+    if (last > today) last = today; // pas de jours futurs (nav en avant)
     first = _addDays(last, -34); // 5 semaines
   } else if (mode === 'yearWall') {
     first = midnight(range.start);
@@ -1002,10 +1120,14 @@ function buildSessionPeakHistogram(sessions) {
 }
 
 // ── Calendrier (heatmap des grammes d'alcool par jour) ────────────
-function HeatmapSection({ drinks, period, range, anchor, collapsed, toggleSection }) {
+function HeatmapSection({ drinks, allDrinks, period, range, anchor, collapsed, toggleSection }) {
+  // Le mode « Aujourd'hui » affiche les 5 dernières semaines : il lui faut
+  // tout l'historique — les drinks de la période ne couvrent qu'UN jour,
+  // les 34 autres cellules resteraient vides à tort.
+  const source = period === 'today' ? (allDrinks || drinks) : drinks;
   const hm = React.useMemo(
-    () => buildHeatmapCells(drinks, period, range, anchor),
-    [drinks, period, range, anchor]
+    () => buildHeatmapCells(source, period, range, anchor),
+    [source, period, range, anchor]
   );
   const hasData = hm.cells.some(c => c.grams > 0);
   return (
@@ -1108,27 +1230,16 @@ function GeneralSection({
   // today), so it's only meaningful when the viewed period contains
   // today — hide it when navigating to a past/future period.
   const periodIncludesToday = today >= range.start && today <= range.end;
-  const sober = React.useMemo(() => {
-    const drinkDays = new Set(drinks.map(d => d.date));
-    const lastInclusive = range.end < today ? range.end : today;
-    if (lastInclusive < range.start) return 0;
-    let count = 0;
-    for (let d = new Date(range.start); d <= lastInclusive; d = _addDays(d, 1)) {
-      if (!drinkDays.has(_fmtIso(d))) count++;
-    }
-    return count;
-  }, [drinks, range, today]);
+  const sober = React.useMemo(
+    () => soberDaysInRange(drinks, range, today),
+    [drinks, range, today]
+  );
   // Same calculation, but the previous period's window is fully past
   // so we always go to its real end.
-  const prevSober = React.useMemo(() => {
-    if (!hasPrev) return null;
-    const drinkDays = new Set(prevDrinks.map(d => d.date));
-    let count = 0;
-    for (let d = new Date(prevRange.start); d <= prevRange.end; d = _addDays(d, 1)) {
-      if (!drinkDays.has(_fmtIso(d))) count++;
-    }
-    return count;
-  }, [prevDrinks, prevRange, hasPrev]);
+  const prevSober = React.useMemo(
+    () => hasPrev ? soberDaysInRange(prevDrinks, prevRange) : null,
+    [prevDrinks, prevRange, hasPrev]
+  );
 
   // Δ% helper — `null` baseline means we don't show a badge (e.g. no
   // previous period or it had zero of this metric).
@@ -1168,16 +1279,7 @@ function GeneralSection({
         if (!Number.isFinite(t)) return min;
         return (min == null || t < min) ? t : min;
       }, null);
-      let bourreToNow = 0;
-      if (firstTs != null) {
-        for (const s of sessions) {
-          const a = Math.max(s.startTs, firstTs);
-          const b = Math.min(s.endTs, now);
-          if (b > a) bourreToNow += b - a;
-        }
-      }
-      const span = firstTs != null ? now - firstTs : 0;
-      const pct = span > 0 ? Math.min(100, (bourreToNow / span) * 100) : 0;
+      const pct = pctBourreAllTime(sessions, firstTs, now);
       out.push({ v: `${pct.toFixed(1)}%`, l: '% bourré', icon: Ic.hourglass });
     }
     // 'all' joins week/month/year/school: the day/week denominators come
@@ -1354,28 +1456,22 @@ const HeroStatCard = React.memo(function HeroStatCard({ icon, label, value, suff
 const hourlyFormatX = (d, i) => i % 4 === 0 ? d.label : '';
 
 // ── 2. Analyse temporelle ─────────────────────────────────────────
-function TemporalSection({ drinks, collapsed, toggleSection, agg, sessions, bacAvailable = true }) {
+function TemporalSection({ drinks, period, collapsed, toggleSection, agg, sessions, bacAvailable = true }) {
   const dayNames = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
+  // Sur « Jour », les métriques multi-jours n'ont pas de sens (un seul jour
+  // de données) : jour de pointe, écart entre sessions et radar hebdo sont
+  // masqués — restent l'heure de pointe, la durée de session et le bar horaire.
+  const multiDay = period !== 'today';
+  // `peakIndex` renvoie null quand l'histogramme est entièrement à zéro
+  // (heures/dates invalides) — la cellule affiche alors « — » au lieu de
+  // désigner faussement « 0h » / « Dim. ».
   const { peakHour, peakDow } = React.useMemo(() => ({
-    peakHour: agg.byHour.indexOf(Math.max(...agg.byHour)),
-    peakDow: agg.byDow.indexOf(Math.max(...agg.byDow)),
+    peakHour: peakIndex(agg.byHour),
+    peakDow: peakIndex(agg.byDow),
   }), [agg]);
-  const avgDuration = React.useMemo(() => sessions.length > 0
-    ? sessions.reduce((s, x) => s + (x.endTs - x.startTs), 0) / sessions.length / 3600_000
-    : 0, [sessions]);
-  // Mean gap between consecutive sessions: Σ (sessions[i+1].start −
-  // sessions[i].end) / (N − 1). The previous formula computed
-  // (last.start − first.end) / (N−1), which conflates total elapsed
-  // time with the per-pair gap and drifts whenever sessions overlap or
-  // the spacing varies.
-  const between = React.useMemo(() => {
-    if (sessions.length < 2) return 0;
-    let totalGap = 0;
-    for (let i = 1; i < sessions.length; i++) {
-      totalGap += sessions[i].startTs - sessions[i - 1].endTs;
-    }
-    return (totalGap / (sessions.length - 1)) / 86400_000;
-  }, [sessions]);
+  const { avgDurationH: avgDuration, meanGapDays: between } = React.useMemo(
+    () => sessionGapStats(sessions), [sessions]
+  );
 
   const fmtH = (h) => {
     if (!h) return '—';
@@ -1417,12 +1513,12 @@ function TemporalSection({ drinks, collapsed, toggleSection, agg, sessions, bacA
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 10,
       }}>
-        <MiniStat big={drinks.length > 0 ? `${peakHour}h` : '—'} label="Heure de pointe" />
-        <MiniStat big={drinks.length > 0 ? dayNames[peakDow] : '—'} label="Jour de pointe" />
+        <MiniStat big={peakHour != null ? `${peakHour}h` : '—'} label="Heure de pointe" />
+        {multiDay && <MiniStat big={peakDow != null ? dayNames[peakDow] : '—'} label="Jour de pointe" />}
         {/* Durées de session = modèle BAC (poids/sexe) : masquées pour un ami
             qui ne partage pas son BAC (sinon poids par défaut → valeurs fausses). */}
         {bacAvailable && <MiniStat big={fmtH(avgDuration)} label="Durée moy. session" />}
-        {bacAvailable && <MiniStat big={between > 0 ? `${between.toFixed(1)}j` : '—'} label="Entre sessions" />}
+        {bacAvailable && multiDay && <MiniStat big={between > 0 ? `${between.toFixed(1)}j` : '—'} label="Entre sessions" />}
       </div>
 
       <Card style={{ marginBottom: 10 }}>
@@ -1441,14 +1537,16 @@ function TemporalSection({ drinks, collapsed, toggleSection, agg, sessions, bacA
         </ChartAutoWidth>
       </Card>
 
-      <Card>
-        <div style={{
-          color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 4, letterSpacing: -0.1,
-        }}>Par jour de la semaine</div>
-        <ChartAutoWidth minHeight={250} maxWidth={300}>
-          {(w) => <SvgRadar data={dailyData} size={w} color={T.good} valueLabel="boisson(s)" />}
-        </ChartAutoWidth>
-      </Card>
+      {multiDay && (
+        <Card>
+          <div style={{
+            color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 4, letterSpacing: -0.1,
+          }}>Par jour de la semaine</div>
+          <ChartAutoWidth minHeight={250} maxWidth={300}>
+            {(w) => <SvgRadar data={dailyData} size={w} color={T.good} valueLabel="boisson(s)" />}
+          </ChartAutoWidth>
+        </Card>
+      )}
     </StatSection>
   );
 }
@@ -1512,13 +1610,17 @@ function CategorySection({ drinks, collapsed, toggleSection }) {
       const cl = toCl(d.quantity, d.unit);
       e.volumeCl += cl;
       if (d.alcoholContent) { e.abvSum += d.alcoholContent; e.abvN++; }
-      e.names[d.name] = (e.names[d.name] || 0) + 1;
+      // Clé normalisée (comme Top boissons / « Boissons diff. ») : la
+      // favorite ne se scinde pas sur une variante de casse/espaces.
+      const k = drinkNameKey(d.name);
+      const rec = e.names[k] || (e.names[k] = { name: (d.name || '').trim(), count: 0 });
+      rec.count++;
     }
     // Precompute each category's most-logged drink here (once per data
     // change) instead of re-sorting `names` inside the render loop below.
     const out = Object.values(map);
     for (const e of out) {
-      e.fav = Object.entries(e.names).sort((a, b) => b[1] - a[1])[0];
+      e.fav = Object.values(e.names).sort((a, b) => b.count - a.count)[0];
     }
     return out.sort((a, b) => b.count - a.count);
   }, [drinks]);
@@ -1560,7 +1662,7 @@ function CategorySection({ drinks, collapsed, toggleSection }) {
                 <StatRow label="Volume" value={`${(c.volumeCl / 100).toFixed(1)}L`} />
                 <StatRow label="Volume moyen" value={`${avgVol.toFixed(2)}L`} />
                 <StatRow label="Degré moyen" value={`${avgAbv.toFixed(1)}%`} />
-                <StatRow label="Favorite" value={fav ? fav[0] : '—'} truncate />
+                <StatRow label="Favorite" value={fav ? fav.name : '—'} truncate />
               </div>
             </Card>
           );
@@ -1593,9 +1695,12 @@ function TopDrinksSection({ drinks, collapsed, toggleSection }) {
   const top = React.useMemo(() => {
     const map = {};
     for (const d of drinks) {
-      const key = d.name;
+      // Même clé normalisée que `aggregateGeneral` (« Boissons diff. ») :
+      // « Pilsner » et « pilsner  » forment UNE ligne. Le nom affiché est
+      // la première casse rencontrée.
+      const key = drinkNameKey(d.name);
       if (!map[key]) {
-        map[key] = { name: d.name, count: 0, volumeCl: 0, lastDate: null };
+        map[key] = { name: (d.name || '').trim(), count: 0, volumeCl: 0, lastDate: null };
       }
       const e = map[key];
       e.count++;
@@ -2175,13 +2280,8 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
   const currentBAC = bacInfo.current || 0;
   const level = bacLevel(currentBAC);
 
-  // Taux moyen PAR SESSION sur la période : moyenne du taux intra-session
-  // (∫ bac dt / durée, calculé dans computeBACSessions), puis moyenne de ces
-  // moyennes sur les sessions de la période. En mg/L (comme le reste du BAC).
-  const meanSessionBac = (arr) => {
-    const xs = (arr || []).filter(s => s.avgBac > 0);
-    return xs.length ? xs.reduce((s, x) => s + x.avgBac, 0) / xs.length : null;
-  };
+  // Taux moyen PAR SESSION sur la période — helper module `meanSessionBac`
+  // (moyenne des `avgBac` intra-session, mg/L), partagé et testé.
   const periodAvgSession = React.useMemo(() => meanSessionBac(sessions), [sessions]);
   const periodAvgDelta = React.useMemo(() => {
     const cur = meanSessionBac(sessions), prev = meanSessionBac(prevSessions);
@@ -2269,6 +2369,12 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
   return (
     <StatSection id="bac" title="Alcoolémie" collapsed={collapsed} toggleSection={toggleSection} sub="Estimation BAC · Formule de Widmark">
       <Card style={{ padding: 16, marginBottom: 10 }}>
+        {/* La jauge est du TEMPS RÉEL : elle ignore la période sélectionnée,
+            et le dit explicitement plutôt que de laisser croire à un taux
+            « de la période ». */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+          <ScopeChip label="En direct" />
+        </div>
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           gap: 18, marginBottom: 14,
@@ -2421,16 +2527,21 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
         <div>
           <div style={{
             display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
-            padding: '0 2px 8px',
+            gap: 8, padding: '0 2px 8px',
           }}>
             <div style={{
               color: T.ink, fontSize: 13, fontWeight: 500, letterSpacing: -0.1,
             }}>Records d'alcoolémie</div>
-            <div style={{
-              color: T.muted, fontSize: 10.5, fontFamily: fontNum,
-              background: T.surface2, padding: '2px 8px', borderRadius: 99,
-              border: `1px solid ${T.rule}`,
-            }}>{totalRecords}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {/* Records ABSOLUS (toutes sessions confondues), pas ceux de la
+                  période sélectionnée — l'étiquette lève l'ambiguïté. */}
+              <ScopeChip label="Records absolus" />
+              <div style={{
+                color: T.muted, fontSize: 10.5, fontFamily: fontNum,
+                background: T.surface2, padding: '2px 8px', borderRadius: 99,
+                border: `1px solid ${T.rule}`,
+              }}>{totalRecords}</div>
+            </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {highest && <BACRecordRow record={highest} isHighest />}
@@ -2443,18 +2554,19 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
 }
 
 function BACGauge({ bac, level }) {
-  const size = 140, thickness = 10;
+  const { size, thickness } = CHART.gauge;
   const cx = size / 2, cy = size / 2;
   const r = size / 2 - thickness / 2 - 2;
   const circ = 2 * Math.PI * r;
   // Fixed full-scale: a level-relative cap makes the ring shrink when BAC
   // crosses a band boundary upward (e.g. 480→96 %, 520→52 %), which reads
-  // as "drinking more empties the gauge". 1500 keeps the arc monotonic.
-  const cap = 1500;
-  const frac = Math.min(1, bac / cap);
+  // as "drinking more empties the gauge". BAC_CHART_CAP (= le plafond des
+  // charts BAC) keeps the arc monotonic and the family consistent.
+  const frac = Math.min(1, bac / BAC_CHART_CAP);
   return (
     <div style={{ position: 'relative', width: size, height: size }}>
-      <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
+      <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}
+        role="img" aria-label={`Alcoolémie estimée : ${bac} milligrammes par litre`}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke={T.rule} strokeWidth={thickness} />
         <circle cx={cx} cy={cy} r={r} fill="none" stroke={level.color}
           strokeWidth={thickness} strokeLinecap="round"
@@ -3024,21 +3136,33 @@ function buildCumulativeComparison(curDrinks, prevDrinks, range, prevRange, metr
   return { labels, cur, prev };
 }
 
-function TrendsSection({ allDrinks, drinks, prevDrinks, range, prevRange, collapsed, toggleSection }) {
+function TrendsSection({ allDrinks, drinks, prevDrinks, range, prevRange, period, collapsed, toggleSection }) {
   const trends = React.useMemo(() => computeMonthlyTrends(allDrinks), [allDrinks]);
+  // Le cumul jour par jour n'a de sens que sur une période multi-jours avec
+  // une période précédente comparable : sur « Aujourd'hui » la courbe se
+  // réduit à 1-2 points ('all' est déjà exclu via prevRange null).
+  const cumRelevant = inPeriods(period, ['week', 'month', 'year', 'school']);
   const cum = React.useMemo(
-    () => (prevDrinks && prevDrinks.length >= 0 && prevRange)
+    () => (cumRelevant && prevDrinks && prevRange)
       ? buildCumulativeComparison(drinks, prevDrinks, range, prevRange, 'grams')
       : null,
-    [drinks, prevDrinks, range, prevRange]
+    [cumRelevant, drinks, prevDrinks, range, prevRange]
   );
   // Ne pas montrer la comparaison cumulée si les deux périodes sont vides.
   const cumHasData = cum && (cum.cur.some(v => v > 0) || cum.prev.some(v => v > 0));
 
+  // Le chart mensuel lit TOUT l'historique : sur « Semaine » il ferait
+  // doublon avec le libellé de période — seul le cumul y est proposé.
+  const monthlyRelevant = inPeriods(period, GLOBAL_CHART_PERIODS);
   const enoughTrend = trends.labels.length >= 2;
-  if (!enoughTrend && !cumHasData) {
+  const showMonthly = monthlyRelevant && enoughTrend;
+  if (!showMonthly && !cumHasData) {
+    // Rien de pertinent pour cette période : pas de section plutôt qu'un
+    // message hors sujet (le cas « pas assez d'historique » ne concerne
+    // que les périodes où le chart mensuel est proposé).
+    if (!monthlyRelevant) return null;
     return (
-      <StatSection id="trends" title="Évolution mensuelle" collapsed={collapsed} toggleSection={toggleSection} sub="Tendances de consommation mois par mois">
+      <StatSection id="trends" title="Tendances" collapsed={collapsed} toggleSection={toggleSection} sub="Consommation dans le temps">
         <Card><div style={{
           color: T.muted, fontSize: 12, padding: '8px 0', textAlign: 'center',
           fontStyle: 'italic', fontFamily: fontSerif,
@@ -3048,35 +3172,35 @@ function TrendsSection({ allDrinks, drinks, prevDrinks, range, prevRange, collap
   }
 
   return (
-    <StatSection id="trends" title="Évolution mensuelle" collapsed={collapsed} toggleSection={toggleSection} sub="Tendances de consommation mois par mois">
-      {enoughTrend && (
+    <StatSection id="trends" title="Tendances" collapsed={collapsed} toggleSection={toggleSection} sub="Consommation dans le temps">
+      {showMonthly && (
         <Card style={cumHasData ? { marginBottom: 10 } : undefined}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 8, marginBottom: 8,
+          }}>
+            <div style={{
+              color: T.ink, fontSize: 12.5, fontWeight: 500, letterSpacing: -0.1,
+            }}>Par mois</div>
+            <ScopeChip label="6 derniers mois" />
+          </div>
+          {/* UNE série tracée (grammes — la mesure d'intensité, cohérente
+              avec heatmap/cumul/moyennes mobiles) ; les verres vivent dans
+              la tooltip. L'ancien double axe verres/grammes superposait
+              deux échelles incomparables (anti-pattern dataviz) — supprimé.
+              Une seule série → pas de légende (le titre de la card nomme). */}
           <ChartAutoWidth minHeight={170}>
             {(w) => (
               <SvgLineChart
                 labels={trends.labels}
-                series={[
-                  { data: trends.drinks },
-                  { data: trends.alcoholG },
-                ]}
+                series={[{ data: trends.alcoholG.map(v => Math.round(v)) }]}
+                tooltipUnits={["g d'alcool"]}
+                extraLines={(i) => [`${trends.drinks[i]} verre${trends.drinks[i] > 1 ? 's' : ''}`]}
+                ariaLabel="Alcool pur par mois, six derniers mois"
                 width={w} height={170}
               />
             )}
           </ChartAutoWidth>
-          <div style={{
-            display: 'flex', gap: 14, justifyContent: 'center', marginTop: 8,
-            fontSize: 10.5, color: T.ink2,
-          }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 14, height: 2, background: T.accent }}/> Verres
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{
-                width: 14, height: 2, background: 'transparent',
-                backgroundImage: `repeating-linear-gradient(90deg, ${T.accent2} 0 3px, transparent 3px 5px)`,
-              }}/> Alcool (g)
-            </span>
-          </div>
         </Card>
       )}
 
@@ -3094,25 +3218,15 @@ function TrendsSection({ allDrinks, drinks, prevDrinks, range, prevRange, collap
                 labels={cum.labels}
                 series={[{ data: cum.cur }, { data: cum.prev }]}
                 width={w} height={170}
-                singleAxis leftLabel="Cumul (g)"
                 tooltipUnits={['g · actuel', 'g · précédent']}
+                ariaLabel="Grammes d'alcool cumulés, période courante et précédente"
               />
             )}
           </ChartAutoWidth>
-          <div style={{
-            display: 'flex', gap: 14, justifyContent: 'center', marginTop: 8,
-            fontSize: 10.5, color: T.ink2,
-          }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 14, height: 2, background: T.accent }}/> Actuelle
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{
-                width: 14, height: 2, background: 'transparent',
-                backgroundImage: `repeating-linear-gradient(90deg, ${T.accent2} 0 3px, transparent 3px 5px)`,
-              }}/> Précédente
-            </span>
-          </div>
+          <ChartLegend items={[
+            { label: 'Actuelle', color: T.accent },
+            { label: 'Précédente', color: T.accent2, dashed: true },
+          ]} />
         </Card>
       )}
     </StatSection>
@@ -3166,51 +3280,66 @@ function computeSessionDurationBuckets(sessions) {
   return buckets;
 }
 
-function AdvancedSection({ drinks, allDrinks, collapsed, toggleSection, agg, sessions, bacAvailable = true }) {
+function AdvancedSection({ drinks, allDrinks, period, hasPeriodData = true, collapsed, toggleSection, agg, sessions, bacAvailable = true }) {
   const rolling = React.useMemo(() => computeRollingDaily(allDrinks), [allDrinks]);
   const sessionDuration = React.useMemo(() => computeSessionDurationBuckets(sessions), [sessions]);
+  // La moyenne mobile lit TOUT l'historique (30 derniers jours) : proposée
+  // seulement quand la période couvre au moins un mois, sinon elle contredit
+  // le libellé de période. Horloge et distribution sont période-scopées —
+  // masquées quand la période est vide (la section peut survivre via
+  // keepWhenEmpty pour la moyenne mobile seule).
+  const showRolling = inPeriods(period, GLOBAL_CHART_PERIODS);
+  const showPeriodCards = hasPeriodData;
+  if (!showRolling && !showPeriodCards) return null;
 
   return (
     <StatSection id="advanced" title="Analyses avancées" collapsed={collapsed} toggleSection={toggleSection} sub={bacAvailable ? 'Moyennes mobiles · Horloge · Distribution des sessions' : 'Moyennes mobiles · Horloge'}>
-      <Card style={{ marginBottom: 10 }}>
-        <div style={{
-          color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
-        }}>Moyenne mobile</div>
-        <div style={{
-          color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
-        }}>Alcool quotidien lissé sur 7 et 30 jours</div>
-        {rolling.length > 0 ? (
-          <ChartAutoWidth minHeight={160}>
-            {(w) => <RollingChart data={rolling} width={w} />}
-          </ChartAutoWidth>
-        ) : (
-          <div style={{ color: T.muted, fontSize: 11, padding: '12px 0', textAlign: 'center' }}>Aucune donnée</div>
-        )}
-        <div style={{
-          display: 'flex', gap: 14, justifyContent: 'center', marginTop: 6,
-          fontSize: 10.5, color: T.ink2,
-        }}>
-          <LegendDot color={withAlpha(T.accent, 0.25)} label="Brut" />
-          <LegendDot color={T.accent} label="7j" />
-          <LegendDot color={T.ink2} label="30j" dashed />
-        </div>
-      </Card>
+      {showRolling && (
+        <Card style={{ marginBottom: 10 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 8, marginBottom: 3,
+          }}>
+            <div style={{
+              color: T.ink, fontSize: 12.5, fontWeight: 500, letterSpacing: -0.1,
+            }}>Moyenne mobile</div>
+            <ScopeChip label="30 derniers jours" />
+          </div>
+          <div style={{
+            color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
+          }}>Alcool quotidien lissé sur 7 et 30 jours</div>
+          {rolling.length > 0 ? (
+            <ChartAutoWidth minHeight={160}>
+              {(w) => <RollingChart data={rolling} width={w} />}
+            </ChartAutoWidth>
+          ) : (
+            <div style={{ color: T.muted, fontSize: 11, padding: '12px 0', textAlign: 'center' }}>Aucune donnée</div>
+          )}
+          <ChartLegend items={[
+            { label: 'Brut', color: withAlpha(T.accent, 0.25) },
+            { label: '7j', color: T.accent },
+            { label: '30j', color: T.ink2, dashed: true },
+          ]} />
+        </Card>
+      )}
 
-      <Card style={{ marginBottom: 10 }}>
-        <div style={{
-          color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
-        }}>Horloge des consommations</div>
-        <div style={{
-          color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
-        }}>Répartition sur 24 heures</div>
-        <ChartAutoWidth minHeight={260} maxWidth={300}>
-          {(w) => <SvgPolarClock hours={agg.byHour} size={w} />}
-        </ChartAutoWidth>
-      </Card>
+      {showPeriodCards && (
+        <Card style={{ marginBottom: 10 }}>
+          <div style={{
+            color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
+          }}>Horloge des consommations</div>
+          <div style={{
+            color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
+          }}>Répartition sur 24 heures</div>
+          <ChartAutoWidth minHeight={260} maxWidth={300}>
+            {(w) => <SvgPolarClock hours={agg.byHour} size={w} />}
+          </ChartAutoWidth>
+        </Card>
+      )}
 
       {/* Distribution des sessions = modèle BAC (poids/sexe) : masquée pour un
           ami qui ne partage pas son BAC. */}
-      {bacAvailable && (
+      {showPeriodCards && bacAvailable && (
         <Card>
           <div style={{
             color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
@@ -3258,17 +3387,26 @@ function RollingChart({ data, width = 320 }) {
     setHover(i);
   });
 
+  // Labels X anti-collision (l'ancien triplet fixe premier/milieu/dernier
+  // en anchor middle clippait aux bords).
+  const xLabels = data.map((r, i) =>
+    (i === 0 || i === Math.floor(n / 2) || i === n - 1) ? r.date : '');
+  const xCenters = data.map((_, i) => xs(i));
+  const shownLabels = thinnedAxisLabels(xLabels, xCenters, { lo: pad.l, hi: width - pad.r });
+
   return (
     <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" height={height}
-      style={{ display: 'block', touchAction: 'pan-y' }} {...scr.handlers}>
+      role="img" aria-label="Moyenne mobile de l'alcool quotidien"
+      className={CHART.anim.className}
+      style={{ display: 'block', touchAction: CHART.touchAction }} {...scr.handlers}>
       <rect x="0" y="0" width={width} height={height} fill="transparent" />
       {yT.values.map((v, i) => (
         <g key={i}>
           <line x1={pad.l} x2={pad.l + w}
             y1={pad.t + h * (1 - v / max)} y2={pad.t + h * (1 - v / max)}
-            stroke={T.rule} strokeDasharray="2 3" strokeWidth={0.6} />
+            stroke={T.rule} strokeDasharray={CHART.grid.dash} strokeWidth={CHART.grid.width} />
           <text x={pad.l - 4} y={pad.t + h * (1 - v / max) + 3}
-            fontSize={9} fill={T.muted} textAnchor="end" fontFamily={fontNum}>
+            fontSize={CHART.font.tick} fill={T.muted} textAnchor="end" fontFamily={fontNum}>
             {fmtTick(v)}g
           </text>
         </g>
@@ -3280,12 +3418,13 @@ function RollingChart({ data, width = 320 }) {
           opacity={hover === i ? 0.55 : 0.25} rx={1} />;
       })}
       <path d={pathR7} fill="none" stroke={T.accent} strokeWidth={2} strokeLinejoin="round" />
-      <path d={pathR30} fill="none" stroke={T.ink2} strokeWidth={1.4} strokeDasharray="3 2" strokeLinejoin="round" />
-      {[0, Math.floor(n / 2), n - 1].map((i, k) => (
-        data[i] && (
-          <text key={k} x={xs(i)} y={height - 8}
-            fontSize={9} fill={T.muted} textAnchor="middle" fontFamily={fontNum}>{data[i].date}</text>
-        )
+      <path d={pathR30} fill="none" stroke={T.ink2} strokeWidth={1.4}
+        strokeDasharray={CHART.dash.secondary} strokeLinejoin="round" />
+      {shownLabels.map(({ i, x, anchor }) => (
+        <text key={`xl-${i}`} x={x} y={height - 8}
+          fontSize={CHART.font.tick} fill={T.muted} textAnchor={anchor} fontFamily={fontNum}>
+          {xLabels[i]}
+        </text>
       ))}
       {hover != null && (() => {
         const r = data[hover];
@@ -3294,7 +3433,8 @@ function RollingChart({ data, width = 320 }) {
         return (
           <>
             <line x1={tx} x2={tx} y1={pad.t} y2={pad.t + h}
-              stroke={T.ink2} strokeDasharray="2 3" strokeWidth={0.8} opacity={0.7} />
+              stroke={T.ink2} strokeDasharray={CHART.dash.hair}
+              strokeWidth={CHART.stroke.hair} opacity={0.7} />
             <circle cx={tx} cy={ys(r.daily)} r={3} fill={T.accent} />
             <circle cx={tx} cy={cy7} r={3} fill={T.accent} stroke={T.bg} strokeWidth={1} />
             <circle cx={tx} cy={ys(r.r30)} r={3} fill={T.ink2} stroke={T.bg} strokeWidth={1} />
@@ -3308,20 +3448,36 @@ function RollingChart({ data, width = 320 }) {
   );
 }
 
-function LegendDot({ color, label, dashed }) {
-  return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-      <span style={{
-        width: 14, height: 2, background: dashed ? 'transparent' : color,
-        ...(dashed ? {
-          backgroundImage: `repeating-linear-gradient(90deg, ${color} 0 3px, transparent 3px 5px)`,
-        } : {}),
-      }}/> {label}
-    </span>
-  );
-}
 
 // ── 8. Dépenses ───────────────────────────────────────────────────
+// Une entrée « tarifée » porte un prix saisi exploitable.
+function isPricedDrink(d) {
+  return d != null && d.price != null && Number.isFinite(Number(d.price));
+}
+
+// Résumé Dépenses (helper pur, testable) : n'agrège QUE les entrées tarifées.
+// → { total, avg (null si aucune), count, byCat: [{ name, total, count }] }
+// trié par total décroissant. Le composant ne fait plus que du rendu.
+function computeSpendingSummary(drinks) {
+  let total = 0, count = 0;
+  const map = {};
+  for (const d of (drinks || [])) {
+    if (!isPricedDrink(d)) continue;
+    const p = Number(d.price);
+    total += p;
+    count++;
+    const cat = canonicalCat(d.category) || 'Autre';
+    if (!map[cat]) map[cat] = { name: cat, total: 0, count: 0 };
+    map[cat].total += p;
+    map[cat].count++;
+  }
+  return {
+    total, count,
+    avg: count ? total / count : null,
+    byCat: Object.values(map).sort((a, b) => b.total - a.total),
+  };
+}
+
 // Regroupe les prix réellement saisis par entrée (drink.price) en buckets
 // temporels adaptés à la période : heure (Aujourd'hui), jour (Semaine/Mois),
 // mois (Année/Année scolaire) ou année (Tout). Renvoie un tableau prêt pour
@@ -3387,30 +3543,17 @@ function bucketSpend(priced, period, range) {
 // (drink.price != null). Le prix de référence vit en settings ; il n'est
 // jamais partagé → la section est masquée en vue ami (StatsTab hidePrice).
 function SpendingSection({ drinks, prevDrinks, period, range, collapsed, toggleSection }) {
-  const isPriced = (d) => d && d.price != null && Number.isFinite(Number(d.price));
-  const priced = React.useMemo(() => drinks.filter(isPriced), [drinks]);
-  const total = React.useMemo(() => priced.reduce((s, d) => s + Number(d.price), 0), [priced]);
-  const avg = priced.length ? total / priced.length : null;
+  const priced = React.useMemo(() => drinks.filter(isPricedDrink), [drinks]);
+  const summary = React.useMemo(() => computeSpendingSummary(drinks), [drinks]);
+  const { total, avg, byCat } = summary;
 
-  const prev = React.useMemo(() => {
-    if (!prevDrinks) return { total: null, count: 0 };
-    let t = 0, n = 0;
-    for (const d of prevDrinks) { if (isPriced(d)) { t += Number(d.price); n++; } }
-    return { total: t, count: n };
-  }, [prevDrinks]);
-  const prevAvg = prev.count ? prev.total / prev.count : null;
+  const prevSummary = React.useMemo(
+    () => prevDrinks ? computeSpendingSummary(prevDrinks) : null,
+    [prevDrinks]
+  );
+  const prevTotal = prevSummary && prevSummary.count ? prevSummary.total : null;
+  const prevAvg = prevSummary ? prevSummary.avg : null;
   const pctChange = (cur, p) => (p == null || p === 0) ? null : ((cur - p) / p) * 100;
-
-  const byCat = React.useMemo(() => {
-    const map = {};
-    for (const d of priced) {
-      const cat = canonicalCat(d.category) || 'Autre';
-      if (!map[cat]) map[cat] = { name: cat, total: 0, count: 0 };
-      map[cat].total += Number(d.price);
-      map[cat].count++;
-    }
-    return Object.values(map).sort((a, b) => b.total - a.total);
-  }, [priced]);
   const catDonut = React.useMemo(
     () => byCat.map(c => ({ name: c.name, v: Math.round(c.total * 100) / 100 })),
     [byCat]
@@ -3432,7 +3575,7 @@ function SpendingSection({ drinks, prevDrinks, period, range, collapsed, toggleS
     <StatSection id="spending" title="Dépenses" collapsed={collapsed} toggleSection={toggleSection} sub="Coût de la consommation (prix saisis)">
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 10 }}>
         <StatCell value={fmtPrice(total)} label="Total dépensé"
-          delta={pctChange(total, prev.total)} period={period} index={0} />
+          delta={pctChange(total, prevTotal)} period={period} index={0} />
         <StatCell value={fmtPrice(avg)} label="Prix moyen / boisson"
           delta={avg != null ? pctChange(avg, prevAvg) : null} period={period} index={1} />
       </div>
@@ -3489,11 +3632,13 @@ Object.assign(window, {
   HeatmapSection, SessionsSection,
   SpendingSection, bucketSpend,
   BACGauge, BACRecordRow, bacLevel, BAC_LEVELS,
-  RollingChart, LegendDot, MiniStat, StatRow, Card, StatSection,
+  RollingChart, MiniStat, StatRow, Card, StatSection,
   DeltaBadge, StatCell, HeroStatCard,
   getPeriodRange, shiftAnchor, periodLabel, computeBacOverTime,
   computeBACSessions, computeBourreTime, computeStreak, fmtBourreTime, fmtDurationHM,
   aggregateGeneral, computeStreakRecord, filterDrinksInRange,
+  drinkNameKey, peakIndex, inPeriods, sessionGapStats, soberDaysInRange,
+  pctBourreAllTime, meanSessionBac, isPricedDrink, computeSpendingSummary,
   computeMonthlyTrends, computeRollingDaily, computeSessionDurationBuckets,
   bucketDailyAlcohol, buildHeatmapCells, buildSessionList, buildSessionPeakHistogram,
   buildCumulativeComparison,
@@ -3501,7 +3646,8 @@ Object.assign(window, {
   BacContext, useBacInfo, BacProvider, BACProjectionResponsive,
   computeBacForecast, BACForecastResponsive,
   ForecastToggle, ForecastMiniStats,
-  STATS_SECTIONS, DEFAULT_SECTION_ORDER, SECTION_ORDER_KEY,
+  STATS_SECTIONS, STATS_PERIOD_MATRIX, ALL_PERIODS, GLOBAL_CHART_PERIODS,
+  ScopeChip, DEFAULT_SECTION_ORDER, SECTION_ORDER_KEY,
   normalizeSectionOrder, moveInArray, dragTargetIndex,
   useSectionOrder, SectionReorderList, StatsEmptyState,
 });
