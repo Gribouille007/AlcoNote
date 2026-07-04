@@ -962,13 +962,16 @@ function SvgPolarClock({ hours, size = 260, ariaLabel = 'Horloge des consommatio
       ))}
       {arcs}
       {labels.map(({ h, txt }) => {
+        // Quatre labels fixes courts (0h/6h/12h/18h) : l'ancrage CENTRÉ est
+        // le bon ici — le padding externe (clockOuter) est calibré pour une
+        // demi-largeur de label ; un ancrage par quadrant les ferait sortir
+        // du viewBox (bug visuel constaté : « 18h »/« 6h » clippés).
         const a = (h / 24) * Math.PI * 2 - Math.PI / 2;
-        const { anchor, dy } = radarLabelLayout(a);
         const lx = cx + Math.cos(a) * (rOuter + CHART.pad.spokeLabel);
-        const ly = cy + Math.sin(a) * (rOuter + CHART.pad.spokeLabel) + dy;
+        const ly = cy + Math.sin(a) * (rOuter + CHART.pad.spokeLabel) + 3;
         return (
           <text key={h} x={lx} y={ly} fontSize={CHART.font.spoke} fill={T.ink2}
-            textAnchor={anchor} fontFamily={fontNum}>{txt}</text>
+            textAnchor="middle" fontFamily={fontNum}>{txt}</text>
         );
       })}
       {hover != null && (() => {
@@ -1708,6 +1711,7 @@ function SvgCalendarHeatmap({
     const prev = shownMonthTicks[shownMonthTicks.length - 1];
     const wLbl = t.label.length * CHART.font.charW;
     if (prev && x < prev.x + prev.w + CHART.label.minGapX) continue; // saute le mois qui mordrait
+    if (x + wLbl > width - 2) continue; // ne clippe jamais le bord droit
     shownMonthTicks.push({ ...t, x, w: wLbl });
   }
 
