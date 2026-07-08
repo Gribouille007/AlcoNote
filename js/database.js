@@ -12,6 +12,17 @@ function genUid() {
     return 'uid-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 }
 
+// Forme canonique d'un nom de catégorie : trim + normalisation Unicode NFC.
+// DOIT rester identique à `canonicalCat` (proto/shared.jsx). Toute recherche /
+// cascade de catégorie dans ce fichier matche canoniquement : deux chaînes qui
+// ne diffèrent que par des espaces ou la composition des accents (« Bière » en
+// NFD vs NFC) désignent la MÊME catégorie. Un equals() exact ratait ces
+// lignes → renommages/cascades qui « ne marchent pas » pour certaines
+// catégories seulement (bug historique).
+function canonicalName(name) {
+    return String(name == null ? '' : name).trim().normalize('NFC');
+}
+
 class AlcoNoteDB extends Dexie {
     constructor() {
         super('AlcoNoteDB');
@@ -141,6 +152,78 @@ class DatabaseManager {
     constructor() {
         this.db = db;
         this.initializeDefaultData();
+        // Best-effort, sans invite dans la plupart des navigateurs : marquer
+        // l'origine comme persistante protège IndexedDB de l'éviction.
+        this.ensurePersistentStorage();
+    }
+
+    // ── Durabilité du stockage ────────────────────────────────────────────
+    // Demande au navigateur de marquer l'origine PERSISTANTE : sans ce flag,
+    // IndexedDB reste du stockage « best-effort » que le navigateur peut
+    // évincer sous pression disque (= perte totale des données locales,
+    // silencieuse). Avec le flag, les données ne sont supprimées que par une
+    // action explicite de l'utilisateur. L'accord dépend de l'« engagement »
+    // (PWA installée, visites répétées) — d'où le re-essai à chaque boot tant
+    // que ce n'est pas accordé. Aucune interaction visible sur Chrome/Android.
+    async ensurePersistentStorage() {
+        try {
+            if (typeof navigator === 'undefined' || !navigator.storage ||
+                typeof navigator.storage.persist !== 'function') {
+                return { supported: false, persisted: false };
+            }
+            const already = typeof navigator.storage.persisted === 'function'
+                ? await navigator.storage.persisted() : false;
+            if (already) return { supported: true, persisted: true };
+            const granted = await navigator.storage.persist();
+            return { supported: true, persisted: !!granted };
+        } catch (error) {
+            return { supported: false, persisted: false };
+        }
+    }
+
+    // ── Snapshot automatique périodique ───────────────────────────────────
+    // Filet de sécurité supplémentaire (règle « zéro perte ») : au plus un
+    // snapshot complet des tables perso par `intervalMs` (24 h par défaut),
+    // écrit dans la table `backups` avec le label 'auto'. Rétention : seuls
+    // les `keep` snapshots 'auto' les plus récents sont conservés — les
+    // snapshots de migration ('pre-v5', 'pre-normalize-categories'…) ne sont
+    // JAMAIS purgés par cette rotation. Une base vide ne produit pas de
+    // snapshot (rien à protéger, et on n'écrase pas la rotation avec du vide).
+    async maybeAutoBackup({ intervalMs = 24 * 3600 * 1000, keep = 5 } = {}) {
+        try {
+            const last = Number(await this.getSetting('backup.lastAutoAt')) || 0;
+            if (Date.now() - last < intervalMs) return false;
+            const [categories, drinks, settings, drinkRatings] = await Promise.all([
+                this.db.categories.toArray(),
+                this.db.drinks.toArray(),
+                this.db.settings.toArray(),
+                this.db.drinkRatings.toArray()
+            ]);
+            if (drinks.length === 0 && categories.length === 0) {
+                await this.setSetting('backup.lastAutoAt', Date.now());
+                return false;
+            }
+            await this.db.backups.add({
+                createdAt: new Date(),
+                label: 'auto',
+                json: JSON.stringify({
+                    version: '1.0',
+                    exportDate: new Date().toISOString(),
+                    reason: 'auto-backup',
+                    categories, drinks, settings, drinkRatings
+                })
+            });
+            const all = await this.db.backups.toArray();
+            const autos = all.filter(b => b.label === 'auto').sort((a, b) => a.id - b.id);
+            if (autos.length > keep) {
+                await this.db.backups.bulkDelete(autos.slice(0, autos.length - keep).map(b => b.id));
+            }
+            await this.setSetting('backup.lastAutoAt', Date.now());
+            return true;
+        } catch (error) {
+            console.error('Error creating auto backup:', error);
+            return false;
+        }
     }
 
     // Initialize default settings if database is empty
@@ -193,7 +276,17 @@ class DatabaseManager {
 
     async getCategoryByName(name) {
         try {
-            return await this.db.categories.where('name').equals(name).first();
+            // Recherche exacte (indexée) d'abord, puis repli CANONIQUE : une
+            // ligne dont le nom ne diffère que par la normalisation Unicode
+            // ou des espaces reste trouvable. Retourne `undefined` si absente
+            // (contrat historique de `.first()`).
+            let exact;
+            try { exact = await this.db.categories.where('name').equals(name).first(); } catch (_) { /* clé invalide */ }
+            if (exact) return exact;
+            const key = canonicalName(name);
+            if (!key) return undefined;
+            const all = await this.db.categories.toArray();
+            return all.find(c => canonicalName(c.name) === key);
         } catch (error) {
             console.error('Error getting category by name:', error);
             return null;
@@ -244,8 +337,9 @@ class DatabaseManager {
                 throw new Error('Catégorie non trouvée');
             }
 
-            // Check if category has drinks (using category name, not ID)
-            const drinksInCategory = await this.db.drinks.where('category').equals(category.name).count();
+            // Check if category has drinks (canonical match on the name)
+            const key = canonicalName(category.name);
+            const drinksInCategory = await this.db.drinks.filter(d => canonicalName(d.category) === key).count();
             if (drinksInCategory > 0) {
                 throw new Error('Impossible de supprimer une catégorie qui contient des boissons');
             }
@@ -262,7 +356,10 @@ class DatabaseManager {
         try {
             const category = await this.getCategoryByName(categoryName);
             if (category) {
-                const drinkCount = await this.db.drinks.where('category').equals(categoryName).count();
+                // Compte CANONIQUE : les boissons dont la chaîne catégorie a
+                // dérivé (NFD, espaces) comptent pour leur vraie catégorie.
+                const key = canonicalName(category.name);
+                const drinkCount = await this.db.drinks.filter(d => canonicalName(d.category) === key).count();
                 await this.updateCategory(category.id, { drinkCount });
             }
         } catch (error) {
@@ -280,19 +377,27 @@ class DatabaseManager {
             if (trimmedOld === trimmedNew) {
                 return true;
             }
-            const existing = await this.getCategoryByName(trimmedNew);
-            if (existing) {
-                throw new Error('Une catégorie avec ce nom existe déjà');
-            }
             const category = await this.getCategoryByName(trimmedOld);
             if (!category) {
                 throw new Error('Catégorie non trouvée');
             }
+            // Renommer « Bière  » en « Bière » (même ligne, à la casse ou la
+            // normalisation près) est légitime — seul un VRAI doublon (une
+            // AUTRE ligne portant déjà ce nom) bloque le renommage.
+            const existing = await this.getCategoryByName(trimmedNew);
+            if (existing && existing.id !== category.id) {
+                throw new Error('Une catégorie avec ce nom existe déjà');
+            }
 
-            // Transaction: update category name and cascade to drinks
+            // Transaction : renomme la ligne et cascade sur les boissons par
+            // correspondance CANONIQUE — un equals() exact ratait celles dont
+            // la chaîne catégorie diffère par la normalisation Unicode ou des
+            // espaces (elles restaient orphelines sous l'ancien nom, faisant
+            // « réapparaître » la catégorie renommée).
+            const oldKey = canonicalName(category.name);
             await this.db.transaction('rw', this.db.categories, this.db.drinks, async () => {
                 await this.db.categories.update(category.id, { name: trimmedNew });
-                await this.db.drinks.where('category').equals(trimmedOld).modify({ category: trimmedNew });
+                await this.db.drinks.filter(d => canonicalName(d.category) === oldKey).modify({ category: trimmedNew });
             });
 
             // Update drink counts for new name
@@ -325,7 +430,10 @@ class DatabaseManager {
 
     async getDrinksByCategory(category) {
         try {
-            return await this.db.drinks.where('category').equals(category).toArray();
+            // Correspondance canonique (cf. canonicalName) : ne rate jamais
+            // une boisson dont la chaîne catégorie a dérivé (NFD, espaces).
+            const key = canonicalName(category);
+            return await this.db.drinks.filter(d => canonicalName(d.category) === key).toArray();
         } catch (error) {
             console.error('Error getting drinks by category:', error);
             return [];
@@ -610,6 +718,89 @@ class DatabaseManager {
         }
     }
 
+    // ── Normalisation one-time des noms de catégorie ─────────────────────────
+    // Réécrit en forme canonique (trim + NFC) le nom de chaque ligne
+    // `categories` et la chaîne `category` de chaque boisson, et FUSIONNE les
+    // lignes categories qui se replient sur le même nom canonique (doublons
+    // hérités d'anciennes versions sans trim/normalisation). Zéro perte de
+    // données : snapshot complet dans `backups` AVANT toute écriture, puis
+    // transaction (rollback intégral si échec). Idempotent — un second appel
+    // ne trouve plus rien à faire. Les surcharges id-keyées (icône `cat.icon.
+    // id.<id>` / couleur `cat.color.id.<id>`) d'une ligne fusionnée migrent
+    // vers la ligne conservée si celle-ci n'en a pas.
+    async normalizeCategoryData() {
+        try {
+            const cats = await this.db.categories.toArray();
+            const drinks = await this.db.drinks.toArray();
+
+            const catFixes = [];        // lignes à renommer { id, name }
+            const byKey = new Map();    // nom canonique → ligne conservée
+            const merges = [];          // doublons { loser, keeper }
+            for (const c of cats) {
+                const key = canonicalName(c.name);
+                const keeper = byKey.get(key);
+                if (!keeper) {
+                    byKey.set(key, c);
+                    if (c.name !== key) catFixes.push({ id: c.id, name: key });
+                } else {
+                    merges.push({ loser: c, keeper });
+                }
+            }
+            const drinkFixes = [];      // boissons à réécrire { id, category }
+            for (const d of drinks) {
+                const key = canonicalName(d.category);
+                if (d.category !== key) drinkFixes.push({ id: d.id, category: key });
+            }
+            if (!catFixes.length && !merges.length && !drinkFixes.length) {
+                return { changed: false };
+            }
+
+            // Snapshot AVANT toute écriture (règle d'or « zéro perte »).
+            await this.db.backups.add({
+                createdAt: new Date(),
+                label: 'pre-normalize-categories',
+                json: JSON.stringify({
+                    version: '1.0',
+                    exportDate: new Date().toISOString(),
+                    reason: 'pre-normalize-categories',
+                    categories: cats,
+                    drinks
+                })
+            });
+
+            await this.db.transaction('rw', this.db.categories, this.db.drinks, this.db.settings, async () => {
+                for (const f of catFixes) {
+                    await this.db.categories.update(f.id, { name: f.name });
+                }
+                for (const f of drinkFixes) {
+                    await this.db.drinks.update(f.id, { category: f.category });
+                }
+                for (const { loser, keeper } of merges) {
+                    for (const prefix of ['cat.icon.id.', 'cat.color.id.']) {
+                        const loserRow = await this.db.settings.get(prefix + loser.id);
+                        if (loserRow && loserRow.value != null) {
+                            const keeperRow = await this.db.settings.get(prefix + keeper.id);
+                            if (!keeperRow || keeperRow.value == null) {
+                                await this.db.settings.put({ key: prefix + keeper.id, value: loserRow.value });
+                            }
+                        }
+                        await this.db.settings.delete(prefix + loser.id);
+                    }
+                    await this.db.categories.delete(loser.id);
+                }
+            });
+
+            // Recompte les compteurs de boissons après coup (best-effort).
+            for (const key of byKey.keys()) {
+                try { await this.updateCategoryDrinkCount(key); } catch (e) { /* best-effort */ }
+            }
+            return { changed: true, merged: merges.length };
+        } catch (error) {
+            console.error('Error normalizing category data:', error);
+            return { changed: false, error: true };
+        }
+    }
+
     // Data export/import
     async exportData() {
         try {
@@ -634,6 +825,34 @@ class DatabaseManager {
         }
     }
 
+    // Snapshot des tables perso dans `backups`, best-effort. Appelé AVANT
+    // toute étape destructive (import qui écrase tout, « Tout effacer ») —
+    // règle d'or « zéro perte » : même une action volontaire reste
+    // récupérable au niveau DB. N'échoue jamais l'opération appelante.
+    async _snapshotPersonalTables(label) {
+        try {
+            const [categories, drinks, settings, drinkRatings] = await Promise.all([
+                this.db.categories.toArray(),
+                this.db.drinks.toArray(),
+                this.db.settings.toArray(),
+                this.db.drinkRatings.toArray()
+            ]);
+            if (categories.length === 0 && drinks.length === 0) return; // rien à protéger
+            await this.db.backups.add({
+                createdAt: new Date(),
+                label,
+                json: JSON.stringify({
+                    version: '1.0',
+                    exportDate: new Date().toISOString(),
+                    reason: label,
+                    categories, drinks, settings, drinkRatings
+                })
+            });
+        } catch (error) {
+            console.error('Error snapshotting before destructive step:', error);
+        }
+    }
+
     async importData(jsonData) {
         try {
             const data = JSON.parse(jsonData);
@@ -641,6 +860,9 @@ class DatabaseManager {
             if (!data.version || !data.categories || !data.drinks) {
                 throw new Error('Format de données invalide');
             }
+
+            // Un import ÉCRASE tout : snapshot de l'état courant d'abord.
+            await this._snapshotPersonalTables('pre-import');
 
             // Backfill a stable uid on drinks coming from a pre-v5 export:
             // without one the sharing engine silently skips the row forever
@@ -674,6 +896,10 @@ class DatabaseManager {
 
     async clearAllData() {
         try {
+            // Dernier filet avant l'effacement volontaire : un snapshot dans
+            // `backups` (non wipé ici) rend même « Tout effacer » récupérable.
+            await this._snapshotPersonalTables('pre-clear');
+
             // Include drinkRatings in the wipe — leaving them behind orphaned
             // every star rating in the DB after a "Tout effacer", which then
             // resurrected onto any drink the user re-added with the same name.

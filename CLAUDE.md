@@ -23,6 +23,14 @@ valeur en dur.
   `rgb()`, ni `oklch(...)` inline dans les composants. Les exceptions
   (couleurs OKLCH dans `BAC_LEVELS`, `bacColor`, niveaux d'alerte) sont
   centralisées et nommées.
+- **Couleurs de catégorie** : `catColor`/`catBg`/`defaultCatHue`
+  canonicalisent le nom en interne (`canonicalCat`) — jamais de lookup
+  `CAT[nom brut]`. La palette vit dans le registre module `CAT` (muté
+  par `applyCatHueOverrides`), invisible pour React : **tout composant
+  qui appelle `catColor()`/`catBg()` appelle AUSSI `useCatPalette()`**.
+  OBLIGATOIRE pour un composant `React.memo` (sinon le memo bloque le
+  repaint quand l'utilisateur change une teinte — bug historique) ;
+  vérifié par static-checks.
 - **Surfaces** : `T.surface` pour les sections, `T.surface2` pour les
   cards/stat blocks, `T.surface3` pour les sub-blocks ; bordure
   toujours `1px solid ${T.rule}` ; radius 12 (mini stats), 14 (Card),
@@ -201,8 +209,11 @@ quand la cible change (évite des champs figés sur l'ancienne cible).
   prix au prorata, arrondi au centime. `AddDrinkSheet` préremplit le champ
   Prix avec cette suggestion tant que l'utilisateur n'a pas tapé dedans
   (`priceAuto`) — changer la quantité re-calcule ; une saisie manuelle
-  n'est JAMAIS écrasée. Toute évolution du prix passe par cet helper,
-  pas par un calcul local.
+  n'est JAMAIS écrasée. Après une saisie manuelle, la suggestion reste
+  visible sous le champ comme bouton « Suggestion : X € — appliquer »
+  (aria-label « Appliquer le prix suggéré … ») qui ré-active `priceAuto`
+  d'un tap — jamais d'écrasement sans ce geste explicite. Toute
+  évolution du prix passe par cet helper, pas par un calcul local.
 
 ### Charts — construire une figure parfaite
 
@@ -459,6 +470,25 @@ SVG dedans, la consommer via `<SvgIcon icon={Ic.xxx} size={N} />`.
 inconnus reçoivent une teinte hashée déterministe. Comparer les noms
 de catégorie via `canonicalCat()` (trim + NFC), jamais par `===` brut.
 
+**Canonicalisation de bout en bout** (« plus jamais le bug rename/
+couleur ») : la même forme canonique existe côté DB (`canonicalName`,
+js/database.js — DOIT rester identique à `canonicalCat`). Toutes les
+opérations DB matchent canoniquement : `getCategoryByName` (exact
+indexé puis repli canonique, `undefined` si absente),
+`getDrinksByCategory`, `updateCategoryDrinkCount`, la cascade de
+`renameCategory` (qui accepte un renommage de casse/normalisation de
+la MÊME ligne et ne bloque que sur un VRAI doublon — une autre ligne),
+le comptage de `deleteCategory`. **Ne jamais réintroduire un
+`where('category').equals(...)`** pour matcher des boissons par
+catégorie : une chaîne héritée en NFD ou avec espace parasite serait
+ratée (boissons orphelines après rename → la catégorie « réapparaît »).
+En complément, `db.normalizeCategoryData()` (one-time, gatée par le
+setting `cat._namesNormalized.v1` via `normalizeCategoryNamesOnce()`
+de data.jsx, appelée au boot et par `CategoriesProvider`) réécrit les
+noms hérités en NFC+trim, fusionne les lignes doublons et migre leurs
+surcharges icône/couleur id-keyées — snapshot `backups` AVANT toute
+écriture, transaction, idempotent.
+
 **Créer / modifier / supprimer** : `EditCategorySheet` gère les deux
 modes — `mode="create"` (titre « Nouvelle catégorie », nom + icône, pas
 de bouton Supprimer ; `addCategory` + `setCategoryIcon`) et le mode édition
@@ -483,13 +513,49 @@ premier paint → pas de flash). `applyCatHueOverrides` ne touche QUE la
 teinte (`hue`) — chroma/clarté du défaut conservés (DA) — et **clone**
 chaque palette `CAT_DEFAULT` (le spread initial partage les refs : muter en
 place corromprait les défauts). Rename-safe (id-keyé, comme les icônes).
-`catColor`/`catBg` relisent `CAT` à chaque appel → repaint au bump.
+`catColor`/`catBg` relisent `CAT` à chaque appel ; le REPAINT, lui,
+passe par l'abonnement `useCatPalette()` de chaque composant peintre
+(cf. règle DA « Couleurs de catégorie » — la mutation de `CAT` seule ne
+re-rend RIEN, et `React.memo` bloquerait même un re-render parent).
+
+### Géolocalisation & permissions
+
+Tout vit dans `data.jsx` (§ Géolocalisation) — à réutiliser, jamais
+re-demander une permission ailleurs :
+- **Une seule demande** : le consentement APP est mémorisé en
+  localStorage (`alconote.geoConsent`, via `ensureGeoConsent()` —
+  dialogue `Confirm.ask` posé une seule fois). L'invite NAVIGATEUR est
+  du ressort du navigateur ; on ne la déclenche qu'à l'acquisition, et
+  `geoPermissionState()` (Permissions API, sans invite) court-circuite :
+  refus navigateur ⇒ consentement app 'denied' (plus aucune tentative),
+  accord navigateur ⇒ pas de double dialogue app.
+- **Hors-ligne** : le GPS matériel marche sans réseau — on garde
+  TOUJOURS les coordonnées et on laisse `address: null` ; le libellé est
+  rattrapé par `backfillMissingAddresses` (au boot en idle ET au retour
+  du réseau via l'event 'online'). Ne jamais bloquer un ajout sur le
+  reverse-geocode.
+- **Cache de position** : `getPosition()` passe `maximumAge: 300000`
+  (5 min) — plusieurs ajouts au même endroit réutilisent le fix sans
+  nouvelle acquisition ; la dernière position est persistée
+  (`alconote.lastPos`) et sert de repli 15 min sur timeout GPS.
+- **Caméra** : la SEULE demande de permission part de `Quagga.init()`
+  quand l'utilisateur ouvre le scanner. `checkCameraPermission()`
+  n'utilise QUE la Permissions API (jamais un `getUserMedia` « pour
+  vérifier » — c'est une invite + un flash de caméra).
 
 ## Service worker
 
 `sw.js`. À chaque modif de fichier statique, **bumper** la triple
 constante `CACHE_NAME / STATIC_CACHE / DYNAMIC_CACHE` et la liste
 `STATIC_FILES` si on ajoute un script.
+
+**Réseau lent ≠ hors-ligne** : sur un wifi mourant, `fetch()` peut
+pendre 30-60 s. Toute stratégie network-first passe par
+`fetchWithTimeout` — navigations bornées à `NAVIGATION_TIMEOUT_MS`
+(3,5 s → repli sur le shell en cache : l'app boote toujours vite),
+APIs tierces (OpenFoodFacts / Nominatim) à `API_TIMEOUT_MS` (8 s →
+repli cache puis fallback JSON). Ne jamais ajouter un `fetch()` nu
+dans un chemin network-first.
 
 ### Version affichée dans Paramètres
 
@@ -564,6 +630,13 @@ dupliquée** — un ami passe par les mêmes `aggregateGeneral`,
     `created_by` est NULL ; le serveur purge drinks + profil +
     membership du retiré. UI : bouton sur la fiche ami (visible selon
     `shareState.creatorId`, le serveur re-vérifie), `Confirm.ask` danger.
+  - *Administration visuelle* : `GroupAdminPanel` (friends.jsx, sous la
+    liste des amis) — panneau « Administration du groupe » listant les
+    profils avec un bouton « Retirer » chacun. Rendu UNIQUEMENT quand
+    `creatorId === userId` (créateur strict, pas le cas `created_by`
+    NULL). La SÉCURITÉ ne repose jamais sur cet affichage : la RPC
+    `remove_member` re-vérifie les droits côté serveur (RLS) quoi que
+    fasse l'UI — masquer/afficher n'est qu'un reflet des droits.
   - *Chez les autres* : après chaque pull à liste de membres saine, le
     moteur **prune** du `sharedPool` les boissons d'auteurs absents de la
     liste (les DELETE serveur sont invisibles au pull incrémental).
@@ -608,7 +681,22 @@ utilisateur.**
   d'abord un export complet v4 dans la table `backups`, **puis** seulement
   rétro-remplit les `uid`. Si l'`upgrade` jette, Dexie **annule** le bump
   (pas d'état à moitié migré). Reproduire ce schéma pour toute future
-  migration qui touche des données.
+  migration qui touche des données. Même règle hors migration :
+  `importData` (écrase tout) et `clearAllData` (« Tout effacer ») passent
+  par `_snapshotPersonalTables('pre-import' | 'pre-clear')` AVANT d'agir,
+  et `normalizeCategoryData` snapshotte avant de fusionner des lignes.
+- **Stockage persistant.** `ensurePersistentStorage()` (appelé au boot
+  par le constructeur de `DatabaseManager`) demande
+  `navigator.storage.persist()` : sans ce flag, IndexedDB est du
+  stockage « best-effort » que le navigateur peut évincer sous pression
+  disque (perte totale silencieuse). Best-effort, re-tenté à chaque boot
+  tant que non accordé.
+- **Snapshot automatique quotidien.** `maybeAutoBackup()` (appelé en
+  idle au boot, cf. AppShell) écrit au plus un export complet par 24 h
+  dans `backups` (label `'auto'`, garde-fou `backup.lastAutoAt`).
+  Rétention : les 5 snapshots `'auto'` les plus récents ; les snapshots
+  de migration (`pre-v5`, `pre-normalize-categories`, `pre-import`,
+  `pre-clear`…) ne sont JAMAIS purgés par cette rotation.
 - **`uid` stable par boisson** (`genUid`, rétro-rempli en v5) : identité
   globale pour le partage, indépendante de l'`++id` local.
 - **`setSetting(key, null)` SUPPRIME la clé** (pas de valeur `null`
@@ -669,11 +757,29 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
   une heure et une minute, OK → l'heure est posée ; fluide sur Android.
 - **Couleur de catégorie** : « Modifier » → slider Teinte ; la pastille/
   l'icône se recolorent en direct ; « Auto » revient au défaut ; la
-  couleur persiste au reload et survit à un renommage.
+  couleur persiste au reload et survit à un renommage. **Changer
+  UNIQUEMENT la couleur** (sans toucher au nom) : la carte de la grille,
+  les lignes de familles ET les pilules de l'Historique se recolorent
+  immédiatement, sans reload ni autre action.
 - **Prix intelligent** : saisir un prix sur Jupiler 25 cL, rouvrir
   l'ajout avec Jupiler 50 cL → champ prérempli au double (hint €/L
   affiché) ; modifier la quantité re-calcule ; taper un prix manuel
-  puis changer la quantité ne l'écrase plus.
+  puis changer la quantité ne l'écrase plus ; après la saisie manuelle
+  le bouton « Suggestion : X € — appliquer » ré-active l'auto d'un tap.
+- **Hors-ligne / réseau lent** : couper le réseau → l'app boote depuis
+  le cache (installée) ; ajouter une boisson avec géoloc consentie →
+  les coordonnées sont enregistrées sans adresse, et l'adresse se
+  complète toute seule au retour du réseau. En wifi très faible, le
+  lancement retombe sur le shell en cache en ~3,5 s (pas d'écran blanc
+  prolongé).
+- **Permissions** : le dialogue de consentement géoloc n'apparaît
+  qu'UNE fois (puis plus jamais, quel que soit le choix) ; refuser la
+  permission navigateur ne redéclenche plus aucune invite ; le scanner
+  ne demande la caméra qu'à sa première ouverture.
+- **Amis — admin** : le panneau « Administration du groupe » n'apparaît
+  que pour le créateur du groupe ; « Retirer » passe par une Confirm
+  danger, purge la liste et le pool ; un non-créateur ne voit PAS le
+  panneau (et le serveur refuse de toute façon).
 - **Sheets** : chaque fermeture (X, Annuler, succès, backdrop, Escape,
   Retour système) glisse vers sa sortie au lieu de disparaître sec ;
   aucune interaction possible pendant la sortie.

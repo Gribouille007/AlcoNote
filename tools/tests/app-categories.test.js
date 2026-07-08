@@ -122,6 +122,14 @@ test('couleur : slider au clavier → setting cat.color.id.<id> + carte recolor�
   // La carte se repeint : catColor lit le CAT muté par applyCatHueOverrides.
   await ctx.waitFor(() => (ctx.window.catColor('Bière', 60) || '').includes('359'),
     { label: 'CAT recoloré' });
+  // RÉGRESSION : le DOM de la carte (React.memo) se repeint AUSSI — sans
+  // l'abonnement useCatPalette, le memo bloquait le re-render et la carte
+  // gardait l'ancienne couleur (« je change la couleur, rien ne se passe »).
+  await ctx.waitFor(() => {
+    const card = ctx.qa('[role="button"]').find((el) =>
+      /Ouvrir la catégorie Bière/.test(el.getAttribute('aria-label') || ''));
+    return card && / 359\)/.test(card.innerHTML);
+  }, { label: 'carte recolorée dans le DOM (repaint malgré React.memo)' });
 });
 
 test('couleur : « Auto » supprime la surcharge (retour au défaut)', async () => {
@@ -136,6 +144,12 @@ test('couleur : « Auto » supprime la surcharge (retour au défaut)', async () 
   // Retour à la teinte par défaut de Bière (hue 80).
   await ctx.waitFor(() => (ctx.window.catColor('Bière', 60) || '').includes('80'),
     { label: 'teinte par défaut restaurée' });
+  // Et le DOM de la carte suit (repaint malgré React.memo).
+  await ctx.waitFor(() => {
+    const card = ctx.qa('[role="button"]').find((el) =>
+      /Ouvrir la catégorie Bière/.test(el.getAttribute('aria-label') || ''));
+    return card && / 80\)/.test(card.innerHTML) && !/ 359\)/.test(card.innerHTML);
+  }, { label: 'carte revenue à la teinte par défaut dans le DOM' });
 });
 
 test('drill-down dans une catégorie et retour', async () => {

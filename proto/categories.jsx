@@ -148,6 +148,10 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
 }
 
 const CategoryCard = React.memo(function CategoryCard({ cat, onOpen, onEdit, index = 0 }) {
+  // Repaint garanti quand une teinte de catégorie change : le contexte
+  // traverse React.memo (les props `cat` ne bougent pas sur un changement
+  // de couleur seul). Cf. useCatPalette (shared.jsx).
+  useCatPalette();
   const color = catColor(cat.name, 70);
   const bg = catBg(cat.name);
   const reduced = useReducedMotion();
@@ -289,6 +293,8 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
 }
 
 const FamilyRow = React.memo(function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onOpen, onDirectAdd, index = 0 }) {
+  // Cf. CategoryCard : abonnement palette → repaint sur changement de teinte.
+  useCatPalette();
   const color = catColor(f.category, 70);
   const totalEntries = f.entries.length;
   const isFirstOfGroup = variantIndex === 0;
@@ -502,8 +508,11 @@ function EditCategorySheet({ category, onClose, mode = 'edit', onRenamed }) {
       let finalName = category;
       if (nameChanged) {
         // renameCategory cascades to drinks. If it throws we abort before
-        // touching the icon; the sheet stays open with the error.
-        if (row) await renameCategory(row.name, trimmed);
+        // touching the icon; the sheet stays open with the error. Sans ligne
+        // résolue on THROW : jamais de toast « mise à jour » sur un rename
+        // silencieusement sauté (bug historique).
+        if (!row) throw new Error('Catégorie introuvable — ferme et rouvre la fiche');
+        await renameCategory(row.name, trimmed);
         finalName = trimmed;
         // Let the parent re-point its name-keyed state (open drill-down,
         // this sheet's own key) at the new name BEFORE the refreshed

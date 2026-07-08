@@ -302,19 +302,24 @@ class CameraScanner {
         if (el) el.textContent = message;
     }
 
+    // Interroge l'état de la permission caméra SANS déclencher d'invite ni
+    // ouvrir de flux (Permissions API). L'ancienne version faisait un
+    // getUserMedia complet « pour vérifier » : cela affichait l'invite
+    // navigateur une fois de trop ET allumait brièvement la caméra. La SEULE
+    // demande de permission part désormais de Quagga.init() (via start()),
+    // c'est-à-dire uniquement quand l'utilisateur ouvre volontairement le
+    // scanner — le navigateur mémorise ensuite l'accord (HTTPS/PWA installée)
+    // et ne re-demande plus.
     async checkCameraPermission() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment" }
-            });
-            stream.getTracks().forEach(track => track.stop());
-            return { granted: true };
-        } catch (error) {
-            let message = 'Permission caméra refusée';
-            if (error.name === 'NotFoundError') message = 'Aucune caméra trouvée';
-            else if (error.name === 'NotSupportedError') message = 'Caméra non supportée';
-            return { granted: false, error: message };
-        }
+            if (navigator.permissions && navigator.permissions.query) {
+                const st = await navigator.permissions.query({ name: 'camera' });
+                return { granted: st.state === 'granted', state: st.state };
+            }
+        } catch (_) { /* Permissions API absente ou nom non supporté */ }
+        // Indéterminé (vieux Safari) : ne PAS sonder via getUserMedia (ce
+        // serait une invite) — l'appelant tentera start() qui tranchera.
+        return { granted: false, state: 'unknown' };
     }
 
     static isSupported() {

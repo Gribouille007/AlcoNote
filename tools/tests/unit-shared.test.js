@@ -146,6 +146,28 @@ test('applyCatHueOverrides — catégorie inconnue prend la teinte donnée', () 
   assert.ok(catColor('Kombucha', 60).includes(String(defaultCatHue('Kombucha'))));
 });
 
+test('RÉGRESSION : palette CANONIQUE — NFD/espaces résolvent la même couleur', () => {
+  // « Bière » en NFD (e + accent grave combinant U+0300) : même catégorie que
+  // la forme NFC — la palette (défaut, hash ET surcharge) doit être identique
+  // quelle que soit la forme brute rencontrée (import, vieux clavier…).
+  const nfd = 'Bière';
+  assert.notEqual(nfd, 'Bière', 'les deux chaînes diffèrent bien au sens strict');
+  assert.equal(catColor(nfd, 60), catColor('Bière', 60), 'NFD = NFC (défaut)');
+  assert.equal(catColor(' Bière ', 60), catColor('Bière', 60), 'espaces ignorés');
+  assert.equal(defaultCatHue(nfd), defaultCatHue('Bière'), 'defaultCatHue canonique');
+  assert.equal(defaultCatHue(' Soft '), defaultCatHue('Soft'), 'hash canonique (nom inconnu)');
+
+  // Surcharge posée sous le nom canonique (comme CategoryIconsProvider) →
+  // résolue depuis TOUTE variante brute. C'était le bug « la couleur ne
+  // change que pour certaines catégories ».
+  applyCatHueOverrides({ 'Bière': 211, 'Soft': 97 });
+  assert.ok(catColor(nfd, 60).includes('211'), 'surcharge résolue via NFD');
+  assert.ok(catBg(' Bière ').includes('211'), 'catBg surchargé avec espaces');
+  assert.ok(catColor('Soft ', 60).includes('97'), 'surcharge custom résolue via variante');
+  applyCatHueOverrides({});
+  assert.equal(catColor(nfd, 60), catColor('Bière', 60), 'reset symétrique');
+});
+
 // ── Maths de la roue horaire ────────────────────────────────────────
 
 test('wheelOffsetForIndex / wheelIndexForOffset — aller-retour + clamp', () => {

@@ -214,3 +214,150 @@ test('clearAllData — ne touche PAS sharedPool / shareOutbox / backups', async 
   assert.equal((await dbManager.getOutbox()).length, 1, 'shareOutbox intact');
   assert.ok(await dbManager.getLatestBackup(), 'backups intacts');
 });
+
+// ── Canonicalisation des catégories (NFC + trim) ────────────────────
+// La table est vide après clearAllData — on reconstruit un état « hérité »
+// où les chaînes de catégorie ont dérivé (NFD, espaces parasites).
+
+const NFD_BIERE = 'Bière'; // « Bière » avec accent combinant (NFD)
+
+test('getCategoryByName — repli canonique (NFD / espaces), undefined sinon', async () => {
+  const row = await dbManager.addCategory({ name: 'Bière' });
+  const viaNfd = await dbManager.getCategoryByName(NFD_BIERE);
+  assert.ok(viaNfd && viaNfd.id === row.id, 'trouvée via la forme NFD');
+  const viaSpaces = await dbManager.getCategoryByName('  Bière ');
+  assert.ok(viaSpaces && viaSpaces.id === row.id, 'trouvée avec espaces parasites');
+  assert.equal(await dbManager.getCategoryByName('Inexistante'), undefined,
+    'contrat historique : undefined quand absente');
+});
+
+test('RÉGRESSION : renameCategory cascade CANONIQUE (boissons NFD / espaces)', async () => {
+  // Deux boissons dont la chaîne catégorie a dérivé : elles doivent suivre le
+  // renommage au lieu de rester orphelines sous l'ancien nom (ce qui faisait
+  // « réapparaître » la catégorie renommée — bug historique).
+  await dbManager.addDrink({
+    name: 'Blonde', category: NFD_BIERE, quantity: 33, unit: 'cL',
+    alcoholContent: 5, date: '2026-06-05', time: '20:00',
+  });
+  await dbManager.addDrink({
+    name: 'Ambrée', category: 'Bière ', quantity: 25, unit: 'cL',
+    alcoholContent: 6, date: '2026-06-05', time: '21:00',
+  });
+  await dbManager.renameCategory('Bière', 'Mousse');
+
+  const all = await dbManager.getAllDrinks();
+  for (const d of all.filter((x) => ['Blonde', 'Ambrée'].includes(x.name))) {
+    assert.equal(d.category, 'Mousse', `${d.name} suit le renommage`);
+  }
+  const mousse = await dbManager.getCategoryByName('Mousse');
+  assert.equal(mousse.drinkCount, 2, 'compteur recalculé canoniquement');
+});
+
+test('renameCategory — casse/normalisation seule (même ligne) acceptée, vrai doublon refusé', async () => {
+  // Même ligne : « Mousse » → « mousse » ne doit PAS être bloqué en doublon.
+  await dbManager.renameCategory('Mousse', 'mousse');
+  const row = await dbManager.getCategoryByName('mousse');
+  assert.equal(row.name, 'mousse', 'renommage de casse appliqué');
+  // Vrai doublon (une AUTRE ligne canoniquement identique) : refusé.
+  await dbManager.addCategory({ name: 'Cidre' });
+  await assert.rejects(() => dbManager.renameCategory('Cidre', ' mousse '), /existe déjà/);
+});
+
+test('normalizeCategoryData — normalise, fusionne les doublons, snapshot AVANT', async () => {
+  // État hérité fabriqué en écrivant directement dans Dexie (comme les
+  // anciennes versions sans trim/normalisation) : deux lignes qui se replient
+  // sur le même nom canonique + une surcharge couleur sur la ligne perdante.
+  const keeperId = await dbManager.db.categories.add({ name: 'Rhum', drinkCount: 0 });
+  const loserId = await dbManager.db.categories.add({ name: 'Rhum ', drinkCount: 0 });
+  await dbManager.db.settings.put({ key: `cat.color.id.${loserId}`, value: '123' });
+  await dbManager.addDrink({
+    name: 'Vieux', category: 'Rhum ', quantity: 4, unit: 'cL',
+    alcoholContent: 40, date: '2026-06-06', time: '22:00',
+  });
+
+  const backupsBefore = await dbManager.db.backups.count();
+  const res = await dbManager.normalizeCategoryData();
+  assert.equal(res.changed, true, 'des corrections ont été appliquées');
+
+  const cats = await dbManager.getAllCategories();
+  const rhums = cats.filter((c) => c.name.trim().normalize('NFC') === 'Rhum');
+  assert.equal(rhums.length, 1, 'doublons fusionnés en une seule ligne');
+  assert.equal(rhums[0].id, keeperId, 'la première ligne est conservée');
+  assert.equal(rhums[0].name, 'Rhum', 'nom canonique');
+  assert.equal(await dbManager.getSetting(`cat.color.id.${keeperId}`), '123',
+    'surcharge couleur migrée vers la ligne conservée');
+  assert.equal(await dbManager.getSetting(`cat.color.id.${loserId}`), null,
+    'surcharge de la ligne perdante purgée');
+
+  const drink = (await dbManager.getAllDrinks()).find((d) => d.name === 'Vieux');
+  assert.equal(drink.category, 'Rhum', 'chaîne catégorie de la boisson réécrite');
+
+  assert.equal(await dbManager.db.backups.count(), backupsBefore + 1,
+    'snapshot pris avant toute écriture');
+  const last = await dbManager.getLatestBackup();
+  assert.equal(last.label, 'pre-normalize-categories');
+
+  // Idempotent : un second appel ne trouve plus rien à faire (pas de snapshot).
+  const res2 = await dbManager.normalizeCategoryData();
+  assert.equal(res2.changed, false, 'second appel = no-op');
+  assert.equal(await dbManager.db.backups.count(), backupsBefore + 1, 'pas de snapshot inutile');
+});
+
+// ── Durabilité : snapshots automatiques ─────────────────────────────
+
+test('maybeAutoBackup — snapshot quotidien, rotation des « auto » seulement', async () => {
+  // Intervalle échu (aucun lastAutoAt) + base non vide (drinks des tests
+  // précédents) → un snapshot 'auto' est créé.
+  await dbManager.setSetting('backup.lastAutoAt', null);
+  const before = (await dbManager.db.backups.toArray()).length;
+  assert.equal(await dbManager.maybeAutoBackup(), true, 'snapshot créé');
+  const after1 = await dbManager.db.backups.toArray();
+  assert.equal(after1.length, before + 1);
+  const auto = after1[after1.length - 1];
+  assert.equal(auto.label, 'auto');
+  const parsed = JSON.parse(auto.json);
+  assert.ok(Array.isArray(parsed.drinks) && parsed.drinks.length > 0, 'les boissons sont dedans');
+
+  // Garde-fou d'intervalle : un second appel immédiat est un no-op.
+  assert.equal(await dbManager.maybeAutoBackup(), false, 'intervalle non échu → no-op');
+
+  // Rotation : keep=2 → seuls les 2 'auto' les plus récents survivent, les
+  // snapshots de migration (labels non-'auto') ne sont JAMAIS purgés.
+  const protectedCount = (await dbManager.db.backups.toArray())
+    .filter((b) => b.label !== 'auto').length;
+  for (let i = 0; i < 3; i++) {
+    await dbManager.setSetting('backup.lastAutoAt', null);
+    assert.equal(await dbManager.maybeAutoBackup({ keep: 2 }), true);
+  }
+  const all = await dbManager.db.backups.toArray();
+  assert.equal(all.filter((b) => b.label === 'auto').length, 2, 'rotation à 2 snapshots auto');
+  assert.equal(all.filter((b) => b.label !== 'auto').length, protectedCount,
+    'les snapshots de migration survivent à la rotation');
+});
+
+test('ensurePersistentStorage — best-effort sans navigator.storage', async () => {
+  const res = await dbManager.ensurePersistentStorage();
+  assert.equal(typeof res.persisted, 'boolean', 'contrat de retour stable');
+});
+
+test('import / clearAllData — snapshot de sécurité AVANT l’étape destructive', async () => {
+  // État courant non vide (les tests précédents ont peuplé la base).
+  assert.ok((await dbManager.getAllDrinks()).length > 0, 'base non vide');
+  const before = (await dbManager.db.backups.toArray()).length;
+
+  // Import valide (round-trip de l'export courant) → snapshot 'pre-import'.
+  const json = await dbManager.exportData();
+  await dbManager.importData(json);
+  let all = await dbManager.db.backups.toArray();
+  assert.equal(all.length, before + 1, 'un snapshot ajouté par l’import');
+  assert.equal(all[all.length - 1].label, 'pre-import');
+
+  // « Tout effacer » → snapshot 'pre-clear' AVANT le wipe.
+  await dbManager.clearAllData();
+  all = await dbManager.db.backups.toArray();
+  assert.equal(all.length, before + 2, 'un snapshot ajouté par le clear');
+  assert.equal(all[all.length - 1].label, 'pre-clear');
+  const parsed = JSON.parse(all[all.length - 1].json);
+  assert.ok(parsed.drinks.length > 0, 'le snapshot contient bien les boissons effacées');
+  assert.equal((await dbManager.getAllDrinks()).length, 0, 'le wipe a bien eu lieu');
+});

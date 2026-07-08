@@ -21,6 +21,9 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
   const [visibleCount, setVisibleCount] = React.useState(8);
 
   const { categories } = useCategories();
+  // Pilules de filtre teintées par catégorie → abonnement palette
+  // (repaint sur changement de couleur, cf. useCatPalette dans shared.jsx).
+  useCatPalette();
   // Single shared families memo from the App-level FamiliesContext —
   // avoids re-building (drinks × ratings) per tab on every bump.
   const families = useFamilies();
@@ -233,6 +236,9 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
   );
 });
 const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectAdd, onDelete, first, last }) {
+  // Abonnement palette : repaint sur changement de teinte de catégorie
+  // malgré React.memo (cf. useCatPalette dans shared.jsx).
+  useCatPalette();
   const color = catColor(e.family.category, 70);
   const t = e.ts.slice(11, 16);
   const swipe = useSwipeToDelete(() => onDelete && onDelete(e));

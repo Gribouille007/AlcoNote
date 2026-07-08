@@ -113,6 +113,97 @@ function FriendRow({
   }))));
 }
 
+// Panneau d'administration du groupe — VISIBLE UNIQUEMENT pour le créateur
+// (groups.created_by, persisté dans shareState.creatorId). La sécurité ne
+// repose PAS sur cet affichage : le serveur re-vérifie les droits dans la
+// RPC remove_member (RLS + created_by) quoi que fasse l'UI — un non-créateur
+// qui forgerait l'appel reçoit une erreur. Ici on ne fait que refléter ces
+// droits pour offrir une gestion visuelle des profils du groupe.
+function GroupAdminPanel({
+  members
+}) {
+  const s = useShare();
+  const isCreator = !!s.groupId && !!s.userId && s.creatorId === s.userId;
+  if (!isCreator || !members || members.length === 0) return null;
+  const remove = async m => {
+    const name = m.displayName || 'Anonyme';
+    const ok = await Confirm.ask({
+      title: `Retirer ${name} du groupe ?`,
+      message: 'Son profil et ses boissons partagées seront supprimés du groupe pour tout le monde. Ses données personnelles sur son appareil ne sont pas touchées.',
+      confirmText: 'Retirer',
+      danger: true
+    });
+    if (!ok) return;
+    try {
+      await shareEngine.removeMember(m.userId);
+      Toast.show(`${name} retiré du groupe`);
+    } catch (e) {
+      Toast.show(shareErrorMessage(e));
+    }
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 18
+    }
+  }, /*#__PURE__*/React.createElement(SectionHead, null, "Administration du groupe"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      background: T.surface2,
+      border: `1px solid ${T.rule}`,
+      borderRadius: 14,
+      overflow: 'hidden'
+    }
+  }, members.map((m, i) => /*#__PURE__*/React.createElement("div", {
+    key: m.userId,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: '12px 14px',
+      borderBottom: i === members.length - 1 ? 'none' : `1px solid ${T.rule}`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0,
+      fontSize: 14,
+      color: T.ink,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap'
+    }
+  }, m.displayName || 'Anonyme'), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => remove(m),
+    "aria-label": `Retirer ${m.displayName || 'Anonyme'} du groupe`,
+    style: {
+      ...ghostButton,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+      padding: '7px 12px',
+      borderRadius: 10,
+      flexShrink: 0,
+      background: T.dangerSoftBg,
+      border: `1px solid ${T.dangerSoftBorder}`,
+      color: T.accent2,
+      fontSize: 11.5,
+      fontWeight: 500
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.userMinus,
+    size: 13
+  }), " Retirer")))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8,
+      color: T.muted,
+      fontSize: 10.5,
+      lineHeight: 1.5,
+      letterSpacing: 0.1
+    }
+  }, "Visible uniquement par la personne qui a cr\xE9\xE9 le groupe \u2014 le serveur re-v\xE9rifie ce droit \xE0 chaque retrait."));
+}
+
 // Pied de l'onglet quand on est dans un groupe : action « Quitter le groupe ».
 // Le code d'invitation N'EST PLUS affiché ici (déjà dans un groupe) — il reste
 // accessible dans Paramètres › Partage, pour inviter d'autres personnes.
@@ -456,7 +547,9 @@ function FriendsTab({
     index: i,
     favorite: s.favoriteId === m.userId,
     onToggleFav: () => shareEngine.toggleFavorite(m.userId)
-  }))), hasGroup && /*#__PURE__*/React.createElement(GroupFooter, null)));
+  }))), hasGroup && /*#__PURE__*/React.createElement(GroupAdminPanel, {
+    members: members
+  }), hasGroup && /*#__PURE__*/React.createElement(GroupFooter, null)));
 }
 
 // Libellé relatif court ("à l'instant", "il y a 8 min", "il y a 2 h").
@@ -710,5 +803,6 @@ Object.assign(window, {
   FriendStatsView,
   FriendRow,
   GroupFooter,
+  GroupAdminPanel,
   HeaderBacStack
 });

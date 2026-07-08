@@ -166,3 +166,33 @@ test('UI : un AUTRE est créateur → bouton masqué', async () => {
   engine().state.creatorId = null;
   ctx.window.shareBus.bump();
 });
+
+// ── UI : panneau « Administration du groupe » (créateur uniquement) ──
+
+test('UI : le panneau admin n’apparaît QUE pour le créateur', async () => {
+  await ctx.clickAria(/Amis/, 300);
+  // Créateur inconnu (null) → pas de panneau : le retrait au cas par cas via
+  // la fiche ami reste possible, mais la gestion visuelle des profils est
+  // réservée au créateur (le serveur re-vérifie ce droit de toute façon).
+  assert.ok(!ctx.text().includes('Administration du groupe'),
+    'pas de panneau quand le créateur est inconnu');
+
+  engine().state.creatorId = engine().state.userId;
+  ctx.window.shareBus.bump();
+  await ctx.waitFor(() => ctx.text().includes('Administration du groupe'),
+    { label: 'panneau visible pour le créateur' });
+  assert.match(ctx.text(), /re-vérifie ce droit/, 'la garantie serveur est expliquée');
+});
+
+test('UI : retirer un profil depuis le panneau admin (Confirm + purge)', async () => {
+  await ctx.clickAria(/Retirer Tom du groupe/, 300);
+  assert.match(ctx.text(), /Retirer Tom du groupe \?/, 'Confirm danger affichée');
+  await ctx.clickText(/^Retirer$/, 450);
+  assert.ok(!engine().state.members.some((m) => m.userId === 'mock-tom'),
+    'Tom retiré de la liste des membres');
+  const pool = await dbm().getAllSharedDrinks();
+  assert.ok(!pool.some((r) => r.authorId === 'mock-tom'), 'ses boissons purgées du pool');
+  // Plus aucun ami → le panneau disparaît avec la liste.
+  await ctx.waitFor(() => !ctx.text().includes('Administration du groupe'),
+    { label: 'panneau retiré quand la liste est vide' });
+});

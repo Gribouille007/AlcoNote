@@ -102,6 +102,39 @@ test('DA : pas de <svg> inline hors fichiers système (Ic/SvgIcon, charts, map)'
   assert.deepEqual(offenders, []);
 });
 
+test('DA : composant React.memo qui peint catColor/catBg → useCatPalette() obligatoire', () => {
+  // La palette de catégories vit dans le registre module `CAT`, muté par
+  // applyCatHueOverrides — une mutation y est INVISIBLE pour React. Un
+  // composant React.memo dont les props n'ont pas bougé ne se re-rend pas et
+  // garde l'ancienne couleur (bug historique « je change la couleur, rien ne
+  // se passe »). Le hook useCatPalette() (contexte → traverse React.memo)
+  // garantit le repaint : tout composant memoïsé qui appelle catColor()/
+  // catBg() doit l'appeler aussi.
+  const offenders = [];
+  for (const f of jsxFiles) {
+    const src = read(path.join('proto', f));
+    const re = /React\.memo\(function\s+(\w+)/g;
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      // Corps de la fonction par équilibrage d'accolades depuis la première
+      // `{` qui suit la liste de paramètres.
+      const open = src.indexOf('{', src.indexOf(')', m.index));
+      if (open === -1) continue;
+      let depth = 0, end = open;
+      for (let i = open; i < src.length; i++) {
+        if (src[i] === '{') depth++;
+        else if (src[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+      }
+      const body = src.slice(open, end + 1);
+      if (/\bcatColor\(|\bcatBg\(/.test(body) && !body.includes('useCatPalette()')) {
+        offenders.push(`proto/${f} › ${m[1]}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [],
+    'composants memoïsés peignant une couleur de catégorie sans abonnement palette');
+});
+
 test('conventions : chaque proto/*.jsx expose ses symboles via Object.assign(window', () => {
   for (const f of jsxFiles) {
     const src = read(path.join('proto', f));

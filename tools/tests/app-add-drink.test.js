@@ -154,6 +154,22 @@ test('prix intelligent — autre quantité préremplie au prorata du €/L, sais
   await ctx.setInput(ctx.findInputByAria(/^Quantité$/), '50');
   await ctx.sleep(150);
   assert.equal(ctx.findInputByAria(/^Prix$/).value, '3', 'prix manuel conservé');
+
+  // 5. La suggestion reste à un tap après une saisie manuelle : le bouton
+  //    « appliquer » ré-active l'auto (le champ suit de nouveau la quantité).
+  const applyBtn = ctx.buttons().find((b) =>
+    /Appliquer le prix suggéré/.test(b.getAttribute('aria-label') || ''));
+  assert.ok(applyBtn, 'bouton « Suggestion — appliquer » visible après saisie manuelle');
+  await ctx.act(async () => { ctx.click(applyBtn); await ctx.sleep(150); });
+  assert.equal(ctx.findInputByAria(/^Prix$/).value, '4', 'suggestion ré-appliquée (50 cL → 4 €)');
+  await ctx.setInput(ctx.findInputByAria(/^Quantité$/), '33');
+  await ctx.waitFor(() => ctx.findInputByAria(/^Prix$/).value === '2.64',
+    { label: 'l’auto suit à nouveau la quantité' });
+
+  // 6. Nouvelle saisie manuelle, puis enregistrement : le prix tapé gagne.
+  await ctx.setInput(ctx.findInputByAria(/^Quantité$/), '50');
+  await ctx.setInput(ctx.findInputByAria(/^Prix$/), '3');
+  await ctx.sleep(150);
   await ctx.clickText(/^Enregistrer$/, 400);
   const second = (await db().getAllDrinks()).find((x) => x.name === 'Smart Pils' && x.quantity === 50);
   assert.equal(second.price, 3, 'le prix saisi manuellement est enregistré');

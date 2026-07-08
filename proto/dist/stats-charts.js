@@ -1153,6 +1153,9 @@ function SvgLineChart({
   extraLines = null,
   ariaLabel = 'Courbe d\'évolution'
 }) {
+  // Traits de série teintés via catColor → abonnement palette (React.memo
+  // bloquerait sinon le repaint sur changement de teinte, cf. useCatPalette).
+  useCatPalette();
   const idSuffix = React.useId().replace(/:/g, '');
   const pad = CHART.pad.cartesian;
   const w = width - pad.l - pad.r;

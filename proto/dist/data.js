@@ -235,6 +235,9 @@ function CategoriesProvider({
     (async () => {
       const db = await waitForDb();
       if (!db) return;
+      // Normalise les noms hérités (NFC + trim, fusion des doublons) AVANT
+      // le seed et la migration d'icônes, qui matchent par nom canonique.
+      await normalizeCategoryNamesOnce();
       await _ensureDefaultCategories();
       await migrateCategoryIconsToId();
       const list = await db.getAllCategories();
@@ -727,6 +730,40 @@ async function migrateCategoryIconsToId() {
   return _iconMigratePromise;
 }
 
+// One-time : normalise les noms de catégorie (lignes + boissons) en forme
+// canonique et fusionne les doublons via db.normalizeCategoryData() —
+// snapshot + transaction côté DB (cf. js/database.js). Gatée par un setting
+// pour ne pas re-scanner à chaque boot ; le flag n'est posé QUE si la
+// normalisation a réussi (sinon retentée au prochain mount). Même schéma
+// mémo/promesse que migrateCategoryIconsToId.
+let _catNormDone = false;
+let _catNormPromise = null;
+async function normalizeCategoryNamesOnce() {
+  if (_catNormDone) return;
+  if (_catNormPromise) return _catNormPromise;
+  _catNormPromise = (async () => {
+    try {
+      const db = await waitForDb();
+      if (!db) return;
+      if (await db.getSetting('cat._namesNormalized.v1')) {
+        _catNormDone = true;
+        return;
+      }
+      if (typeof db.normalizeCategoryData === 'function') {
+        const res = await db.normalizeCategoryData();
+        if (res && res.error) return; // réessaie au prochain mount
+      }
+      await db.setSetting('cat._namesNormalized.v1', true);
+      _catNormDone = true;
+    } catch (e) {
+      // best-effort ; retentée au prochain mount
+    } finally {
+      if (!_catNormDone) _catNormPromise = null;
+    }
+  })();
+  return _catNormPromise;
+}
+
 // Throws on any failure so the EditCategorySheet's catch block can
 // surface a real error message instead of silently displaying "mis à
 // jour" when the write never made it to disk. Three failure modes are
@@ -975,6 +1012,8 @@ async function clearAllData() {
   _iconMigratePromise = null;
   _ratingCanonDone = false;
   _ratingCanonPromise = null;
+  _catNormDone = false;
+  _catNormPromise = null;
   dataBus.bump('cat-icons');
   dataBus.bump();
   return r;
@@ -1026,6 +1065,23 @@ function setGeoConsent(state) {
   } catch {}
 }
 
+// État de la permission navigateur SANS déclencher d'invite (Permissions
+// API). 'granted' | 'denied' | 'prompt' | 'unknown' (API absente — Safari
+// iOS < 16). Sert à ne JAMAIS re-solliciter un utilisateur qui a déjà
+// refusé au niveau navigateur, et à sauter le dialogue de consentement
+// app quand la permission est déjà définitivement accordée.
+async function geoPermissionState() {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
+      const st = await navigator.permissions.query({
+        name: 'geolocation'
+      });
+      return st && st.state ? st.state : 'unknown';
+    }
+  } catch {}
+  return 'unknown';
+}
+
 // Consentement applicatif demandé une seule fois (puis mémorisé), pour
 // ne pas reposer la question à chaque ajout. La permission définitive
 // reste gérée par l'invite native du navigateur, à l'acquisition.
@@ -1034,6 +1090,19 @@ function setGeoConsent(state) {
 let _geoConsentPromise = null;
 async function ensureGeoConsent() {
   if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return false;
+  // Permission navigateur déjà tranchée ? On s'aligne sans rien afficher :
+  // refus navigateur = refus app (inutile de demander, l'acquisition
+  // échouerait) ; accord navigateur = accord app (l'utilisateur a déjà
+  // répondu OUI à l'invite système — ne pas re-demander en double).
+  const perm = await geoPermissionState();
+  if (perm === 'denied') {
+    setGeoConsent('denied');
+    return false;
+  }
+  if (perm === 'granted' && getGeoConsent() !== 'denied') {
+    setGeoConsent('granted');
+    return true;
+  }
   const stored = getGeoConsent();
   if (stored === 'granted') return true;
   if (stored === 'denied') return false;
@@ -1060,9 +1129,14 @@ async function ensureGeoConsent() {
 function getPosition(timeout = 10000) {
   return new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(resolve, reject, {
+      // maximumAge 5 min : plusieurs ajouts dans le même bar réutilisent le
+      // fix GPS en cache (réponse instantanée, zéro nouvelle acquisition,
+      // pas de spinner). Le GPS matériel fonctionne SANS réseau — seule
+      // l'adresse (reverse-geocode) a besoin d'Internet, et elle est
+      // rattrapée plus tard par backfillMissingAddresses.
       enableHighAccuracy: true,
       timeout,
-      maximumAge: 60000
+      maximumAge: 300000
     });
   });
 }
@@ -1105,9 +1179,51 @@ async function reverseGeocodeReliable(lat, lng, {
   return null;
 }
 
-// Dernière position GPS connue (récente), pour ne pas perdre le lieu sur un
-// timeout ponctuel d'un ajout rapide.
+// Dernière position GPS connue, pour ne pas perdre le lieu sur un timeout
+// ponctuel d'un ajout rapide. Persistée en localStorage (forme minimale
+// { lat, lng, accuracy, at }) pour survivre à un reload — un timeout GPS
+// juste après la réouverture de l'app retombe ainsi sur le dernier fix
+// plutôt que de perdre le lieu.
+const LAST_POS_KEY = 'alconote.lastPos';
 let _lastPosition = null;
+function _loadLastPosition() {
+  if (_lastPosition) return _lastPosition;
+  try {
+    const raw = JSON.parse(localStorage.getItem(LAST_POS_KEY) || 'null');
+    if (raw && Number.isFinite(raw.lat) && Number.isFinite(raw.lng) && Number.isFinite(raw.at)) {
+      _lastPosition = {
+        at: raw.at,
+        pos: {
+          coords: {
+            latitude: raw.lat,
+            longitude: raw.lng,
+            accuracy: raw.accuracy ?? null
+          }
+        }
+      };
+    }
+  } catch {}
+  return _lastPosition;
+}
+function _saveLastPosition(pos) {
+  _lastPosition = {
+    pos,
+    at: Date.now()
+  };
+  try {
+    localStorage.setItem(LAST_POS_KEY, JSON.stringify({
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      accuracy: pos.coords.accuracy ?? null,
+      at: _lastPosition.at
+    }));
+  } catch {}
+}
+
+// Fenêtre de validité du repli « dernière position connue » (15 min : assez
+// courte pour rester dans le même lieu, assez longue pour couvrir un GPS
+// capricieux en intérieur).
+const LAST_POS_MAX_AGE_MS = 15 * 60000;
 
 // Acquiert la position courante pour l'attacher à une boisson. Retourne
 // { latitude, longitude, accuracy, address } ou null (refus, indispo,
@@ -1118,26 +1234,26 @@ async function captureLocationForDrink() {
     let pos;
     try {
       pos = await getPosition();
+      _saveLastPosition(pos);
     } catch (e) {
       if (e && e.code === 1 /* PERMISSION_DENIED */) {
         setGeoConsent('denied');
         return null;
       }
       // Timeout / indispo ponctuel : repli sur la dernière position connue
-      // (< 2 min) plutôt que de perdre le lieu.
-      if (_lastPosition && Date.now() - _lastPosition.at < 120000) pos = _lastPosition.pos;else return null;
+      // (mémoire ou localStorage) plutôt que de perdre le lieu.
+      const last = _loadLastPosition();
+      if (last && Date.now() - last.at < LAST_POS_MAX_AGE_MS) pos = last.pos;else return null;
     }
     setGeoConsent('granted');
-    _lastPosition = {
-      pos,
-      at: Date.now()
-    };
     const {
       latitude,
       longitude,
       accuracy
     } = pos.coords;
-    const address = await reverseGeocodeReliable(latitude, longitude);
+    // Hors-ligne : on garde TOUJOURS les coordonnées (le GPS marche sans
+    // réseau) ; l'adresse est rattrapée plus tard par le backfill.
+    const address = typeof navigator !== 'undefined' && navigator.onLine === false ? null : await reverseGeocodeReliable(latitude, longitude);
     return {
       latitude,
       longitude,
@@ -1226,6 +1342,20 @@ async function backfillMissingAddresses({
     // best-effort
   }
 }
+
+// Retour du réseau → nouvelle passe de rattrapage : les coordonnées
+// capturées hors-ligne reçoivent leur libellé dès que possible, sans
+// attendre le prochain lancement de l'app.
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    _backfillRan = false;
+    setTimeout(() => {
+      try {
+        backfillMissingAddresses();
+      } catch {}
+    }, 3000);
+  });
+}
 Object.assign(window, {
   dataBus,
   waitForDb,
@@ -1267,6 +1397,7 @@ Object.assign(window, {
   addCategory,
   renameCategory,
   deleteCategory,
+  normalizeCategoryNamesOnce,
   updateFamily,
   deleteFamily,
   restoreDrinks,
@@ -1277,6 +1408,7 @@ Object.assign(window, {
   getPosition,
   getDrinkCoords,
   drinkPlaceLabel,
+  geoPermissionState,
   loadCategoryIcons,
   setCategoryIcon,
   migrateCategoryIconsToId,

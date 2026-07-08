@@ -5,9 +5,9 @@
 // source of truth for the displayed version: the GET_VERSION handler returns
 // it and `useSWVersion()` extracts the `vX.Y.Z` suffix. STATIC_CACHE /
 // DYNAMIC_CACHE name the actual Cache Storage buckets.
-const CACHE_NAME = 'alconote-v3.29.0';
-const STATIC_CACHE = 'alconote-static-v3.29.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v3.29.0';
+const CACHE_NAME = 'alconote-v3.30.0';
+const STATIC_CACHE = 'alconote-static-v3.30.0';
+const DYNAMIC_CACHE = 'alconote-dynamic-v3.30.0';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -197,18 +197,38 @@ function isStaticFile(url) {
     }
 }
 
+// fetch borné dans le temps : sur un réseau « présent mais mourant » (wifi
+// faible, 1 barre de 4G), fetch() peut rester suspendu 30-60 s AVANT
+// d'échouer — l'app paraît morte au lancement alors que tout est en cache.
+// Au-delà du délai on abandonne la requête (AbortController) et on laisse
+// networkFirst servir le cache. Les navigations utilisent un délai court :
+// mieux vaut booter sur le shell en cache en ~3,5 s et laisser le SW
+// rafraîchir en arrière-plan au prochain lancement.
+const NAVIGATION_TIMEOUT_MS = 3500;
+function fetchWithTimeout(request, timeoutMs) {
+    if (!timeoutMs) return fetch(request);
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    if (!ctrl) return fetch(request);
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    return fetch(request, { signal: ctrl.signal }).finally(() => clearTimeout(t));
+}
+
 // Network First Strategy - for dynamic content and APIs
 async function networkFirst(request) {
     try {
-        // Try network first
-        const networkResponse = await fetch(request);
-        
+        // Try network first. Les navigations (boot de l'app) sont bornées :
+        // réseau trop lent ⇒ on retombe vite sur le shell en cache au lieu
+        // de laisser l'utilisateur devant un écran blanc.
+        const isNav = request.mode === 'navigate' ||
+            (request.headers.get('accept') || '').includes('text/html');
+        const networkResponse = await fetchWithTimeout(request, isNav ? NAVIGATION_TIMEOUT_MS : 0);
+
         // If successful, cache the response
         if (networkResponse.ok) {
             const cache = await caches.open(DYNAMIC_CACHE);
             cache.put(request, networkResponse.clone());
         }
-        
+
         return networkResponse;
     } catch (error) {
         console.log('Service Worker: Network failed, trying cache for:', request.url);
@@ -420,10 +440,15 @@ self.addEventListener('message', (event) => {
     }
 });
 
+// Délai maxi des APIs tierces (lookup produit / géocodage) : au-delà, on
+// répond depuis le cache ou par le fallback JSON — un scan ne doit pas
+// rester suspendu une minute sur un wifi mourant.
+const API_TIMEOUT_MS = 8000;
+
 // Handle OpenFoodFacts API requests with offline fallback
 async function handleOpenFoodFactsRequest(request) {
     try {
-        const response = await fetch(request);
+        const response = await fetchWithTimeout(request, API_TIMEOUT_MS);
         if (response.ok) {
             // OpenFoodFacts answers HTTP 200 with {"status":0} for unknown
             // barcodes. Caching those pollutes the dynamic cache with one
@@ -464,7 +489,7 @@ async function handleOpenFoodFactsRequest(request) {
 // Handle Nominatim geocoding requests with offline fallback
 async function handleNominatimRequest(request) {
     try {
-        const response = await fetch(request);
+        const response = await fetchWithTimeout(request, API_TIMEOUT_MS);
         if (response.ok) {
             // Cache successful responses
             const cache = await caches.open(DYNAMIC_CACHE);

@@ -423,7 +423,33 @@ function AddDrinkSheet({
     style: {
       fontFamily: fontNum
     }
-  }, fmtPrice(suggestion.perLiter), "/L"))), /*#__PURE__*/React.createElement("div", {
+  }, fmtPrice(suggestion.perLiter), "/L"))), !priceAuto && suggestion && parseDecimal(price) !== suggestion.price && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setPriceAuto(true),
+    "aria-label": `Appliquer le prix suggéré ${fmtPrice(suggestion.price)}`,
+    style: {
+      ...ghostButton,
+      marginTop: 6,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 5,
+      color: T.accent,
+      fontSize: 11,
+      lineHeight: 1.4
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.refresh,
+    size: 11
+  }), "Suggestion : ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: fontNum
+    }
+  }, fmtPrice(suggestion.price)), !suggestion.exact && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: fontNum,
+      color: T.muted
+    }
+  }, "\xB7 ", fmtPrice(suggestion.perLiter), "/L"), "\u2014 appliquer"), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
       background: T.surface,
@@ -860,6 +886,9 @@ function DrinkDetailSheet({
   const {
     loading
   } = useDrinks();
+  // En-tête teinté par catégorie → abonnement palette (repaint si la teinte
+  // change pendant que la sheet est ouverte, cf. useCatPalette).
+  useCatPalette();
   // Fermeture animée. `onEdit` / `onAddAgain` restent des bascules
   // instantanées : la sheet est REMPLACÉE par la suivante, pas fermée.
   const [closing, close] = useSheetClose(onClose);
