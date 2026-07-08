@@ -195,3 +195,22 @@ test('suggestPriceForVolume — priorités : contenant exact > degré > premièr
   // 50 cL à 8° → source 33 cL 8° (12,12 €/L) malgré la 25 cL plus ancienne.
   assert.equal(suggestPriceForVolume(mix, 'Brune', 50, 8).price, 6.06);
 });
+
+test('suggestPriceForVolume — cas limites : EcoCup, prix négatif/invalide ignorés', () => {
+  const { suggestPriceForVolume, toCl } = global;
+  // Source en EcoCup (1 EcoCup = 25 cL) à 3 € → 12 €/L.
+  const fams = [
+    { name: 'Kro', quantity: 1, unit: 'EcoCup', alcohol: 5, referencePrice: 3,
+      entries: [{ ts: '2026-06-01T20:00' }] },
+    // Références invalides : jamais sources.
+    { name: 'Kro', quantity: 50, unit: 'cL', alcohol: 5, referencePrice: -2,
+      entries: [{ ts: '2026-06-02T20:00' }] },
+    { name: 'Kro', quantity: 33, unit: 'cL', alcohol: 5, referencePrice: 'abc',
+      entries: [{ ts: '2026-06-03T20:00' }] },
+  ];
+  assert.equal(suggestPriceForVolume(fams, 'Kro', 50, 5).price, 6, '12 €/L × 0,5 L');
+  assert.equal(suggestPriceForVolume(fams, 'Kro', toCl(1, 'EcoCup'), 5).price, 3,
+    'contenant exact EcoCup → référence telle quelle');
+  // Volume énorme : prorata linéaire, fini.
+  assert.equal(suggestPriceForVolume(fams, 'Kro', 1000, 5).price, 120);
+});

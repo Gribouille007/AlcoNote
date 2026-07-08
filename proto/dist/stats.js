@@ -579,6 +579,10 @@ function StatsTab({
     loading
   } = useDrinks();
   const settings = useSettings();
+  // Plusieurs sections peignent des couleurs de catégorie (donut, sessions,
+  // spotlight…) : l'abonnement palette au niveau du tab re-rend toutes les
+  // sections (non memoïsées) quand une teinte change (cf. useCatPalette).
+  useCatPalette();
   const [period, setPeriod] = React.useState(() => localStorage.getItem(_statsKey('alconote.stats.period', storageScope)) || 'week');
   const [anchor, setAnchor] = React.useState(() => new Date());
   const [collapsed, setCollapsed] = React.useState(() => loadCollapsedSections(storageScope));

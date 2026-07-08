@@ -224,13 +224,20 @@ function _hashHue(name) {
 }
 
 function _ensureCat(name) {
-  if (!CAT[name]) {
-    CAT[name] = {
-      hue: _hashHue(name), c: 0.12,
+  // Clé TOUJOURS canonique (trim + NFC) : les surcharges de teinte sont posées
+  // sous canonicalCat(name) par applyCatHueOverrides — un nom brut divergent
+  // (« Bière » en NFD, espace parasite venu d'un import) doit résoudre la
+  // MÊME palette, sinon la couleur perso « ne marche pas » pour cette
+  // catégorie-là (bug historique : couleur/teinte ignorée pour certaines
+  // catégories seulement).
+  const key = canonicalCat(name);
+  if (!CAT[key]) {
+    CAT[key] = {
+      hue: _hashHue(key), c: 0.12,
       light_l: 52, dark_l: 70, bg_l: 30,
     };
   }
-  return CAT[name];
+  return CAT[key];
 }
 
 function catColor(name, l) {
@@ -260,8 +267,11 @@ function catBg(name) {
 // défaut nommé si connu, sinon hash déterministe. Sert d'aperçu « Auto » et
 // de valeur de repli quand l'utilisateur efface sa couleur perso.
 function defaultCatHue(name) {
-  const def = CAT_DEFAULT[name];
-  return def ? def.hue : _hashHue(name);
+  // Même canonicalisation que _ensureCat : « Bière  » et « Bière » (NFC/NFD)
+  // partagent le même défaut ET le même hash de repli.
+  const key = canonicalCat(name);
+  const def = CAT_DEFAULT[key];
+  return def ? def.hue : _hashHue(key);
 }
 
 // Applique des surcharges de teinte par catégorie (couleur perso choisie au
@@ -538,6 +548,19 @@ const CategoryColorsContext = React.createContext({});
 // "Bière " resolves to the same key as the "Bière" category row).
 function canonicalCat(name) {
   return String(name == null ? '' : name).trim().normalize('NFC');
+}
+
+// Abonnement à la palette de catégories. La palette vit dans le registre
+// module `CAT` (muté par applyCatHueOverrides) — une mutation y est INVISIBLE
+// pour React : un composant `React.memo` dont les props n'ont pas bougé ne se
+// re-rend pas, et sa carte garde l'ancienne couleur jusqu'à un bump étranger
+// (bug historique : « je change la couleur, rien ne se passe »). Ce hook lit
+// CategoryColorsContext (nouvelle référence à chaque changement de couleur),
+// ce qui traverse React.memo et force le repaint.
+// RÈGLE : tout composant qui appelle catColor()/catBg() appelle AUSSI
+// useCatPalette() — vérifié par static-checks pour les composants React.memo.
+function useCatPalette() {
+  return React.useContext(CategoryColorsContext);
 }
 
 function CategoryGlyph({ name, glyph, size = 22 }) {
@@ -1678,7 +1701,7 @@ Object.assign(window, {
   fontSans, fontSerif, fontNum,
   BacPill,
   Ic, SvgIcon, CAT, catColor, catBg, withAlpha, CategoryIconsContext,
-  CategoryColorsContext, defaultCatHue, applyCatHueOverrides,
+  CategoryColorsContext, defaultCatHue, applyCatHueOverrides, useCatPalette,
   Toast,
   FR_DAYS_LONG, FR_DAYS_SHORT, FR_MONTHS_SHORT, FR_MONTHS_LONG, FR_MONTHS_DOTTED,
   fmtDateMedium, fmtDayHeader, localDate, localTime,

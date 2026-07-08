@@ -261,6 +261,24 @@ function AddDrinkSheet({ open, prefill, onClose }) {
                   : <>Suggéré d'après {suggestion.source.quantity} {suggestion.source.unit} à {fmtPrice(suggestion.source.referencePrice)} · <span style={{ fontFamily: fontNum }}>{fmtPrice(suggestion.perLiter)}/L</span></>}
               </div>
             )}
+            {/* Après une saisie manuelle, la suggestion reste à un tap : ce
+                bouton ré-active le prix auto (le champ suit alors à nouveau
+                les changements de quantité). Une saisie manuelle n'est JAMAIS
+                écrasée sans ce geste explicite. */}
+            {!priceAuto && suggestion && parseDecimal(price) !== suggestion.price && (
+              <button type="button"
+                onClick={() => setPriceAuto(true)}
+                aria-label={`Appliquer le prix suggéré ${fmtPrice(suggestion.price)}`}
+                style={{
+                  ...ghostButton, marginTop: 6, display: 'flex', alignItems: 'center',
+                  gap: 5, color: T.accent, fontSize: 11, lineHeight: 1.4,
+                }}>
+                <SvgIcon icon={Ic.refresh} size={11} />
+                Suggestion : <span style={{ fontFamily: fontNum }}>{fmtPrice(suggestion.price)}</span>
+                {!suggestion.exact && <span style={{ fontFamily: fontNum, color: T.muted }}>· {fmtPrice(suggestion.perLiter)}/L</span>}
+                — appliquer
+              </button>
+            )}
             <div style={{
               marginTop: 8, background: T.surface, border: `1px solid ${T.rule}`,
               borderRadius: 12, overflow: 'hidden',
@@ -554,6 +572,9 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
   const ratings = useRatings();
   const { categories } = useCategories();
   const { loading } = useDrinks();
+  // En-tête teinté par catégorie → abonnement palette (repaint si la teinte
+  // change pendant que la sheet est ouverte, cf. useCatPalette).
+  useCatPalette();
   // Fermeture animée. `onEdit` / `onAddAgain` restent des bascules
   // instantanées : la sheet est REMPLACÉE par la suivante, pas fermée.
   const [closing, close] = useSheetClose(onClose);

@@ -107,6 +107,26 @@ function AppShell() {
     };
   }, []);
 
+  // Snapshot automatique quotidien des tables perso dans `backups` (rétention
+  // gérée côté DB, cf. maybeAutoBackup) — filet « zéro perte de données »
+  // même si l'utilisateur n'exporte jamais manuellement. En idle, une fois
+  // par lancement ; le garde-fou d'intervalle vit dans la DB.
+  React.useEffect(() => {
+    const run = () => {
+      try {
+        if (window.dbManager && typeof window.dbManager.maybeAutoBackup === 'function') {
+          window.dbManager.maybeAutoBackup();
+        }
+      } catch (e) {}
+    };
+    const ric = typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback : null;
+    const handle = ric ? ric(run, { timeout: 10000 }) : setTimeout(run, 6000);
+    return () => {
+      if (ric && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(handle);
+      else clearTimeout(handle);
+    };
+  }, []);
+
   const [adding, setAdding] = React.useState(false);
   const [prefill, setPrefill] = React.useState(null);
   const [settings, setSettings] = React.useState(false);
@@ -521,6 +541,11 @@ async function mountAlcoNote() {
       applyTheme(stored);
     }
   } catch {}
+
+  // Normalise les noms de catégorie hérités (NFC + trim, fusion des
+  // doublons — snapshot + transaction côté DB) AVANT la migration d'icônes
+  // qui matche par nom canonique. Idempotent, no-op après le premier run.
+  try { await normalizeCategoryNamesOnce(); } catch {}
 
   // Migrate any legacy name-keyed icon overrides to the id-keyed format
   // BEFORE seeding, so the preload below already reflects migrated glyphs
