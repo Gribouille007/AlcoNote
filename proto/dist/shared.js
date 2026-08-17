@@ -202,12 +202,16 @@ const fontNum = '"Geist Mono", ui-monospace, monospace';
 // hiérarchie : une grande surface se lit plus ÉPAISSE qu'une petite — plus
 // de flou, ombre plus profonde. Une barre d'onglets n'a donc pas le même
 // flou qu'une feuille plein écran.
+// Les rayons sont volontairement MODESTES : le coût d'un flou de fond croît
+// avec le rayon, et il est repayé à chaque frame tant que le contenu défile
+// dessous. Au-delà d'une quinzaine de pixels on ne gagne plus de lisibilité —
+// seulement des images par seconde (mesuré sur iPhone, PWA installée).
 const MATERIAL = Object.freeze({
   blur: Object.freeze({
-    chrome: 20,
-    sheet: 30
+    chrome: 14,
+    sheet: 18
   }),
-  saturate: 180,
+  saturate: 140,
   // Hauteur du dégradé de bord (là où le contenu passe SOUS le chrome
   // flottant) : un fondu court, jamais un filet de 1px.
   edgeFade: 28
@@ -378,8 +382,33 @@ const MOTION = Object.freeze({
   // variante plus sèche (listes courtes)
   rubber: 0.55,
   // constante d'élastique aux bornes
-  slop: 10 // hystérésis avant d'engager une direction (px)
+  slop: 10,
+  // au-delà, c'est un vrai glissement (plus un tap)
+  lockPx: 6,
+  // distance avant de TRANCHER une direction
+  axisBias: 1.4 // avance qu'il faut à l'axe pour battre le défilement
 });
+
+// Quelle direction le geste a-t-il choisie ? Fonction PURE (donc testable), et
+// surtout : le défilement est PRIORITAIRE. Un pouce ne trace pas une droite —
+// il décrit un arc. Avec un simple `|delta| > |cross|`, un défilement vertical
+// qui dérive de deux pixels engage le geste horizontal : la liste se fige, le
+// tiroir part de travers, et le tap qui suit est avalé par le garde anti-clic
+// fantôme (symptôme « les paramètres ne sont pas stables »).
+// D'où l'AVANCE demandée à l'axe (`bias`) : il ne l'emporte que s'il domine
+// franchement. Le sens inverse, lui, n'a pas besoin d'avance — abandonner tôt
+// au profit du défilement ne coûte rien, le contraire coûte un geste raté.
+function axisLock(delta, cross, opts) {
+  const o = opts || {};
+  const min = Number.isFinite(o.slop) ? o.slop : MOTION.lockPx;
+  const bias = Number.isFinite(o.bias) ? o.bias : MOTION.axisBias;
+  const d = Math.abs(Number.isFinite(delta) ? delta : 0);
+  const c = Math.abs(Number.isFinite(cross) ? cross : 0);
+  if (d < min && c < min) return null; // intention encore illisible
+  if (d >= min && d > c * bias) return 'axis';
+  if (c >= min) return 'cross';
+  return null;
+}
 
 // ── Ressorts : intégration exacte, pure et testable ────────────────
 // `springStep` avance l'état d'un ressort de `dt` secondes vers `target`. La
@@ -2199,7 +2228,17 @@ const BackStack = (() => {
         suppress--;
         return;
       }
-      const top = stack[stack.length - 1];
+      // On vise la couche la plus haute encore OUVERTE. Une couche déjà
+      // `closedByPop` attend seulement son démontage (fenêtre de MOTION.exit,
+      // pendant laquelle son `close()` est idempotent donc sans effet) : la
+      // cibler ferait consommer une vraie entrée d'historique sans rien
+      // fermer. Au bout de quelques Retour, la pile réelle est vide alors que
+      // l'app croit encore avoir des couches — le Retour suivant sort du
+      // document et la PWA se relance (symptôme « l'app redémarre toute
+      // seule »).
+      let i = stack.length - 1;
+      while (i >= 0 && stack[i].closedByPop) i--;
+      const top = stack[i];
       if (!top) return; // nothing open → let the browser do the default
       top.closedByPop = true;
       try {
@@ -2323,11 +2362,15 @@ function SheetOverlay({
   label,
   closing = false,
   onCancelClose,
-  dismissible = true
+  dismissible = true,
+  sheetClassName
 }) {
   const reduced = useReducedMotion();
   const scrimRef = React.useRef(null);
   const sheetRef = React.useRef(null);
+  // La couche composée est ARMÉE pendant le mouvement et RENDUE au repos :
+  // c'est ce qui garde la matière vivante (cf. useLayerHint / sheetClassName).
+  const hint = useLayerHint(sheetRef);
   const distRef = React.useRef(SHEET_FALLBACK_DIST);
   const onCloseRef = React.useRef(onClose);
   onCloseRef.current = onClose;
@@ -2356,16 +2399,21 @@ function SheetOverlay({
     const dist = distRef.current || SHEET_FALLBACK_DIST;
     const el = sheetRef.current;
     if (el) {
+      hint(true);
       el.style.transform = axis === 'y' ? `translate3d(0, ${x}px, 0)` : `translate3d(${x}px, 0, 0)`;
     }
     const sc = scrimRef.current;
     if (sc) sc.style.opacity = String(Math.max(0, Math.min(1, 1 - Math.abs(x) / dist)));
-  }, [axis]);
+  }, [axis, hint]);
   const drag = useAxisDrag({
     axis,
     apply,
     enabled: dismissible && !reduced,
     config: MOTION.spring.sheet,
+    // Fin du mouvement : on rend la couche. Une feuille ouverte et immobile ne
+    // doit pas garder un backing store plein écran — ni couper le backdrop de
+    // sa propre matière.
+    onRest: () => hint(false),
     onStart: () => {
       measure();
       // Rattrapage : saisir une feuille qui se referme ANNULE la fermeture.
@@ -2465,6 +2513,7 @@ function SheetOverlay({
     "aria-modal": "true",
     "aria-label": label,
     ref: sheetRef,
+    className: sheetClassName,
     onClick: e => e.stopPropagation()
   }, isSide && dismissible && !reduced ? drag.handlers : null, {
     style: {
@@ -2475,8 +2524,11 @@ function SheetOverlay({
       display: 'flex',
       flexDirection: 'column',
       transform: reduced ? undefined : initialTransform,
-      // Le compositeur est prévenu : la feuille va bouger.
-      willChange: reduced ? undefined : 'transform',
+      // Un tiroir latéral se traîne depuis n'importe où : le vertical
+      // reste donc au NAVIGATEUR (défilement natif, composé) et seul
+      // l'horizontal nous revient. Sans cette ligne, le doigt fait
+      // bouger le tiroir ET défiler sa liste en même temps.
+      touchAction: isSide && dismissible && !reduced ? 'pan-y' : undefined,
       // Pendant la sortie, le CONTENU devient inerte (plus de double-tap
       // sur une action déjà lancée) mais la poignée reste vivante :
       // c'est ce qui permet de rattraper la feuille au vol.
@@ -2878,7 +2930,15 @@ function useSWVersion() {
        Une tâche MODALE (ajouter/éditer une boisson), elle, ne prend PAS de
        matière : elle est opaque et s'accompagne d'un voile qui assombrit le
        reste. On ne remplit pas un formulaire au-dessus d'un texte fantôme —
-       le but d'un modal est de concentrer, pas d'exhiber la profondeur. */
+       le but d'un modal est de concentrer, pas d'exhiber la profondeur.
+
+       ⚠ Une matière TRANSLUCIDE (celles qui portent un backdrop-filter
+       ci-dessous) ne peut pas vivre SOUS un ancêtre transformé ou promu :
+       le moteur n'a alors plus de fond à échantillonner et le flou s'éteint
+       — sur WebKit, exactement au moment où la couche est promue, donc juste
+       après l'animation d'entrée. L'élément flouté DOIT être celui qui bouge
+       (cf. SheetOverlay › sheetClassName). Les matières opaques
+       (« .alco-material-sheet ») ne sont pas concernées. */
     .alco-material, .alco-material-panel {
       background: var(--alco-glass-chrome);
       -webkit-backdrop-filter: blur(${MATERIAL.blur.chrome}px) saturate(${MATERIAL.saturate}%);
@@ -2920,16 +2980,17 @@ function useSWVersion() {
        ici — une opacité ne peut jamais « mal tomber », d'une pastille de
        12px à une ligne pleine largeur. Le déplacement, lui, est opt-in via
        les classes ci-dessous, là où il flatte la cible. */
+    /* L'assombrissement est INSTANTANÉ, et c'est volontaire : le retour doit
+       tomber sur la frame de l'appui. Une transition ici n'ajouterait qu'un
+       retard perceptible — et une propriété animable sur CHAQUE bouton de
+       l'arbre, que le moteur doit ensuite suivre. Le déplacement, lui, est
+       opt-in et garde sa transition (classes ci-dessous). */
     button:not(:disabled):active,
     [role="button"]:not([aria-disabled="true"]):active,
     [role="tab"]:active, [role="radio"]:active,
     [role="switch"]:active, [role="option"]:active,
     [role="slider"]:active {
       opacity: 0.82;
-    }
-    button, [role="button"], [role="tab"], [role="radio"],
-    [role="switch"], [role="option"], [role="slider"] {
-      transition: opacity ${MOTION.fast}ms ${MOTION.ease};
     }
     .alco-press { transition: transform ${MOTION.fast}ms ${MOTION.ease}, opacity ${MOTION.fast}ms ${MOTION.ease}; }
     .alco-press:active { transform: scale(${MOTION.press}); opacity: 0.9; }
@@ -3215,18 +3276,25 @@ function createSpringDriver(apply, opts = {}) {
 
 // Pilote de ressort au cycle de vie d'un composant. `apply` est lu via un
 // ref : le pilote est créé UNE fois (l'animation survit aux re-renders) et
-// appelle toujours la dernière closure.
+// appelle toujours la dernière closure. `onRest` suit le même chemin — c'est
+// lui qui permet de RENDRE la couche composée dès que le mouvement est fini
+// (cf. useLayerHint).
 function useSpringDriver(apply, opts) {
   const reduced = useReducedMotion();
   const applyRef = React.useRef(apply);
   applyRef.current = apply;
+  const restRef = React.useRef(null);
+  restRef.current = opts && opts.onRest || null;
   const ref = React.useRef(null);
   if (!ref.current) {
     ref.current = createSpringDriver((x, v) => {
       if (applyRef.current) applyRef.current(x, v);
     }, {
       ...(opts || {}),
-      reduced
+      reduced,
+      onRest: to => {
+        if (restRef.current) restRef.current(to);
+      }
     });
   }
   React.useEffect(() => {
@@ -3234,6 +3302,37 @@ function useSpringDriver(apply, opts) {
   }, [reduced]);
   React.useEffect(() => () => ref.current.stop(), []);
   return ref.current;
+}
+
+// ── `will-change` : une promesse, pas un réglage ───────────────────
+// `will-change: transform` ne « rend pas plus fluide » : il demande au moteur
+// de PROMOUVOIR l'élément en couche composée, avec son backing store en
+// mémoire graphique. Laissé en permanence sur un item de liste, c'est une
+// couche PAR LIGNE — quelques centaines d'entrées à 3× de densité suffisent à
+// faire tuer le process web par iOS, et la PWA « redémarre toute seule »
+// (bug historique). Un ancêtre ainsi promu coupe en plus le backdrop qu'un
+// `backdrop-filter` descendant peut échantillonner : la matière s'éteint.
+// La règle est donc celle des docs WebKit : on ARME juste avant le
+// mouvement, on DÉSARME dès le repos.
+function setLayerHint(el, on) {
+  if (!el || !el.style) return;
+  el.style.willChange = on ? 'transform' : '';
+}
+
+// Compagnon des gestes : renvoie un `hint(bool)` IDEMPOTENT (appelable à
+// chaque frame depuis `apply` sans écrire le DOM à chaque fois), à désarmer
+// depuis le `onRest` du ressort.
+function useLayerHint(elRef) {
+  const armed = React.useRef(false);
+  React.useEffect(() => () => {
+    armed.current = false;
+  }, []);
+  return React.useCallback(next => {
+    const on = !!next;
+    if (armed.current === on) return;
+    armed.current = on;
+    setLayerHint(elRef.current, on);
+  }, [elRef]);
 }
 
 // ── Geste de traînée sur un axe (1:1 → élan → ressort) ─────────────
@@ -3262,15 +3361,19 @@ function useAxisDrag({
   onStart,
   onMove,
   onCommit,
+  onRest,
   slop = MOTION.slop,
   config = MOTION.spring.sheet,
   enabled = true,
   clickGuard = true
 }) {
-  // `useSpringDriver` lit déjà `apply` via un ref : le pilote est créé une
-  // fois et appelle toujours la dernière closure.
+  // `useSpringDriver` lit déjà `apply` et `onRest` via des refs : le pilote
+  // est créé une fois et appelle toujours les dernières closures. `onRest`
+  // est le moment où le mouvement est FINI — donc où l'on rend la couche
+  // composée (cf. useLayerHint).
   const spring = useSpringDriver(apply, {
-    config
+    config,
+    onRest
   });
   const cb = React.useRef({});
   cb.current = {
@@ -3318,9 +3421,11 @@ function useAxisDrag({
     const dCross = cross(e) - st.startCross;
     if (!st.lock) {
       // Tous les gestes plausibles restent candidats jusqu'à ce que
-      // l'intention soit claire ; on tranche alors franchement.
-      if (Math.abs(d) < 6 && Math.abs(dCross) < 6) return;
-      st.lock = Math.abs(d) > Math.abs(dCross) ? 'axis' : 'cross';
+      // l'intention soit claire ; on tranche alors franchement — et en
+      // laissant l'avantage au défilement (cf. axisLock).
+      const lock = axisLock(d, dCross);
+      if (!lock) return;
+      st.lock = lock;
       if (st.lock === 'axis') {
         try {
           st.target && st.target.setPointerCapture && st.target.setPointerCapture(e.pointerId);
@@ -3407,13 +3512,16 @@ function useAxisDrag({
 // les bordures/marges de voisinage). Fill `backwards` : masque l'item
 // pendant le délai (pas de flash) puis relâche la transform après l'anim
 // (laisse un éventuel scale de tap reprendre la main).
+const STAGGER_MAX = 12; // au-delà, la cascade ne cascade plus
+// Durée totale d'une entrée en cascade : l'animation du dernier item plafonné.
+const ENTER_TOTAL_MS = MOTION.base + STAGGER_MAX * MOTION.stagger;
 function staggerStyle(index = 0, opts = {}) {
   const {
     name = 'alcoRise',
     duration = MOTION.base,
     step = MOTION.stagger,
     base = 0,
-    max = 12,
+    max = STAGGER_MAX,
     reduced = false
   } = opts;
   if (reduced) return null;
@@ -3423,6 +3531,26 @@ function staggerStyle(index = 0, opts = {}) {
     animationDelay: `${base + i * step}ms`,
     animationFillMode: 'backwards'
   };
+}
+
+// ── Une entrée se joue UNE fois ────────────────────────────────────
+// Les onglets ne sont pas démontés au changement (display:none) — et une
+// animation CSS REDÉMARRE quand l'élément revient à l'affichage. Sans garde,
+// toute la liste re-cascade à chaque retour sur l'onglet : c'est le
+// « tout est haché » le plus visible de l'app, et il coûte d'autant plus cher
+// que chaque ligne est lourde.
+// Le hook rend `true` le temps de la première entrée puis `false`
+// DÉFINITIVEMENT : les propriétés d'animation quittent alors le rendu, donc
+// plus rien ne peut rejouer. À passer à `staggerStyle({ reduced: !entering })`.
+function useEnterOnce(totalMs = ENTER_TOTAL_MS) {
+  const reduced = useReducedMotion();
+  const [entering, setEntering] = React.useState(true);
+  React.useEffect(() => {
+    if (!entering) return;
+    const t = setTimeout(() => setEntering(false), totalMs);
+    return () => clearTimeout(t);
+  }, [entering, totalMs]);
+  return entering && !reduced;
 }
 
 // Feedback tactile réutilisable : léger scale au pointerdown. Contourne
@@ -4298,9 +4426,12 @@ Object.assign(window, {
   clampRubber,
   nearestSnapPoint,
   createVelocityTracker,
+  axisLock,
   createSpringDriver,
   useSpringDriver,
   useAxisDrag,
+  setLayerHint,
+  useLayerHint,
   HAPTICS,
   haptic,
   hapticsEnabled,
@@ -4354,6 +4485,9 @@ Object.assign(window, {
   staggerStyle,
   usePressScale,
   Collapse,
+  STAGGER_MAX,
+  ENTER_TOTAL_MS,
+  useEnterOnce,
   useSWVersion,
   inputBaseStyle,
   inputS: inputBaseStyle,

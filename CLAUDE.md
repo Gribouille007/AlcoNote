@@ -89,9 +89,27 @@ valeur en dur.
   complète : § « Mouvement — un geste qui répond ». Toute fermeture de
   sheet/vue passe par `useSheetClose` (cf. § Sheets) — jamais de
   démontage sec d'un overlay.
+- **Coût d'une couche** : `will-change: transform` n'accélère rien — il
+  demande la PROMOTION de l'élément en couche composée, avec son backing
+  store en mémoire graphique. Il s'ARME juste avant le mouvement et se
+  DÉSARME au repos, via `setLayerHint`/`useLayerHint` + le `onRest` du
+  ressort — **jamais en style permanent sur un item de liste** (une
+  couche par ligne : quelques centaines d'entrées suffisent à faire tuer
+  le process web par iOS, et l'app « redémarre toute seule »). Vérifié
+  par static-checks ; seul l'indicateur d'onglet (un élément de 3 px)
+  fait exception.
+- **Entrée de liste** : une cascade se joue **une seule fois**. Les
+  onglets ne sont pas démontés (`display:none`) et une animation CSS
+  REDÉMARRE au retour à l'affichage : sans garde, toute la liste
+  re-cascade à chaque bascule d'onglet. Un `useEnterOnce()` au niveau de
+  la LISTE (ou de l'item quand le fil de props est trop long, cf.
+  `StatCell`) éteint `staggerStyle` après la première entrée.
 - **Réponse au toucher** : le retour visuel vit sur l'APPUI, jamais sur
   le relâchement. Le socle est CSS et universel (`:active` → opacité sur
-  tout `button`/`role="button"`/`radio`/`tab`/`switch`) ; ajouter
+  tout `button`/`role="button"`/`radio`/`tab`/`switch`), **sans
+  transition** : l'assombrissement tombe sur la frame de l'appui, et
+  aucune propriété animable n'est posée sur tous les boutons de l'arbre.
+  Ajouter
   `className="alco-press"` (petites cibles) ou `"alco-press-soft"`
   (cards, lignes pleine largeur) pour le léger recul d'échelle. L'ACTION,
   elle, se valide au relâchement — pour qu'un appui reste annulable en
@@ -106,7 +124,14 @@ valeur en dur.
   jamais des bandes opaques bordées d'un filet 1px. Une tâche **modale**
   (formulaire) reste OPAQUE (`.alco-material-sheet`) sur un voile qui
   assombrit : on ne remplit pas un champ au-dessus d'un texte fantôme.
-  Détails : § « Matières & profondeur ».
+  ⚠ Une matière **translucide** (celles qui portent un `backdrop-filter`)
+  ne vit JAMAIS sous un ancêtre transformé ou promu : le moteur n'a alors
+  plus de fond à échantillonner et le flou s'éteint — sur WebKit, pile à
+  la fin de l'animation d'entrée. **L'élément flouté est celui qui
+  bouge** : une feuille passe donc sa classe de matière par
+  `SheetOverlay`'s `sheetClassName` (posée sur l'élément transformé), pas
+  sur un `<div>` enfant. Les matières opaques ne sont pas concernées.
+  Vérifié par static-checks. Détails : § « Matières & profondeur ».
 - **Charts** : tous via les primitives de `stats-charts.jsx`
   (`SvgBarChart`, `SvgRadar`, `SvgDonut`, `SvgLineChart`,
   `SvgPolarClock`, `SvgBACProjection`, `SvgHistogram`). Géométrie/typo/
@@ -277,6 +302,12 @@ toucher de l'app, jamais un détail.
 - `createVelocityTracker(ms)` — vitesse de relâchement mesurée sur une
   FENÊTRE glissante. Jamais sur les deux derniers points : un doigt qui
   s'immobilise une frame avant de lâcher donnerait 0 et tuerait l'élan.
+- `axisLock(delta, cross)` — quelle direction le geste a choisie, avec le
+  **défilement prioritaire** : l'axe ne l'emporte que s'il domine
+  franchement (`MOTION.axisBias`), au-delà de `MOTION.lockPx`. Un pouce
+  qui défile décrit un arc ; avec un simple `|d| > |cross|` sa dérive de
+  deux pixels engageait le geste, figeait la liste et faisait avaler le
+  tap suivant par le garde anti-clic fantôme.
 
 **Les deux hooks**
 
@@ -305,7 +336,22 @@ corrige (vérifié par static-checks pour les trois gestes existants).
 `apply` doit rester le SEUL point d'écriture du DOM pour un geste donné :
 le doigt et le ressort passent par la même fonction, ils ne peuvent donc
 pas se désynchroniser (et un voile qui suit la traînée bouge à la même
-frame que la feuille).
+frame que la feuille). `onRest` est son pendant : le moment où le
+mouvement est FINI, donc où l'on rend la couche composée
+(`useLayerHint`).
+
+**Chaque geste a sa zone, et il l'a à lui.** Deux gestes ne se disputent
+jamais la même surface, et un `touch-action` ne se pose jamais « pour
+faire large » : il s'intersecte avec celui de TOUS les descendants (une
+racine en `pan-y` supprime le défilement horizontal de tout ce qu'elle
+contient — bug historique du sélecteur de période dans la fiche ami).
+Trois formes, selon ce que le contenu revendique :
+- zone dédiée en `touch-action: none` quand le contenu voisin défile dans
+  les deux sens — poignée d'une feuille du bas (`SheetGrabber`), bande de
+  bord gauche de la fiche ami ;
+- `touch-action: pan-y` quand seul l'axe horizontal nous revient — tiroir
+  latéral traînable partout, ligne d'historique balayable ;
+- rien du tout quand la zone n'a aucun geste JS.
 
 **Reduced-motion** : `useReducedMotion()` coupe translations et ressorts
 (fondu court à la place) et désactive le drag-to-dismiss ; le retour à
@@ -326,6 +372,23 @@ Trois poids, et le choix se justifie :
   épais, on garde le fil de ce qu'on faisait derrière sans le lire.
 - `.alco-material-sheet` — tâche MODALE (ajout/édition) : **opaque**, sur
   un voile qui assombrit. Concentrer, pas exhiber la profondeur.
+
+**Où poser une matière translucide.** Un `backdrop-filter` échantillonne
+ce qui est peint DERRIÈRE lui — et un ancêtre transformé ou promu
+(`will-change`) ne lui laisse plus rien à échantillonner : le flou
+s'éteint, sur WebKit exactement au moment où la couche est promue, donc
+juste après l'animation d'entrée. Une feuille passe donc sa classe de
+matière par `SheetOverlay`'s **`sheetClassName`**, qui la pose sur
+l'élément que le ressort transforme — jamais sur un `<div>` enfant. Même
+raison pour ne pas imbriquer une zone défilante sous le filtre : elle
+sortirait du chemin composité. Les matières OPAQUES
+(`.alco-material-sheet`) échappent à tout ça — sans filtre, aucun
+backdrop à perdre. Vérifié par static-checks.
+
+Les rayons de flou (`MATERIAL.blur`) sont volontairement modestes : leur
+coût croît avec le rayon et il est repayé à chaque frame tant que le
+contenu défile dessous. Au-delà d'une quinzaine de pixels on ne gagne
+plus de lisibilité, seulement des images par seconde.
 
 Les couleurs vivent dans `THEMES` (`glassChrome`/`glassPanel`/
 `glassSolid`/`glassEdge`/`shadowChrome`/`shadowSheet`) et sont republiées
@@ -956,6 +1019,21 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
 - **Sheets — rattraper** : lancer la fermeture puis re-saisir la poignée
   pendant qu'elle part → elle repart du doigt, sans saut, et ne se ferme
   plus. Idem pour la fiche ami depuis le bord gauche.
+- **Tiroir Paramètres — la matière TIENT** : ouvrir le tiroir et le
+  regarder ≥ 5 s → le flou reste, il ne « retombe » pas en aplat une
+  seconde après l'entrée. Défiler la liste des réglages est fluide.
+  Défiler verticalement au pouce (arc, donc un peu oblique) ne fait PAS
+  partir le tiroir ; tirer franchement à gauche le ferme toujours ; un
+  tap sur une ligne répond du premier coup.
+- **Fiche ami — défilements internes** : le sélecteur de période se fait
+  défiler horizontalement partout SAUF sur la bande du bord gauche, qui
+  reste le geste de retour. Le bouton Retour reste tapable.
+- **Onglets — pas de re-cascade** : aller-retour Catégories ↔ Historique
+  ↔ Stats → la liste ne rejoue ni son entrée ni sa cascade à chaque
+  bascule (seulement la première fois qu'on regarde l'onglet).
+- **Historique — mémoire** : sur un historique fourni, défiler de bout en
+  bout plusieurs fois puis naviguer 5 min dans l'app → aucune relance
+  spontanée de la PWA (une couche composée par ligne était la cause).
 - **Balayage** : franchir le seuil de suppression se sent (vibration) ;
   relâcher avant annule sans rebond ; un flick court suffit à supprimer.
 - **Haptique** : Paramètres › Retour haptique coupe toutes les vibrations

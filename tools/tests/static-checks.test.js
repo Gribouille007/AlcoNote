@@ -177,6 +177,8 @@ test('gel — constantes de mouvement (ressorts, décélération, élastique)', 
     /rubber: 0\.55,/,
     /const TRACKING_A = 0\.49;/,
     /const TRACKING_B = -0\.035;/,
+    /lockPx: 6,/,
+    /axisBias: 1\.4,/,
   ];
   for (const re of frozen) {
     assert.match(src, re,
@@ -197,6 +199,88 @@ test('gestes : feuilles, balayage et retour de page passent par useAxisDrag', ()
   for (const [file, what] of wired) {
     assert.ok(read(file).includes('useAxisDrag({'), `${what} : useAxisDrag attendu dans ${file}`);
   }
+});
+
+test('perf : `will-change` n’est jamais posé en style PERMANENT', () => {
+  // `will-change: transform` ne rend rien plus fluide : il demande la
+  // PROMOTION de l'élément en couche composée, avec son backing store en
+  // mémoire graphique. Sur un item de liste, c'est une couche PAR LIGNE —
+  // quelques centaines d'entrées suffisent à faire tuer le process web par
+  // iOS (« l'app redémarre toute seule »). Et un ancêtre ainsi promu coupe le
+  // backdrop d'une matière descendante, qui s'éteint.
+  // La seule écriture autorisée passe par setLayerHint/useLayerHint, qui
+  // arment au geste et RENDENT la couche au repos.
+  const allowed = new Set([
+    // Indicateur d'onglet : UN élément de 3px qui bouge à chaque bascule.
+    'proto/app.jsx',
+    // Définition du helper lui-même.
+    'proto/shared.jsx',
+  ]);
+  const offenders = [];
+  for (const f of jsxFiles) {
+    const file = path.join('proto', f);
+    if (allowed.has(file)) continue;
+    read(file).split('\n').forEach((line, i) => {
+      if (/^\s*(\/\/|\*|\{?\/\*)/.test(line)) return;   // commentaires
+      if (/\bwillChange\s*:/.test(line)) offenders.push(`${file}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(offenders, [],
+    `will-change permanent (utiliser useLayerHint) :\n${offenders.join('\n')}`);
+  // Et le helper existe bien, avec sa remise à zéro.
+  const shared = read('proto/shared.jsx');
+  assert.match(shared, /function setLayerHint\(/, 'setLayerHint absent');
+  assert.match(shared, /function useLayerHint\(/, 'useLayerHint absent');
+});
+
+test('perf : pas de `text-rendering: optimizeLegibility` global', () => {
+  // Il force le crénage et les ligatures sur TOUT le texte de l'app : un coût
+  // de mise en page sur chaque ligne de chaque liste, pour un gain nul avec
+  // les fontes du projet.
+  // Commentaires retirés : la règle est justifiée EN COMMENTAIRE sur place,
+  // et cette explication cite forcément le nom de la propriété bannie.
+  const html = read('index.html').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(!/text-rendering:\s*optimizeLegibility/.test(html),
+    'optimizeLegibility ralentit toute la mise en page du texte');
+});
+
+test('matières : une matière TRANSLUCIDE vit sur l’élément qui bouge', () => {
+  // Sous un ancêtre transformé/promu, WebKit n'a plus de fond à échantillonner
+  // et le flou s'éteint — sur iOS, pile à la fin de l'animation d'entrée
+  // (« le translucide se retire après une seconde »). SheetOverlay expose donc
+  // `sheetClassName`, posé sur l'élément qu'il transforme lui-même.
+  const shared = read('proto/shared.jsx');
+  assert.match(shared, /sheetClassName/, 'SheetOverlay doit exposer sheetClassName');
+  assert.match(shared, /className=\{sheetClassName\}/,
+    'sheetClassName doit être posé sur l’élément transformé (ref={sheetRef})');
+  const offenders = [];
+  for (const f of jsxFiles) {
+    read(path.join('proto', f)).split('\n').forEach((line, i) => {
+      // Les matières OPAQUES (alco-material-sheet) ne sont pas concernées :
+      // sans backdrop-filter, aucun backdrop à perdre.
+      if (/className="[^"]*alco-material-panel/.test(line) &&
+          !/sheetClassName=/.test(line)) {
+        offenders.push(`proto/${f}:${i + 1}`);
+      }
+    });
+  }
+  assert.deepEqual(offenders, [],
+    `matière translucide posée sur un enfant (passer par sheetClassName) :\n${offenders.join('\n')}`);
+});
+
+test('gestes : le geste ne dispute jamais sa zone au défilement', () => {
+  // Un `touch-action` posé sur une racine s'intersecte avec celui de TOUS ses
+  // descendants : la fiche ami perdait le défilement horizontal de son
+  // sélecteur de période. Le geste vit donc dans une bande à lui.
+  const friends = read('proto/friends.jsx');
+  assert.match(friends, /width: PAGE_EDGE_PX/,
+    'le retour de page doit avoir sa bande de saisie dédiée');
+  assert.ok(!/pointerEvents: closing \? 'none' : undefined,\n\s+touchAction: 'pan-y' \}\}>/.test(friends),
+    'plus de touch-action sur la racine de la fiche ami');
+  // Un tiroir latéral, lui, se traîne partout : le vertical doit alors rester
+  // au navigateur, sinon le doigt bouge le tiroir ET défile la liste.
+  assert.match(read('proto/shared.jsx'), /touchAction: isSide && dismissible && !reduced \? 'pan-y'/,
+    'les tiroirs latéraux doivent laisser le pan vertical au navigateur');
 });
 
 test('CSS injecté : aucun backtick non échappé (casserait tout le module)', () => {

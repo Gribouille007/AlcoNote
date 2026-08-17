@@ -1903,6 +1903,10 @@ const StatCell = React.memo(function StatCell({
   index = 0
 }) {
   const reduced = useReducedMotion();
+  // La cascade se joue à l'ouverture de la section (les cellules sont montées
+  // par <Collapse>) puis PLUS JAMAIS : sans cette garde elle rejoue à chaque
+  // retour sur l'onglet Stats, sur des dizaines de cellules à la fois.
+  const entering = useEnterOnce();
   return /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.surface2,
@@ -1915,7 +1919,7 @@ const StatCell = React.memo(function StatCell({
       justifyContent: 'space-between',
       minHeight: 64,
       ...staggerStyle(index, {
-        reduced
+        reduced: reduced || !entering
       })
     }
   }, /*#__PURE__*/React.createElement("div", {

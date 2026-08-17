@@ -1312,9 +1312,16 @@ function SettingsDrawer({ open, onClose }) {
     }
   };
 
+  // La matière du tiroir est TRANSLUCIDE : elle doit vivre sur l'élément que
+  // SheetOverlay transforme (`sheetClassName`), jamais sur un enfant. Sous un
+  // ancêtre promu, WebKit n'a plus de fond à échantillonner et le flou s'éteint
+  // dès la fin de l'animation d'entrée (« le translucide se retire après une
+  // seconde »). La liste défilante cesse aussi d'être imbriquée sous une
+  // seconde couche filtrée — son défilement redevient composé.
   return (
-    <SheetOverlay onClose={close} closing={closing} onCancelClose={cancelClose} side="left" label="Paramètres">
-      <div className="alco-material-panel alco-material-edge" style={{
+    <SheetOverlay onClose={close} closing={closing} onCancelClose={cancelClose} side="left"
+      label="Paramètres" sheetClassName="alco-material-panel alco-material-edge">
+      <div style={{
         width: 'min(360px, 100vw)', height: '100%',
         borderRight: `1px solid ${T.rule}`,
         display: 'flex', flexDirection: 'column',

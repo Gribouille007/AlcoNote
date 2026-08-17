@@ -12,7 +12,8 @@ const W = loadDist('shared');
 
 const {
   MOTION, springStep, springAtRest, projectMomentum, rubberband, clampRubber,
-  nearestSnapPoint, createVelocityTracker, createSpringDriver,
+  nearestSnapPoint, createVelocityTracker, createSpringDriver, axisLock,
+  setLayerHint, STAGGER_MAX, ENTER_TOTAL_MS,
   tracking, leading, remSize, type, TYPE,
 } = W;
 
@@ -243,6 +244,61 @@ test('vitesse — deux échantillons au même instant ne divisent pas par zéro'
   assert.equal(t.velocity(), 0);
 });
 
+// ── Engagement d'une direction (le défilement d'abord) ─────────────
+
+test('engagement — sous le seuil, l’intention reste illisible : aucune direction', () => {
+  assert.equal(axisLock(0, 0), null);
+  assert.equal(axisLock(5, 5), null);
+  assert.equal(axisLock(-5, 3), null);
+});
+
+test('engagement — un geste franchement sur l’axe engage l’axe', () => {
+  assert.equal(axisLock(12, 0), 'axis');
+  assert.equal(axisLock(-12, 2), 'axis', 'le SIGNE n’entre pas en compte');
+  assert.equal(axisLock(MOTION.lockPx, 0), 'axis', 'le seuil lui-même suffit');
+});
+
+test('engagement — le DÉFILEMENT est prioritaire : l’axe doit dominer franchement', () => {
+  // Le cas qui casse tout en vrai : un pouce qui défile verticalement dérive
+  // de quelques pixels sur le côté. Avec un simple |d| > |cross|, ce geste
+  // engageait l’axe — la liste se figeait et le tap suivant était avalé.
+  assert.equal(axisLock(7, 6), 'cross', 'une courte avance ne suffit pas');
+  assert.equal(axisLock(10, 9), 'cross');
+  assert.equal(axisLock(3, 12), 'cross', 'geste clairement transversal');
+  // Au-delà du biais, l’axe l’emporte sans ambiguïté.
+  assert.equal(axisLock(10, 6), 'axis');
+  assert.ok(MOTION.axisBias > 1, 'sans avance demandée, la règle ne sert à rien');
+});
+
+test('engagement — un biais explicite remplace le défaut, et 1 rend la règle neutre', () => {
+  assert.equal(axisLock(7, 6, { bias: 1 }), 'axis');
+  assert.equal(axisLock(10, 6, { bias: 3 }), 'cross');
+  assert.equal(axisLock(9, 0, { slop: 20 }), null, 'seuil relevé = rien n’engage');
+});
+
+test('engagement — entrées non finies neutralisées (jamais de NaN dans la décision)', () => {
+  assert.equal(axisLock(NaN, NaN), null);
+  assert.equal(axisLock(undefined, 30), 'cross');
+  assert.equal(axisLock(30, null), 'axis');
+});
+
+// ── Couche composée : armée au geste, RENDUE au repos ──────────────
+
+test('couche — `will-change` s’arme puis se rend complètement', () => {
+  const el = { style: {} };
+  setLayerHint(el, true);
+  assert.equal(el.style.willChange, 'transform');
+  setLayerHint(el, false);
+  assert.equal(el.style.willChange, '', 'au repos, la propriété doit DISPARAÎTRE');
+  // Un nœud absent (démonté entre deux frames) ne doit rien casser.
+  assert.doesNotThrow(() => { setLayerHint(null, true); setLayerHint({}, false); });
+});
+
+test('cascade — la fenêtre d’entrée couvre le dernier item plafonné', () => {
+  assert.equal(STAGGER_MAX, 12);
+  assert.equal(ENTER_TOTAL_MS, MOTION.base + STAGGER_MAX * MOTION.stagger);
+});
+
 // ── Tokens de mouvement gelés ──────────────────────────────────────
 
 test('gel — les ressorts nommés gardent les valeurs de la référence Apple', () => {
@@ -252,6 +308,8 @@ test('gel — les ressorts nommés gardent les valeurs de la référence Apple',
   assert.equal(MOTION.spring.ui.damping, 1, 'le défaut est SANS rebond');
   assert.equal(MOTION.decel, 0.998);
   assert.equal(MOTION.rubber, 0.55);
+  assert.equal(MOTION.lockPx, 6);
+  assert.equal(MOTION.axisBias, 1.4);
 });
 
 test('gel — `easeReverse` est le miroir exact d’`ease`', () => {

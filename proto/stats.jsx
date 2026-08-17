@@ -1363,13 +1363,17 @@ function GeneralSection({
 // one of them actually changed.
 const StatCell = React.memo(function StatCell({ value, label, icon, delta, period, index = 0 }) {
   const reduced = useReducedMotion();
+  // La cascade se joue à l'ouverture de la section (les cellules sont montées
+  // par <Collapse>) puis PLUS JAMAIS : sans cette garde elle rejoue à chaque
+  // retour sur l'onglet Stats, sur des dizaines de cellules à la fois.
+  const entering = useEnterOnce();
   return (
     <div style={{
       background: T.surface2, borderRadius: 12, padding: '12px 10px',
       border: `1px solid ${T.rule}`, position: 'relative',
       display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
       minHeight: 64,
-      ...staggerStyle(index, { reduced }) }}>
+      ...staggerStyle(index, { reduced: reduced || !entering }) }}>
       <div style={{
         display: 'flex', alignItems: 'baseline', gap: 6,
         fontFamily: fontSerif, fontSize: remSize(22), letterSpacing: tracking(22), color: T.ink,

@@ -236,15 +236,28 @@ function AppShell() {
   // alive but the browser skips layout / paint. Combined with the
   // shared data context above, switching tabs becomes a CSS toggle
   // instead of a full unmount + remount + refetch.
-  // Inactive tabs keep `animation` set but `display:none` suspends it ;
-  // when a tab becomes visible (display:none → flex) the spec restarts
-  // its animation, so `alcoRise` rejoue à chaque activation sans démonter
-  // le sous-arbre (on garde la persistance/perf du StatsTab).
+  //
+  // Corollaire : `display:none` → `flex` REDÉMARRE les animations CSS du
+  // sous-arbre. Laisser `alcoRise` en place, c'est donc réanimer tout
+  // l'onglet à CHAQUE bascule — et promouvoir un instant un sous-arbre de
+  // plusieurs milliers de nœuds (l'onglet Stats et ses SVG). L'entrée ne se
+  // joue donc que la PREMIÈRE fois qu'un onglet est regardé ; ensuite, la
+  // bascule est un simple basculement d'affichage, instantané.
+  const [entered, setEntered] = React.useState(() => new Set());
+  React.useEffect(() => {
+    if (entered.has(tab)) return;
+    const t = setTimeout(
+      () => setEntered(prev => (prev.has(tab) ? prev : new Set(prev).add(tab))),
+      MOTION.base
+    );
+    return () => clearTimeout(t);
+  }, [tab, entered]);
   const tabContainer = (id) => ({
     flex: 1, minHeight: 0,
     display: tab === id ? 'flex' : 'none',
     flexDirection: 'column',
-    animation: reducedMotion ? undefined : `alcoRise ${MOTION.base}ms ${MOTION.ease}`,
+    animation: (reducedMotion || entered.has(id)) ? undefined
+      : `alcoRise ${MOTION.base}ms ${MOTION.ease}`,
   });
 
   return (
