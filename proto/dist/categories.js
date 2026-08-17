@@ -206,52 +206,42 @@ const CategoryCard = React.memo(function CategoryCard({
   const bg = catBg(cat.name);
   const reduced = useReducedMotion();
   const press = usePressScale();
-  return /*#__PURE__*/React.createElement("div", _extends({}, clickable(() => onOpen && onOpen(cat.name), `Ouvrir la catégorie ${cat.name} — ${cat.entries} entrée${cat.entries !== 1 ? 's' : ''}, ${cat.families} type${cat.families !== 1 ? 's' : ''}`), press.handlers, {
+  // Deux boutons FRÈRES dans un conteneur non-interactif — « ouvrir la
+  // catégorie » et « modifier » — au lieu d'imbriquer le crayon dans une card
+  // `role="button"`. Même correctif que FriendRow : plus de button-in-button
+  // (violation a11y « nested-interactive », sérieuse : un lecteur d'écran ne
+  // sait plus ce qu'il annonce, et la navigation clavier piège le focus), et
+  // plus besoin de stopPropagation ni de gestion clavier maison — le <button>
+  // natif apporte Entrée/Espace gratuitement.
+  return /*#__PURE__*/React.createElement("div", {
     style: {
+      position: 'relative',
+      ...staggerStyle(index, {
+        reduced
+      })
+    }
+  }, /*#__PURE__*/React.createElement("button", _extends({
+    type: "button",
+    onClick: () => onOpen && onOpen(cat.name),
+    "aria-label": `Ouvrir la catégorie ${cat.name} — ${cat.entries} entrée${cat.entries !== 1 ? 's' : ''}, ${cat.families} type${cat.families !== 1 ? 's' : ''}`
+  }, press.handlers, {
+    style: {
+      width: '100%',
+      textAlign: 'left',
+      fontFamily: 'inherit',
       background: T.surface,
       borderRadius: 18,
       padding: 14,
       border: `1px solid ${T.rule}`,
       cursor: 'pointer',
-      position: 'relative',
       overflow: 'hidden',
       aspectRatio: '1 / 1.05',
       display: 'flex',
       flexDirection: 'column',
       justifyContent: 'space-between',
-      ...press.style,
-      ...staggerStyle(index, {
-        reduced
-      })
+      ...press.style
     }
-  }), /*#__PURE__*/React.createElement("button", {
-    type: "button",
-    onClick: e => {
-      e.stopPropagation();
-      onEdit && onEdit(cat.name);
-    },
-    "aria-label": `Modifier ${cat.name}`,
-    style: {
-      position: 'absolute',
-      top: 10,
-      right: 10,
-      width: 26,
-      height: 26,
-      borderRadius: 8,
-      background: T.surface2,
-      border: `1px solid ${T.rule}`,
-      display: 'grid',
-      placeItems: 'center',
-      color: T.muted,
-      cursor: 'pointer',
-      zIndex: 2,
-      padding: 0,
-      fontFamily: 'inherit'
-    }
-  }, /*#__PURE__*/React.createElement(SvgIcon, {
-    icon: Ic.edit,
-    size: 11
-  })), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
       width: 44,
       height: 44,
@@ -264,7 +254,12 @@ const CategoryCard = React.memo(function CategoryCard({
     }
   }, /*#__PURE__*/React.createElement(CategoryGlyph, {
     name: cat.name
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: '100%',
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSans,
       fontWeight: 500,
@@ -293,7 +288,33 @@ const CategoryCard = React.memo(function CategoryCard({
     style: {
       opacity: 0.4
     }
-  }, "\xB7"), cat.families, " type", cat.families !== 1 ? 's' : '')));
+  }, "\xB7"), cat.families, " type", cat.families !== 1 ? 's' : ''))), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => onEdit && onEdit(cat.name),
+    "aria-label": `Modifier ${cat.name}`,
+    className: "alco-press",
+    style: {
+      position: 'absolute',
+      top: 10,
+      right: 10,
+      width: 26,
+      height: 26,
+      borderRadius: 8,
+      background: T.surface2,
+      border: `1px solid ${T.rule}`,
+      display: 'grid',
+      placeItems: 'center',
+      color: T.muted,
+      cursor: 'pointer',
+      zIndex: 2,
+      padding: 0,
+      fontFamily: 'inherit',
+      touchAction: 'manipulation'
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.edit,
+    size: 11
+  })));
 });
 function FamilyList({
   category,
