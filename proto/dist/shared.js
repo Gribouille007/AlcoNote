@@ -227,7 +227,11 @@ const MATERIAL = Object.freeze({
 // est illisible.
 const TRACKING_A = 0.49;
 const TRACKING_B = -0.035;
-const TRACKING_CAPS = 0.07;
+// Ouverture supplémentaire des capitales. Volontairement SOBRE : les
+// micro-labels en majuscules vivent dans des grilles étroites (trois stats par
+// ligne), et une approche trop généreuse les fait passer à la ligne — un
+// libellé cassé en deux coûte plus de lisibilité qu'il n'en gagne.
+const TRACKING_CAPS = 0.03;
 function tracking(px, opts) {
   const size = Number.isFinite(px) && px > 0 ? px : 14;
   const caps = !!(opts && opts.caps);

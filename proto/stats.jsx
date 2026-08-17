@@ -1310,7 +1310,7 @@ function GeneralSection({
 
       {drinks.length > 0 && (
         <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
+          display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginBottom: 12 }}>
           {cards.map((c, i) => (
             <StatCell key={c.l} value={c.v} label={c.l} icon={c.icon}
               delta={c.delta} period={period} index={i} />
@@ -1482,7 +1482,7 @@ function TemporalSection({ drinks, period, collapsed, toggleSection, agg, sessio
   return (
     <StatSection id="temporal" title="Analyse temporelle" collapsed={collapsed} toggleSection={toggleSection} sub="Répartition par heures et jours">
       <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 10 }}>
+        display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, marginBottom: 10 }}>
         <MiniStat big={peakHour != null ? `${peakHour}h` : '—'} label="Heure de pointe" />
         {multiDay && <MiniStat big={peakDow != null ? dayNames[peakDow] : '—'} label="Jour de pointe" />}
         {/* Durées de session = modèle BAC (poids/sexe) : masquées pour un ami
@@ -1618,7 +1618,7 @@ function CategorySection({ drinks, collapsed, toggleSection }) {
                   fontFamily: fontNum, fontSize: remSize(13), letterSpacing: tracking(13), color: T.accent, fontWeight: 500 }}>{c.count}×</div>
               </div>
               <div style={{
-                display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '5px 14px' }}>
+                display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '5px 14px' }}>
                 <StatRow label="Volume" value={`${(c.volumeCl / 100).toFixed(1)}L`} />
                 <StatRow label="Volume moyen" value={`${avgVol.toFixed(2)}L`} />
                 <StatRow label="Degré moyen" value={`${avgAbv.toFixed(1)}%`} />
@@ -2211,7 +2211,7 @@ function ForecastMiniStats({ forecast, fmtTime }) {
   );
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 10 }}>
+      display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6, marginBottom: 10 }}>
       {item(Ic.flame,     'Rythme',    rate,     null)}
       {item(Ic.hourglass, 'Durée moy', duration, null)}
       {item(Ic.star,      'Peak moy',  peak,     'mg/L')}
@@ -3457,7 +3457,7 @@ function SpendingSection({ drinks, prevDrinks, period, range, collapsed, toggleS
 
   return (
     <StatSection id="spending" title="Dépenses" collapsed={collapsed} toggleSection={toggleSection} sub="Coût de la consommation (prix saisis)">
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, marginBottom: 10 }}>
         <StatCell value={fmtPrice(total)} label="Total dépensé"
           delta={pctChange(total, prevTotal)} period={period} index={0} />
         <StatCell value={fmtPrice(avg)} label="Prix moyen / boisson"

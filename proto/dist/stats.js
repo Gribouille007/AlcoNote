@@ -1806,7 +1806,7 @@ function GeneralSection({
   }), drinks.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(3, 1fr)',
+      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
       gap: 8,
       marginBottom: 12
     }
@@ -2121,7 +2121,7 @@ function TemporalSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(2, 1fr)',
+      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
       gap: 8,
       marginBottom: 10
     }
@@ -2366,7 +2366,7 @@ function CategorySection({
     }, c.count, "\xD7")), /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'grid',
-        gridTemplateColumns: 'repeat(2, 1fr)',
+        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
         gap: '5px 14px'
       }
     }, /*#__PURE__*/React.createElement(StatRow, {
@@ -3183,7 +3183,7 @@ function ForecastMiniStats({
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(4, 1fr)',
+      gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
       gap: 6,
       marginBottom: 10
     }
@@ -5172,7 +5172,7 @@ function SpendingSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(2, 1fr)',
+      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
       gap: 8,
       marginBottom: 10
     }
