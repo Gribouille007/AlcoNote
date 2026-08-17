@@ -626,21 +626,17 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
         <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 120px' }}>
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            gap: 10, padding: '4px 4px 16px',
-          }}>
+            gap: 10, padding: '4px 4px 16px' }}>
             <div style={{
-              fontFamily: fontSerif, fontSize: 18, color: T.ink,
-              fontStyle: 'italic', letterSpacing: -0.3,
-            }}>Réorganiser les sections</div>
+              fontFamily: fontSerif, fontSize: remSize(18), letterSpacing: tracking(18), color: T.ink,
+              fontStyle: 'italic' }}>Réorganiser les sections</div>
             <button type="button" onClick={() => setReorderMode(false)} style={{
               border: 'none', fontFamily: 'inherit', cursor: 'pointer',
               background: T.accent, color: T.accentInk, fontWeight: 600,
-              fontSize: 12, padding: '8px 14px', borderRadius: 10, flexShrink: 0,
-            }}>Terminé</button>
+              fontSize: remSize(12), letterSpacing: tracking(12), padding: '8px 14px', borderRadius: 10, flexShrink: 0 }}>Terminé</button>
           </div>
           <div style={{
-            color: T.muted, fontSize: 10.5, padding: '0 4px 14px', lineHeight: 1.5,
-          }}>Glisse une section par sa poignée pour changer l'ordre. Il est conservé définitivement.</div>
+            color: T.muted, fontSize: remSize(10.5), letterSpacing: tracking(10.5), padding: '0 4px 14px', lineHeight: 1.5 }}>Glisse une section par sa poignée pour changer l'ordre. Il est conservé définitivement.</div>
           <SectionReorderList
             sections={visibleSections}
             onChange={saveSectionOrder}
@@ -682,12 +678,11 @@ function StatsEmptyState({ scope }) {
         <SvgIcon icon={Ic.bars} size={30} />
       </div>
       <div style={{
-        fontFamily: fontSerif, fontStyle: 'italic', fontSize: 18,
-        color: T.ink, letterSpacing: -0.3, marginBottom: 8,
-      }}>
+        fontFamily: fontSerif, fontStyle: 'italic', fontSize: remSize(18), letterSpacing: tracking(18),
+        color: T.ink, marginBottom: 8 }}>
         Pas de données disponibles
       </div>
-      <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6, maxWidth: 260, margin: '0 auto' }}>
+      <div style={{ fontSize: remSize(12), letterSpacing: tracking(12), color: T.muted, lineHeight: 1.6, maxWidth: 260, margin: '0 auto' }}>
         {scope === 'global'
           ? 'Ajoute ta première boisson avec le bouton + pour voir tes statistiques ici.'
           : 'Aucune boisson enregistrée sur cette période.'}
@@ -700,22 +695,19 @@ function PeriodSwitcher({ period, onChange }) {
   return (
     <div style={{
       display: 'flex', padding: '4px 16px 14px',
-      overflowX: 'auto', scrollbarWidth: 'none',
-    }}>
+      overflowX: 'auto', scrollbarWidth: 'none' }}>
       <div role="tablist" aria-label="Période" style={{
         display: 'flex', gap: 2, padding: 3, background: T.surface2,
-        borderRadius: 12, border: `1px solid ${T.rule}`, flexShrink: 0,
-      }}>
+        borderRadius: 12, border: `1px solid ${T.rule}`, flexShrink: 0 }}>
         {PERIODS.map(p => (
           <button key={p.id} type="button" role="tab" aria-selected={period === p.id}
             onClick={() => onChange(p.id)} style={{
               padding: '6px 12px', borderRadius: 9, cursor: 'pointer',
               background: period === p.id ? T.accent : 'transparent',
               color: period === p.id ? T.accentInk : T.ink2,
-              fontSize: 12, fontWeight: period === p.id ? 600 : 400,
-              letterSpacing: -0.1, whiteSpace: 'nowrap',
-              border: 'none', fontFamily: 'inherit',
-            }}>{p.label}</button>
+              fontSize: remSize(12), letterSpacing: tracking(12), fontWeight: period === p.id ? 600 : 400,
+              whiteSpace: 'nowrap',
+              border: 'none', fontFamily: 'inherit' }}>{p.label}</button>
         ))}
       </div>
     </div>
@@ -731,22 +723,19 @@ function PeriodNav({ period, anchor, onShift }) {
         width: 32, height: 32, borderRadius: 10, background: T.surface2,
         display: 'grid', placeItems: 'center', color: T.ink2,
         border: `1px solid ${T.rule}`, cursor: period === 'all' ? 'not-allowed' : 'pointer',
-        opacity: period === 'all' ? 0.4 : 1, padding: 0, fontFamily: 'inherit',
-      }}>
+        opacity: period === 'all' ? 0.4 : 1, padding: 0, fontFamily: 'inherit' }}>
       <SvgIcon icon={icon} size={14} />
     </button>
   );
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '0 4px 18px', gap: 8,
-    }}>
+      padding: '0 4px 18px', gap: 8 }}>
       {arrowBtn(Ic.chevL, -1, 'Période précédente')}
       <div style={{
-        fontFamily: fontSerif, fontSize: 18, color: T.ink,
-        fontStyle: 'italic', letterSpacing: -0.3, textAlign: 'center', flex: 1,
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-      }}>{label}</div>
+        fontFamily: fontSerif, fontSize: remSize(18), letterSpacing: tracking(18), color: T.ink,
+        fontStyle: 'italic', textAlign: 'center', flex: 1,
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
       {arrowBtn(Ic.chevR, 1, 'Période suivante')}
     </div>
   );
@@ -760,8 +749,7 @@ function StatSection({ id, title, action, children, sub, collapsed, toggleSectio
       background: T.surface,
       borderRadius: 16,
       border: `1px solid ${T.rule}`,
-      overflow: 'hidden',
-    }}>
+      overflow: 'hidden' }}>
       <button type="button"
         onClick={() => toggleSection(id)}
         aria-expanded={isOpen}
@@ -772,24 +760,19 @@ function StatSection({ id, title, action, children, sub, collapsed, toggleSectio
           padding: '12px 14px', background: 'transparent',
           borderTop: 'none', borderLeft: 'none', borderRight: 'none',
           borderBottom: isOpen ? `1px solid ${T.rule}` : 'none',
-          fontFamily: 'inherit', color: 'inherit',
-        }}>
+          fontFamily: 'inherit', color: 'inherit' }}>
         <span style={{
           color: T.muted, transition: 'transform 0.2s ease',
           transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)',
-          display: 'flex', flexShrink: 0,
-        }}>
+          display: 'flex', flexShrink: 0 }}>
           <SvgIcon icon={Ic.chev} size={12} />
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
-            color: T.ink, fontSize: 12.5, letterSpacing: 0.2, fontWeight: 500,
-          }}>{title}</div>
+            color: T.ink, fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500 }}>{title}</div>
           {sub && (
             <div style={{
-              color: T.muted, fontSize: 10.5, marginTop: 2, letterSpacing: 0.1,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>{sub}</div>
+              color: T.muted, fontSize: remSize(10.5), letterSpacing: tracking(10.5), marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</div>
           )}
         </div>
         {action}
@@ -913,6 +896,10 @@ function SectionReorderList({ sections, onChange }) {
   const [drag, setDrag] = React.useState(null); // { id, from, dy, pointerId }
   const dragRef = React.useRef(null);
   const startYRef = React.useRef(0);
+  // Dernier emplacement visé : franchir un cran se SENT (petite vibration),
+  // exactement comme un cran mécanique. C'est ce qui permet de réordonner
+  // sans regarder fixement l'écran.
+  const lastSlotRef = React.useRef(-1);
   const setDragBoth = (d) => { dragRef.current = d; setDrag(d); };
 
   const targetIndex = drag ? dragTargetIndex(drag.from, drag.dy, REORDER_STEP, ids.length) : -1;
@@ -923,7 +910,8 @@ function SectionReorderList({ sections, onChange }) {
     if (!d) return;
     const to = dragTargetIndex(d.from, d.dy, REORDER_STEP, ids.length);
     setDragBoth(null);
-    if (to !== d.from) onChange(moveInArray(ids, d.from, to));
+    lastSlotRef.current = -1;
+    if (to !== d.from) { haptic('commit'); onChange(moveInArray(ids, d.from, to)); }
   };
 
   return (
@@ -937,21 +925,19 @@ function SectionReorderList({ sections, onChange }) {
           <div key={s.id} style={{
             position: 'absolute', left: 0, right: 0, height: REORDER_ROW,
             transform: `translateY(${y}px) scale(${isDragged ? 1.02 : 1})`,
-            transition: isDragged ? 'none' : 'transform 0.18s ease',
+            // La ligne saisie suit le doigt à 1:1 (aucune transition) ; les
+            // autres glissent pour montrer la place qui se libère.
+            transition: isDragged ? 'none' : `transform ${MOTION.fast}ms ${MOTION.ease}`,
             zIndex: isDragged ? 2 : 1,
             display: 'flex', alignItems: 'center', gap: 8,
             background: T.surface2, border: `1px solid ${T.rule}`,
             borderRadius: 12, padding: '0 4px 0 14px',
-            boxShadow: isDragged ? `0 6px 20px ${T.scrim}` : 'none',
-          }}>
+            boxShadow: isDragged ? `0 6px 20px ${T.scrim}` : 'none' }}>
             <span style={{
-              color: T.muted, fontSize: 10, fontFamily: fontNum,
-              width: 14, textAlign: 'center', flexShrink: 0,
-            }}>{displayIds.indexOf(s.id) + 1}</span>
+              color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10), fontFamily: fontNum,
+              width: 14, textAlign: 'center', flexShrink: 0 }}>{displayIds.indexOf(s.id) + 1}</span>
             <div style={{
-              flex: 1, minWidth: 0, fontSize: 13, color: T.ink, letterSpacing: -0.1,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>{s.title}</div>
+              flex: 1, minWidth: 0, fontSize: remSize(13), letterSpacing: tracking(13), color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</div>
             <button type="button"
               aria-label={`Déplacer « ${s.title} » — glisser, ou flèches haut/bas`}
               onPointerDown={(e) => {
@@ -960,29 +946,36 @@ function SectionReorderList({ sections, onChange }) {
                   if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId);
                 } catch {}
                 startYRef.current = e.clientY;
+                lastSlotRef.current = i;
+                // La ligne se « décolle » sous le doigt : le retour part de
+                // l'appui, pas du relâchement.
+                haptic('select');
                 setDragBoth({ id: s.id, from: i, dy: 0, pointerId: e.pointerId });
               }}
               onPointerMove={(e) => {
                 const d = dragRef.current;
                 if (!d || d.id !== s.id || e.pointerId !== d.pointerId) return;
                 if (e.cancelable) e.preventDefault();
-                setDragBoth({ ...d, dy: e.clientY - startYRef.current });
+                const dy = e.clientY - startYRef.current;
+                const slot = dragTargetIndex(d.from, dy, REORDER_STEP, ids.length);
+                if (slot !== lastSlotRef.current) { lastSlotRef.current = slot; haptic('tick'); }
+                setDragBoth({ ...d, dy });
               }}
               onPointerUp={commit}
-              onPointerCancel={() => setDragBoth(null)}
+              onPointerCancel={() => { setDragBoth(null); lastSlotRef.current = -1; }}
               onKeyDown={(e) => {
                 if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
                 e.preventDefault();
                 const to = e.key === 'ArrowUp' ? i - 1 : i + 1;
                 if (to < 0 || to >= ids.length) return;
+                haptic('tick');
                 onChange(moveInArray(ids, i, to));
               }}
               style={{
                 ...ghostButton, width: 38, height: 38, flexShrink: 0,
                 display: 'grid', placeItems: 'center', color: T.muted,
                 touchAction: 'none', cursor: isDragged ? 'grabbing' : 'grab',
-                borderRadius: 10,
-              }}>
+                borderRadius: 10 }}>
               <SvgIcon icon={Ic.grip} size={16} />
             </button>
           </div>
@@ -1009,10 +1002,9 @@ function Card({ children, style, ...rest }) {
 function ScopeChip({ label }) {
   return (
     <span style={{
-      color: T.muted, fontSize: 9.5, letterSpacing: 0.3, textTransform: 'uppercase',
+      color: T.muted, fontSize: remSize(9.5), letterSpacing: tracking(9.5, { caps: true }), textTransform: 'uppercase',
       fontWeight: 600, border: `1px solid ${T.rule}`, borderRadius: 99,
-      padding: '2px 8px', background: T.surface3, flexShrink: 0, whiteSpace: 'nowrap',
-    }}>{label}</span>
+      padding: '2px 8px', background: T.surface3, flexShrink: 0, whiteSpace: 'nowrap' }}>{label}</span>
   );
 }
 
@@ -1143,9 +1135,8 @@ function HeatmapSection({ drinks, allDrinks, period, range, anchor, collapsed, t
           </ChartAutoWidth>
         ) : (
           <div style={{
-            color: T.muted, fontSize: 12, padding: '8px 0', textAlign: 'center',
-            fontStyle: 'italic', fontFamily: fontSerif,
-          }}>Aucune donnée pour cette période</div>
+            color: T.muted, fontSize: remSize(12), letterSpacing: tracking(12), padding: '8px 0', textAlign: 'center',
+            fontStyle: 'italic', fontFamily: fontSerif }}>Aucune donnée pour cette période</div>
         )}
       </Card>
     </StatSection>
@@ -1162,9 +1153,8 @@ function SessionsSection({ sessions, collapsed, toggleSection }) {
     <StatSection id="sessions" title="Sessions" collapsed={collapsed} toggleSection={toggleSection} sub="Vos dernières sessions · pic d'alcoolémie">
       {total === 0 ? (
         <Card><div style={{
-          color: T.muted, fontSize: 12, padding: '8px 0', textAlign: 'center',
-          fontStyle: 'italic', fontFamily: fontSerif,
-        }}>Aucune session sur cette période</div></Card>
+          color: T.muted, fontSize: remSize(12), letterSpacing: tracking(12), padding: '8px 0', textAlign: 'center',
+          fontStyle: 'italic', fontFamily: fontSerif }}>Aucune session sur cette période</div></Card>
       ) : (
         <>
           <Card style={{ padding: '4px 4px', marginBottom: 10 }}>
@@ -1174,27 +1164,21 @@ function SessionsSection({ sessions, collapsed, toggleSection }) {
               return (
                 <div key={s.id} style={{
                   display: 'flex', alignItems: 'center', gap: 12, padding: '11px 12px',
-                  borderBottom: i === list.length - 1 ? 'none' : `1px solid ${T.rule}`,
-                }}>
+                  borderBottom: i === list.length - 1 ? 'none' : `1px solid ${T.rule}` }}>
                   <div style={{
                     width: 10, height: 10, borderRadius: 99, background: lvl.color, flexShrink: 0,
                     boxShadow: `0 0 8px ${withAlpha(lvl.color, 0.5)}`,
                   }}/>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{
-                      color: T.ink, fontSize: 13, letterSpacing: -0.1,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>{fmtDateMedium(_fmtIso(d))} · {localTime(d)}</div>
-                    <div style={{ color: T.muted, fontSize: 10.5, fontFamily: fontNum, marginTop: 2 }}>
+                      color: T.ink, fontSize: remSize(13), letterSpacing: tracking(13), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtDateMedium(_fmtIso(d))} · {localTime(d)}</div>
+                    <div style={{ color: T.muted, fontSize: remSize(10.5), letterSpacing: tracking(10.5), fontFamily: fontNum, marginTop: 2 }}>
                       {fmtDurationHM(s.durationMs / 3600_000)} · {s.drinkCount} conso{s.drinkCount > 1 ? 's' : ''}
                     </div>
                   </div>
                   <div style={{
-                    fontFamily: fontSerif, fontSize: 17, color: T.ink, letterSpacing: -0.3,
-                    whiteSpace: 'nowrap', flexShrink: 0,
-                  }}>{Math.round(s.peakBac)}<span style={{
-                    fontSize: 9.5, color: T.muted, fontFamily: fontSans, marginLeft: 2,
-                  }}>mg/L</span></div>
+                    fontFamily: fontSerif, fontSize: remSize(17), letterSpacing: tracking(17), color: T.ink, whiteSpace: 'nowrap', flexShrink: 0 }}>{Math.round(s.peakBac)}<span style={{
+                    fontSize: remSize(9.5), letterSpacing: tracking(9.5), color: T.muted, fontFamily: fontSans, marginLeft: 2 }}>mg/L</span></div>
                 </div>
               );
             })}
@@ -1202,11 +1186,9 @@ function SessionsSection({ sessions, collapsed, toggleSection }) {
 
           <Card>
             <div style={{
-              color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
-            }}>Distribution des pics</div>
+              color: T.ink, fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500, marginBottom: 3 }}>Distribution des pics</div>
             <div style={{
-              color: T.muted, fontSize: 10, marginBottom: 12, fontStyle: 'italic', fontFamily: fontSerif,
-            }}>Pic d'alcoolémie par session (mg/L)</div>
+              color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10), marginBottom: 12, fontStyle: 'italic', fontFamily: fontSerif }}>Pic d'alcoolémie par session (mg/L)</div>
             <ChartAutoWidth minHeight={150}>
               {(w) => <SvgHistogram buckets={hist} width={w} height={150} color={T.accent} />}
             </ChartAutoWidth>
@@ -1328,8 +1310,7 @@ function GeneralSection({
 
       {drinks.length > 0 && (
         <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12,
-        }}>
+          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
           {cards.map((c, i) => (
             <StatCell key={c.l} value={c.v} label={c.l} icon={c.icon}
               delta={c.delta} period={period} index={i} />
@@ -1340,8 +1321,7 @@ function GeneralSection({
       {catDist.length > 0 && (
         <Card>
           <div style={{
-            color: T.ink, fontSize: 13, fontWeight: 500, marginBottom: 12, letterSpacing: -0.1,
-          }}>Répartition par catégorie</div>
+            color: T.ink, fontSize: remSize(13), letterSpacing: tracking(13), fontWeight: 500, marginBottom: 12 }}>Répartition par catégorie</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
             <div style={{ flexShrink: 0 }}>
               <SvgDonut data={catDist} size={130} thickness={20} />
@@ -1351,12 +1331,11 @@ function GeneralSection({
                 const pct = catTotal > 0 ? Math.round((d.v / catTotal) * 100) : 0;
                 return (
                   <div key={d.name} style={{
-                    display: 'flex', alignItems: 'center', gap: 8, fontSize: 11,
-                  }}>
+                    display: 'flex', alignItems: 'center', gap: 8, fontSize: remSize(11), letterSpacing: tracking(11) }}>
                     <div style={{
                       width: 8, height: 8, borderRadius: 99, background: catColor(d.name, 65),
                     }}/>
-                    <span style={{ color: T.ink, flex: 1, letterSpacing: -0.1 }}>{d.name}</span>
+                    <span style={{ color: T.ink, flex: 1 }}>{d.name}</span>
                     <span style={{ color: T.muted, fontFamily: fontNum }}>{pct}%</span>
                   </div>
                 );
@@ -1369,9 +1348,8 @@ function GeneralSection({
       {drinks.length === 0 && (
         <Card>
           <div style={{
-            color: T.muted, fontSize: 12, padding: '12px 0', textAlign: 'center',
-            fontStyle: 'italic', fontFamily: fontSerif,
-          }}>Aucune donnée pour cette période</div>
+            color: T.muted, fontSize: remSize(12), letterSpacing: tracking(12), padding: '12px 0', textAlign: 'center',
+            fontStyle: 'italic', fontFamily: fontSerif }}>Aucune donnée pour cette période</div>
         </Card>
       )}
     </StatSection>
@@ -1391,13 +1369,11 @@ const StatCell = React.memo(function StatCell({ value, label, icon, delta, perio
       border: `1px solid ${T.rule}`, position: 'relative',
       display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
       minHeight: 64,
-      ...staggerStyle(index, { reduced }),
-    }}>
+      ...staggerStyle(index, { reduced }) }}>
       <div style={{
         display: 'flex', alignItems: 'baseline', gap: 6,
-        fontFamily: fontSerif, fontSize: 22, color: T.ink,
-        letterSpacing: -0.4, lineHeight: 1,
-      }}>
+        fontFamily: fontSerif, fontSize: remSize(22), letterSpacing: tracking(22), color: T.ink,
+        lineHeight: 1 }}>
         {icon && (
           <span style={{ color: T.muted, display: 'flex', alignSelf: 'center' }}>
             <SvgIcon icon={icon} size={13} />
@@ -1406,9 +1382,7 @@ const StatCell = React.memo(function StatCell({ value, label, icon, delta, perio
         <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
       </div>
       <div style={{
-        color: T.muted, fontSize: 9.5, marginTop: 5, letterSpacing: 0.3,
-        textTransform: 'uppercase', lineHeight: 1.2,
-      }}>{label}</div>
+        color: T.muted, fontSize: remSize(9.5), letterSpacing: tracking(9.5, { caps: true }), marginTop: 5, textTransform: 'uppercase', lineHeight: 1.2 }}>{label}</div>
       {delta != null && period !== 'all' && <DeltaBadge delta={delta} />}
     </div>
   );
@@ -1423,30 +1397,24 @@ const HeroStatCard = React.memo(function HeroStatCard({ icon, label, value, suff
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
       background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
-      borderRadius: 14, padding: '12px 14px', marginBottom: 10,
-    }}>
+      borderRadius: 14, padding: '12px 14px', marginBottom: 10 }}>
       <div style={{
         width: 36, height: 36, borderRadius: 12,
         display: 'grid', placeItems: 'center',
-        background: withAlpha(T.accent, 0.18), color: T.accent, flexShrink: 0,
-      }}>
+        background: withAlpha(T.accent, 0.18), color: T.accent, flexShrink: 0 }}>
         <SvgIcon icon={icon} size={20} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
-          color: T.muted, fontSize: 9.5, letterSpacing: 0.4,
-          textTransform: 'uppercase', marginBottom: 2,
-        }}>{label}</div>
+          color: T.muted, fontSize: remSize(9.5), letterSpacing: tracking(9.5, { caps: true }), textTransform: 'uppercase', marginBottom: 2 }}>{label}</div>
         <div style={{
-          fontFamily: fontSerif, fontSize: 22, color: T.ink,
-          letterSpacing: -0.3, lineHeight: 1, fontStyle: 'italic',
-        }}>
+          fontFamily: fontSerif, fontSize: remSize(22), letterSpacing: tracking(22), color: T.ink,
+          lineHeight: 1, fontStyle: 'italic' }}>
           {value}
           {suffix && (
             <span style={{
-              fontStyle: 'normal', fontFamily: fontSans, fontSize: 12,
-              color: T.ink2, marginLeft: 6, letterSpacing: 0,
-            }}>{suffix}</span>
+              fontStyle: 'normal', fontFamily: fontSans, fontSize: remSize(12), letterSpacing: tracking(12),
+              color: T.ink2, marginLeft: 6 }}>{suffix}</span>
           )}
         </div>
       </div>
@@ -1505,9 +1473,8 @@ function TemporalSection({ drinks, period, collapsed, toggleSection, agg, sessio
     return (
       <StatSection id="temporal" title="Analyse temporelle" collapsed={collapsed} toggleSection={toggleSection} sub="Répartition par heures et jours">
         <Card><div style={{
-          color: T.muted, fontSize: 12, padding: '8px 0', textAlign: 'center',
-          fontStyle: 'italic', fontFamily: fontSerif,
-        }}>Aucune donnée pour cette période</div></Card>
+          color: T.muted, fontSize: remSize(12), letterSpacing: tracking(12), padding: '8px 0', textAlign: 'center',
+          fontStyle: 'italic', fontFamily: fontSerif }}>Aucune donnée pour cette période</div></Card>
       </StatSection>
     );
   }
@@ -1515,8 +1482,7 @@ function TemporalSection({ drinks, period, collapsed, toggleSection, agg, sessio
   return (
     <StatSection id="temporal" title="Analyse temporelle" collapsed={collapsed} toggleSection={toggleSection} sub="Répartition par heures et jours">
       <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 10,
-      }}>
+        display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 10 }}>
         <MiniStat big={peakHour != null ? `${peakHour}h` : '—'} label="Heure de pointe" />
         {multiDay && <MiniStat big={peakDow != null ? dayNames[peakDow] : '—'} label="Jour de pointe" />}
         {/* Durées de session = modèle BAC (poids/sexe) : masquées pour un ami
@@ -1527,8 +1493,7 @@ function TemporalSection({ drinks, period, collapsed, toggleSection, agg, sessio
 
       <Card style={{ marginBottom: 10 }}>
         <div style={{
-          color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 10, letterSpacing: -0.1,
-        }}>Par heure</div>
+          color: T.ink, fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500, marginBottom: 10 }}>Par heure</div>
         <ChartAutoWidth minHeight={150}>
           {(w) => (
             <SvgBarChart
@@ -1544,8 +1509,7 @@ function TemporalSection({ drinks, period, collapsed, toggleSection, agg, sessio
       {multiDay && (
         <Card>
           <div style={{
-            color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 4, letterSpacing: -0.1,
-          }}>Par jour de la semaine</div>
+            color: T.ink, fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500, marginBottom: 4 }}>Par jour de la semaine</div>
           <ChartAutoWidth minHeight={250} maxWidth={300}>
             {(w) => <SvgRadar data={dailyData} size={w} color={T.good} valueLabel="boisson(s)" />}
           </ChartAutoWidth>
@@ -1573,10 +1537,10 @@ function DeltaBadge({ delta }) {
     <div style={{
       position: 'absolute', top: 8, right: 8,
       display: 'inline-flex', alignItems: 'center', gap: 3,
-      color: fg, fontSize: 9.5, fontFamily: fontNum, fontWeight: 600,
+      color: fg, fontSize: remSize(9.5), letterSpacing: tracking(9.5), fontFamily: fontNum, fontWeight: 600,
       background: bg, padding: '2px 6px', borderRadius: 99,
       border: `1px solid ${withAlpha(fg, 0.18)}`,
-      letterSpacing: 0, lineHeight: 1,
+      lineHeight: 1,
     }} aria-label={`${ariaDir} de ${value} vs période précédente`}>
       <SvgIcon icon={arrowIcon} size={9} />{value}
     </div>
@@ -1589,16 +1553,12 @@ function MiniStat({ big, label }) {
       background: T.surface2, borderRadius: 12, padding: '14px 10px',
       border: `1px solid ${T.rule}`,
       display: 'flex', flexDirection: 'column', alignItems: 'center',
-      textAlign: 'center',
-    }}>
+      textAlign: 'center' }}>
       <div style={{
-        fontFamily: fontSerif, fontSize: 22, color: T.ink,
-        letterSpacing: -0.3, lineHeight: 1,
-      }}>{big}</div>
+        fontFamily: fontSerif, fontSize: remSize(22), letterSpacing: tracking(22), color: T.ink,
+        lineHeight: 1 }}>{big}</div>
       <div style={{
-        color: T.muted, fontSize: 10, marginTop: 6, letterSpacing: 0.3,
-        textTransform: 'uppercase',
-      }}>{label}</div>
+        color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10, { caps: true }), marginTop: 6, textTransform: 'uppercase' }}>{label}</div>
     </div>
   );
 }
@@ -1633,9 +1593,8 @@ function CategorySection({ drinks, collapsed, toggleSection }) {
     return (
       <StatSection id="category" title="Analyse par catégorie" collapsed={collapsed} toggleSection={toggleSection} sub="Statistiques par type de boisson">
         <Card><div style={{
-          color: T.muted, fontSize: 12, padding: '8px 0', textAlign: 'center',
-          fontStyle: 'italic', fontFamily: fontSerif,
-        }}>Aucune donnée</div></Card>
+          color: T.muted, fontSize: remSize(12), letterSpacing: tracking(12), padding: '8px 0', textAlign: 'center',
+          fontStyle: 'italic', fontFamily: fontSerif }}>Aucune donnée</div></Card>
       </StatSection>
     );
   }
@@ -1650,19 +1609,16 @@ function CategorySection({ drinks, collapsed, toggleSection }) {
           return (
             <Card key={c.name} style={{ padding: 14 }}>
               <div style={{
-                display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10,
-              }}>
+                display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                 <div style={{
                   width: 10, height: 10, borderRadius: 99, background: catColor(c.name, 65),
                 }}/>
-                <div style={{ flex: 1, color: T.ink, fontSize: 14, fontWeight: 500 }}>{c.name}</div>
+                <div style={{ flex: 1, color: T.ink, fontSize: remSize(14), letterSpacing: tracking(14), fontWeight: 500 }}>{c.name}</div>
                 <div style={{
-                  fontFamily: fontNum, fontSize: 13, color: T.accent, fontWeight: 500,
-                }}>{c.count}×</div>
+                  fontFamily: fontNum, fontSize: remSize(13), letterSpacing: tracking(13), color: T.accent, fontWeight: 500 }}>{c.count}×</div>
               </div>
               <div style={{
-                display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '5px 14px',
-              }}>
+                display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '5px 14px' }}>
                 <StatRow label="Volume" value={`${(c.volumeCl / 100).toFixed(1)}L`} />
                 <StatRow label="Volume moyen" value={`${avgVol.toFixed(2)}L`} />
                 <StatRow label="Degré moyen" value={`${avgAbv.toFixed(1)}%`} />
@@ -1680,15 +1636,13 @@ function StatRow({ label, value, truncate }) {
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', gap: 8,
-      fontSize: 11, borderTop: `1px dashed ${T.rule}`, paddingTop: 5,
-    }}>
-      <span style={{ color: T.muted, letterSpacing: 0.1 }}>{label}</span>
+      fontSize: remSize(11), letterSpacing: tracking(11), borderTop: `1px dashed ${T.rule}`, paddingTop: 5 }}>
+      <span style={{ color: T.muted }}>{label}</span>
       <span style={{
         color: T.ink2, fontFamily: fontNum,
         ...(truncate ? {
           maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        } : {}),
-      }}>{value}</span>
+        } : {}) }}>{value}</span>
     </div>
   );
 }
@@ -1718,9 +1672,8 @@ function TopDrinksSection({ drinks, collapsed, toggleSection }) {
     return (
       <StatSection id="top" title="Top 10 des boissons" collapsed={collapsed} toggleSection={toggleSection} sub="Vos boissons les plus consommées">
         <Card><div style={{
-          color: T.muted, fontSize: 12, padding: '8px 0', textAlign: 'center',
-          fontStyle: 'italic', fontFamily: fontSerif,
-        }}>Aucune donnée</div></Card>
+          color: T.muted, fontSize: remSize(12), letterSpacing: tracking(12), padding: '8px 0', textAlign: 'center',
+          fontStyle: 'italic', fontFamily: fontSerif }}>Aucune donnée</div></Card>
       </StatSection>
     );
   }
@@ -1732,35 +1685,28 @@ function TopDrinksSection({ drinks, collapsed, toggleSection }) {
           <div key={d.name} style={{
             display: 'flex', alignItems: 'center', gap: 12,
             padding: '12px 12px',
-            borderBottom: i === top.length - 1 ? 'none' : `1px solid ${T.rule}`,
-          }}>
+            borderBottom: i === top.length - 1 ? 'none' : `1px solid ${T.rule}` }}>
             <div style={{
               width: 24, height: 24, borderRadius: 8,
               background: i < 3 ? T.accent : T.surface3,
               color: i < 3 ? T.accentInk : T.ink2,
               display: 'grid', placeItems: 'center', flexShrink: 0,
-              fontSize: 11, fontWeight: 600, fontFamily: fontNum,
-            }}>{i + 1}</div>
+              fontSize: remSize(11), letterSpacing: tracking(11), fontWeight: 600, fontFamily: fontNum }}>{i + 1}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
-                display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2,
-              }}>
+                display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                 <div style={{
-                  color: T.ink, fontSize: 13, letterSpacing: -0.1,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  flex: 1, minWidth: 0,
-                }}>{d.name}</div>
+                  color: T.ink, fontSize: remSize(13), letterSpacing: tracking(13), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  flex: 1, minWidth: 0 }}>{d.name}</div>
                 <Stars n={ratings[ratingKey(d.name)] || 0} size={10} />
               </div>
               <div style={{
-                color: T.muted, fontSize: 10.5, letterSpacing: 0.1, fontFamily: fontNum,
-              }}>
+                color: T.muted, fontSize: remSize(10.5), letterSpacing: tracking(10.5), fontFamily: fontNum }}>
                 {d.count} fois · {(d.volumeCl / 100).toFixed(2)}L · {fmtDateMedium(d.lastDate)}
               </div>
             </div>
             <div style={{
-              fontFamily: fontNum, color: T.accent, fontSize: 13, fontWeight: 500,
-            }}>{d.count}</div>
+              fontFamily: fontNum, color: T.accent, fontSize: remSize(13), letterSpacing: tracking(13), fontWeight: 500 }}>{d.count}</div>
           </div>
         ))}
       </Card>
@@ -2215,15 +2161,13 @@ function ForecastToggle({ enabled, onChange }) {
       ...ghostButton, padding: '4px 9px', borderRadius: 7,
       background: active ? T.accent : 'transparent',
       color: active ? T.accentInk : T.muted,
-      fontSize: 9.5, letterSpacing: 0.3, textTransform: 'uppercase',
-      fontWeight: active ? 600 : 500, transition: 'background 0.18s ease, color 0.18s ease',
-    }}>{label}</button>
+      fontSize: remSize(9.5), letterSpacing: tracking(9.5, { caps: true }), textTransform: 'uppercase',
+      fontWeight: active ? 600 : 500, transition: 'background 0.18s ease, color 0.18s ease' }}>{label}</button>
   );
   return (
     <div role="group" aria-label="Affichage de la prévision" style={{
       display: 'flex', gap: 2, padding: 2, background: T.surface3,
-      borderRadius: 9, border: `1px solid ${T.rule}`, flexShrink: 0,
-    }}>
+      borderRadius: 9, border: `1px solid ${T.rule}`, flexShrink: 0 }}>
       {pill(enabled, 'Affichée', () => onChange(true))}
       {pill(!enabled, 'Masquée', () => onChange(false))}
     </div>
@@ -2253,24 +2197,21 @@ function ForecastMiniStats({ forecast, fmtTime }) {
     <div style={{
       background: T.surface3, borderRadius: 12, padding: '10px 8px',
       border: `1px solid ${T.rule}`,
-      display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
-    }}>
+      display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
         <SvgIcon icon={icon} size={11} color={T.muted}/>
-        <div style={{ color: T.muted, fontSize: 9.5, letterSpacing: 0.3, textTransform: 'uppercase' }}>{label}</div>
+        <div style={{ color: T.muted, fontSize: remSize(9.5), letterSpacing: tracking(9.5, { caps: true }), textTransform: 'uppercase' }}>{label}</div>
       </div>
       <div style={{
-        fontFamily: fontSerif, fontSize: 18, color: T.ink, letterSpacing: -0.3, lineHeight: 1,
-      }}>{value}</div>
+        fontFamily: fontSerif, fontSize: remSize(18), letterSpacing: tracking(18), color: T.ink, lineHeight: 1 }}>{value}</div>
       {unit && (
-        <div style={{ color: T.muted, fontSize: 9, marginTop: 3, fontFamily: fontNum, letterSpacing: 0.2 }}>{unit}</div>
+        <div style={{ color: T.muted, fontSize: remSize(9), letterSpacing: tracking(9), marginTop: 3, fontFamily: fontNum }}>{unit}</div>
       )}
     </div>
   );
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 10,
-    }}>
+      display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 10 }}>
       {item(Ic.flame,     'Rythme',    rate,     null)}
       {item(Ic.hourglass, 'Durée moy', duration, null)}
       {item(Ic.star,      'Peak moy',  peak,     'mg/L')}
@@ -2381,51 +2322,42 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
         </div>
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          gap: 18, marginBottom: 14,
-        }}>
+          gap: 18, marginBottom: 14 }}>
           <BACGauge bac={currentBAC} level={level} />
         </div>
         <div style={{
-          textAlign: 'center', color: level.color, fontSize: 13,
-          fontWeight: 500, letterSpacing: 0.1, marginBottom: 14,
-        }}>{level.text}</div>
+          textAlign: 'center', color: level.color, fontSize: remSize(13), letterSpacing: tracking(13),
+          fontWeight: 500, marginBottom: 14 }}>{level.text}</div>
 
         <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
-        }}>
+          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <div style={{
             background: T.surface3, borderRadius: 12, padding: '12px 12px',
             border: `1px solid ${T.rule}`,
             display: 'flex', flexDirection: 'column', alignItems: 'center',
-            textAlign: 'center',
-          }}>
+            textAlign: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, justifyContent: 'center' }}>
               <SvgIcon icon={Ic.clock} size={12} color={T.muted}/>
-              <div style={{ color: T.muted, fontSize: 9.5, letterSpacing: 0.5, textTransform: 'uppercase' }}>Sobriété</div>
+              <div style={{ color: T.muted, fontSize: remSize(9.5), letterSpacing: tracking(9.5, { caps: true }), textTransform: 'uppercase' }}>Sobriété</div>
             </div>
             <div style={{
-              fontFamily: fontSerif, fontSize: 20, color: T.ink, letterSpacing: -0.3,
-            }}>{fmtTime(hoursToSober)}</div>
+              fontFamily: fontSerif, fontSize: remSize(20), letterSpacing: tracking(20), color: T.ink }}>{fmtTime(hoursToSober)}</div>
             <div style={{
-              color: T.muted, fontSize: 10.5, fontFamily: fontNum, marginTop: 3,
-            }}>{fmtEtaClock(hoursToSober) ? `→ ${fmtEtaClock(hoursToSober)}` : '—'}</div>
+              color: T.muted, fontSize: remSize(10.5), letterSpacing: tracking(10.5), fontFamily: fontNum, marginTop: 3 }}>{fmtEtaClock(hoursToSober) ? `→ ${fmtEtaClock(hoursToSober)}` : '—'}</div>
           </div>
           <div style={{
             background: T.surface3, borderRadius: 12, padding: '12px 12px',
             border: `1px solid ${T.rule}`,
             display: 'flex', flexDirection: 'column', alignItems: 'center',
-            textAlign: 'center',
-          }}>
+            textAlign: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, justifyContent: 'center' }}>
               <SvgIcon icon={Ic.car} size={12} color={T.muted}/>
-              <div style={{ color: T.muted, fontSize: 9.5, letterSpacing: 0.5, textTransform: 'uppercase' }}>Conduite (&lt;500)</div>
+              <div style={{ color: T.muted, fontSize: remSize(9.5), letterSpacing: tracking(9.5, { caps: true }), textTransform: 'uppercase' }}>Conduite (&lt;500)</div>
             </div>
             <div style={{
-              fontFamily: fontSerif, fontSize: 20, color: T.ink, letterSpacing: -0.3,
-            }}>{fmtTime(hoursToLegal)}</div>
+              fontFamily: fontSerif, fontSize: remSize(20), letterSpacing: tracking(20), color: T.ink }}>{fmtTime(hoursToLegal)}</div>
             <div style={{
-              color: T.muted, fontSize: 10.5, fontFamily: fontNum, marginTop: 3,
-            }}>{fmtEtaClock(hoursToLegal) ? `→ ${fmtEtaClock(hoursToLegal)}` : '—'}</div>
+              color: T.muted, fontSize: remSize(10.5), letterSpacing: tracking(10.5), fontFamily: fontNum, marginTop: 3 }}>{fmtEtaClock(hoursToLegal) ? `→ ${fmtEtaClock(hoursToLegal)}` : '—'}</div>
           </div>
         </div>
       </Card>
@@ -2433,23 +2365,19 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
       {periodAvgSession != null && (
         <Card style={{ padding: 14, marginBottom: 10, position: 'relative' }}>
           <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-          }}>
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ minWidth: 0 }}>
               <div style={{
-                color: T.muted, fontSize: 9.5, letterSpacing: 0.5, textTransform: 'uppercase',
-                marginBottom: 4,
-              }}>Taux moyen par session</div>
-              <div style={{ color: T.ink2, fontSize: 11, lineHeight: 1.4 }}>
+                color: T.muted, fontSize: remSize(9.5), letterSpacing: tracking(9.5, { caps: true }), textTransform: 'uppercase',
+                marginBottom: 4 }}>Taux moyen par session</div>
+              <div style={{ color: T.ink2, fontSize: remSize(11), letterSpacing: tracking(11), lineHeight: 1.4 }}>
                 Moyenne intra-session, puis moyenne sur la période
               </div>
             </div>
             <div style={{
-              fontFamily: fontSerif, fontSize: 24, color: T.ink, letterSpacing: -0.3,
-              lineHeight: 1, whiteSpace: 'nowrap', flexShrink: 0,
-            }}>
+              fontFamily: fontSerif, fontSize: remSize(24), letterSpacing: tracking(24), color: T.ink, lineHeight: 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
               {Math.round(periodAvgSession)}
-              <span style={{ fontFamily: fontSans, fontSize: 12, color: T.ink2, marginLeft: 5 }}>mg/L</span>
+              <span style={{ fontFamily: fontSans, fontSize: remSize(12), letterSpacing: tracking(12), color: T.ink2, marginLeft: 5 }}>mg/L</span>
             </div>
           </div>
           {periodAvgDelta != null && period !== 'all' && <DeltaBadge delta={periodAvgDelta} />}
@@ -2459,12 +2387,10 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
       {bacInfo.points.length > 0 && (
         <Card style={{ marginBottom: 10 }}>
           <div style={{
-            color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 8, letterSpacing: -0.1,
-          }}>Projection d'alcoolémie</div>
+            color: T.ink, fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500, marginBottom: 8 }}>Projection d'alcoolémie</div>
           <BACProjectionResponsive points={bacInfo.points} />
           <div style={{
-            color: T.muted, fontSize: 10, marginTop: 6, fontStyle: 'italic', fontFamily: fontSerif,
-          }}>Glissez le doigt sur le graphe pour voir le taux à un moment précis</div>
+            color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10), marginTop: 6, fontStyle: 'italic', fontFamily: fontSerif }}>Glissez le doigt sur le graphe pour voir le taux à un moment précis</div>
         </Card>
       )}
 
@@ -2472,11 +2398,9 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
         <Card style={{ marginBottom: 10 }}>
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            gap: 10, marginBottom: forecastEnabled ? 8 : 0,
-          }}>
+            gap: 10, marginBottom: forecastEnabled ? 8 : 0 }}>
             <div style={{
-              color: T.ink, fontSize: 12.5, fontWeight: 500, letterSpacing: -0.1,
-            }}>Prévision de session</div>
+              color: T.ink, fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500 }}>Prévision de session</div>
             <ForecastToggle enabled={forecastEnabled} onChange={setForecastEnabled} />
           </div>
           {forecastEnabled && (
@@ -2490,8 +2414,7 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
                 truncated={forecast.truncated}
               />
               <div style={{
-                color: T.muted, fontSize: 10, marginTop: 6, fontStyle: 'italic', fontFamily: fontSerif,
-              }}>{forecast.hasHistory
+                color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10), marginTop: 6, fontStyle: 'italic', fontFamily: fontSerif }}>{forecast.hasHistory
                 ? 'Extrapolation au rythme actuel jusqu\'à la durée moyenne de vos sessions passées'
                 : 'Rythme actuel · pas encore de session passée pour estimer la durée'}</div>
             </>
@@ -2502,26 +2425,20 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
       {relevantDrinks.length > 0 && (
         <Card style={{ marginBottom: 10 }}>
           <div style={{
-            color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 10, letterSpacing: -0.1,
-          }}>Consommations prises en compte ({bacInfo.drinks.length})
+            color: T.ink, fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500, marginBottom: 10 }}>Consommations prises en compte ({bacInfo.drinks.length})
             {bacInfo.drinks.length > relevantDrinks.length
               ? ` · ${relevantDrinks.length} plus récentes` : ''}</div>
           {relevantDrinks.map((d, i) => (
             <div key={i} style={{
               display: 'flex', alignItems: 'center', gap: 10,
               padding: '8px 0',
-              borderTop: i === 0 ? 'none' : `1px dashed ${T.rule}`,
-            }}>
+              borderTop: i === 0 ? 'none' : `1px dashed ${T.rule}` }}>
               <div style={{
-                color: T.ink, fontSize: 12, flex: 1, letterSpacing: -0.1,
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>{d.name}</div>
+                color: T.ink, fontSize: remSize(12), letterSpacing: tracking(12), flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</div>
               <div style={{
-                color: T.ink2, fontSize: 10.5, fontFamily: fontNum,
-              }}>{d.qty} · {d.abv}%</div>
+                color: T.ink2, fontSize: remSize(10.5), letterSpacing: tracking(10.5), fontFamily: fontNum }}>{d.qty} · {d.abv}%</div>
               <div style={{
-                color: T.muted, fontSize: 10, fontFamily: fontNum, minWidth: 52, textAlign: 'right',
-              }}>il y a {d.hoursAgo}h</div>
+                color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10), fontFamily: fontNum, minWidth: 52, textAlign: 'right' }}>il y a {d.hoursAgo}h</div>
             </div>
           ))}
         </Card>
@@ -2531,20 +2448,17 @@ function BACSection({ collapsed, toggleSection, allSessions, sessions, prevSessi
         <div>
           <div style={{
             display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
-            gap: 8, padding: '0 2px 8px',
-          }}>
+            gap: 8, padding: '0 2px 8px' }}>
             <div style={{
-              color: T.ink, fontSize: 13, fontWeight: 500, letterSpacing: -0.1,
-            }}>Records d'alcoolémie</div>
+              color: T.ink, fontSize: remSize(13), letterSpacing: tracking(13), fontWeight: 500 }}>Records d'alcoolémie</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               {/* Records ABSOLUS (toutes sessions confondues), pas ceux de la
                   période sélectionnée — l'étiquette lève l'ambiguïté. */}
               <ScopeChip label="Records absolus" />
               <div style={{
-                color: T.muted, fontSize: 10.5, fontFamily: fontNum,
+                color: T.muted, fontSize: remSize(10.5), letterSpacing: tracking(10.5), fontFamily: fontNum,
                 background: T.surface2, padding: '2px 8px', borderRadius: 99,
-                border: `1px solid ${T.rule}`,
-              }}>{totalRecords}</div>
+                border: `1px solid ${T.rule}` }}>{totalRecords}</div>
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -2579,13 +2493,11 @@ function BACGauge({ bac, level }) {
       </svg>
       <div style={{
         position: 'absolute', inset: 0, display: 'flex',
-        flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      }}>
+        flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{
-          fontFamily: fontSerif, fontSize: 36, color: T.ink,
-          letterSpacing: -1, lineHeight: 1,
-        }}>{bac}</div>
-        <div style={{ color: T.muted, fontSize: 10, letterSpacing: 1, marginTop: 2 }}>MG/L</div>
+          fontFamily: fontSerif, fontSize: remSize(36), letterSpacing: tracking(36), color: T.ink,
+          lineHeight: 1 }}>{bac}</div>
+        <div style={{ color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10), marginTop: 2 }}>MG/L</div>
       </div>
     </div>
   );
@@ -2613,31 +2525,26 @@ function BACRecordRow({ record, isHighest }) {
       border: `1px solid ${isHighest ? level.color : T.rule}`,
       padding: '10px 12px',
       display: 'flex', alignItems: 'center', gap: 12,
-      boxShadow: isHighest ? `0 0 0 1px ${withAlpha(level.color, 0.25)}, 0 4px 12px ${withAlpha(level.color, 0.12)}` : 'none',
-    }}>
+      boxShadow: isHighest ? `0 0 0 1px ${withAlpha(level.color, 0.25)}, 0 4px 12px ${withAlpha(level.color, 0.12)}` : 'none' }}>
       <div style={{
         width: 10, height: 10, borderRadius: 99, background: level.color, flexShrink: 0,
         boxShadow: `0 0 8px ${withAlpha(level.color, 0.5)}`,
       }}/>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2,
-        }}>
+          display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
           <span style={{
-            fontFamily: fontSerif, fontSize: 17, color: T.ink,
-            letterSpacing: -0.3, fontStyle: isHighest ? 'italic' : 'normal',
-          }}>{record.bacValue}<span style={{ fontSize: 10, color: T.muted, fontStyle: 'normal', fontFamily: fontSans, marginLeft: 2 }}>mg/L</span></span>
+            fontFamily: fontSerif, fontSize: remSize(17), letterSpacing: tracking(17), color: T.ink,
+            fontStyle: isHighest ? 'italic' : 'normal' }}>{record.bacValue}<span style={{ fontSize: remSize(10), letterSpacing: tracking(10), color: T.muted, fontStyle: 'normal', fontFamily: fontSans, marginLeft: 2 }}>mg/L</span></span>
           {isHighest && (
             <span style={{
-              fontSize: 8.5, color: T.accent, background: T.accentSoft,
+              fontSize: remSize(8.5), letterSpacing: tracking(8.5, { caps: true }), color: T.accent, background: T.accentSoft,
               padding: '2px 6px', borderRadius: 99, border: `1px solid ${T.accentSoftBorder}`,
-              letterSpacing: 0.8, textTransform: 'uppercase', fontWeight: 600,
-            }}>Record</span>
+              textTransform: 'uppercase', fontWeight: 600 }}>Record</span>
           )}
         </div>
         <div style={{
-          color: T.muted, fontSize: 10.5, letterSpacing: 0.1, fontFamily: fontNum,
-        }}>{dateLabel} · {record.drinkCount || 0} conso{(record.drinkCount || 0) > 1 ? 's' : ''}</div>
+          color: T.muted, fontSize: remSize(10.5), letterSpacing: tracking(10.5), fontFamily: fontNum }}>{dateLabel} · {record.drinkCount || 0} conso{(record.drinkCount || 0) > 1 ? 's' : ''}</div>
       </div>
     </div>
   );
@@ -2706,7 +2613,7 @@ function groupDrinksForMap(drinks) {
 function MapDrinksSheet({ drinks, onClose }) {
   const groups = React.useMemo(() => groupDrinksForMap(drinks), [drinks]);
   const total = drinks ? drinks.length : 0;
-  const [closing, close] = useSheetClose(onClose);
+  const [closing, close, cancelClose] = useSheetClose(onClose);
   // Si toutes les boissons partagent un même libellé de lieu, on le met en
   // titre ; sinon un titre générique (le rond couvre plusieurs endroits).
   const sharedPlace = React.useMemo(() => {
@@ -2715,66 +2622,55 @@ function MapDrinksSheet({ drinks, onClose }) {
   }, [drinks]);
 
   return (
-    <SheetOverlay onClose={close} closing={closing} label={sharedPlace || 'Consommations ici'}>
-      <div style={{
-        background: T.bg, borderRadius: '22px 22px 0 0', maxHeight: '85dvh',
+    <SheetOverlay onClose={close} closing={closing} onCancelClose={cancelClose} label={sharedPlace || 'Consommations ici'}>
+      <div className="alco-material-sheet alco-material-edge" style={{
+        borderRadius: '22px 22px 0 0', maxHeight: '85dvh',
         display: 'flex', flexDirection: 'column',
         borderTop: `1px solid ${T.rule}`, borderLeft: `1px solid ${T.rule}`,
         borderRight: `1px solid ${T.rule}`, overflow: 'hidden',
-      }}>
-        <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
-          <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }} />
-        </div>
-
+        boxShadow: T.shadowSheet }}>
+        <SheetGrabber>
         <div style={{
           padding: '14px 22px 16px', borderBottom: `1px solid ${T.rule}`,
-          display: 'flex', alignItems: 'flex-start', gap: 12,
-        }}>
+          display: 'flex', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{
-              fontFamily: fontSerif, fontStyle: 'italic', fontSize: 22,
-              color: T.ink, letterSpacing: -0.4, lineHeight: 1.15, wordBreak: 'break-word',
-            }}>{sharedPlace || 'Consommations ici'}</div>
+              ...type(22, { family: fontSerif, italic: true }),
+              color: T.ink, wordBreak: 'break-word' }}>{sharedPlace || 'Consommations ici'}</div>
             <div style={{
-              color: T.muted, fontSize: 9.5, letterSpacing: 0.3,
-              textTransform: 'uppercase', marginTop: 6,
-            }}>{total} boisson{total !== 1 ? 's' : ''} · {groups.length} type{groups.length !== 1 ? 's' : ''}</div>
+              color: T.muted, ...TYPE.label, marginTop: 6 }}>{total} boisson{total !== 1 ? 's' : ''} · {groups.length} type{groups.length !== 1 ? 's' : ''}</div>
           </div>
-          <button type="button" onClick={close} aria-label="Fermer" style={{
+          <button type="button" className="alco-press" onClick={close} aria-label="Fermer" style={{
             width: 32, height: 32, borderRadius: 99, background: T.surface2,
             display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
             border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit', flexShrink: 0,
-          }}><SvgIcon icon={Ic.close} size={14} /></button>
+            touchAction: 'manipulation' }}><SvgIcon icon={Ic.close} size={14} /></button>
         </div>
+        </SheetGrabber>
 
         <div style={{ overflow: 'auto', padding: '14px 22px 20px' }}>
           <div style={{
-            background: T.surface, borderRadius: 14, border: `1px solid ${T.rule}`, overflow: 'hidden',
-          }}>
+            background: T.surface, borderRadius: 14, border: `1px solid ${T.rule}`, overflow: 'hidden' }}>
             {groups.map((g, i) => (
               <div key={g.key} style={{
                 display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-                borderBottom: i === groups.length - 1 ? 'none' : `1px solid ${T.rule}`,
-              }}>
+                borderBottom: i === groups.length - 1 ? 'none' : `1px solid ${T.rule}` }}>
                 <div style={{
                   width: 38, height: 38, borderRadius: 12, flexShrink: 0,
                   background: catBg(g.category), color: catColor(g.category, 70),
-                  display: 'grid', placeItems: 'center', border: `1px solid ${T.rule}`,
-                }}>
+                  display: 'grid', placeItems: 'center', border: `1px solid ${T.rule}` }}>
                   <CategoryGlyph name={g.category} size={20} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
-                    fontFamily: fontSans, fontSize: 14, color: T.ink, fontWeight: 500,
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                  }}>{g.name}</div>
+                    fontFamily: fontSans, fontSize: remSize(14), letterSpacing: tracking(14), color: T.ink, fontWeight: 500,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name}</div>
                   <div style={{
-                    fontFamily: fontNum, fontSize: 11, color: T.muted, marginTop: 2,
-                  }}>{g.quantity} {g.unit} · {g.alcohol}%</div>
+                    fontFamily: fontNum, fontSize: remSize(11), letterSpacing: tracking(11), color: T.muted, marginTop: 2 }}>{g.quantity} {g.unit} · {g.alcohol}%</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, flexShrink: 0 }}>
-                  <span style={{ color: T.muted, fontFamily: fontNum, fontSize: 12 }}>×</span>
-                  <span style={{ color: T.ink, fontFamily: fontNum, fontSize: 17, letterSpacing: -0.3 }}>{g.count}</span>
+                  <span style={{ color: T.muted, fontFamily: fontNum, fontSize: remSize(12), letterSpacing: tracking(12) }}>×</span>
+                  <span style={{ color: T.ink, fontFamily: fontNum, fontSize: remSize(17), letterSpacing: tracking(17) }}>{g.count}</span>
                 </div>
               </div>
             ))}
@@ -3014,10 +2910,9 @@ function MapSection({ drinks, allDrinks, collapsed, toggleSection }) {
   const overlay = (txt, serif) => (
     <div style={{
       position: 'absolute', inset: 0, display: 'grid', placeItems: 'center',
-      background: T.surface2, color: T.muted, fontSize: 11, padding: 24,
+      background: T.surface2, color: T.muted, fontSize: remSize(11), letterSpacing: tracking(11), padding: 24,
       textAlign: 'center', zIndex: 1200,
-      fontFamily: serif ? fontSerif : fontSans, fontStyle: serif ? 'italic' : 'normal',
-    }}>{txt}</div>
+      fontFamily: serif ? fontSerif : fontSans, fontStyle: serif ? 'italic' : 'normal' }}>{txt}</div>
   );
 
   return (
@@ -3044,8 +2939,7 @@ function MapSection({ drinks, allDrinks, collapsed, toggleSection }) {
         // Confine la pile z-index de Leaflet (contrôles jusqu'à z-index 1000)
         // pour que la liste déroulante (SheetOverlay, z-index 100) passe bien
         // au-dessus de la carte au lieu d'être masquée par ses contrôles.
-        isolation: 'isolate',
-      }}>
+        isolation: 'isolate' }}>
         {!ready && !error && overlay('Chargement de la carte…', true)}
         {error && overlay(error, false)}
         {ready && geoPoints.length === 0 && overlay(
@@ -3168,9 +3062,8 @@ function TrendsSection({ allDrinks, drinks, prevDrinks, range, prevRange, period
     return (
       <StatSection id="trends" title="Tendances" collapsed={collapsed} toggleSection={toggleSection} sub="Consommation dans le temps">
         <Card><div style={{
-          color: T.muted, fontSize: 12, padding: '8px 0', textAlign: 'center',
-          fontStyle: 'italic', fontFamily: fontSerif,
-        }}>Pas assez d'historique (au moins 2 mois requis)</div></Card>
+          color: T.muted, fontSize: remSize(12), letterSpacing: tracking(12), padding: '8px 0', textAlign: 'center',
+          fontStyle: 'italic', fontFamily: fontSerif }}>Pas assez d'historique (au moins 2 mois requis)</div></Card>
       </StatSection>
     );
   }
@@ -3181,11 +3074,9 @@ function TrendsSection({ allDrinks, drinks, prevDrinks, range, prevRange, period
         <Card style={cumHasData ? { marginBottom: 10 } : undefined}>
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            gap: 8, marginBottom: 8,
-          }}>
+            gap: 8, marginBottom: 8 }}>
             <div style={{
-              color: T.ink, fontSize: 12.5, fontWeight: 500, letterSpacing: -0.1,
-            }}>Par mois</div>
+              color: T.ink, fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500 }}>Par mois</div>
             <ScopeChip label="6 derniers mois" />
           </div>
           {/* UNE série tracée (grammes — la mesure d'intensité, cohérente
@@ -3211,11 +3102,9 @@ function TrendsSection({ allDrinks, drinks, prevDrinks, range, prevRange, period
       {cumHasData && (
         <Card>
           <div style={{
-            color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
-          }}>Cumul vs période précédente</div>
+            color: T.ink, fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500, marginBottom: 3 }}>Cumul vs période précédente</div>
           <div style={{
-            color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
-          }}>Grammes d'alcool cumulés, jour par jour</div>
+            color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10), marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif }}>Grammes d'alcool cumulés, jour par jour</div>
           <ChartAutoWidth minHeight={170}>
             {(w) => (
               <SvgLineChart
@@ -3302,22 +3191,19 @@ function AdvancedSection({ drinks, allDrinks, period, hasPeriodData = true, coll
         <Card style={{ marginBottom: 10 }}>
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            gap: 8, marginBottom: 3,
-          }}>
+            gap: 8, marginBottom: 3 }}>
             <div style={{
-              color: T.ink, fontSize: 12.5, fontWeight: 500, letterSpacing: -0.1,
-            }}>Moyenne mobile</div>
+              color: T.ink, fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500 }}>Moyenne mobile</div>
             <ScopeChip label="30 derniers jours" />
           </div>
           <div style={{
-            color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
-          }}>Alcool quotidien lissé sur 7 et 30 jours</div>
+            color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10), marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif }}>Alcool quotidien lissé sur 7 et 30 jours</div>
           {rolling.length > 0 ? (
             <ChartAutoWidth minHeight={160}>
               {(w) => <RollingChart data={rolling} width={w} />}
             </ChartAutoWidth>
           ) : (
-            <div style={{ color: T.muted, fontSize: 11, padding: '12px 0', textAlign: 'center' }}>Aucune donnée</div>
+            <div style={{ color: T.muted, fontSize: remSize(11), letterSpacing: tracking(11), padding: '12px 0', textAlign: 'center' }}>Aucune donnée</div>
           )}
           <ChartLegend items={[
             { label: 'Brut', color: withAlpha(T.accent, 0.25) },
@@ -3330,11 +3216,9 @@ function AdvancedSection({ drinks, allDrinks, period, hasPeriodData = true, coll
       {showPeriodCards && (
         <Card style={{ marginBottom: 10 }}>
           <div style={{
-            color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
-          }}>Horloge des consommations</div>
+            color: T.ink, fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500, marginBottom: 3 }}>Horloge des consommations</div>
           <div style={{
-            color: T.muted, fontSize: 10, marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif,
-          }}>Répartition sur 24 heures</div>
+            color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10), marginBottom: 10, fontStyle: 'italic', fontFamily: fontSerif }}>Répartition sur 24 heures</div>
           <ChartAutoWidth minHeight={260} maxWidth={300}>
             {(w) => <SvgPolarClock hours={agg.byHour} size={w} />}
           </ChartAutoWidth>
@@ -3346,17 +3230,14 @@ function AdvancedSection({ drinks, allDrinks, period, hasPeriodData = true, coll
       {showPeriodCards && bacAvailable && (
         <Card>
           <div style={{
-            color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 3, letterSpacing: -0.1,
-          }}>Distribution des sessions</div>
+            color: T.ink, fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500, marginBottom: 3 }}>Distribution des sessions</div>
           <div style={{
-            color: T.muted, fontSize: 10, marginBottom: 12, fontStyle: 'italic', fontFamily: fontSerif,
-          }}>Durée par session</div>
+            color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10), marginBottom: 12, fontStyle: 'italic', fontFamily: fontSerif }}>Durée par session</div>
 
           <div>
             <div style={{
-              color: T.ink2, fontSize: 10.5, marginBottom: 4, textAlign: 'center',
-              letterSpacing: 0.3, textTransform: 'uppercase',
-            }}>Durée</div>
+              color: T.ink2, fontSize: remSize(10.5), letterSpacing: tracking(10.5, { caps: true }), marginBottom: 4, textAlign: 'center',
+              textTransform: 'uppercase' }}>Durée</div>
             <ChartAutoWidth minHeight={150}>
               {(w) => <SvgHistogram buckets={sessionDuration} width={w} height={150} color={T.accent} />}
             </ChartAutoWidth>
@@ -3568,9 +3449,8 @@ function SpendingSection({ drinks, prevDrinks, period, range, collapsed, toggleS
     return (
       <StatSection id="spending" title="Dépenses" collapsed={collapsed} toggleSection={toggleSection} sub="Coût de la consommation (prix saisis)">
         <Card><div style={{
-          color: T.muted, fontSize: 12, padding: '8px 0', textAlign: 'center',
-          fontStyle: 'italic', fontFamily: fontSerif,
-        }}>Aucun prix saisi sur cette période</div></Card>
+          color: T.muted, fontSize: remSize(12), letterSpacing: tracking(12), padding: '8px 0', textAlign: 'center',
+          fontStyle: 'italic', fontFamily: fontSerif }}>Aucun prix saisi sur cette période</div></Card>
       </StatSection>
     );
   }
@@ -3587,20 +3467,18 @@ function SpendingSection({ drinks, prevDrinks, period, range, collapsed, toggleS
       {byCat.length > 0 && (
         <Card style={{ marginBottom: 10 }}>
           <div style={{
-            color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 12, letterSpacing: -0.1,
-          }}>Par catégorie</div>
+            color: T.ink, fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500, marginBottom: 12 }}>Par catégorie</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
             <div style={{ flexShrink: 0 }}>
               <SvgDonut data={catDonut} size={120} thickness={18} />
             </div>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
               {byCat.map(c => (
-                <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: remSize(11), letterSpacing: tracking(11) }}>
                   <div style={{ width: 8, height: 8, borderRadius: 99, background: catColor(c.name, 65) }}/>
                   <span style={{
-                    color: T.ink, flex: 1, letterSpacing: -0.1,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>{c.name}</span>
+                    color: T.ink, flex: 1,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
                   <span style={{ color: T.muted, fontFamily: fontNum }}>{fmtPrice(c.total)}</span>
                 </div>
               ))}
@@ -3612,8 +3490,7 @@ function SpendingSection({ drinks, prevDrinks, period, range, collapsed, toggleS
       {spend.data.length > 0 && (
         <Card>
           <div style={{
-            color: T.ink, fontSize: 12.5, fontWeight: 500, marginBottom: 10, letterSpacing: -0.1,
-          }}>Dépenses {spend.unitLabel}</div>
+            color: T.ink, fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500, marginBottom: 10 }}>Dépenses {spend.unitLabel}</div>
           <ChartAutoWidth minHeight={160}>
             {(w) => (
               <SvgBarChart

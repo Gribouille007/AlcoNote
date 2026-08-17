@@ -120,10 +120,12 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
         <SearchInput value={query} onChange={setQuery} placeholder="Rechercher dans l'historique…" />
       </div>
 
-      <div style={{
+      {/* Rangée de filtres qui déborde : le contenu s'efface aux bords au
+          lieu d'être tranché net — on VOIT qu'il y en a plus de chaque côté
+          (cf. `.alco-fade-x`, shared.jsx). */}
+      <div className="alco-fade-x" style={{
         display: 'flex', gap: 8, padding: '2px 18px 14px',
-        overflowX: 'auto', scrollbarWidth: 'none',
-      }}>
+        overflowX: 'auto', scrollbarWidth: 'none' }}>
         <Pill active={filter === 'all'} onClick={() => setFilter('all')}>Tous</Pill>
         {categories.map(c => (
           <Pill key={c.id} active={filter === c.name} onClick={() => setFilter(c.name)}
@@ -133,7 +135,7 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
 
       <div style={{ flex: 1, overflow: 'auto', padding: '0 18px 120px' }}>
         {days.length === 0 && (
-          <div style={{ color: T.muted, fontSize: 13, padding: '60px 0', textAlign: 'center' }}>
+          <div style={{ color: T.muted, fontSize: remSize(13), letterSpacing: tracking(13), padding: '60px 0', textAlign: 'center' }}>
             Aucune entrée trouvée
           </div>
         )}
@@ -170,7 +172,8 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
   return (
     <div style={{ marginTop: first ? 4 : 14, marginBottom: 4, position: 'relative',
       ...staggerStyle(index, { reduced }) }}>
-      <button type="button" onClick={() => onToggle(day)}
+      <button type="button" className="alco-press-soft"
+        onClick={() => { haptic('tick'); onToggle(day); }}
         aria-expanded={!isCollapsed}
         aria-label={`${isCollapsed ? 'Déplier' : 'Replier'} ${fmtDayHeader(d)} — ${entries.length} boisson${entries.length > 1 ? 's' : ''}, ${totalCl.toFixed(0)} cL${rel ? `, ${rel}` : ''}`}
         style={{
@@ -185,24 +188,20 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
         borderRight: `1px solid ${T.rule}`,
         borderBottom: isCollapsed ? `1px solid ${T.rule}` : 'none',
         cursor: 'pointer', position: 'relative', zIndex: 2,
-        fontFamily: 'inherit', color: 'inherit',
-      }}>
+        fontFamily: 'inherit', color: 'inherit' }}>
         <span style={{
-          color: T.muted, transition: 'transform 0.2s ease',
+          color: T.muted,
+          transition: reduced ? undefined : `transform ${MOTION.base}ms ${MOTION.ease}`,
           transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
-          display: 'flex',
-        }}>
+          display: 'flex' }}>
           <SvgIcon icon={Ic.chev} size={12} />
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
-            fontFamily: fontSerif, fontSize: 18, color: T.ink,
-            letterSpacing: -0.2, lineHeight: 1.05,
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}>{fmtDayHeader(d)}</div>
+            ...TYPE.heading, color: T.ink,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fmtDayHeader(d)}</div>
           <div style={{
-            fontSize: 10, color: T.muted, letterSpacing: 0.6, marginTop: 3, fontFamily: fontNum,
-          }}>
+            ...type(10), ...TYPE.num, color: T.muted, marginTop: 3 }}>
             {entries.length} boisson{entries.length > 1 ? 's' : ''} · {totalCl.toFixed(0)} cL
             {rel && <span> · {rel}</span>}
           </div>
@@ -220,8 +219,7 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
             borderLeft: `1px solid ${T.rule}`,
             borderRight: `1px solid ${T.rule}`,
             borderBottom: `1px solid ${T.rule}`,
-            marginLeft: -24,
-          }}>
+            marginLeft: -24 }}>
             {entries.map((e, i) => (
               <EntryRow key={e.id || i} entry={e} onOpenEntry={onOpenEntry}
                 onDirectAdd={onDirectAdd}
@@ -245,30 +243,29 @@ const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectA
   return (
     <div style={{
       position: 'relative', overflow: 'hidden',
-      borderBottom: last ? 'none' : `1px solid ${T.rule}`,
-    }}>
-      <div style={{
+      borderBottom: last ? 'none' : `1px solid ${T.rule}` }}>
+      {/* Couche d'action révélée par le geste : elle apparaît et grandit
+          VERS le doigt (opacité + échelle pilotées par `apply`), au lieu
+          d'être déjà là, entière, derrière la ligne. */}
+      <div ref={swipe.actionRef} style={{
         position: 'absolute', inset: 0, background: T.dangerBg,
         display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-        paddingRight: 18, color: T.dangerBtnInk, fontSize: 12, fontWeight: 500, gap: 8,
-        cursor: 'pointer',
+        paddingRight: 18, color: T.dangerBtnInk, ...type(12, { weight: 500 }), gap: 8,
+        cursor: 'pointer', opacity: 0, transformOrigin: 'right center',
       }}
         onClick={() => onDelete && onDelete(e)}>
         <SvgIcon icon={Ic.trash} size={15} />
         <span>Supprimer</span>
       </div>
-      <div {...swipe.handlers} style={{
+      <div ref={swipe.rowRef} {...swipe.handlers} style={{
         display: 'flex', alignItems: 'center', gap: 12,
         padding: '12px 10px 12px 18px',
         position: 'relative', background: T.surface,
-        transform: `translateX(${swipe.offset}px)`,
-        transition: swipe.dragging ? 'none' : 'transform 0.22s ease',
-        touchAction: 'pan-y',
-      }}>
+        willChange: 'transform',
+        touchAction: 'pan-y' }}>
         <div style={{
           position: 'absolute', left: -2, top: 0, bottom: 0,
-          width: 20,
-        }}>
+          width: 20 }}>
           <div style={{
             position: 'absolute', left: 0, top: '50%',
             width: 14, height: 2, background: T.rule,
@@ -279,26 +276,25 @@ const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectA
           flexShrink: 0, boxShadow: `0 0 0 3px ${T.surface}`,
           zIndex: 1,
         }}/>
-        <button type="button" onClick={() => onOpenEntry && onOpenEntry(e)} aria-label={`Modifier ${e.family.name}, ${e.family.quantity} ${e.family.unit}, ${e.family.alcohol}°${e.place ? `, ${e.place}` : ''}`}
+        <button type="button" className="alco-press-soft"
+          onClick={() => onOpenEntry && onOpenEntry(e)} aria-label={`Modifier ${e.family.name}, ${e.family.quantity} ${e.family.unit}, ${e.family.alcohol}°${e.place ? `, ${e.place}` : ''}`}
           style={{
             ...ghostButton,
             flex: 1, minWidth: 0, cursor: 'pointer',
-            display: 'block', textAlign: 'left',
-          }}>
+            display: 'block', textAlign: 'left' }}>
           <div style={{
-            fontSize: 14, color: T.ink, fontWeight: 500, letterSpacing: -0.1,
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}>{e.family.name}</div>
+            ...TYPE.bodyStrong, color: T.ink,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.family.name}</div>
           <div style={{
-            color: T.muted, fontSize: 11.5, marginTop: 2, letterSpacing: 0.1,
-          }}>
+            color: T.muted, ...TYPE.footnote, marginTop: 2 }}>
             {e.family.quantity} {e.family.unit} · {e.family.alcohol}°
             {e.place && <span> · {e.place}</span>}
           </div>
         </button>
         <div style={{
-          fontFamily: fontNum, fontSize: 11, color: T.ink2,
-        }}>{t}</div>
+          // `TYPE.num` en DERNIER : la chasse fixe et l'approche neutre des
+          // chiffres doivent l'emporter sur l'approche optique du texte.
+          ...type(11), ...TYPE.num, color: T.ink2 }}>{t}</div>
         <QuickAddButton
           size={30}
           onAdd={() => onDirectAdd && onDirectAdd(e.family)}
@@ -309,93 +305,74 @@ const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectA
   );
 });
 
-// Tiny pointer-driven swipe controller. Returns translate offset, a
-// drag flag (so the consumer can disable transitions during dragging),
-// and the handlers to spread on the swipeable element. Calls `onAction`
-// when the user releases past `actionThreshold` pixels of drag.
-//
-// `offsetRef` mirrors the React state so `onPointerUp` always sees the
-// latest drag distance, even when several `pointermove` events fire
-// faster than React can commit a re-render. Reading `offset` from
-// closure was unreliable: the captured value lagged the real position
-// and the swipe action almost never triggered.
-//
-// `onClickCapture` swallows the synthetic click that some browsers
-// generate after a meaningful pointer drag, so swiping never
-// accidentally opens the edit sheet sitting underneath the row.
-function useSwipeToDelete(onAction, actionThreshold = 64, tapSlop = 10) {
-  const [offset, setOffset] = React.useState(0);
-  const [dragging, setDragging] = React.useState(false);
-  const offsetRef = React.useRef(0);
-  const startRef = React.useRef(null);
-  const lockRef = React.useRef(null); // 'h' | 'v' once direction decided
-  const swipedRef = React.useRef(false); // true once the finger travels past tapSlop (a real swipe, not a tap)
+// Balayage pour supprimer — geste physique complet, bâti sur `useAxisDrag`
+// (cf. shared.jsx) et non sur un compteur de pixels :
+//   • la ligne colle au doigt, et RÉSISTE élastiquement si on la pousse à
+//     droite (il n'y a rien de ce côté-là : elle le dit au lieu de bloquer) ;
+//   • franchir le seuil se SENT (petite vibration) — on sait avant de lâcher
+//     que ça supprimera ;
+//   • la couche rouge se révèle progressivement et grandit VERS le doigt :
+//     les frames intermédiaires annoncent le résultat au lieu d'interpoler
+//     bêtement ;
+//   • à la relâche, c'est le point d'arrivée PROJETÉ depuis la vitesse qui
+//     tranche : un petit coup sec suffit, sans traverser tout l'écran ;
+//   • la vitesse du doigt est passée au ressort — la ligne continue sur son
+//     élan, sans couture entre le geste et l'animation ;
+//   • retour au repos en amorti CRITIQUE : un dépassement ferait
+//     réapparaître le rouge du mauvais côté.
+// Retourne les refs à poser (la ligne, la couche d'action) : le mouvement
+// s'écrit dans le DOM, jamais via un état React re-rendu à chaque frame.
+const SWIPE_COMMIT_PX = 72;   // engagement de la suppression
+const SWIPE_FLING_V = 300;    // px/s : au-delà, le signe de la vitesse décide
+const SWIPE_RUBBER_DIM = 90;  // amplitude de résistance du mauvais côté
 
-  const setOff = (v) => { offsetRef.current = v; setOffset(v); };
+function useSwipeToDelete(onAction) {
+  const rowRef = React.useRef(null);
+  const actionRef = React.useRef(null);
+  const widthRef = React.useRef(0);
+  const armedRef = React.useRef(false);
 
-  const onPointerDown = (e) => {
-    startRef.current = { x: e.clientX, y: e.clientY };
-    lockRef.current = null;
-    swipedRef.current = false;
-    setDragging(true);
-    // Pointer capture is deferred until a horizontal swipe is actually
-    // committed (see onPointerMove). Capturing eagerly here would make
-    // every tap — including taps on the inner "+"/edit buttons — capture
-    // the pointer, which on touch can interfere with the trailing click.
-  };
-  const onPointerMove = (e) => {
-    if (!startRef.current) return;
-    const dx = e.clientX - startRef.current.x;
-    const dy = e.clientY - startRef.current.y;
-    if (!lockRef.current) {
-      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
-      lockRef.current = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
-      // Capture only once we've committed to a horizontal swipe so move/up
-      // keep coming even if the finger leaves the row. A plain tap never
-      // locks horizontal, so it never captures and its click flows through.
-      if (lockRef.current === 'h') {
-        try { e.currentTarget.setPointerCapture && e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+  const apply = React.useCallback((x) => {
+    const row = rowRef.current;
+    if (row) row.style.transform = `translate3d(${x}px, 0, 0)`;
+    const act = actionRef.current;
+    if (act) {
+      const p = Math.max(0, Math.min(1, -x / SWIPE_COMMIT_PX));
+      act.style.opacity = String(p);
+      act.style.transform = `scale(${(0.92 + 0.08 * p).toFixed(3)})`;
+    }
+  }, []);
+
+  const drag = useAxisDrag({
+    axis: 'x', apply,
+    config: MOTION.spring.ui,
+    onStart: () => {
+      armedRef.current = false;
+      const row = rowRef.current;
+      if (row && row.getBoundingClientRect) {
+        const w = row.getBoundingClientRect().width;
+        if (w > 0) widthRef.current = w;
       }
-    }
-    if (lockRef.current !== 'h') return;
-    // Only mark this as a real swipe (and thus swallow the trailing click
-    // in onClickCapture) once the finger has travelled past the tap slop.
-    // Below it the gesture stays a tap, so the row's "+" / edit button
-    // fire reliably despite a few px of finger jitter.
-    if (Math.abs(dx) > tapSlop) swipedRef.current = true;
-    const next = Math.max(-actionThreshold * 1.6, Math.min(0, dx));
-    setOff(next);
-  };
-  const onPointerUp = (e) => {
-    if (lockRef.current === 'h' && offsetRef.current <= -actionThreshold) {
-      onAction && onAction();
-    }
-    setOff(0);
-    setDragging(false);
-    startRef.current = null;
-    lockRef.current = null;
-    try {
-      if (e && e.currentTarget && e.currentTarget.releasePointerCapture) {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      }
-    } catch {}
-  };
-  // Called in the capture phase BEFORE the click reaches any inner
-  // button. Suppresses ghost clicks that follow a real swipe.
-  const onClickCapture = (e) => {
-    if (swipedRef.current) {
-      e.preventDefault();
-      e.stopPropagation();
-      swipedRef.current = false;
-    }
-  };
-  return {
-    offset, dragging,
-    handlers: {
-      onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp,
-      onClickCapture,
     },
-  };
+    bounds: () => ({ min: null, max: 0, dimension: SWIPE_RUBBER_DIM }),
+    onMove: (x) => {
+      const past = x <= -SWIPE_COMMIT_PX;
+      if (past !== armedRef.current) { armedRef.current = past; haptic('tick'); }
+    },
+    decide: ({ velocity, projected }) => {
+      const commit = Math.abs(velocity) > SWIPE_FLING_V
+        ? velocity < 0
+        : projected < -SWIPE_COMMIT_PX;
+      return {
+        to: commit ? -(widthRef.current || 420) : 0,
+        commit,
+        config: commit ? MOTION.spring.flick : MOTION.spring.ui,
+      };
+    },
+    onCommit: () => { haptic('commit'); onAction && onAction(); },
+  });
+
+  return { rowRef, actionRef, dragging: drag.dragging, handlers: drag.handlers };
 }
 
 Object.assign(window, { HistoryTab, DayGroup, EntryRow, useSwipeToDelete });

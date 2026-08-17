@@ -19,21 +19,18 @@ class AppErrorBoundary extends React.Component {
       <div style={{
         position: 'fixed', inset: 0, display: 'grid', placeItems: 'center',
         padding: 24, background: T.bg, color: T.ink,
-        zIndex: 9999, fontFamily: 'Geist, system-ui, sans-serif',
-      }}>
+        zIndex: 9999, fontFamily: 'Geist, system-ui, sans-serif' }}>
         <div style={{ maxWidth: 360, textAlign: 'center' }}>
           <div style={{
             fontFamily: '"Instrument Serif", serif', fontStyle: 'italic',
-            fontSize: 28, marginBottom: 12,
-          }}>Une erreur est survenue</div>
-          <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 18, lineHeight: 1.5 }}>
+            fontSize: remSize(28), letterSpacing: tracking(28), marginBottom: 12 }}>Une erreur est survenue</div>
+          <div style={{ fontSize: remSize(13), letterSpacing: tracking(13), opacity: 0.7, marginBottom: 18, lineHeight: 1.5 }}>
             L'application a rencontré un problème. Vos données restent intactes.
           </div>
           <button type="button" onClick={() => location.reload()} style={{
-            padding: '12px 22px', borderRadius: 12, fontSize: 13, fontWeight: 600,
+            padding: '12px 22px', borderRadius: 12, fontSize: remSize(13), letterSpacing: tracking(13), fontWeight: 600,
             background: T.accent, color: T.accentInk,
-            border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-          }}>Recharger</button>
+            border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Recharger</button>
         </div>
       </div>
     );
@@ -255,8 +252,7 @@ function AppShell() {
     <div className="alco-shell" style={{
       minHeight: '100dvh', height: '100dvh', display: 'flex', flexDirection: 'column',
       background: T.bg, color: T.ink, position: 'relative',
-      overflow: 'hidden',
-    }}>
+      overflow: 'hidden' }}>
       <AppHeader tab={tab} onMenu={() => setSettings(true)} />
       <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {activated.has('categories') && (
@@ -323,7 +319,7 @@ function AppShell() {
           bottom: 'calc(96px + env(safe-area-inset-bottom))',
           left: '50%', transform: 'translateX(-50%)',
           background: T.ink, color: T.bg, padding: '10px 14px 10px 18px', borderRadius: 99,
-          fontSize: 13, fontWeight: 500, letterSpacing: -0.1,
+          ...type(13, { weight: 500 }),
           zIndex: 9999, boxShadow: TOAST_SHADOW,
           display: 'flex', alignItems: 'center', gap: 10,
           // Montée + fondu à l'arrivée, fondu descendant au départ (les
@@ -331,14 +327,13 @@ function AppShell() {
           animation: reducedMotion ? undefined
             : toast.leaving ? `toastOut ${MOTION.fast}ms ${MOTION.ease} forwards`
             : `toastIn ${MOTION.base}ms ${MOTION.ease}`,
-          maxWidth: 'calc(100vw - 24px)',
-        }}>
+          maxWidth: 'calc(100vw - 24px)' }}>
           <span style={{ display: 'flex', color: T.accent }}><SvgIcon icon={Ic.check} size={14} /></span>
           <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {toast.msg}
           </span>
           {toast.opts && typeof toast.opts.undo === 'function' && (
-            <button type="button"
+            <button type="button" className="alco-press"
               onClick={() => {
                 const fn = toast.opts.undo;
                 clearTimeout(window.__aToast);
@@ -353,10 +348,8 @@ function AppShell() {
               style={{
                 marginLeft: 4, padding: '6px 12px', borderRadius: 99,
                 background: T.accent, color: T.accentInk,
-                border: 'none', fontSize: 12, fontWeight: 600,
-                fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0,
-                letterSpacing: 0.1,
-              }}>Annuler</button>
+                border: 'none', fontSize: remSize(12), letterSpacing: tracking(12), fontWeight: 600,
+                fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0 }}>Annuler</button>
           )}
         </div>
       )}
@@ -400,26 +393,21 @@ function AppHeader({ tab, onMenu }) {
       padding: 'calc(env(safe-area-inset-top) + 14px) 18px 14px',
       display: 'flex', alignItems: 'center',
       justifyContent: 'space-between', gap: 12,
-      flexShrink: 0,
-    }}>
-      <button type="button" onClick={onMenu} aria-label="Ouvrir les paramètres" style={{
-        width: 38, height: 38, borderRadius: 12, background: T.surface2,
-        display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
-        border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit',
-      }}>
+      flexShrink: 0 }}>
+      <button type="button" className="alco-press" onClick={onMenu}
+        aria-label="Ouvrir les paramètres" style={{
+          width: 38, height: 38, borderRadius: 12, background: T.surface2,
+          display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
+          border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit',
+          touchAction: 'manipulation' }}>
         <SvgIcon icon={Ic.menu} size={18} />
       </button>
       <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
         <h1 style={{
-          fontFamily: fontSerif, fontSize: 20, color: T.ink,
-          letterSpacing: -0.3, lineHeight: 1, fontStyle: 'italic',
-          margin: 0, fontWeight: 400,
-        }}>{titles[tab]}</h1>
+          ...TYPE.title, color: T.ink, lineHeight: 1, margin: 0 }}>{titles[tab]}</h1>
         <div style={{
-          fontSize: 10, color: T.muted, letterSpacing: 1, marginTop: 3,
-          textTransform: 'uppercase', fontWeight: 500,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>{dateStr}</div>
+          ...TYPE.label, color: T.muted, marginTop: 3,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dateStr}</div>
       </div>
       {/* Pile des pastilles BAC (la mienne + ami favori) dans un slot à
           hauteur FIXE de 38px, calé sur le bouton menu : le header garde
@@ -438,19 +426,52 @@ function NavButton({ item, active, onChange }) {
     <button type="button" role="tab" aria-selected={active}
       aria-label={item.label}
       {...press.handlers}
-      onClick={() => onChange(item.id)} style={{
+      onClick={() => { if (!active) haptic('select'); onChange(item.id); }} style={{
         flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
         gap: 4, padding: '10px 8px', cursor: 'pointer', position: 'relative',
-        color: active ? T.accent : T.muted,
+        // Sur une matière translucide, le contenu défile DERRIÈRE le libellé :
+        // un gris pâle y devient illisible. L'inactif reste donc de l'encre
+        // (ink2), jamais du `muted` — c'est la règle de vibrance.
+        color: active ? T.accent : T.ink2,
         background: 'transparent', border: 'none', fontFamily: 'inherit',
+        touchAction: 'manipulation',
         ...press.style,
-        ...(reduced ? null : { transition: `transform ${MOTION.fast}ms ${MOTION.ease}, color ${MOTION.fast}ms ${MOTION.ease}` }),
-      }}>
+        ...(reduced ? null : { transition: `transform ${MOTION.fast}ms ${MOTION.ease}, color ${MOTION.fast}ms ${MOTION.ease}` }) }}>
       <SvgIcon icon={item.icon} size={22} />
       <span style={{
-        fontSize: 10, letterSpacing: 0.2, fontWeight: active ? 600 : 400,
-      }}>{item.label}</span>
+        ...type(10, { caps: false, weight: active ? 600 : 500 }) }}>{item.label}</span>
     </button>
+  );
+}
+
+// Indicateur d'onglet actif : un ressort écrit sa transform directement dans
+// le DOM (aucun re-render par frame). Il n'a pas de « durée » — il rejoint la
+// nouvelle cible depuis là où il est, à la vitesse qu'il a.
+function NavIndicator({ index, count, reduced }) {
+  const ref = React.useRef(null);
+  const spring = useSpringDriver((x) => {
+    if (ref.current) ref.current.style.transform = `translateX(${x}%)`;
+  }, { from: index * 100, config: MOTION.spring.move });
+  React.useEffect(() => {
+    if (reduced) {
+      if (ref.current) ref.current.style.transform = `translateX(${index * 100}%)`;
+      return;
+    }
+    spring.set(index * 100);
+  }, [index, reduced, spring]);
+  return (
+    <div ref={ref} aria-hidden="true" style={{
+      position: 'absolute', top: 2, left: 0, height: 3,
+      width: `${100 / count}%`,
+      display: 'flex', justifyContent: 'center',
+      transform: `translateX(${index * 100}%)`,
+      willChange: reduced ? undefined : 'transform',
+      pointerEvents: 'none' }}>
+      <div style={{
+        width: 20, height: 3, borderRadius: 99,
+        background: T.accent, boxShadow: `0 0 8px ${T.accent}`,
+      }}/>
+    </div>
   );
 }
 
@@ -464,21 +485,23 @@ function BottomNav({ tab, onChange, onReorder }) {
   ];
   const activeIdx = Math.max(0, items.findIndex(it => it.id === tab));
   return (
-    <nav style={{
-      position: 'relative',
+    // La barre d'onglets n'est plus une bande opaque qui ampute l'écran :
+    // c'est une COUCHE DE MATIÈRE posée par-dessus, sous laquelle la liste
+    // continue de défiler (les zones défilantes réservent déjà 120px en bas).
+    // D'où l'absence de filet 1px : la séparation vient du flou et de
+    // l'arête claire de la matière, pas d'un trait.
+    <nav className="alco-material alco-material-edge" style={{
+      position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 20,
       padding: '6px 16px calc(4px + env(safe-area-inset-bottom))',
-      background: T.bg, borderTop: `1px solid ${T.rule}`,
-      flexShrink: 0,
-    }}>
+      boxShadow: T.shadowChrome }}>
       {tab === 'stats' && onReorder && (
         <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 4 }}>
-          <button type="button" onClick={onReorder}
+          <button type="button" onClick={onReorder} className="alco-press"
             aria-label="Réorganiser les sections"
             style={{
               ...ghostButton, display: 'flex', alignItems: 'center', gap: 5,
-              color: T.muted, fontSize: 10, letterSpacing: 0.3,
-              textTransform: 'uppercase', fontWeight: 500, padding: '2px 8px',
-            }}>
+              color: T.muted, ...TYPE.label, padding: '2px 8px',
+              touchAction: 'manipulation' }}>
             <SvgIcon icon={Ic.grip} size={12} /> Réorganiser
           </button>
         </div>
@@ -486,20 +509,11 @@ function BottomNav({ tab, onChange, onReorder }) {
       <div role="tablist" aria-label="Navigation principale"
         style={{ display: 'flex', justifyContent: 'space-around', paddingBottom: 2, position: 'relative' }}>
         {/* Indicateur actif unique : glisse d'un onglet à l'autre au lieu
-            d'apparaître. Hors flux (absolute) pour ne pas pousser les boutons. */}
-        <div aria-hidden="true" style={{
-          position: 'absolute', top: 2, left: 0, height: 3,
-          width: `${100 / items.length}%`,
-          display: 'flex', justifyContent: 'center',
-          transform: `translateX(${activeIdx * 100}%)`,
-          transition: reduced ? undefined : `transform ${MOTION.base}ms ${MOTION.ease}`,
-          pointerEvents: 'none',
-        }}>
-          <div style={{
-            width: 20, height: 3, borderRadius: 99,
-            background: T.accent, boxShadow: `0 0 8px ${T.accent}`,
-          }}/>
-        </div>
+            d'apparaître. Hors flux (absolute) pour ne pas pousser les boutons.
+            Piloté par un RESSORT et non une transition : en tapant vite deux
+            onglets d'affilée, il repart de sa position affichée AVEC sa
+            vitesse au lieu de heurter un mur puis de redémarrer à zéro. */}
+        <NavIndicator index={activeIdx} count={items.length} reduced={reduced} />
         {items.map(it => (
           <NavButton key={it.id} item={it} active={tab === it.id} onChange={onChange} />
         ))}
@@ -511,7 +525,8 @@ function Fab({ onClick }) {
   const reduced = useReducedMotion();
   const press = usePressScale();
   return (
-    <button type="button" onClick={onClick} aria-label="Ajouter une boisson"
+    <button type="button" aria-label="Ajouter une boisson"
+      onClick={(e) => { haptic('select'); onClick && onClick(e); }}
       {...press.handlers} style={{
       position: 'absolute',
       bottom: 'calc(78px + env(safe-area-inset-bottom))',
@@ -522,8 +537,7 @@ function Fab({ onClick }) {
       border: 'none', padding: 0, fontFamily: 'inherit',
       boxShadow: `0 10px 26px ${withAlpha(T.accent, T.isDark ? 0.5 : 0.45)}, 0 0 0 1px ${withAlpha(T.accentRing, T.isDark ? 0.3 : 0.6)}`,
       ...press.style,
-      ...(reduced ? null : { animation: `scaleIn ${MOTION.base}ms ${MOTION.ease}` }),
-    }}>
+      ...(reduced ? null : { animation: `scaleIn ${MOTION.base}ms ${MOTION.ease}` }) }}>
       <SvgIcon icon={Ic.plus} size={26} />
     </button>
   );

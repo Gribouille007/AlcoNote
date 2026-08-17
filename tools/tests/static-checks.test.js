@@ -135,6 +135,118 @@ test('DA : composant React.memo qui peint catColor/catBg → useCatPalette() obl
     'composants memoïsés peignant une couleur de catégorie sans abonnement palette');
 });
 
+// ── Typographie : l'approche suit la TAILLE, jamais une valeur en dur ──
+test('DA : aucune taille/approche en dur — remSize()/tracking()/type() partout', () => {
+  // Une seule valeur d'approche pour toutes les tailles est forcément fausse
+  // quelque part (cf. CLAUDE.md › DA § Typographie). Et une taille en px
+  // ignore le réglage « taille du texte » du système : tout passe par la
+  // grille (remSize/tracking/type/TYPE).
+  const offenders = [];
+  for (const f of jsxFiles) {
+    const src = read(path.join('proto', f));
+    const lines = src.split('\n');
+    // Le bloc TYPE de shared.jsx EST le système : c'est là que vivent les
+    // constantes de la courbe et la définition des rôles.
+    const allowed = f === 'shared.jsx'
+      ? blockRanges(lines, /^const TRACKING_A = /, /^const TYPE = Object\.freeze\(\{[\s\S]*/)
+        .concat(blockRanges(lines, /^const TYPE = Object\.freeze\(\{/, /^\}\);/))
+      : [];
+    lines.forEach((line, i) => {
+      if (inRanges(allowed, i)) return;
+      if (/^\s*(\/\/|\*)/.test(line)) return;
+      if (/\bfontSize:\s*-?\d/.test(line)) offenders.push(`fontSize en dur — proto/${f}:${i + 1}`);
+      if (/\bletterSpacing:\s*-?\d/.test(line)) offenders.push(`letterSpacing en dur — proto/${f}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(offenders, [],
+    `Taille/approche hors grille typographique :\n${offenders.join('\n')}`);
+});
+
+// ── Mouvement : le moteur est bien celui qui pilote les gestes ─────
+test('gel — constantes de mouvement (ressorts, décélération, élastique)', () => {
+  // Même logique que le gel des formules : le « toucher » de l'app ne doit
+  // pas dériver en silence. Changement voulu ? Mettre à jour CE test ET
+  // unit-motion.test.js dans le même commit.
+  const src = read('proto/shared.jsx');
+  const frozen = [
+    /ui:\s+Object\.freeze\(\{ damping: 1,\s+response: 0\.35 \}\)/,
+    /move:\s+Object\.freeze\(\{ damping: 1,\s+response: 0\.4 \}\)/,
+    /sheet:\s+Object\.freeze\(\{ damping: 0\.8, response: 0\.3 \}\)/,
+    /flick:\s+Object\.freeze\(\{ damping: 0\.8, response: 0\.4 \}\)/,
+    /decel: 0\.998,/,
+    /rubber: 0\.55,/,
+    /const TRACKING_A = 0\.49;/,
+    /const TRACKING_B = -0\.035;/,
+  ];
+  for (const re of frozen) {
+    assert.match(src, re,
+      `${re} introuvable — CONSTANTE DE MOUVEMENT GELÉE (CLAUDE.md § Mouvement). ` +
+      'Changement voulu ? Mettre à jour CE test ET unit-motion.test.js dans le même commit.');
+  }
+});
+
+test('gestes : feuilles, balayage et retour de page passent par useAxisDrag', () => {
+  // Le suivi 1:1, la capture du pointeur, l'élastique, la projection d'élan
+  // et la reprise en vol vivent DANS useAxisDrag. Réécrire un geste à la main
+  // à côté, c'est réintroduire les bugs qu'il corrige.
+  const wired = [
+    ['proto/shared.jsx', 'SheetOverlay (feuilles / tiroirs)'],
+    ['proto/history.jsx', 'balayage pour supprimer'],
+    ['proto/friends.jsx', 'retour de page au doigt'],
+  ];
+  for (const [file, what] of wired) {
+    assert.ok(read(file).includes('useAxisDrag({'), `${what} : useAxisDrag attendu dans ${file}`);
+  }
+});
+
+test('CSS injecté : aucun backtick non échappé (casserait tout le module)', () => {
+  // Le CSS de base vit dans un template literal. Un backtick oublié dans un
+  // commentaire le FERME : l'IIFE jette, l'évaluation de shared.js s'arrête
+  // net et l'app entière ne démarre plus (aucun token, aucun composant).
+  const src = read('proto/shared.jsx');
+  const start = src.indexOf('s.textContent = `');
+  assert.ok(start > 0, 'bloc CSS injecté introuvable');
+  const body = src.slice(start + 's.textContent = `'.length);
+  const end = body.indexOf('\n  `;');
+  assert.ok(end > 0, 'fin du bloc CSS introuvable');
+  const inner = body.slice(0, end);
+  const bad = [];
+  inner.split('\n').forEach((line, i) => {
+    for (let c = 0; c < line.length; c++) {
+      if (line[c] === '`' && line[c - 1] !== '\\') bad.push(`ligne ${i + 1} : ${line.trim().slice(0, 70)}`);
+    }
+  });
+  assert.deepEqual(bad, [], `Backtick non échappé dans le CSS injecté :\n${bad.join('\n')}`);
+});
+
+test('accessibilité : les trois préférences système sont honorées', () => {
+  // « Moins d'animation » ≠ « moins de transparence » ≠ « plus de contraste » :
+  // trois réglages indépendants, trois réponses distinctes.
+  const shared = read('proto/shared.jsx');
+  for (const q of ['prefers-reduced-motion: reduce',
+                   'prefers-reduced-transparency: reduce',
+                   'prefers-contrast: more']) {
+    assert.ok(shared.includes(q), `média-requête ${q} absente de shared.jsx`);
+  }
+  for (const hook of ['useReducedMotion', 'useReducedTransparency', 'useHighContrast']) {
+    assert.ok(shared.includes(`function ${hook}(`), `hook ${hook} absent`);
+  }
+  // Sans backdrop-filter (Firefox par défaut), une matière « translucide »
+  // deviendrait une vitre sale : il FAUT un repli opaque.
+  assert.match(shared, /@supports not \(\(backdrop-filter/,
+    'repli @supports pour les navigateurs sans backdrop-filter');
+});
+
+test('matières : la barre d’onglets flotte (pas de filet 1px de séparation)', () => {
+  const app = read('proto/app.jsx');
+  assert.match(app, /className="alco-material alco-material-edge"/,
+    'la barre d’onglets doit porter la matière + son arête');
+  assert.match(app, /position: 'absolute', left: 0, right: 0, bottom: 0/,
+    'la barre d’onglets doit être une couche flottante (contenu défilant dessous)');
+  assert.ok(!/borderTop: `1px solid \$\{T\.rule\}`,\n\s+flexShrink/.test(app),
+    'plus de filet 1px sous le chrome : la séparation vient de la matière');
+});
+
 test('conventions : chaque proto/*.jsx expose ses symboles via Object.assign(window', () => {
   for (const f of jsxFiles) {
     const src = read(path.join('proto', f));

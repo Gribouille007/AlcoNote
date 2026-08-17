@@ -38,8 +38,7 @@ function ChartAutoWidth({ minHeight = 0, maxWidth = null, children }) {
   return (
     <div ref={ref} style={{
       width: '100%', minHeight,
-      display: 'flex', justifyContent: 'center',
-    }}>
+      display: 'flex', justifyContent: 'center' }}>
       {width > 0 ? children(width) : null}
     </div>
   );
@@ -277,8 +276,7 @@ function ChartLegend({ items }) {
   return (
     <div style={{
       display: 'flex', gap: 14, justifyContent: 'center', marginTop: 8,
-      fontSize: 10.5, color: T.ink2, flexWrap: 'wrap',
-    }}>
+      fontSize: remSize(10.5), letterSpacing: tracking(10.5), color: T.ink2, flexWrap: 'wrap' }}>
       {items.map((it) => (
         <span key={it.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           {it.dot ? (
@@ -741,9 +739,8 @@ function SvgDonut({
   // Après les hooks : un donut sans donnée affiche un état vide honnête.
   if (!segments.length) {
     return <div style={{
-      color: T.muted, fontSize: 11, padding: '20px 0', textAlign: 'center',
-      fontStyle: 'italic', fontFamily: fontSerif,
-    }}>Aucune donnée</div>;
+      color: T.muted, fontSize: remSize(11), letterSpacing: tracking(11), padding: '20px 0', textAlign: 'center',
+      fontStyle: 'italic', fontFamily: fontSerif }}>Aucune donnée</div>;
   }
 
   const focused = hover != null ? segments[hover] : null;
@@ -1031,8 +1028,7 @@ function SvgBACProjection({ points, width = 320, height = 200, nowMs = Date.now(
   // hook order intact.
   if (!safePoints) {
     return <div style={{
-      color: T.muted, fontSize: 11, padding: '20px 0', textAlign: 'center',
-    }}>Aucune donnée d'alcoolémie</div>;
+      color: T.muted, fontSize: remSize(11), letterSpacing: tracking(11), padding: '20px 0', textAlign: 'center' }}>Aucune donnée d'alcoolémie</div>;
   }
 
   const h = height - pad.t - pad.b;
@@ -1287,8 +1283,7 @@ function SvgBACForecast({
 
   if (!hasAnyCurve) {
     return <div style={{
-      color: T.muted, fontSize: 11, padding: '20px 0', textAlign: 'center',
-    }}>Aucune donnée pour la prévision</div>;
+      color: T.muted, fontSize: remSize(11), letterSpacing: tracking(11), padding: '20px 0', textAlign: 'center' }}>Aucune donnée pour la prévision</div>;
   }
 
   const h = height - pad.t - pad.b;

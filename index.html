@@ -37,12 +37,24 @@
   </noscript>
 
   <style>
+    html {
+      /* Racine à 100% : la grille typographique de l'app est exprimée en
+         `rem` (cf. shared.jsx › TYPE), donc le réglage « taille du texte »
+         du navigateur/de l'OS agit réellement sur toute l'interface au lieu
+         d'être ignoré. Ne jamais fixer une taille en px ici. */
+      font-size: 100%;
+      /* Les fontes variables ajustent leur dessin à la taille rendue. */
+      font-optical-sizing: auto;
+      text-rendering: optimizeLegibility;
+    }
     html, body {
       margin: 0; padding: 0;
       width: 100%;
       min-height: 100vh; min-height: 100dvh;
       font-family: "Geist", system-ui, sans-serif;
-      transition: background 0.35s ease;
+      /* Le passage clair↔sombre est adouci : un saut de luminosité brutal
+         plein écran est agressif (et déconseillé en accessibilité). */
+      transition: background 0.35s ease, color 0.35s ease;
       overflow: hidden;
       overscroll-behavior: none;
       /* Zoom de page définitivement désactivé : seuls les pans (scroll)
@@ -89,6 +101,17 @@
       background: radial-gradient(ellipse at top, oklch(22% 0.01 55), oklch(14% 0.008 50) 75%);
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    /* Moins d'animation : plus aucune transition de fond plein écran, et les
+       animations résiduelles sont réduites à un battement (on ne met pas
+       `none` : certaines animations portent un état final `forwards`). */
+    @media (prefers-reduced-motion: reduce) {
+      html, body { transition: none; }
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
     /* Disable text selection across the whole app — the surface acts
        like a native UI, not a document. Inputs/textareas/contenteditable
        still allow selection so the user can type and edit values. */

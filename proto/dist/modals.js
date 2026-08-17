@@ -26,17 +26,19 @@ function ImpactStat({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
-      fontSize: 22,
+      fontSize: remSize(22),
+      letterSpacing: tracking(22),
       color: accent ? T.accent : T.ink,
-      letterSpacing: -0.3,
       lineHeight: 1
     }
   }, big), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10, {
+        caps: true
+      }),
       color: T.muted,
       marginTop: 4,
-      letterSpacing: 0.3,
       textTransform: 'uppercase'
     }
   }, unit));
@@ -83,7 +85,7 @@ function AddDrinkSheet({
   // drink twice before the button disables. Mirrors EditCategorySheet.
   const submittingRef = React.useRef(false);
   // Fermeture animée (sortie de sheet) — ré-armée à chaque ouverture.
-  const [closing, close] = useSheetClose(onClose, open);
+  const [closing, close, cancelClose] = useSheetClose(onClose, open);
 
   // Reset on open / prefill changes.
   React.useEffect(() => {
@@ -218,10 +220,11 @@ function AddDrinkSheet({
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: close,
     closing: closing,
+    onCancelClose: cancelClose,
     label: "Nouvelle boisson"
   }, /*#__PURE__*/React.createElement("div", {
+    className: "alco-material-sheet alco-material-edge",
     style: {
-      background: T.bg,
       borderRadius: '22px 22px 0 0',
       padding: '10px 0 0',
       maxHeight: '92dvh',
@@ -230,22 +233,10 @@ function AddDrinkSheet({
       borderTop: `1px solid ${T.rule}`,
       borderLeft: `1px solid ${T.rule}`,
       borderRight: `1px solid ${T.rule}`,
-      overflowX: 'hidden'
+      overflowX: 'hidden',
+      boxShadow: T.shadowSheet
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'grid',
-      placeItems: 'center',
-      padding: '6px 0 4px'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 42,
-      height: 4,
-      borderRadius: 99,
-      background: T.rule
-    }
-  })), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(SheetGrabber, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       alignItems: 'center',
@@ -258,14 +249,15 @@ function AddDrinkSheet({
     }
   }), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontFamily: fontSerif,
-      fontSize: 22,
-      color: T.ink,
-      letterSpacing: -0.3,
-      fontStyle: 'italic'
+      ...type(22, {
+        family: fontSerif,
+        italic: true
+      }),
+      color: T.ink
     }
   }, "Nouvelle boisson"), /*#__PURE__*/React.createElement("button", {
     type: "button",
+    className: "alco-press",
     onClick: close,
     "aria-label": "Fermer",
     style: {
@@ -279,12 +271,13 @@ function AddDrinkSheet({
       cursor: 'pointer',
       border: 'none',
       padding: 0,
-      fontFamily: 'inherit'
+      fontFamily: 'inherit',
+      touchAction: 'manipulation'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.close,
     size: 14
-  }))), /*#__PURE__*/React.createElement("div", {
+  })))), /*#__PURE__*/React.createElement("div", {
     style: {
       overflowY: 'auto',
       overflowX: 'hidden',
@@ -332,16 +325,16 @@ function AddDrinkSheet({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 14,
-      fontWeight: 500,
-      letterSpacing: -0.1
+      fontSize: remSize(14),
+      letterSpacing: tracking(14),
+      fontWeight: 500
     }
   }, "Scanner un code-barres"), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 11.5,
-      marginTop: 3,
-      letterSpacing: 0.1
+      fontSize: remSize(11.5),
+      letterSpacing: tracking(11.5),
+      marginTop: 3
     }
   }, "Remplissage auto depuis OpenFoodFacts")), /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.chev,
@@ -409,7 +402,8 @@ function AddDrinkSheet({
     style: {
       marginTop: 6,
       color: T.muted,
-      fontSize: 11,
+      fontSize: remSize(11),
+      letterSpacing: tracking(11),
       lineHeight: 1.4,
       display: 'flex',
       alignItems: 'center',
@@ -434,7 +428,8 @@ function AddDrinkSheet({
       alignItems: 'center',
       gap: 5,
       color: T.accent,
-      fontSize: 11,
+      fontSize: remSize(11),
+      letterSpacing: tracking(11),
       lineHeight: 1.4
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
@@ -530,7 +525,8 @@ function AddDrinkSheet({
       border: `1px solid ${T.dangerSoftBorder}`,
       padding: '8px 12px',
       borderRadius: 10,
-      fontSize: 12
+      fontSize: remSize(12),
+      letterSpacing: tracking(12)
     }
   }, err)), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -549,7 +545,8 @@ function AddDrinkSheet({
       borderRadius: 12,
       background: T.surface2,
       color: T.ink2,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       cursor: 'pointer',
       border: `1px solid ${T.rule}`,
       fontFamily: 'inherit'
@@ -565,10 +562,10 @@ function AddDrinkSheet({
       borderRadius: 12,
       background: T.accent,
       color: T.accentInk,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       fontWeight: 600,
       cursor: busy ? 'wait' : 'pointer',
-      letterSpacing: 0.1,
       opacity: busy ? 0.5 : 1,
       border: 'none',
       fontFamily: 'inherit',
@@ -706,9 +703,9 @@ function ScannerSheet({
     style: {
       color: VIEWFINDER_INK,
       fontFamily: fontSerif,
-      fontSize: 20,
-      fontStyle: 'italic',
-      letterSpacing: -0.2
+      fontSize: remSize(20),
+      letterSpacing: tracking(20),
+      fontStyle: 'italic'
     }
   }, "Scanner"), /*#__PURE__*/React.createElement("button", {
     type: "button",
@@ -784,7 +781,8 @@ function ScannerSheet({
       right: 0,
       textAlign: 'center',
       color: VIEWFINDER_INK,
-      fontSize: 13
+      fontSize: remSize(13),
+      letterSpacing: tracking(13)
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -821,7 +819,8 @@ function ScannerSheet({
       padding: '14px',
       borderRadius: 14,
       textAlign: 'center',
-      fontSize: 14,
+      fontSize: remSize(14),
+      letterSpacing: tracking(14),
       fontWeight: 600,
       cursor: 'pointer',
       border: 'none',
@@ -847,8 +846,10 @@ function FactCell({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 9,
-      letterSpacing: 1,
+      fontSize: remSize(9),
+      letterSpacing: tracking(9, {
+        caps: true
+      }),
       textTransform: 'uppercase',
       color: T.muted,
       fontWeight: 500,
@@ -857,9 +858,9 @@ function FactCell({
   }, label), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
-      fontSize: 17,
+      fontSize: remSize(17),
+      letterSpacing: tracking(17),
       color: T.ink,
-      letterSpacing: -0.2,
       display: 'flex',
       justifyContent: 'center'
     }
@@ -891,7 +892,7 @@ function DrinkDetailSheet({
   useCatPalette();
   // Fermeture animée. `onEdit` / `onAddAgain` restent des bascules
   // instantanées : la sheet est REMPLACÉE par la suivante, pas fermée.
-  const [closing, close] = useSheetClose(onClose);
+  const [closing, close, cancelClose] = useSheetClose(onClose);
   // Inline "move to another category" affordance (applies to the whole
   // family via updateFamily).
   const [moving, setMoving] = React.useState(false);
@@ -952,10 +953,11 @@ function DrinkDetailSheet({
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: close,
     closing: closing,
+    onCancelClose: cancelClose,
     label: "D\xE9tail de la boisson"
   }, /*#__PURE__*/React.createElement("div", {
+    className: "alco-material-sheet alco-material-edge",
     style: {
-      background: T.bg,
       borderRadius: '22px 22px 0 0',
       maxHeight: '90dvh',
       display: 'flex',
@@ -963,22 +965,10 @@ function DrinkDetailSheet({
       borderTop: `1px solid ${T.rule}`,
       borderLeft: `1px solid ${T.rule}`,
       borderRight: `1px solid ${T.rule}`,
-      overflow: 'hidden'
+      overflow: 'hidden',
+      boxShadow: T.shadowSheet
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'grid',
-      placeItems: 'center',
-      padding: '10px 0 4px'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 42,
-      height: 4,
-      borderRadius: 99,
-      background: T.rule
-    }
-  })), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(SheetGrabber, null, /*#__PURE__*/React.createElement("div", {
     style: {
       padding: '20px 22px 22px',
       background: `linear-gradient(160deg, ${catBg(f.category)}, transparent 90%)`,
@@ -1012,8 +1002,10 @@ function DrinkDetailSheet({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 10.5,
-      letterSpacing: 1.4,
+      fontSize: remSize(10.5),
+      letterSpacing: tracking(10.5, {
+        caps: true
+      }),
       textTransform: 'uppercase',
       color,
       fontWeight: 500,
@@ -1022,9 +1014,9 @@ function DrinkDetailSheet({
   }, f.category), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
-      fontSize: 24,
+      fontSize: remSize(24),
+      letterSpacing: tracking(24),
       color: T.ink,
-      letterSpacing: -0.4,
       lineHeight: 1.1,
       wordBreak: 'break-word'
     }
@@ -1084,14 +1076,17 @@ function DrinkDetailSheet({
     }
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
+    className: "alco-press",
     onClick: () => rate(0),
     style: {
       ...ghostButton,
       color: T.muted,
-      fontSize: 11,
-      cursor: 'pointer'
+      ...type(11),
+      cursor: 'pointer',
+      padding: 4,
+      touchAction: 'manipulation'
     }
-  }, "Effacer la note"))), /*#__PURE__*/React.createElement("div", {
+  }, "Effacer la note")))), /*#__PURE__*/React.createElement("div", {
     style: {
       overflow: 'auto',
       padding: '16px 22px 20px',
@@ -1100,10 +1095,7 @@ function DrinkDetailSheet({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10.5,
-      letterSpacing: 1.4,
-      textTransform: 'uppercase',
-      fontWeight: 500,
+      ...TYPE.labelLg,
       marginBottom: 10
     }
   }, "Historique \xB7 ", f.entries.length, " entr\xE9e", f.entries.length !== 1 ? 's' : ''), /*#__PURE__*/React.createElement("div", {
@@ -1127,7 +1119,8 @@ function DrinkDetailSheet({
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: fontSerif,
-        fontSize: 14,
+        fontSize: remSize(14),
+        letterSpacing: tracking(14),
         color: T.ink2,
         fontStyle: 'italic',
         width: 60,
@@ -1141,14 +1134,16 @@ function DrinkDetailSheet({
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: fontNum,
-        fontSize: 13,
+        fontSize: remSize(13),
+        letterSpacing: tracking(13),
         color: T.ink,
         fontWeight: 500
       }
     }, e.ts.slice(11, 16)), e.place && /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.muted,
-        fontSize: 11,
+        fontSize: remSize(11),
+        letterSpacing: tracking(11),
         marginTop: 2,
         display: 'flex',
         alignItems: 'center',
@@ -1167,15 +1162,18 @@ function DrinkDetailSheet({
         gap: 5,
         flexShrink: 0,
         fontFamily: fontNum,
-        fontSize: 12,
+        fontSize: remSize(12),
+        letterSpacing: tracking(12),
         color: T.ink2
       }
     }, e.raw.priceIsCustom && /*#__PURE__*/React.createElement("span", {
       style: {
         fontFamily: fontSans,
-        fontSize: 8.5,
+        fontSize: remSize(8.5),
+        letterSpacing: tracking(8.5, {
+          caps: true
+        }),
         color: T.muted,
-        letterSpacing: 0.3,
         textTransform: 'uppercase'
       }
     }, "perso"), fmtPrice(e.raw.price)), /*#__PURE__*/React.createElement("button", {
@@ -1230,7 +1228,8 @@ function DrinkDetailSheet({
       padding: '10px 0',
       cursor: 'pointer',
       color: T.ink2,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -1284,7 +1283,8 @@ function DrinkDetailSheet({
       borderRadius: 12,
       background: T.surface2,
       color: T.ink2,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       cursor: 'pointer',
       border: `1px solid ${T.rule}`,
       display: 'flex',
@@ -1306,7 +1306,8 @@ function DrinkDetailSheet({
       borderRadius: 12,
       background: T.accent,
       color: T.accentInk,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       fontWeight: 600,
       cursor: 'pointer',
       display: 'flex',
@@ -1359,7 +1360,7 @@ function EditEntrySheet({
   const savingRef = React.useRef(false);
   const removingRef = React.useRef(false);
   // Fermeture animée (sortie de sheet).
-  const [closing, close] = useSheetClose(onClose);
+  const [closing, close, cancelClose] = useSheetClose(onClose);
   const save = async () => {
     if (savingRef.current || removingRef.current) return;
     setErr('');
@@ -1448,10 +1449,11 @@ function EditEntrySheet({
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: close,
     closing: closing,
+    onCancelClose: cancelClose,
     label: "Modifier l'entr\xE9e"
   }, /*#__PURE__*/React.createElement("div", {
+    className: "alco-material-sheet alco-material-edge",
     style: {
-      background: T.bg,
       borderRadius: '22px 22px 0 0',
       maxHeight: '92dvh',
       display: 'flex',
@@ -1459,22 +1461,10 @@ function EditEntrySheet({
       borderTop: `1px solid ${T.rule}`,
       borderLeft: `1px solid ${T.rule}`,
       borderRight: `1px solid ${T.rule}`,
-      overflowX: 'hidden'
+      overflowX: 'hidden',
+      boxShadow: T.shadowSheet
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'grid',
-      placeItems: 'center',
-      padding: '10px 0 4px'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 42,
-      height: 4,
-      borderRadius: 99,
-      background: T.rule
-    }
-  })), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(SheetGrabber, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       alignItems: 'center',
@@ -1487,14 +1477,15 @@ function EditEntrySheet({
     }
   }), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontFamily: fontSerif,
-      fontSize: 22,
-      color: T.ink,
-      letterSpacing: -0.3,
-      fontStyle: 'italic'
+      ...type(22, {
+        family: fontSerif,
+        italic: true
+      }),
+      color: T.ink
     }
   }, "Modifier l'entr\xE9e"), /*#__PURE__*/React.createElement("button", {
     type: "button",
+    className: "alco-press",
     onClick: close,
     "aria-label": "Fermer",
     style: {
@@ -1508,12 +1499,13 @@ function EditEntrySheet({
       cursor: 'pointer',
       border: 'none',
       padding: 0,
-      fontFamily: 'inherit'
+      fontFamily: 'inherit',
+      touchAction: 'manipulation'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.close,
     size: 14
-  }))), /*#__PURE__*/React.createElement("div", {
+  })))), /*#__PURE__*/React.createElement("div", {
     style: {
       overflowY: 'auto',
       overflowX: 'hidden',
@@ -1619,7 +1611,8 @@ function EditEntrySheet({
       border: `1px solid ${T.dangerSoftBorder}`,
       padding: '8px 12px',
       borderRadius: 10,
-      fontSize: 12,
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
       marginBottom: 10
     }
   }, err), /*#__PURE__*/React.createElement("button", {
@@ -1635,7 +1628,8 @@ function EditEntrySheet({
       background: T.dangerSoftBg,
       color: T.accent2,
       border: `1px solid ${T.dangerSoftBorder}`,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500,
       cursor: busy ? 'wait' : 'pointer',
       opacity: busy ? 0.5 : 1,
@@ -1665,7 +1659,8 @@ function EditEntrySheet({
       borderRadius: 12,
       background: T.surface2,
       color: T.ink2,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       cursor: 'pointer',
       border: `1px solid ${T.rule}`,
       fontFamily: 'inherit'
@@ -1681,7 +1676,8 @@ function EditEntrySheet({
       borderRadius: 12,
       background: T.accent,
       color: T.accentInk,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       fontWeight: 600,
       cursor: busy ? 'wait' : 'pointer',
       opacity: busy ? 0.5 : 1,
@@ -1727,7 +1723,7 @@ function EditFamilySheet({
   const savingRef = React.useRef(false);
   const removingRef = React.useRef(false);
   // Fermeture animée (sortie de sheet).
-  const [closing, close] = useSheetClose(onClose);
+  const [closing, close, cancelClose] = useSheetClose(onClose);
   const save = async () => {
     if (savingRef.current || removingRef.current) return;
     setErr('');
@@ -1867,32 +1863,21 @@ function EditFamilySheet({
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: close,
     closing: closing,
+    onCancelClose: cancelClose,
     label: "Modifier la boisson"
   }, /*#__PURE__*/React.createElement("div", {
+    className: "alco-material-sheet alco-material-edge",
     style: {
-      background: T.bg,
       borderRadius: '22px 22px 0 0',
       maxHeight: '92dvh',
       display: 'flex',
       flexDirection: 'column',
       borderTop: `1px solid ${T.rule}`,
       borderLeft: `1px solid ${T.rule}`,
-      borderRight: `1px solid ${T.rule}`
+      borderRight: `1px solid ${T.rule}`,
+      boxShadow: T.shadowSheet
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'grid',
-      placeItems: 'center',
-      padding: '10px 0 4px'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 42,
-      height: 4,
-      borderRadius: 99,
-      background: T.rule
-    }
-  })), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(SheetGrabber, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       alignItems: 'center',
@@ -1905,14 +1890,15 @@ function EditFamilySheet({
     }
   }), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontFamily: fontSerif,
-      fontSize: 22,
-      color: T.ink,
-      letterSpacing: -0.3,
-      fontStyle: 'italic'
+      ...type(22, {
+        family: fontSerif,
+        italic: true
+      }),
+      color: T.ink
     }
   }, "Modifier la boisson"), /*#__PURE__*/React.createElement("button", {
     type: "button",
+    className: "alco-press",
     onClick: close,
     "aria-label": "Fermer",
     style: {
@@ -1926,12 +1912,13 @@ function EditFamilySheet({
       cursor: 'pointer',
       border: 'none',
       padding: 0,
-      fontFamily: 'inherit'
+      fontFamily: 'inherit',
+      touchAction: 'manipulation'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.close,
     size: 14
-  }))), /*#__PURE__*/React.createElement("div", {
+  })))), /*#__PURE__*/React.createElement("div", {
     style: {
       overflow: 'auto',
       padding: '0 18px 20px',
@@ -2000,8 +1987,8 @@ function EditFamilySheet({
     style: {
       marginTop: 6,
       color: T.accent,
-      fontSize: 11,
-      letterSpacing: 0.2
+      fontSize: remSize(11),
+      letterSpacing: tracking(11)
     }
   }, refPricedCount, " boisson", plur(refPricedCount), " ", /*#__PURE__*/React.createElement("span", {
     style: {
@@ -2011,7 +1998,8 @@ function EditFamilySheet({
     style: {
       marginTop: 6,
       color: T.muted,
-      fontSize: 11,
+      fontSize: remSize(11),
+      letterSpacing: tracking(11),
       lineHeight: 1.4
     }
   }, "Toutes les entr\xE9es ont un prix personnalis\xE9 \u2014 ce prix ne sera repris que par les nouveaux ajouts.")), /*#__PURE__*/React.createElement(FieldGroup, {
@@ -2026,7 +2014,8 @@ function EditFamilySheet({
       border: `1px solid ${T.dangerSoftBorder}`,
       padding: '8px 12px',
       borderRadius: 10,
-      fontSize: 12,
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
       marginBottom: 10
     }
   }, err), /*#__PURE__*/React.createElement("button", {
@@ -2042,7 +2031,8 @@ function EditFamilySheet({
       background: T.dangerSoftBg,
       color: T.accent2,
       border: `1px solid ${T.dangerSoftBorder}`,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500,
       cursor: busy ? 'wait' : 'pointer',
       opacity: busy ? 0.5 : 1,
@@ -2072,7 +2062,8 @@ function EditFamilySheet({
       borderRadius: 12,
       background: T.surface2,
       color: T.ink2,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       cursor: 'pointer',
       border: `1px solid ${T.rule}`,
       fontFamily: 'inherit'
@@ -2088,7 +2079,8 @@ function EditFamilySheet({
       borderRadius: 12,
       background: T.accent,
       color: T.accentInk,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       fontWeight: 600,
       cursor: busy ? 'wait' : 'pointer',
       opacity: busy ? 0.5 : 1,
@@ -2110,7 +2102,7 @@ function SettingsDrawer({
   // SW is registered (browser preview, file://).
   const swVersion = useSWVersion();
   // Fermeture animée (le tiroir repart vers la gauche) — ré-armée à l'ouverture.
-  const [closing, close] = useSheetClose(onClose, open);
+  const [closing, close, cancelClose] = useSheetClose(onClose, open);
   if (!open) return null;
   const onExport = async () => {
     try {
@@ -2164,16 +2156,18 @@ function SettingsDrawer({
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: close,
     closing: closing,
+    onCancelClose: cancelClose,
     side: "left",
     label: "Param\xE8tres"
   }, /*#__PURE__*/React.createElement("div", {
+    className: "alco-material-panel alco-material-edge",
     style: {
-      background: T.bg,
       width: 'min(360px, 100vw)',
       height: '100%',
       borderRight: `1px solid ${T.rule}`,
       display: 'flex',
-      flexDirection: 'column'
+      flexDirection: 'column',
+      boxShadow: T.shadowSheet
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2185,14 +2179,12 @@ function SettingsDrawer({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontFamily: fontSerif,
-      fontSize: 24,
-      color: T.ink,
-      letterSpacing: -0.4,
-      fontStyle: 'italic'
+      ...TYPE.display,
+      color: T.ink
     }
   }, "Param\xE8tres"), /*#__PURE__*/React.createElement("button", {
     type: "button",
+    className: "alco-press",
     onClick: close,
     "aria-label": "Fermer les param\xE8tres",
     style: {
@@ -2206,7 +2198,8 @@ function SettingsDrawer({
       cursor: 'pointer',
       border: 'none',
       padding: 0,
-      fontFamily: 'inherit'
+      fontFamily: 'inherit',
+      touchAction: 'manipulation'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.close,
@@ -2219,7 +2212,9 @@ function SettingsDrawer({
     }
   }, /*#__PURE__*/React.createElement(SettingsGroup, {
     label: "Apparence"
-  }, /*#__PURE__*/React.createElement(ThemePicker, null)), /*#__PURE__*/React.createElement(SettingsGroup, {
+  }, /*#__PURE__*/React.createElement(ThemePicker, null), /*#__PURE__*/React.createElement(HapticsRow, {
+    last: true
+  })), /*#__PURE__*/React.createElement(SettingsGroup, {
     label: "Profil"
   }, /*#__PURE__*/React.createElement(ProfileRow, {
     label: "Poids (kg)",
@@ -2262,10 +2257,10 @@ function SettingsDrawer({
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       textAlign: 'center',
-      padding: '24px 0',
-      letterSpacing: 0.3
+      padding: '24px 0'
     }
   }, "AlcoNote \xB7 ", swVersion || '—'))));
 }
@@ -2289,7 +2284,8 @@ function ThemePicker() {
       flex: 1,
       padding: '14px 0',
       textAlign: 'center',
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       cursor: 'pointer',
       background: current === id ? T.accentSoft : 'transparent',
       color: current === id ? T.accent : T.ink2,
@@ -2302,7 +2298,6 @@ function ThemePicker() {
       borderLeft: 'none',
       borderBottom: 'none',
       borderRight: i === 0 ? `1px solid ${T.rule}` : 'none',
-      letterSpacing: -0.1,
       fontFamily: 'inherit'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
@@ -2335,8 +2330,8 @@ function ProfileRow({
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       color: T.ink,
-      fontSize: 13.5,
-      letterSpacing: -0.1
+      fontSize: remSize(13.5),
+      letterSpacing: tracking(13.5)
     }
   }, label), numeric ?
   /*#__PURE__*/
@@ -2354,7 +2349,8 @@ function ProfileRow({
     style: {
       width: 80,
       padding: '6px 10px',
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       textAlign: 'right',
       borderRadius: 8
     }
@@ -2371,7 +2367,8 @@ function ProfileRow({
       borderRadius: 8,
       padding: '6px 10px',
       color: T.ink,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       fontFamily: fontSans,
       outline: 'none',
       textAlign: 'right'
@@ -2395,8 +2392,8 @@ function GenderPicker({
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       color: T.ink,
-      fontSize: 13.5,
-      letterSpacing: -0.1
+      fontSize: remSize(13.5),
+      letterSpacing: tracking(13.5)
     }
   }, "Sexe"), /*#__PURE__*/React.createElement("div", {
     role: "radiogroup",
@@ -2419,9 +2416,9 @@ function GenderPicker({
       padding: '6px 10px',
       borderRadius: 7,
       textAlign: 'center',
-      fontSize: 11,
+      fontSize: remSize(11),
+      letterSpacing: tracking(11),
       cursor: 'pointer',
-      letterSpacing: -0.1,
       background: value === k ? T.ink : 'transparent',
       color: value === k ? T.bg : T.ink2,
       fontWeight: value === k ? 600 : 400,
@@ -2441,8 +2438,10 @@ function SettingsGroup({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 10,
-      letterSpacing: 1.4,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10, {
+        caps: true
+      }),
       textTransform: 'uppercase',
       color: T.muted,
       fontWeight: 500,
@@ -2458,6 +2457,74 @@ function SettingsGroup({
     }
   }, children));
 }
+
+// Interrupteur de retour haptique. Le retour tactile est un service rendu à
+// l'utilisateur, pas une signature : il doit pouvoir le couper. La valeur vit
+// en localStorage (lue à chaud dans des handlers de geste, sans await).
+function HapticsRow({
+  last
+}) {
+  const [on, setOn] = React.useState(() => hapticsEnabled());
+  const toggle = () => {
+    const next = !on;
+    setHapticsEnabled(next);
+    setOn(next);
+    if (next) haptic('commit'); // on fait SENTIR ce qu'on vient d'activer
+  };
+  return /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    role: "switch",
+    "aria-checked": on,
+    onClick: toggle,
+    className: "alco-press-soft",
+    style: {
+      width: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '12px 14px',
+      gap: 10,
+      borderTop: 'none',
+      borderLeft: 'none',
+      borderRight: 'none',
+      borderBottom: last ? 'none' : `1px solid ${T.rule}`,
+      background: 'transparent',
+      fontFamily: 'inherit',
+      cursor: 'pointer',
+      color: 'inherit',
+      textAlign: 'left',
+      touchAction: 'manipulation'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: T.ink,
+      ...type(13.5)
+    }
+  }, "Retour haptique"), /*#__PURE__*/React.createElement("span", {
+    "aria-hidden": "true",
+    style: {
+      width: 40,
+      height: 24,
+      borderRadius: 99,
+      flexShrink: 0,
+      background: on ? T.accent : T.surface3,
+      border: `1px solid ${on ? T.accent : T.rule}`,
+      display: 'flex',
+      alignItems: 'center',
+      padding: 2,
+      transition: `background ${MOTION.fast}ms ${MOTION.ease}`
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 18,
+      height: 18,
+      borderRadius: 99,
+      background: on ? T.accentInk : T.muted,
+      transform: `translateX(${on ? 16 : 0}px)`,
+      transition: `transform ${MOTION.fast}ms ${MOTION.ease}`
+    }
+  })));
+}
 function SettingRow({
   label,
   value,
@@ -2472,6 +2539,7 @@ function SettingRow({
   } : {};
   return /*#__PURE__*/React.createElement(Tag, _extends({}, extra, {
     onClick: onClick,
+    className: onClick ? 'alco-press-soft' : undefined,
     style: {
       width: '100%',
       display: 'flex',
@@ -2492,8 +2560,7 @@ function SettingRow({
   }), /*#__PURE__*/React.createElement("span", {
     style: {
       color: danger ? T.accent2 : T.ink,
-      fontSize: 13.5,
-      letterSpacing: -0.1,
+      ...type(13.5),
       display: 'flex',
       alignItems: 'center',
       gap: 10
@@ -2505,7 +2572,7 @@ function SettingRow({
   }), label), value !== undefined ? /*#__PURE__*/React.createElement("span", {
     style: {
       color: T.muted,
-      fontSize: 12.5
+      ...type(12.5)
     }
   }, value) : !danger && onClick && /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.chev,
@@ -2537,13 +2604,14 @@ function ToggleRow({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 13.5,
-      letterSpacing: -0.1
+      fontSize: remSize(13.5),
+      letterSpacing: tracking(13.5)
     }
   }, label), sub && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 11,
+      fontSize: remSize(11),
+      letterSpacing: tracking(11),
       marginTop: 2,
       lineHeight: 1.4
     }

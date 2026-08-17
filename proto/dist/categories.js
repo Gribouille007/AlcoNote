@@ -143,7 +143,8 @@ function CategoryGrid({
   }))), cats.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       padding: '40px 0 16px',
       textAlign: 'center'
     }
@@ -165,8 +166,8 @@ function CategoryGrid({
       gap: 8,
       cursor: 'pointer',
       fontFamily: 'inherit',
-      fontSize: 13,
-      letterSpacing: -0.1
+      fontSize: remSize(13),
+      letterSpacing: tracking(13)
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.plus,
@@ -184,7 +185,8 @@ function CategoryGrid({
   })), matchedFams.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       padding: '40px 0',
       textAlign: 'center'
     }
@@ -266,9 +268,9 @@ const CategoryCard = React.memo(function CategoryCard({
     style: {
       fontFamily: fontSans,
       fontWeight: 500,
-      fontSize: 15,
+      fontSize: remSize(15),
+      letterSpacing: tracking(15),
       color: T.ink,
-      letterSpacing: -0.2,
       marginBottom: 3,
       whiteSpace: 'nowrap',
       overflow: 'hidden',
@@ -277,8 +279,8 @@ const CategoryCard = React.memo(function CategoryCard({
   }, cat.name), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 11,
-      letterSpacing: 0.1,
+      fontSize: remSize(11),
+      letterSpacing: tracking(11),
       display: 'flex',
       alignItems: 'center',
       gap: 6
@@ -378,7 +380,8 @@ function FamilyList({
       display: 'flex',
       alignItems: 'center',
       gap: 6,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       cursor: 'pointer'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
@@ -399,7 +402,8 @@ function FamilyList({
       background: T.surface2,
       border: `1px solid ${T.rule}`,
       color: T.ink2,
-      fontSize: 11
+      fontSize: remSize(11),
+      letterSpacing: tracking(11)
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.edit,
@@ -407,18 +411,18 @@ function FamilyList({
   }), /*#__PURE__*/React.createElement("span", null, "Modifier"))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
-      fontSize: 36,
+      fontSize: remSize(36),
+      letterSpacing: tracking(36),
       color: T.ink,
-      letterSpacing: -0.8,
       lineHeight: 1,
       marginBottom: 4
     }
   }, category), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 12,
-      marginBottom: 18,
-      letterSpacing: 0.1
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
+      marginBottom: 18
     }
   }, sortedLen, " variante", sortedLen !== 1 ? 's' : '', " \xB7", ' ', entriesTotal, " entr\xE9es au total"), rows.map(({
     f,
@@ -435,7 +439,8 @@ function FamilyList({
   })), rows.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       padding: '40px 0',
       textAlign: 'center'
     }
@@ -499,10 +504,10 @@ const FamilyRow = React.memo(function FamilyRow({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 14.5,
+      fontSize: remSize(14.5),
+      letterSpacing: tracking(14.5),
       color: T.ink,
       fontWeight: 500,
-      letterSpacing: -0.2,
       whiteSpace: 'nowrap',
       overflow: 'hidden',
       textOverflow: 'ellipsis'
@@ -510,18 +515,18 @@ const FamilyRow = React.memo(function FamilyRow({
   }, f.name, variantCount > 1 && /*#__PURE__*/React.createElement("span", {
     style: {
       marginLeft: 8,
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       color: T.muted,
       fontFamily: fontNum,
-      letterSpacing: 0.4,
       fontWeight: 400
     }
   }, variantIndex + 1, "/", variantCount)), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 11.5,
+      fontSize: remSize(11.5),
+      letterSpacing: tracking(11.5),
       marginTop: 3,
-      letterSpacing: 0.1,
       display: 'flex',
       gap: 6,
       alignItems: 'center'
@@ -534,10 +539,10 @@ const FamilyRow = React.memo(function FamilyRow({
     title: `${totalEntries} entrée${totalEntries > 1 ? 's' : ''}`,
     style: {
       fontFamily: fontNum,
-      fontSize: 14,
+      fontSize: remSize(14),
+      letterSpacing: tracking(14),
       fontWeight: 600,
       color: T.ink2,
-      letterSpacing: 0.2,
       lineHeight: 1,
       fontVariantNumeric: 'tabular-nums',
       marginRight: 6,
@@ -595,7 +600,7 @@ function EditCategorySheet({
   const savingRef = React.useRef(false);
   const removingRef = React.useRef(false);
   // Fermeture animée (sortie de sheet).
-  const [closing, close] = useSheetClose(onClose);
+  const [closing, close, cancelClose] = useSheetClose(onClose);
 
   // What the picker should highlight. After "Réinitialiser" we fall
   // back to the same logic <CategoryGlyph> uses when there's no
@@ -867,47 +872,38 @@ function EditCategorySheet({
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: close,
     closing: closing,
+    onCancelClose: cancelClose,
     label: isCreate ? 'Nouvelle catégorie' : 'Modifier la catégorie'
   }, /*#__PURE__*/React.createElement("div", {
+    className: "alco-material-sheet alco-material-edge",
     style: {
-      background: T.bg,
       borderRadius: '22px 22px 0 0',
-      padding: '18px 20px 28px',
+      padding: '8px 20px 28px',
       borderTop: `1px solid ${T.rule}`,
       borderLeft: `1px solid ${T.rule}`,
       borderRight: `1px solid ${T.rule}`,
       overflowX: 'hidden',
       overflowY: 'auto',
-      maxHeight: '92dvh'
+      maxHeight: '92dvh',
+      boxShadow: T.shadowSheet
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(SheetGrabber, null, /*#__PURE__*/React.createElement("div", {
     style: {
-      display: 'grid',
-      placeItems: 'center',
-      paddingBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 42,
-      height: 4,
-      borderRadius: 99,
-      background: T.rule
-    }
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontFamily: fontSerif,
-      fontSize: 22,
+      ...type(22, {
+        family: fontSerif,
+        italic: true
+      }),
       color: T.ink,
-      letterSpacing: -0.3,
-      fontStyle: 'italic',
       marginBottom: 18,
       textAlign: 'center'
     }
-  }, isCreate ? 'Nouvelle catégorie' : 'Modifier la catégorie'), /*#__PURE__*/React.createElement("div", {
+  }, isCreate ? 'Nouvelle catégorie' : 'Modifier la catégorie')), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
-      letterSpacing: 1.2,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10, {
+        caps: true
+      }),
       textTransform: 'uppercase',
       marginBottom: 8
     }
@@ -923,7 +919,8 @@ function EditCategorySheet({
       padding: '12px 14px',
       color: T.ink,
       fontFamily: fontSans,
-      fontSize: 14,
+      fontSize: remSize(14),
+      letterSpacing: tracking(14),
       outline: 'none',
       marginBottom: 18,
       boxSizing: 'border-box'
@@ -931,8 +928,10 @@ function EditCategorySheet({
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
-      letterSpacing: 1.2,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10, {
+        caps: true
+      }),
       textTransform: 'uppercase',
       marginBottom: 8
     }
@@ -1007,8 +1006,10 @@ function EditCategorySheet({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
-      letterSpacing: 1.2,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10, {
+        caps: true
+      }),
       textTransform: 'uppercase'
     }
   }, "Couleur"), /*#__PURE__*/React.createElement("button", {
@@ -1028,8 +1029,10 @@ function EditCategorySheet({
       border: `1px solid ${isAuto ? T.accent : T.rule}`,
       background: isAuto ? T.accentSoft : 'transparent',
       color: isAuto ? T.accent : T.muted,
-      fontSize: 10,
-      letterSpacing: 0.3,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10, {
+        caps: true
+      }),
       textTransform: 'uppercase'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
@@ -1114,10 +1117,10 @@ function EditCategorySheet({
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       marginTop: 6,
-      fontFamily: fontNum,
-      letterSpacing: 0.2
+      fontFamily: fontNum
     }
   }, isAuto ? `Auto · teinte ${effHue}°` : `Teinte ${effHue}°`))), err && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1126,7 +1129,8 @@ function EditCategorySheet({
       border: `1px solid ${T.dangerSoftBorder}`,
       padding: '8px 12px',
       borderRadius: 10,
-      fontSize: 12,
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
       marginBottom: 14
     }
   }, err), /*#__PURE__*/React.createElement("button", {
@@ -1140,7 +1144,8 @@ function EditCategorySheet({
       borderRadius: 12,
       background: T.accent,
       color: T.accentInk,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       fontWeight: 600,
       cursor: busy ? 'wait' : 'pointer',
       opacity: busy ? 0.5 : 1,
@@ -1161,7 +1166,8 @@ function EditCategorySheet({
       background: T.dangerSoftBg,
       color: T.accent2,
       border: `1px solid ${T.dangerSoftBorder}`,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500,
       cursor: busy ? 'wait' : 'pointer',
       opacity: busy ? 0.5 : 1,

@@ -46,12 +46,14 @@ class AppErrorBoundary extends React.Component {
       style: {
         fontFamily: '"Instrument Serif", serif',
         fontStyle: 'italic',
-        fontSize: 28,
+        fontSize: remSize(28),
+        letterSpacing: tracking(28),
         marginBottom: 12
       }
     }, "Une erreur est survenue"), /*#__PURE__*/React.createElement("div", {
       style: {
-        fontSize: 13,
+        fontSize: remSize(13),
+        letterSpacing: tracking(13),
         opacity: 0.7,
         marginBottom: 18,
         lineHeight: 1.5
@@ -62,7 +64,8 @@ class AppErrorBoundary extends React.Component {
       style: {
         padding: '12px 22px',
         borderRadius: 12,
-        fontSize: 13,
+        fontSize: remSize(13),
+        letterSpacing: tracking(13),
         fontWeight: 600,
         background: T.accent,
         color: T.accentInk,
@@ -391,9 +394,9 @@ function AppShell() {
       color: T.bg,
       padding: '10px 14px 10px 18px',
       borderRadius: 99,
-      fontSize: 13,
-      fontWeight: 500,
-      letterSpacing: -0.1,
+      ...type(13, {
+        weight: 500
+      }),
       zIndex: 9999,
       boxShadow: TOAST_SHADOW,
       display: 'flex',
@@ -421,6 +424,7 @@ function AppShell() {
     }
   }, toast.msg), toast.opts && typeof toast.opts.undo === 'function' && /*#__PURE__*/React.createElement("button", {
     type: "button",
+    className: "alco-press",
     onClick: () => {
       const fn = toast.opts.undo;
       clearTimeout(window.__aToast);
@@ -442,12 +446,12 @@ function AppShell() {
       background: T.accent,
       color: T.accentInk,
       border: 'none',
-      fontSize: 12,
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
       fontWeight: 600,
       fontFamily: 'inherit',
       cursor: 'pointer',
-      flexShrink: 0,
-      letterSpacing: 0.1
+      flexShrink: 0
     }
   }, "Annuler"))));
 }
@@ -480,6 +484,7 @@ function AppHeader({
     }
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
+    className: "alco-press",
     onClick: onMenu,
     "aria-label": "Ouvrir les param\xE8tres",
     style: {
@@ -493,7 +498,8 @@ function AppHeader({
       cursor: 'pointer',
       border: `1px solid ${T.rule}`,
       padding: 0,
-      fontFamily: 'inherit'
+      fontFamily: 'inherit',
+      touchAction: 'manipulation'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.menu,
@@ -506,23 +512,16 @@ function AppHeader({
     }
   }, /*#__PURE__*/React.createElement("h1", {
     style: {
-      fontFamily: fontSerif,
-      fontSize: 20,
+      ...TYPE.title,
       color: T.ink,
-      letterSpacing: -0.3,
       lineHeight: 1,
-      fontStyle: 'italic',
-      margin: 0,
-      fontWeight: 400
+      margin: 0
     }
   }, titles[tab]), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 10,
+      ...TYPE.label,
       color: T.muted,
-      letterSpacing: 1,
       marginTop: 3,
-      textTransform: 'uppercase',
-      fontWeight: 500,
       whiteSpace: 'nowrap',
       overflow: 'hidden',
       textOverflow: 'ellipsis'
@@ -544,7 +543,10 @@ function NavButton({
     "aria-selected": active,
     "aria-label": item.label
   }, press.handlers, {
-    onClick: () => onChange(item.id),
+    onClick: () => {
+      if (!active) haptic('select');
+      onChange(item.id);
+    },
     style: {
       flex: 1,
       display: 'flex',
@@ -554,10 +556,14 @@ function NavButton({
       padding: '10px 8px',
       cursor: 'pointer',
       position: 'relative',
-      color: active ? T.accent : T.muted,
+      // Sur une matière translucide, le contenu défile DERRIÈRE le libellé :
+      // un gris pâle y devient illisible. L'inactif reste donc de l'encre
+      // (ink2), jamais du `muted` — c'est la règle de vibrance.
+      color: active ? T.accent : T.ink2,
       background: 'transparent',
       border: 'none',
       fontFamily: 'inherit',
+      touchAction: 'manipulation',
       ...press.style,
       ...(reduced ? null : {
         transition: `transform ${MOTION.fast}ms ${MOTION.ease}, color ${MOTION.fast}ms ${MOTION.ease}`
@@ -568,11 +574,60 @@ function NavButton({
     size: 22
   }), /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 10,
-      letterSpacing: 0.2,
-      fontWeight: active ? 600 : 400
+      ...type(10, {
+        caps: false,
+        weight: active ? 600 : 500
+      })
     }
   }, item.label));
+}
+
+// Indicateur d'onglet actif : un ressort écrit sa transform directement dans
+// le DOM (aucun re-render par frame). Il n'a pas de « durée » — il rejoint la
+// nouvelle cible depuis là où il est, à la vitesse qu'il a.
+function NavIndicator({
+  index,
+  count,
+  reduced
+}) {
+  const ref = React.useRef(null);
+  const spring = useSpringDriver(x => {
+    if (ref.current) ref.current.style.transform = `translateX(${x}%)`;
+  }, {
+    from: index * 100,
+    config: MOTION.spring.move
+  });
+  React.useEffect(() => {
+    if (reduced) {
+      if (ref.current) ref.current.style.transform = `translateX(${index * 100}%)`;
+      return;
+    }
+    spring.set(index * 100);
+  }, [index, reduced, spring]);
+  return /*#__PURE__*/React.createElement("div", {
+    ref: ref,
+    "aria-hidden": "true",
+    style: {
+      position: 'absolute',
+      top: 2,
+      left: 0,
+      height: 3,
+      width: `${100 / count}%`,
+      display: 'flex',
+      justifyContent: 'center',
+      transform: `translateX(${index * 100}%)`,
+      willChange: reduced ? undefined : 'transform',
+      pointerEvents: 'none'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 20,
+      height: 3,
+      borderRadius: 99,
+      background: T.accent,
+      boxShadow: `0 0 8px ${T.accent}`
+    }
+  }));
 }
 function BottomNav({
   tab,
@@ -598,76 +653,68 @@ function BottomNav({
     icon: Ic.users
   }];
   const activeIdx = Math.max(0, items.findIndex(it => it.id === tab));
-  return /*#__PURE__*/React.createElement("nav", {
-    style: {
-      position: 'relative',
-      padding: '6px 16px calc(4px + env(safe-area-inset-bottom))',
-      background: T.bg,
-      borderTop: `1px solid ${T.rule}`,
-      flexShrink: 0
-    }
-  }, tab === 'stats' && onReorder && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      justifyContent: 'center',
-      paddingBottom: 4
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    type: "button",
-    onClick: onReorder,
-    "aria-label": "R\xE9organiser les sections",
-    style: {
-      ...ghostButton,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 5,
-      color: T.muted,
-      fontSize: 10,
-      letterSpacing: 0.3,
-      textTransform: 'uppercase',
-      fontWeight: 500,
-      padding: '2px 8px'
-    }
-  }, /*#__PURE__*/React.createElement(SvgIcon, {
-    icon: Ic.grip,
-    size: 12
-  }), " R\xE9organiser")), /*#__PURE__*/React.createElement("div", {
-    role: "tablist",
-    "aria-label": "Navigation principale",
-    style: {
-      display: 'flex',
-      justifyContent: 'space-around',
-      paddingBottom: 2,
-      position: 'relative'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    "aria-hidden": "true",
-    style: {
-      position: 'absolute',
-      top: 2,
-      left: 0,
-      height: 3,
-      width: `${100 / items.length}%`,
-      display: 'flex',
-      justifyContent: 'center',
-      transform: `translateX(${activeIdx * 100}%)`,
-      transition: reduced ? undefined : `transform ${MOTION.base}ms ${MOTION.ease}`,
-      pointerEvents: 'none'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 20,
-      height: 3,
-      borderRadius: 99,
-      background: T.accent,
-      boxShadow: `0 0 8px ${T.accent}`
-    }
-  })), items.map(it => /*#__PURE__*/React.createElement(NavButton, {
-    key: it.id,
-    item: it,
-    active: tab === it.id,
-    onChange: onChange
-  }))));
+  return (
+    /*#__PURE__*/
+    // La barre d'onglets n'est plus une bande opaque qui ampute l'écran :
+    // c'est une COUCHE DE MATIÈRE posée par-dessus, sous laquelle la liste
+    // continue de défiler (les zones défilantes réservent déjà 120px en bas).
+    // D'où l'absence de filet 1px : la séparation vient du flou et de
+    // l'arête claire de la matière, pas d'un trait.
+    React.createElement("nav", {
+      className: "alco-material alco-material-edge",
+      style: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 20,
+        padding: '6px 16px calc(4px + env(safe-area-inset-bottom))',
+        boxShadow: T.shadowChrome
+      }
+    }, tab === 'stats' && onReorder && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        justifyContent: 'center',
+        paddingBottom: 4
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onReorder,
+      className: "alco-press",
+      "aria-label": "R\xE9organiser les sections",
+      style: {
+        ...ghostButton,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
+        color: T.muted,
+        ...TYPE.label,
+        padding: '2px 8px',
+        touchAction: 'manipulation'
+      }
+    }, /*#__PURE__*/React.createElement(SvgIcon, {
+      icon: Ic.grip,
+      size: 12
+    }), " R\xE9organiser")), /*#__PURE__*/React.createElement("div", {
+      role: "tablist",
+      "aria-label": "Navigation principale",
+      style: {
+        display: 'flex',
+        justifyContent: 'space-around',
+        paddingBottom: 2,
+        position: 'relative'
+      }
+    }, /*#__PURE__*/React.createElement(NavIndicator, {
+      index: activeIdx,
+      count: items.length,
+      reduced: reduced
+    }), items.map(it => /*#__PURE__*/React.createElement(NavButton, {
+      key: it.id,
+      item: it,
+      active: tab === it.id,
+      onChange: onChange
+    }))))
+  );
 }
 function Fab({
   onClick
@@ -676,8 +723,11 @@ function Fab({
   const press = usePressScale();
   return /*#__PURE__*/React.createElement("button", _extends({
     type: "button",
-    onClick: onClick,
-    "aria-label": "Ajouter une boisson"
+    "aria-label": "Ajouter une boisson",
+    onClick: e => {
+      haptic('select');
+      onClick && onClick(e);
+    }
   }, press.handlers, {
     style: {
       position: 'absolute',
