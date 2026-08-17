@@ -117,6 +117,10 @@ function CategoryGrid({
   onAddCategory
 }) {
   const q = (query || '').toLowerCase();
+  // Cascade d'entrée : une fois, au montage. Sans garde elle rejoue à chaque
+  // retour sur l'onglet (display:none → grid redémarre les animations CSS) ET
+  // à chaque frappe dans la recherche (les délais changent avec les index).
+  const entering = useEnterOnce();
   const matchedFams = React.useMemo(() => {
     if (!q) return [];
     return families.filter(f => f.name.toLowerCase().includes(q) || f.category.toLowerCase().includes(q));
@@ -139,7 +143,8 @@ function CategoryGrid({
     cat: c,
     index: i,
     onOpen: onOpen,
-    onEdit: onEditCat
+    onEdit: onEditCat,
+    stagger: entering
   }))), cats.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
@@ -181,7 +186,8 @@ function CategoryGrid({
     family: f,
     index: i,
     onOpen: onOpenFamily,
-    onDirectAdd: onDirectAdd
+    onDirectAdd: onDirectAdd,
+    stagger: entering
   })), matchedFams.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
@@ -196,7 +202,8 @@ const CategoryCard = React.memo(function CategoryCard({
   cat,
   onOpen,
   onEdit,
-  index = 0
+  index = 0,
+  stagger = false
 }) {
   // Repaint garanti quand une teinte de catégorie change : le contexte
   // traverse React.memo (les props `cat` ne bougent pas sur un changement
@@ -217,7 +224,7 @@ const CategoryCard = React.memo(function CategoryCard({
     style: {
       position: 'relative',
       ...staggerStyle(index, {
-        reduced
+        reduced: reduced || !stagger
       })
     }
   }, /*#__PURE__*/React.createElement("button", _extends({
@@ -325,6 +332,10 @@ function FamilyList({
   onEditCat,
   onEditFamily
 }) {
+  // Vue montée à l'ouverture d'une catégorie : la cascade se joue donc bien à
+  // chaque entrée dans le détail — mais une seule fois, pas à chaque bump de
+  // données ni à chaque retour sur l'onglet.
+  const entering = useEnterOnce();
   // Sort families: identical-name groups stay contiguous, ordered by
   // total entries inside the group, then by quantity asc inside each
   // group. We keep one line per (name, qty, unit, abv) variant so the
@@ -456,7 +467,8 @@ function FamilyList({
     variantIndex: idx,
     variantCount: total,
     onOpen: onOpen,
-    onDirectAdd: onDirectAdd
+    onDirectAdd: onDirectAdd,
+    stagger: entering
   })), rows.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
@@ -473,7 +485,8 @@ const FamilyRow = React.memo(function FamilyRow({
   variantCount = 1,
   onOpen,
   onDirectAdd,
-  index = 0
+  index = 0,
+  stagger = false
 }) {
   // Cf. CategoryCard : abonnement palette → repaint sur changement de teinte.
   useCatPalette();
@@ -501,7 +514,7 @@ const FamilyRow = React.memo(function FamilyRow({
       position: 'relative',
       ...press.style,
       ...staggerStyle(index, {
-        reduced
+        reduced: reduced || !stagger
       })
     }
   }), /*#__PURE__*/React.createElement("div", {

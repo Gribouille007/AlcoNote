@@ -45,7 +45,11 @@
       font-size: 100%;
       /* Les fontes variables ajustent leur dessin à la taille rendue. */
       font-optical-sizing: auto;
-      text-rendering: optimizeLegibility;
+      /* PAS de `text-rendering: optimizeLegibility` : il force le crénage et
+         les ligatures sur TOUT le texte de l'app, donc un coût de mise en
+         page sur chaque ligne de chaque liste. Geist et Instrument Serif sont
+         déjà bien crénées par défaut — on payait le ralentissement sans rien
+         gagner à l'œil (mesuré sur iPhone, PWA installée). */
     }
     html, body {
       margin: 0; padding: 0;

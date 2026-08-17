@@ -21,7 +21,8 @@ function FriendRow({
   onOpen,
   favorite,
   onToggleFav,
-  index = 0
+  index = 0,
+  stagger = false
 }) {
   const press = usePressScale();
   const reduced = useReducedMotion();
@@ -32,7 +33,7 @@ function FriendRow({
       alignItems: 'stretch',
       borderBottom: `1px solid ${T.rule}`,
       ...staggerStyle(index, {
-        reduced
+        reduced: reduced || !stagger
       })
     }
   }, member.shareBac && /*#__PURE__*/React.createElement("button", {
@@ -455,6 +456,9 @@ function FriendsTab({
   const s = useShare();
   const members = useGroupMembers();
   const bacMap = useFriendsBac(members);
+  // Cascade d'entrée une seule fois : un pull toutes les 10 min ne doit pas
+  // faire re-cascader la liste, ni un retour sur l'onglet.
+  const entering = useEnterOnce();
   const hasGroup = s.enabled && !!s.groupId;
   const onRefresh = async () => {
     const err = await shareEngine.refreshNow();
@@ -568,6 +572,7 @@ function FriendsTab({
     bac: bacMap[m.userId],
     onOpen: onOpenFriend,
     index: i,
+    stagger: entering,
     favorite: s.favoriteId === m.userId,
     onToggleFav: () => shareEngine.toggleFavorite(m.userId)
   }))), hasGroup && /*#__PURE__*/React.createElement(GroupAdminPanel, {
@@ -644,9 +649,13 @@ function FriendStatsView({
   // repousser du doigt, pas seulement la fermer au bouton. Même moteur que
   // les feuilles (suivi 1:1, bord élastique, arrivée projetée depuis la
   // vitesse, reprise en vol), avec une règle de plus : le geste ne part que
-  // du BORD GAUCHE. Ailleurs, la page contient ses propres défilements
-  // horizontaux (sélecteur de période, listes de pilules) qui restent
-  // prioritaires — deux gestes ne se disputent jamais la même zone.
+  // du BORD GAUCHE, et il vit dans une BANDE À LUI (cf. le rendu plus bas).
+  // Ailleurs, la page contient ses propres défilements horizontaux (sélecteur
+  // de période, listes de pilules) qui restent prioritaires — deux gestes ne
+  // se disputent jamais la même zone. Poser le geste sur la page entière (même
+  // avec un garde `clientX`) obligeait à y poser aussi un `touch-action`, qui
+  // s'intersecte avec celui de TOUS les descendants : les rangées de pilules
+  // ne se faisaient plus défiler du tout.
   const pageRef = React.useRef(null);
   const widthRef = React.useRef(0);
   const measure = React.useCallback(() => {
@@ -657,10 +666,17 @@ function FriendStatsView({
     }
     return widthRef.current || PAGE_FALLBACK_W;
   }, []);
+  // La page entière est une couche composée le TEMPS du mouvement seulement :
+  // laissée promue, elle garde un backing store plein écran (et tout le
+  // StatsTab avec) pendant toute la consultation.
+  const hint = useLayerHint(pageRef);
   const applyPage = React.useCallback(x => {
     const el = pageRef.current;
-    if (el) el.style.transform = `translate3d(${x}px, 0, 0)`;
-  }, []);
+    if (el) {
+      hint(true);
+      el.style.transform = `translate3d(${x}px, 0, 0)`;
+    }
+  }, [hint]);
   const drag = useAxisDrag({
     axis: 'x',
     apply: applyPage,
@@ -670,6 +686,7 @@ function FriendStatsView({
       measure();
       if (closing) cancelClose();
     },
+    onRest: () => hint(false),
     bounds: () => ({
       min: 0,
       max: null,
@@ -703,19 +720,8 @@ function FriendStatsView({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closing, reduced, drag.dragging]);
-  const page = {
+  return /*#__PURE__*/React.createElement("div", {
     ref: pageRef,
-    handlers: {
-      ...drag.handlers,
-      onPointerDown: e => {
-        if (e.clientX > PAGE_EDGE_PX) return;
-        drag.handlers.onPointerDown(e);
-      }
-    }
-  };
-  return /*#__PURE__*/React.createElement("div", _extends({
-    ref: page.ref
-  }, page.handlers, {
     style: {
       position: 'fixed',
       inset: 0,
@@ -728,18 +734,32 @@ function FriendStatsView({
       // arrière » : ce qui est arrivé par la droite repart par la droite.
       // Le ressort prend le relais dès qu'un doigt touche la page.
       transform: reduced ? undefined : 'translate3d(100%, 0, 0)',
-      willChange: reduced ? undefined : 'transform',
       animation: reduced && closing ? `fadeOut ${MOTION.fast}ms ${MOTION.ease} forwards` : undefined,
-      pointerEvents: closing ? 'none' : undefined,
-      touchAction: 'pan-y'
+      pointerEvents: closing ? 'none' : undefined
     }
-  }), /*#__PURE__*/React.createElement("div", {
+  }, !reduced && /*#__PURE__*/React.createElement("div", _extends({}, drag.handlers, {
+    "aria-hidden": "true",
+    style: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: PAGE_EDGE_PX,
+      zIndex: 1,
+      // Reste vivante pendant la sortie : c'est par elle qu'on rattrape
+      // une page qui part (même règle que SheetGrabber).
+      pointerEvents: 'auto',
+      touchAction: 'none'
+    }
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 'calc(env(safe-area-inset-top) + 14px) 16px 12px',
       display: 'flex',
       alignItems: 'center',
       gap: 12,
       flexShrink: 0,
+      position: 'relative',
+      zIndex: 2,
       borderBottom: `1px solid ${T.rule}`
     }
   }, /*#__PURE__*/React.createElement("button", {

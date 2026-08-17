@@ -24,6 +24,11 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
   // Pilules de filtre teintées par catégorie → abonnement palette
   // (repaint sur changement de couleur, cf. useCatPalette dans shared.jsx).
   useCatPalette();
+  // La cascade d'entrée ne se joue qu'au premier montage de l'onglet. Sans
+  // cette garde elle REJOUE à chaque retour sur l'Historique (display:none →
+  // flex redémarre les animations CSS) : des dizaines de groupes qui
+  // re-cascadent, c'est la saccade la plus visible de l'app.
+  const entering = useEnterOnce();
   // Single shared families memo from the App-level FamiliesContext —
   // avoids re-building (drinks × ratings) per tab on every bump.
   const families = useFamilies();
@@ -145,7 +150,7 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
             onOpenEntry={setEditEntry}
             onDirectAdd={onDirectAdd}
             onDelete={onDeleteEntry}
-            index={i} first={i === 0} />
+            index={i} first={i === 0} stagger={entering} />
         ))}
       </div>
 
@@ -156,7 +161,7 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
   );
 }
 
-const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAdd, onDelete, first, index = 0 }) {
+const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAdd, onDelete, first, index = 0, stagger = false }) {
   const reduced = useReducedMotion();
   const d = new Date(day + 'T00:00');
   const today = new Date(); today.setHours(0,0,0,0);
@@ -171,7 +176,7 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
 
   return (
     <div style={{ marginTop: first ? 4 : 14, marginBottom: 4, position: 'relative',
-      ...staggerStyle(index, { reduced }) }}>
+      ...staggerStyle(index, { reduced: reduced || !stagger }) }}>
       <button type="button" className="alco-press-soft"
         onClick={() => { haptic('tick'); onToggle(day); }}
         aria-expanded={!isCollapsed}
@@ -257,11 +262,13 @@ const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectA
         <SvgIcon icon={Ic.trash} size={15} />
         <span>Supprimer</span>
       </div>
+      {/* Aucun `willChange` ici : il serait posé sur CHAQUE ligne, en
+          permanence — une couche composée par ligne, avec son backing store.
+          Il est armé par le geste et rendu au repos (cf. useSwipeToDelete). */}
       <div ref={swipe.rowRef} {...swipe.handlers} style={{
         display: 'flex', alignItems: 'center', gap: 12,
         padding: '12px 10px 12px 18px',
         position: 'relative', background: T.surface,
-        willChange: 'transform',
         touchAction: 'pan-y' }}>
         <div style={{
           position: 'absolute', left: -2, top: 0, bottom: 0,
@@ -331,6 +338,10 @@ function useSwipeToDelete(onAction) {
   const actionRef = React.useRef(null);
   const widthRef = React.useRef(0);
   const armedRef = React.useRef(false);
+  // La couche composée n'existe que le temps du geste : armée quand l'axe est
+  // engagé (onMove), rendue au repos du ressort (onRest). Une liste de plusieurs
+  // centaines de lignes ne peut pas garder autant de calques en mémoire.
+  const hint = useLayerHint(rowRef);
 
   const apply = React.useCallback((x) => {
     const row = rowRef.current;
@@ -356,9 +367,13 @@ function useSwipeToDelete(onAction) {
     },
     bounds: () => ({ min: null, max: 0, dimension: SWIPE_RUBBER_DIM }),
     onMove: (x) => {
+      // `onMove` n'est appelé qu'une fois l'axe engagé : un simple tap (ou un
+      // défilement vertical) ne promeut donc jamais la ligne.
+      hint(true);
       const past = x <= -SWIPE_COMMIT_PX;
       if (past !== armedRef.current) { armedRef.current = past; haptic('tick'); }
     },
+    onRest: () => hint(false),
     decide: ({ velocity, projected }) => {
       const commit = Math.abs(velocity) > SWIPE_FLING_V
         ? velocity < 0

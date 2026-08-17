@@ -32,6 +32,11 @@ function HistoryTab({
   // Pilules de filtre teintées par catégorie → abonnement palette
   // (repaint sur changement de couleur, cf. useCatPalette dans shared.jsx).
   useCatPalette();
+  // La cascade d'entrée ne se joue qu'au premier montage de l'onglet. Sans
+  // cette garde elle REJOUE à chaque retour sur l'Historique (display:none →
+  // flex redémarre les animations CSS) : des dizaines de groupes qui
+  // re-cascadent, c'est la saccade la plus visible de l'app.
+  const entering = useEnterOnce();
   // Single shared families memo from the App-level FamiliesContext —
   // avoids re-building (drinks × ratings) per tab on every bump.
   const families = useFamilies();
@@ -182,7 +187,8 @@ function HistoryTab({
     onDirectAdd: onDirectAdd,
     onDelete: onDeleteEntry,
     index: i,
-    first: i === 0
+    first: i === 0,
+    stagger: entering
   }))), editEntry && /*#__PURE__*/React.createElement(EditEntrySheet, {
     key: editEntry.id,
     entry: editEntry,
@@ -198,7 +204,8 @@ const DayGroup = React.memo(function DayGroup({
   onDirectAdd,
   onDelete,
   first,
-  index = 0
+  index = 0,
+  stagger = false
 }) {
   const reduced = useReducedMotion();
   const d = new Date(day + 'T00:00');
@@ -216,7 +223,7 @@ const DayGroup = React.memo(function DayGroup({
       marginBottom: 4,
       position: 'relative',
       ...staggerStyle(index, {
-        reduced
+        reduced: reduced || !stagger
       })
     }
   }, /*#__PURE__*/React.createElement("button", {
@@ -369,7 +376,6 @@ const EntryRow = React.memo(function EntryRow({
       padding: '12px 10px 12px 18px',
       position: 'relative',
       background: T.surface,
-      willChange: 'transform',
       touchAction: 'pan-y'
     }
   }), /*#__PURE__*/React.createElement("div", {
@@ -467,6 +473,10 @@ function useSwipeToDelete(onAction) {
   const actionRef = React.useRef(null);
   const widthRef = React.useRef(0);
   const armedRef = React.useRef(false);
+  // La couche composée n'existe que le temps du geste : armée quand l'axe est
+  // engagé (onMove), rendue au repos du ressort (onRest). Une liste de plusieurs
+  // centaines de lignes ne peut pas garder autant de calques en mémoire.
+  const hint = useLayerHint(rowRef);
   const apply = React.useCallback(x => {
     const row = rowRef.current;
     if (row) row.style.transform = `translate3d(${x}px, 0, 0)`;
@@ -495,12 +505,16 @@ function useSwipeToDelete(onAction) {
       dimension: SWIPE_RUBBER_DIM
     }),
     onMove: x => {
+      // `onMove` n'est appelé qu'une fois l'axe engagé : un simple tap (ou un
+      // défilement vertical) ne promeut donc jamais la ligne.
+      hint(true);
       const past = x <= -SWIPE_COMMIT_PX;
       if (past !== armedRef.current) {
         armedRef.current = past;
         haptic('tick');
       }
     },
+    onRest: () => hint(false),
     decide: ({
       velocity,
       projected

@@ -92,6 +92,10 @@ function CategoriesTab({ onOpenFamily, onDirectAdd, onEditFamily, query, setQuer
 
 function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, onDirectAdd, onAddCategory }) {
   const q = (query || '').toLowerCase();
+  // Cascade d'entrée : une fois, au montage. Sans garde elle rejoue à chaque
+  // retour sur l'onglet (display:none → grid redémarre les animations CSS) ET
+  // à chaque frappe dans la recherche (les délais changent avec les index).
+  const entering = useEnterOnce();
   const matchedFams = React.useMemo(() => {
     if (!q) return [];
     return families.filter(f =>
@@ -108,7 +112,7 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 10 }}>
             {cats.map((c, i) => <CategoryCard key={c.id || c.name} cat={c} index={i}
               onOpen={onOpen}
-              onEdit={onEditCat} />)}
+              onEdit={onEditCat} stagger={entering} />)}
           </div>
           {cats.length === 0 && (
             <div style={{
@@ -131,7 +135,7 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
           <div style={{ marginTop: 10 }}>
             {matchedFams.map((f, i) => (
               <FamilyRow key={f.id} family={f} index={i} onOpen={onOpenFamily}
-                onDirectAdd={onDirectAdd} />
+                onDirectAdd={onDirectAdd} stagger={entering} />
             ))}
             {matchedFams.length === 0 && (
               <div style={{
@@ -144,7 +148,7 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
   );
 }
 
-const CategoryCard = React.memo(function CategoryCard({ cat, onOpen, onEdit, index = 0 }) {
+const CategoryCard = React.memo(function CategoryCard({ cat, onOpen, onEdit, index = 0, stagger = false }) {
   // Repaint garanti quand une teinte de catégorie change : le contexte
   // traverse React.memo (les props `cat` ne bougent pas sur un changement
   // de couleur seul). Cf. useCatPalette (shared.jsx).
@@ -161,7 +165,7 @@ const CategoryCard = React.memo(function CategoryCard({ cat, onOpen, onEdit, ind
   // plus besoin de stopPropagation ni de gestion clavier maison — le <button>
   // natif apporte Entrée/Espace gratuitement.
   return (
-    <div style={{ position: 'relative', ...staggerStyle(index, { reduced }) }}>
+    <div style={{ position: 'relative', ...staggerStyle(index, { reduced: reduced || !stagger }) }}>
       <button type="button"
         onClick={() => onOpen && onOpen(cat.name)}
         aria-label={`Ouvrir la catégorie ${cat.name} — ${cat.entries} entrée${cat.entries !== 1 ? 's' : ''}, ${cat.families} type${cat.families !== 1 ? 's' : ''}`}
@@ -208,6 +212,10 @@ const CategoryCard = React.memo(function CategoryCard({ cat, onOpen, onEdit, ind
   );
 });
 function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat, onEditFamily }) {
+  // Vue montée à l'ouverture d'une catégorie : la cascade se joue donc bien à
+  // chaque entrée dans le détail — mais une seule fois, pas à chaque bump de
+  // données ni à chaque retour sur l'onglet.
+  const entering = useEnterOnce();
   // Sort families: identical-name groups stay contiguous, ordered by
   // total entries inside the group, then by quantity asc inside each
   // group. We keep one line per (name, qty, unit, abv) variant so the
@@ -279,7 +287,7 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
       {rows.map(({ f, idx, total }, i) => (
         <FamilyRow key={f.id} family={f} index={i}
           variantIndex={idx} variantCount={total}
-          onOpen={onOpen} onDirectAdd={onDirectAdd} />
+          onOpen={onOpen} onDirectAdd={onDirectAdd} stagger={entering} />
       ))}
 
       {rows.length === 0 && (
@@ -291,7 +299,7 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
   );
 }
 
-const FamilyRow = React.memo(function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onOpen, onDirectAdd, index = 0 }) {
+const FamilyRow = React.memo(function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onOpen, onDirectAdd, index = 0, stagger = false }) {
   // Cf. CategoryCard : abonnement palette → repaint sur changement de teinte.
   useCatPalette();
   const color = catColor(f.category, 70);
@@ -316,7 +324,7 @@ const FamilyRow = React.memo(function FamilyRow({ family: f, variantIndex = 0, v
       marginBottom: isLastOfGroup ? 8 : 0,
       cursor: 'pointer', position: 'relative',
       ...press.style,
-      ...staggerStyle(index, { reduced }) }}>
+      ...staggerStyle(index, { reduced: reduced || !stagger }) }}>
       <div style={{
         width: 40, height: 40, borderRadius: 12, background: catBg(f.category),
         display: 'grid', placeItems: 'center', color,
