@@ -396,7 +396,8 @@ function ChartLegend({
       gap: 14,
       justifyContent: 'center',
       marginTop: 8,
-      fontSize: 10.5,
+      fontSize: remSize(10.5),
+      letterSpacing: tracking(10.5),
       color: T.ink2,
       flexWrap: 'wrap'
     }
@@ -1045,7 +1046,8 @@ function SvgDonut({
     return /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.muted,
-        fontSize: 11,
+        fontSize: remSize(11),
+        letterSpacing: tracking(11),
         padding: '20px 0',
         textAlign: 'center',
         fontStyle: 'italic',
@@ -1522,7 +1524,8 @@ function SvgBACProjection({
     return /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.muted,
-        fontSize: 11,
+        fontSize: remSize(11),
+        letterSpacing: tracking(11),
         padding: '20px 0',
         textAlign: 'center'
       }
@@ -1873,7 +1876,8 @@ function SvgBACForecast({
     return /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.muted,
-        fontSize: 11,
+        fontSize: remSize(11),
+        letterSpacing: tracking(11),
         padding: '20px 0',
         textAlign: 'center'
       }

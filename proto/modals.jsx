@@ -13,13 +13,10 @@ function ImpactStat({ big, unit, accent }) {
   return (
     <div style={{ textAlign: 'center' }}>
       <div style={{
-        fontFamily: fontSerif, fontSize: 22, color: accent ? T.accent : T.ink,
-        letterSpacing: -0.3, lineHeight: 1,
-      }}>{big}</div>
+        fontFamily: fontSerif, fontSize: remSize(22), letterSpacing: tracking(22), color: accent ? T.accent : T.ink,
+        lineHeight: 1 }}>{big}</div>
       <div style={{
-        fontSize: 10, color: T.muted, marginTop: 4, letterSpacing: 0.3,
-        textTransform: 'uppercase',
-      }}>{unit}</div>
+        fontSize: remSize(10), letterSpacing: tracking(10, { caps: true }), color: T.muted, marginTop: 4, textTransform: 'uppercase' }}>{unit}</div>
     </div>
   );
 }
@@ -60,7 +57,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
   // drink twice before the button disables. Mirrors EditCategorySheet.
   const submittingRef = React.useRef(false);
   // Fermeture animée (sortie de sheet) — ré-armée à chaque ouverture.
-  const [closing, close] = useSheetClose(onClose, open);
+  const [closing, close, cancelClose] = useSheetClose(onClose, open);
 
   // Reset on open / prefill changes.
   React.useEffect(() => {
@@ -165,35 +162,30 @@ function AddDrinkSheet({ open, prefill, onClose }) {
   };
 
   return (
-    <SheetOverlay onClose={close} closing={closing} label="Nouvelle boisson">
-      <div style={{
-        background: T.bg, borderRadius: '22px 22px 0 0', padding: '10px 0 0',
+    <SheetOverlay onClose={close} closing={closing} onCancelClose={cancelClose} label="Nouvelle boisson">
+      <div className="alco-material-sheet alco-material-edge" style={{
+        borderRadius: '22px 22px 0 0', padding: '10px 0 0',
         maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
         borderTop: `1px solid ${T.rule}`,
         borderLeft: `1px solid ${T.rule}`,
         borderRight: `1px solid ${T.rule}`,
-        overflowX: 'hidden',
-      }}>
-        <div style={{ display: 'grid', placeItems: 'center', padding: '6px 0 4px' }}>
-          <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }}/>
-        </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '8px 18px 14px',
-        }}>
-          <div style={{ width: 30 }}/>
+        overflowX: 'hidden', boxShadow: T.shadowSheet }}>
+        <SheetGrabber>
           <div style={{
-            fontFamily: fontSerif, fontSize: 22, color: T.ink,
-            letterSpacing: -0.3, fontStyle: 'italic',
-          }}>Nouvelle boisson</div>
-          <button type="button" onClick={close} aria-label="Fermer" style={{
-            width: 30, height: 30, borderRadius: 99, background: T.surface2,
-            display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
-            border: 'none', padding: 0, fontFamily: 'inherit',
-          }}>
-            <SvgIcon icon={Ic.close} size={14} />
-          </button>
-        </div>
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '8px 18px 14px' }}>
+            <div style={{ width: 30 }}/>
+            <div style={{ ...type(22, { family: fontSerif, italic: true }), color: T.ink }}>
+              Nouvelle boisson
+            </div>
+            <button type="button" className="alco-press" onClick={close} aria-label="Fermer" style={{
+              width: 30, height: 30, borderRadius: 99, background: T.surface2,
+              display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
+              border: 'none', padding: 0, fontFamily: 'inherit', touchAction: 'manipulation' }}>
+              <SvgIcon icon={Ic.close} size={14} />
+            </button>
+          </div>
+        </SheetGrabber>
 
         <div style={{ overflowY: 'auto', overflowX: 'hidden', padding: '0 18px 20px', flex: 1 }}>
           <button type="button" onClick={() => setScan(true)} aria-label="Scanner un code-barres" style={{
@@ -201,19 +193,17 @@ function AddDrinkSheet({ open, prefill, onClose }) {
             background: `linear-gradient(135deg, ${T.accentSoft}, ${T.surface})`,
             border: `1px solid ${T.rule}`, borderRadius: 16, padding: 16,
             display: 'flex', alignItems: 'center', gap: 14,
-            cursor: 'pointer', marginBottom: 18, position: 'relative', overflow: 'hidden',
-          }}>
+            cursor: 'pointer', marginBottom: 18, position: 'relative', overflow: 'hidden' }}>
             <div style={{
               width: 48, height: 48, borderRadius: 14, background: T.accent,
-              display: 'grid', placeItems: 'center', color: T.accentInk, flexShrink: 0,
-            }}>
+              display: 'grid', placeItems: 'center', color: T.accentInk, flexShrink: 0 }}>
               <SvgIcon icon={Ic.scan} size={22} />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ color: T.ink, fontSize: 14, fontWeight: 500, letterSpacing: -0.1 }}>
+              <div style={{ color: T.ink, fontSize: remSize(14), letterSpacing: tracking(14), fontWeight: 500 }}>
                 Scanner un code-barres
               </div>
-              <div style={{ color: T.muted, fontSize: 11.5, marginTop: 3, letterSpacing: 0.1 }}>
+              <div style={{ color: T.muted, fontSize: remSize(11.5), letterSpacing: tracking(11.5), marginTop: 3 }}>
                 Remplissage auto depuis OpenFoodFacts
               </div>
             </div>
@@ -252,9 +242,8 @@ function AddDrinkSheet({ open, prefill, onClose }) {
               step="0.1" suffix="€" ariaLabel="Prix" />
             {priceAuto && suggestion && price !== '' && (
               <div style={{
-                marginTop: 6, color: T.muted, fontSize: 11, lineHeight: 1.4,
-                display: 'flex', alignItems: 'center', gap: 5,
-              }}>
+                marginTop: 6, color: T.muted, fontSize: remSize(11), letterSpacing: tracking(11), lineHeight: 1.4,
+                display: 'flex', alignItems: 'center', gap: 5 }}>
                 <SvgIcon icon={Ic.check} size={11} color={T.accent} />
                 {suggestion.exact
                   ? 'Prix habituel de cette boisson'
@@ -271,8 +260,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
                 aria-label={`Appliquer le prix suggéré ${fmtPrice(suggestion.price)}`}
                 style={{
                   ...ghostButton, marginTop: 6, display: 'flex', alignItems: 'center',
-                  gap: 5, color: T.accent, fontSize: 11, lineHeight: 1.4,
-                }}>
+                  gap: 5, color: T.accent, fontSize: remSize(11), letterSpacing: tracking(11), lineHeight: 1.4 }}>
                 <SvgIcon icon={Ic.refresh} size={11} />
                 Suggestion : <span style={{ fontFamily: fontNum }}>{fmtPrice(suggestion.price)}</span>
                 {!suggestion.exact && <span style={{ fontFamily: fontNum, color: T.muted }}>· {fmtPrice(suggestion.perLiter)}/L</span>}
@@ -281,8 +269,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
             )}
             <div style={{
               marginTop: 8, background: T.surface, border: `1px solid ${T.rule}`,
-              borderRadius: 12, overflow: 'hidden',
-            }}>
+              borderRadius: 12, overflow: 'hidden' }}>
               <ToggleRow label="Prix habituel pour cette boisson"
                 sub="Le « + » et « Ajouter à nouveau » reprendront ce prix"
                 on={priceIsReference} onToggle={() => setPriceIsReference(v => !v)} last />
@@ -291,8 +278,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
 
           <div style={{
             display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
-            gap: 10, width: '100%',
-          }}>
+            gap: 10, width: '100%' }}>
             <FieldGroup label="Date">
               <input type="date" value={date} onChange={e => setDate(e.target.value)} aria-label="Date"
                 style={{
@@ -315,8 +301,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
 
           <div style={{
             marginTop: 8, padding: 14, background: T.surface, borderRadius: 14,
-            border: `1px solid ${T.rule}`, display: 'flex', justifyContent: 'space-around',
-          }}>
+            border: `1px solid ${T.rule}`, display: 'flex', justifyContent: 'space-around' }}>
             <ImpactStat big={`${volCl} cL`} unit="volume" />
             <ImpactStat big={g + 'g'} unit="alcool pur" accent />
           </div>
@@ -326,27 +311,23 @@ function AddDrinkSheet({ open, prefill, onClose }) {
               marginTop: 14,
               color: T.accent2, background: T.dangerSoftBg,
               border: `1px solid ${T.dangerSoftBorder}`,
-              padding: '8px 12px', borderRadius: 10, fontSize: 12,
-            }}>{err}</div>
+              padding: '8px 12px', borderRadius: 10, fontSize: remSize(12), letterSpacing: tracking(12) }}>{err}</div>
           )}
         </div>
 
         <div style={{
           padding: '12px 18px calc(22px + env(safe-area-inset-bottom))',
-          borderTop: `1px solid ${T.rule}`, display: 'flex', gap: 10,
-        }}>
+          borderTop: `1px solid ${T.rule}`, display: 'flex', gap: 10 }}>
           <button type="button" onClick={close} style={{
             flex: 1, padding: '14px', textAlign: 'center', borderRadius: 12,
-            background: T.surface2, color: T.ink2, fontSize: 13, cursor: 'pointer',
-            border: `1px solid ${T.rule}`, fontFamily: 'inherit',
-          }}>Annuler</button>
+            background: T.surface2, color: T.ink2, fontSize: remSize(13), letterSpacing: tracking(13), cursor: 'pointer',
+            border: `1px solid ${T.rule}`, fontFamily: 'inherit' }}>Annuler</button>
           <button type="button" onClick={busy ? undefined : submit} disabled={busy} style={{
             flex: 2, padding: '14px', textAlign: 'center', borderRadius: 12,
-            background: T.accent, color: T.accentInk, fontSize: 13, fontWeight: 600,
-            cursor: busy ? 'wait' : 'pointer', letterSpacing: 0.1, opacity: busy ? 0.5 : 1,
+            background: T.accent, color: T.accentInk, fontSize: remSize(13), letterSpacing: tracking(13), fontWeight: 600,
+            cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.5 : 1,
             border: 'none', fontFamily: 'inherit',
-            boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
-          }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
+            boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}` }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
         </div>
       </div>
 
@@ -451,8 +432,7 @@ function ScannerSheet({ onClose, onScanned }) {
   return (
     <div style={{
       position: 'fixed', inset: 0, background: VIEWFINDER_BG, zIndex: 200,
-      display: 'flex', flexDirection: 'column',
-    }}>
+      display: 'flex', flexDirection: 'column' }}>
       <div id="scanner-viewport" ref={viewportRef} style={{
         position: 'absolute', inset: 0, overflow: 'hidden',
       }}/>
@@ -460,18 +440,14 @@ function ScannerSheet({ onClose, onScanned }) {
       <div style={{
         position: 'relative', padding: 'calc(50px + env(safe-area-inset-top)) 22px 18px',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 2,
-        background: VIEWFINDER_HEADER_SCRIM,
-      }}>
+        background: VIEWFINDER_HEADER_SCRIM }}>
         <div style={{
-          color: VIEWFINDER_INK, fontFamily: fontSerif, fontSize: 20, fontStyle: 'italic',
-          letterSpacing: -0.2,
-        }}>Scanner</div>
+          color: VIEWFINDER_INK, fontFamily: fontSerif, fontSize: remSize(20), letterSpacing: tracking(20), fontStyle: 'italic' }}>Scanner</div>
         <button type="button" onClick={onClose} aria-label="Fermer le scanner" style={{
           width: 36, height: 36, borderRadius: 99,
           background: VIEWFINDER_CLOSE_BG, display: 'grid', placeItems: 'center',
           color: VIEWFINDER_INK, cursor: 'pointer',
-          border: 'none', padding: 0, fontFamily: 'inherit',
-        }}><SvgIcon icon={Ic.close} size={16} /></button>
+          border: 'none', padding: 0, fontFamily: 'inherit' }}><SvgIcon icon={Ic.close} size={16} /></button>
       </div>
 
       <div style={{ flex: 1, position: 'relative', display: 'grid', placeItems: 'center', zIndex: 2 }}>
@@ -479,8 +455,7 @@ function ScannerSheet({ onClose, onScanned }) {
           width: 240, height: 150, position: 'relative',
           border: `1.5px solid ${status === 'found' ? T.good : T.accent}`,
           borderRadius: 14, overflow: 'hidden',
-          boxShadow: `0 0 0 9999px ${VIEWFINDER_MASK}`,
-        }}>
+          boxShadow: `0 0 0 9999px ${VIEWFINDER_MASK}` }}>
           {[0,1,2,3].map(i => (
             <div key={i} style={{
               position: 'absolute', width: 22, height: 22,
@@ -506,14 +481,12 @@ function ScannerSheet({ onClose, onScanned }) {
 
         <div style={{
           position: 'absolute', bottom: 50, left: 0, right: 0, textAlign: 'center',
-          color: VIEWFINDER_INK, fontSize: 13,
-        }}>
+          color: VIEWFINDER_INK, fontSize: remSize(13), letterSpacing: tracking(13) }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 8,
             padding: '8px 14px', borderRadius: 99,
             background: VIEWFINDER_CHIP_BG, backdropFilter: 'blur(8px)',
-            border: `1px solid ${VIEWFINDER_CHIP_BORDER}`,
-          }}>
+            border: `1px solid ${VIEWFINDER_CHIP_BORDER}` }}>
             <div style={{
               width: 8, height: 8, borderRadius: 99,
               background: status === 'found' ? T.good : T.accent,
@@ -527,16 +500,14 @@ function ScannerSheet({ onClose, onScanned }) {
       {status === 'found' && (
         <div style={{
           padding: '0 22px calc(40px + env(safe-area-inset-bottom))',
-          position: 'relative', zIndex: 2,
-        }}>
+          position: 'relative', zIndex: 2 }}>
           <button type="button" onClick={() => onScanned(foundProduct)} style={{
             width: '100%',
             background: T.accent, color: T.accentInk,
             padding: '14px', borderRadius: 14,
-            textAlign: 'center', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            textAlign: 'center', fontSize: remSize(14), letterSpacing: tracking(14), fontWeight: 600, cursor: 'pointer',
             border: 'none', fontFamily: 'inherit',
-            boxShadow: `0 8px 30px ${withAlpha(T.accent, 0.32)}`,
-          }}>Utiliser ce produit</button>
+            boxShadow: `0 8px 30px ${withAlpha(T.accent, 0.32)}` }}>Utiliser ce produit</button>
         </div>
       )}
     </div>
@@ -547,16 +518,12 @@ function FactCell({ label, value, last }) {
     <div style={{
       flex: 1, padding: '0 6px', borderRight: last ? 'none' : `1px solid ${T.rule}`,
       display: 'flex', flexDirection: 'column', alignItems: 'center',
-      textAlign: 'center',
-    }}>
+      textAlign: 'center' }}>
       <div style={{
-        fontSize: 9, letterSpacing: 1, textTransform: 'uppercase',
-        color: T.muted, fontWeight: 500, marginBottom: 4,
-      }}>{label}</div>
+        fontSize: remSize(9), letterSpacing: tracking(9, { caps: true }), textTransform: 'uppercase',
+        color: T.muted, fontWeight: 500, marginBottom: 4 }}>{label}</div>
       <div style={{
-        fontFamily: fontSerif, fontSize: 17, color: T.ink, letterSpacing: -0.2,
-        display: 'flex', justifyContent: 'center',
-      }}>{value}</div>
+        fontFamily: fontSerif, fontSize: remSize(17), letterSpacing: tracking(17), color: T.ink, display: 'flex', justifyContent: 'center' }}>{value}</div>
     </div>
   );
 }
@@ -577,7 +544,7 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
   useCatPalette();
   // Fermeture animée. `onEdit` / `onAddAgain` restent des bascules
   // instantanées : la sheet est REMPLACÉE par la suivante, pas fermée.
-  const [closing, close] = useSheetClose(onClose);
+  const [closing, close, cancelClose] = useSheetClose(onClose);
   // Inline "move to another category" affordance (applies to the whole
   // family via updateFamily).
   const [moving, setMoving] = React.useState(false);
@@ -637,49 +604,42 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
   };
 
   return (
-    <SheetOverlay onClose={close} closing={closing} label="Détail de la boisson">
-      <div style={{
-        background: T.bg, borderRadius: '22px 22px 0 0',
+    <SheetOverlay onClose={close} closing={closing} onCancelClose={cancelClose} label="Détail de la boisson">
+      <div className="alco-material-sheet alco-material-edge" style={{
+        borderRadius: '22px 22px 0 0',
         maxHeight: '90dvh', display: 'flex', flexDirection: 'column',
         borderTop: `1px solid ${T.rule}`,
         borderLeft: `1px solid ${T.rule}`,
         borderRight: `1px solid ${T.rule}`,
-        overflow: 'hidden',
-      }}>
-        <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
-          <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }}/>
-        </div>
-
+        overflow: 'hidden', boxShadow: T.shadowSheet }}>
+        {/* Tout l'en-tête coloré est saisissable : la feuille se repousse
+            depuis là où on la « tient » naturellement. */}
+        <SheetGrabber>
         <div style={{
           padding: '20px 22px 22px',
           background: `linear-gradient(160deg, ${catBg(f.category)}, transparent 90%)`,
-          borderBottom: `1px solid ${T.rule}`, position: 'relative',
-        }}>
+          borderBottom: `1px solid ${T.rule}`, position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{
               width: 54, height: 54, borderRadius: 16, background: DETAIL_HEADER_TILE_BG,
               display: 'grid', placeItems: 'center', color, flexShrink: 0,
-              border: `1px solid ${T.rule}`,
-            }}>
+              border: `1px solid ${T.rule}` }}>
               <CategoryGlyph name={f.category} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
-                fontSize: 10.5, letterSpacing: 1.4, textTransform: 'uppercase',
-                color, fontWeight: 500, marginBottom: 4,
-              }}>{f.category}</div>
+                fontSize: remSize(10.5), letterSpacing: tracking(10.5, { caps: true }), textTransform: 'uppercase',
+                color, fontWeight: 500, marginBottom: 4 }}>{f.category}</div>
               <div style={{
-                fontFamily: fontSerif, fontSize: 24, color: T.ink,
-                letterSpacing: -0.4, lineHeight: 1.1,
-                wordBreak: 'break-word',
-              }}>{f.name}</div>
+                fontFamily: fontSerif, fontSize: remSize(24), letterSpacing: tracking(24), color: T.ink,
+                lineHeight: 1.1,
+                wordBreak: 'break-word' }}>{f.name}</div>
             </div>
             <button type="button" onClick={close} aria-label="Fermer" style={{
               width: 32, height: 32, borderRadius: 99, background: DETAIL_HEADER_CLOSE_BG,
               display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
               alignSelf: 'flex-start',
-              border: 'none', padding: 0, fontFamily: 'inherit',
-            }}><SvgIcon icon={Ic.close} size={14} /></button>
+              border: 'none', padding: 0, fontFamily: 'inherit' }}><SvgIcon icon={Ic.close} size={14} /></button>
           </div>
 
           <div style={{ display: 'flex', gap: 0, marginTop: 18 }}>
@@ -691,43 +651,37 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
           </div>
           {myRating > 0 && (
             <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>
-              <button type="button" onClick={() => rate(0)} style={{
-                ...ghostButton, color: T.muted, fontSize: 11, cursor: 'pointer',
-              }}>Effacer la note</button>
+              <button type="button" className="alco-press" onClick={() => rate(0)} style={{
+                ...ghostButton, color: T.muted, ...type(11), cursor: 'pointer',
+                padding: 4, touchAction: 'manipulation' }}>Effacer la note</button>
             </div>
           )}
         </div>
+        </SheetGrabber>
 
         <div style={{ overflow: 'auto', padding: '16px 22px 20px', flex: 1 }}>
           <div style={{
-            color: T.muted, fontSize: 10.5, letterSpacing: 1.4,
-            textTransform: 'uppercase', fontWeight: 500, marginBottom: 10,
-          }}>Historique · {f.entries.length} entrée{f.entries.length !== 1 ? 's' : ''}</div>
+            color: T.muted, ...TYPE.labelLg, marginBottom: 10 }}>Historique · {f.entries.length} entrée{f.entries.length !== 1 ? 's' : ''}</div>
 
           <div style={{
-            background: T.surface, borderRadius: 14, border: `1px solid ${T.rule}`, overflow: 'hidden',
-          }}>
+            background: T.surface, borderRadius: 14, border: `1px solid ${T.rule}`, overflow: 'hidden' }}>
             {f.entries.map((e, i) => {
               const d = new Date(e.ts);
               return (
                 <div key={e.id || i} style={{
                   display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-                  borderBottom: i === f.entries.length - 1 ? 'none' : `1px solid ${T.rule}`,
-                }}>
+                  borderBottom: i === f.entries.length - 1 ? 'none' : `1px solid ${T.rule}` }}>
                   <div style={{
-                    fontFamily: fontSerif, fontSize: 14, color: T.ink2,
-                    fontStyle: 'italic', width: 60, flexShrink: 0,
-                  }}>{d.getDate()} {FR_MONTHS_SHORT[d.getMonth()]}</div>
+                    fontFamily: fontSerif, fontSize: remSize(14), letterSpacing: tracking(14), color: T.ink2,
+                    fontStyle: 'italic', width: 60, flexShrink: 0 }}>{d.getDate()} {FR_MONTHS_SHORT[d.getMonth()]}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{
-                      fontFamily: fontNum, fontSize: 13, color: T.ink, fontWeight: 500,
-                    }}>{e.ts.slice(11, 16)}</div>
+                      fontFamily: fontNum, fontSize: remSize(13), letterSpacing: tracking(13), color: T.ink, fontWeight: 500 }}>{e.ts.slice(11, 16)}</div>
                     {e.place && (
                       <div style={{
-                        color: T.muted, fontSize: 11, marginTop: 2,
+                        color: T.muted, fontSize: remSize(11), letterSpacing: tracking(11), marginTop: 2,
                         display: 'flex', alignItems: 'center', gap: 4,
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      }}>
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         <SvgIcon icon={Ic.pin} size={10} /> {e.place}
                       </div>
                     )}
@@ -735,13 +689,11 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
                   {e.raw && e.raw.price != null && (
                     <div style={{
                       display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
-                      fontFamily: fontNum, fontSize: 12, color: T.ink2,
-                    }}>
+                      fontFamily: fontNum, fontSize: remSize(12), letterSpacing: tracking(12), color: T.ink2 }}>
                       {e.raw.priceIsCustom && (
                         <span style={{
-                          fontFamily: fontSans, fontSize: 8.5, color: T.muted,
-                          letterSpacing: 0.3, textTransform: 'uppercase',
-                        }}>perso</span>
+                          fontFamily: fontSans, fontSize: remSize(8.5), letterSpacing: tracking(8.5, { caps: true }), color: T.muted,
+                          textTransform: 'uppercase' }}>perso</span>
                       )}
                       {fmtPrice(e.raw.price)}
                     </div>
@@ -771,8 +723,7 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
                       }
                     }} style={{
                       color: T.muted, display: 'flex', cursor: 'pointer',
-                      padding: 4, background: 'transparent', border: 'none',
-                    }}>
+                      padding: 4, background: 'transparent', border: 'none' }}>
                     <SvgIcon icon={Ic.trash} size={14} />
                   </button>
                 </div>
@@ -784,16 +735,14 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
             <button type="button" onClick={() => setMoving(v => !v)} aria-expanded={moving}
               style={{
                 ...ghostButton, width: '100%', padding: '10px 0', cursor: 'pointer',
-                color: T.ink2, fontSize: 12.5, display: 'flex', alignItems: 'center',
-                justifyContent: 'center', gap: 6,
-              }}>
+                color: T.ink2, fontSize: remSize(12.5), letterSpacing: tracking(12.5), display: 'flex', alignItems: 'center',
+                justifyContent: 'center', gap: 6 }}>
               <SvgIcon icon={Ic.grid} size={13} /> Déplacer vers une autre catégorie
             </button>
             {moving && (
               <div style={{
                 marginTop: 10, padding: 12, background: T.surface,
-                border: `1px solid ${T.rule}`, borderRadius: 14,
-              }}>
+                border: `1px solid ${T.rule}`, borderRadius: 14 }}>
                 <CategoryChips categories={categories} value={f.category}
                   ariaLabel="Déplacer vers la catégorie"
                   onChange={async (nextCat) => {
@@ -815,24 +764,21 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
         <div style={{
           padding: '12px 22px calc(22px + env(safe-area-inset-bottom))',
           borderTop: `1px solid ${T.rule}`,
-          display: 'flex', gap: 10,
-        }}>
+          display: 'flex', gap: 10 }}>
           <button type="button" onClick={() => onEdit && onEdit(f)} style={{
             flex: 1, padding: '12px', textAlign: 'center', borderRadius: 12,
-            background: T.surface2, color: T.ink2, fontSize: 13, cursor: 'pointer',
+            background: T.surface2, color: T.ink2, fontSize: remSize(13), letterSpacing: tracking(13), cursor: 'pointer',
             border: `1px solid ${T.rule}`, display: 'flex', alignItems: 'center',
-            justifyContent: 'center', gap: 6, fontFamily: 'inherit',
-          }}>
+            justifyContent: 'center', gap: 6, fontFamily: 'inherit' }}>
             <SvgIcon icon={Ic.edit} size={14} /> Modifier
           </button>
           <button type="button" onClick={() => onAddAgain && onAddAgain(f)} style={{
             flex: 2, padding: '12px', textAlign: 'center', borderRadius: 12,
-            background: T.accent, color: T.accentInk, fontSize: 13, fontWeight: 600,
+            background: T.accent, color: T.accentInk, fontSize: remSize(13), letterSpacing: tracking(13), fontWeight: 600,
             cursor: 'pointer', display: 'flex', alignItems: 'center',
             justifyContent: 'center', gap: 6,
             border: 'none', fontFamily: 'inherit',
-            boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
-          }}>
+            boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}` }}>
             <SvgIcon icon={Ic.plus} size={14} /> Ajouter à nouveau
           </button>
         </div>
@@ -874,7 +820,7 @@ function EditEntrySheet({ entry, onClose }) {
   const savingRef = React.useRef(false);
   const removingRef = React.useRef(false);
   // Fermeture animée (sortie de sheet).
-  const [closing, close] = useSheetClose(onClose);
+  const [closing, close, cancelClose] = useSheetClose(onClose);
 
   const save = async () => {
     if (savingRef.current || removingRef.current) return;
@@ -945,33 +891,28 @@ function EditEntrySheet({ entry, onClose }) {
   };
 
   return (
-    <SheetOverlay onClose={close} closing={closing} label="Modifier l'entrée">
-      <div style={{
-        background: T.bg, borderRadius: '22px 22px 0 0',
+    <SheetOverlay onClose={close} closing={closing} onCancelClose={cancelClose} label="Modifier l'entrée">
+      <div className="alco-material-sheet alco-material-edge" style={{
+        borderRadius: '22px 22px 0 0',
         maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
         borderTop: `1px solid ${T.rule}`,
         borderLeft: `1px solid ${T.rule}`,
         borderRight: `1px solid ${T.rule}`,
-        overflowX: 'hidden',
-      }}>
-        <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
-          <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }}/>
-        </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '8px 18px 14px',
-        }}>
-          <div style={{ width: 30 }}/>
+        overflowX: 'hidden', boxShadow: T.shadowSheet }}>
+        <SheetGrabber>
           <div style={{
-            fontFamily: fontSerif, fontSize: 22, color: T.ink,
-            letterSpacing: -0.3, fontStyle: 'italic',
-          }}>Modifier l'entrée</div>
-          <button type="button" onClick={close} aria-label="Fermer" style={{
-            width: 30, height: 30, borderRadius: 99, background: T.surface2,
-            display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
-            border: 'none', padding: 0, fontFamily: 'inherit',
-          }}><SvgIcon icon={Ic.close} size={14} /></button>
-        </div>
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '8px 18px 14px' }}>
+            <div style={{ width: 30 }}/>
+            <div style={{ ...type(22, { family: fontSerif, italic: true }), color: T.ink }}>
+              Modifier l'entrée
+            </div>
+            <button type="button" className="alco-press" onClick={close} aria-label="Fermer" style={{
+              width: 30, height: 30, borderRadius: 99, background: T.surface2,
+              display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
+              border: 'none', padding: 0, fontFamily: 'inherit', touchAction: 'manipulation' }}><SvgIcon icon={Ic.close} size={14} /></button>
+          </div>
+        </SheetGrabber>
         <div style={{ overflowY: 'auto', overflowX: 'hidden', padding: '0 18px 20px', flex: 1 }}>
           <FieldGroup label="Nom"><input value={name} onChange={e => setName(e.target.value)} aria-label="Nom" style={inputS()} /></FieldGroup>
           <FieldGroup label="Catégorie">
@@ -999,8 +940,7 @@ function EditEntrySheet({ entry, onClose }) {
 
           <div style={{
             display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
-            gap: 10, width: '100%',
-          }}>
+            gap: 10, width: '100%' }}>
             <FieldGroup label="Date">
               <input type="date" value={date} onChange={e => setDate(e.target.value)} aria-label="Date"
                 style={{
@@ -1025,8 +965,7 @@ function EditEntrySheet({ entry, onClose }) {
             <div style={{
               color: T.accent2, background: T.dangerSoftBg,
               border: `1px solid ${T.dangerSoftBorder}`,
-              padding: '8px 12px', borderRadius: 10, fontSize: 12, marginBottom: 10,
-            }}>{err}</div>
+              padding: '8px 12px', borderRadius: 10, fontSize: remSize(12), letterSpacing: tracking(12), marginBottom: 10 }}>{err}</div>
           )}
 
           <button type="button" onClick={busy ? undefined : remove} disabled={busy} style={{
@@ -1035,31 +974,27 @@ function EditEntrySheet({ entry, onClose }) {
             background: T.dangerSoftBg,
             color: T.accent2,
             border: `1px solid ${T.dangerSoftBorder}`,
-            fontSize: 12.5, fontWeight: 500, cursor: busy ? 'wait' : 'pointer',
+            fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500, cursor: busy ? 'wait' : 'pointer',
             opacity: busy ? 0.5 : 1,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            fontFamily: 'inherit',
-          }}>
+            fontFamily: 'inherit' }}>
             <SvgIcon icon={Ic.trash} size={13} />
             Supprimer cette entrée
           </button>
         </div>
         <div style={{
           padding: '12px 18px calc(22px + env(safe-area-inset-bottom))',
-          borderTop: `1px solid ${T.rule}`, display: 'flex', gap: 10,
-        }}>
+          borderTop: `1px solid ${T.rule}`, display: 'flex', gap: 10 }}>
           <button type="button" onClick={close} style={{
             flex: 1, padding: '14px', textAlign: 'center', borderRadius: 12,
-            background: T.surface2, color: T.ink2, fontSize: 13, cursor: 'pointer',
-            border: `1px solid ${T.rule}`, fontFamily: 'inherit',
-          }}>Annuler</button>
+            background: T.surface2, color: T.ink2, fontSize: remSize(13), letterSpacing: tracking(13), cursor: 'pointer',
+            border: `1px solid ${T.rule}`, fontFamily: 'inherit' }}>Annuler</button>
           <button type="button" onClick={busy ? undefined : save} disabled={busy} style={{
             flex: 2, padding: '14px', textAlign: 'center', borderRadius: 12,
-            background: T.accent, color: T.accentInk, fontSize: 13, fontWeight: 600,
+            background: T.accent, color: T.accentInk, fontSize: remSize(13), letterSpacing: tracking(13), fontWeight: 600,
             cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.5 : 1,
             border: 'none', fontFamily: 'inherit',
-            boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
-          }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
+            boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}` }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
         </div>
       </div>
     </SheetOverlay>
@@ -1098,7 +1033,7 @@ function EditFamilySheet({ family, onClose }) {
   const savingRef = React.useRef(false);
   const removingRef = React.useRef(false);
   // Fermeture animée (sortie de sheet).
-  const [closing, close] = useSheetClose(onClose);
+  const [closing, close, cancelClose] = useSheetClose(onClose);
 
   const save = async () => {
     if (savingRef.current || removingRef.current) return;
@@ -1213,32 +1148,28 @@ function EditFamilySheet({ family, onClose }) {
   const refDirty = liveNewVal !== liveOldVal;
 
   return (
-    <SheetOverlay onClose={close} closing={closing} label="Modifier la boisson">
-      <div style={{
-        background: T.bg, borderRadius: '22px 22px 0 0',
+    <SheetOverlay onClose={close} closing={closing} onCancelClose={cancelClose} label="Modifier la boisson">
+      <div className="alco-material-sheet alco-material-edge" style={{
+        borderRadius: '22px 22px 0 0',
         maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
         borderTop: `1px solid ${T.rule}`,
         borderLeft: `1px solid ${T.rule}`,
         borderRight: `1px solid ${T.rule}`,
-      }}>
-        <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
-          <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }}/>
-        </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '8px 18px 14px',
-        }}>
-          <div style={{ width: 30 }}/>
+        boxShadow: T.shadowSheet }}>
+        <SheetGrabber>
           <div style={{
-            fontFamily: fontSerif, fontSize: 22, color: T.ink,
-            letterSpacing: -0.3, fontStyle: 'italic',
-          }}>Modifier la boisson</div>
-          <button type="button" onClick={close} aria-label="Fermer" style={{
-            width: 30, height: 30, borderRadius: 99, background: T.surface2,
-            display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
-            border: 'none', padding: 0, fontFamily: 'inherit',
-          }}><SvgIcon icon={Ic.close} size={14} /></button>
-        </div>
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '8px 18px 14px' }}>
+            <div style={{ width: 30 }}/>
+            <div style={{ ...type(22, { family: fontSerif, italic: true }), color: T.ink }}>
+              Modifier la boisson
+            </div>
+            <button type="button" className="alco-press" onClick={close} aria-label="Fermer" style={{
+              width: 30, height: 30, borderRadius: 99, background: T.surface2,
+              display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
+              border: 'none', padding: 0, fontFamily: 'inherit', touchAction: 'manipulation' }}><SvgIcon icon={Ic.close} size={14} /></button>
+          </div>
+        </SheetGrabber>
         <div style={{ overflow: 'auto', padding: '0 18px 20px', flex: 1 }}>
           <FieldGroup label="Nom"><input value={name} onChange={e => setName(e.target.value)} aria-label="Nom" style={inputS()} /></FieldGroup>
           <FieldGroup label="Catégorie">
@@ -1262,22 +1193,20 @@ function EditFamilySheet({ family, onClose }) {
               <div>
                 <div style={{
                   marginTop: 8, background: T.surface, border: `1px solid ${T.rule}`,
-                  borderRadius: 12, overflow: 'hidden',
-                }}>
+                  borderRadius: 12, overflow: 'hidden' }}>
                   <ToggleRow label="Mettre à jour les boissons existantes"
                     sub={`${refPricedCount} au prix de référence${customCount > 0 ? ` · ${customCount} personnalisée${plur(customCount)} préservée${plur(customCount)}` : ''}`}
                     on={applyToExisting} onToggle={() => setApplyToExisting(v => !v)} last />
                 </div>
                 {refDirty && applyToExisting && (
                   <div style={{
-                    marginTop: 6, color: T.accent, fontSize: 11, letterSpacing: 0.2,
-                  }}>
+                    marginTop: 6, color: T.accent, fontSize: remSize(11), letterSpacing: tracking(11) }}>
                     {refPricedCount} boisson{plur(refPricedCount)} <span style={{ fontFamily: fontNum }}>→ {liveNewVal != null ? fmtPrice(liveNewVal) : 'sans prix'}</span>
                   </div>
                 )}
               </div>
             ) : (
-              <div style={{ marginTop: 6, color: T.muted, fontSize: 11, lineHeight: 1.4 }}>
+              <div style={{ marginTop: 6, color: T.muted, fontSize: remSize(11), letterSpacing: tracking(11), lineHeight: 1.4 }}>
                 Toutes les entrées ont un prix personnalisé — ce prix ne sera repris que par les nouveaux ajouts.
               </div>
             )}
@@ -1291,8 +1220,7 @@ function EditFamilySheet({ family, onClose }) {
             <div style={{
               color: T.accent2, background: T.dangerSoftBg,
               border: `1px solid ${T.dangerSoftBorder}`,
-              padding: '8px 12px', borderRadius: 10, fontSize: 12, marginBottom: 10,
-            }}>{err}</div>
+              padding: '8px 12px', borderRadius: 10, fontSize: remSize(12), letterSpacing: tracking(12), marginBottom: 10 }}>{err}</div>
           )}
 
           <button type="button" onClick={busy ? undefined : delAll} disabled={busy} style={{
@@ -1301,31 +1229,27 @@ function EditFamilySheet({ family, onClose }) {
             background: T.dangerSoftBg,
             color: T.accent2,
             border: `1px solid ${T.dangerSoftBorder}`,
-            fontSize: 12.5, fontWeight: 500, cursor: busy ? 'wait' : 'pointer',
+            fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500, cursor: busy ? 'wait' : 'pointer',
             opacity: busy ? 0.5 : 1,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            fontFamily: 'inherit',
-          }}>
+            fontFamily: 'inherit' }}>
             <SvgIcon icon={Ic.trash} size={13} />
             Supprimer toutes les entrées
           </button>
         </div>
         <div style={{
           padding: '12px 18px calc(22px + env(safe-area-inset-bottom))',
-          borderTop: `1px solid ${T.rule}`, display: 'flex', gap: 10,
-        }}>
+          borderTop: `1px solid ${T.rule}`, display: 'flex', gap: 10 }}>
           <button type="button" onClick={close} style={{
             flex: 1, padding: '14px', textAlign: 'center', borderRadius: 12,
-            background: T.surface2, color: T.ink2, fontSize: 13, cursor: 'pointer',
-            border: `1px solid ${T.rule}`, fontFamily: 'inherit',
-          }}>Annuler</button>
+            background: T.surface2, color: T.ink2, fontSize: remSize(13), letterSpacing: tracking(13), cursor: 'pointer',
+            border: `1px solid ${T.rule}`, fontFamily: 'inherit' }}>Annuler</button>
           <button type="button" onClick={busy ? undefined : save} disabled={busy} style={{
             flex: 2, padding: '14px', textAlign: 'center', borderRadius: 12,
-            background: T.accent, color: T.accentInk, fontSize: 13, fontWeight: 600,
+            background: T.accent, color: T.accentInk, fontSize: remSize(13), letterSpacing: tracking(13), fontWeight: 600,
             cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.5 : 1,
             border: 'none', fontFamily: 'inherit',
-            boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
-          }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
+            boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}` }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
         </div>
       </div>
     </SheetOverlay>
@@ -1340,7 +1264,7 @@ function SettingsDrawer({ open, onClose }) {
   // SW is registered (browser preview, file://).
   const swVersion = useSWVersion();
   // Fermeture animée (le tiroir repart vers la gauche) — ré-armée à l'ouverture.
-  const [closing, close] = useSheetClose(onClose, open);
+  const [closing, close, cancelClose] = useSheetClose(onClose, open);
 
   if (!open) return null;
 
@@ -1389,31 +1313,28 @@ function SettingsDrawer({ open, onClose }) {
   };
 
   return (
-    <SheetOverlay onClose={close} closing={closing} side="left" label="Paramètres">
-      <div style={{
-        background: T.bg, width: 'min(360px, 100vw)', height: '100%',
+    <SheetOverlay onClose={close} closing={closing} onCancelClose={cancelClose} side="left" label="Paramètres">
+      <div className="alco-material-panel alco-material-edge" style={{
+        width: 'min(360px, 100vw)', height: '100%',
         borderRight: `1px solid ${T.rule}`,
         display: 'flex', flexDirection: 'column',
-      }}>
+        boxShadow: T.shadowSheet }}>
         <div style={{
           padding: 'calc(36px + env(safe-area-inset-top)) 20px 18px',
           borderBottom: `1px solid ${T.rule}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        }}>
-          <div style={{
-            fontFamily: fontSerif, fontSize: 24, color: T.ink,
-            letterSpacing: -0.4, fontStyle: 'italic',
-          }}>Paramètres</div>
-          <button type="button" onClick={close} aria-label="Fermer les paramètres" style={{
-            width: 32, height: 32, borderRadius: 99, background: T.surface2,
-            display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
-            border: 'none', padding: 0, fontFamily: 'inherit',
-          }}><SvgIcon icon={Ic.close} size={14} /></button>
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ ...TYPE.display, color: T.ink }}>Paramètres</div>
+          <button type="button" className="alco-press" onClick={close}
+            aria-label="Fermer les paramètres" style={{
+              width: 32, height: 32, borderRadius: 99, background: T.surface2,
+              display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
+              border: 'none', padding: 0, fontFamily: 'inherit', touchAction: 'manipulation' }}><SvgIcon icon={Ic.close} size={14} /></button>
         </div>
 
         <div style={{ flex: 1, overflow: 'auto', padding: '14px 20px' }}>
           <SettingsGroup label="Apparence">
             <ThemePicker />
+            <HapticsRow last />
           </SettingsGroup>
 
           <SettingsGroup label="Profil">
@@ -1435,9 +1356,8 @@ function SettingsDrawer({ open, onClose }) {
             style={{ display: 'none' }} onChange={onFile}/>
 
           <div style={{
-            color: T.muted, fontSize: 10, textAlign: 'center',
-            padding: '24px 0', letterSpacing: 0.3,
-          }}>AlcoNote · {swVersion || '—'}</div>
+            color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10), textAlign: 'center',
+            padding: '24px 0' }}>AlcoNote · {swVersion || '—'}</div>
         </div>
       </div>
     </SheetOverlay>
@@ -1453,15 +1373,14 @@ function ThemePicker() {
         <button key={id} type="button" role="radio" aria-checked={current === id}
           onClick={() => applyTheme(id)} style={{
             flex: 1, padding: '14px 0', textAlign: 'center',
-            fontSize: 13, cursor: 'pointer',
+            fontSize: remSize(13), letterSpacing: tracking(13), cursor: 'pointer',
             background: current === id ? T.accentSoft : 'transparent',
             color: current === id ? T.accent : T.ink2,
             fontWeight: current === id ? 600 : 400,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             borderTop: 'none', borderLeft: 'none', borderBottom: 'none',
             borderRight: i === 0 ? `1px solid ${T.rule}` : 'none',
-            letterSpacing: -0.1, fontFamily: 'inherit',
-          }}>
+            fontFamily: 'inherit' }}>
           <SvgIcon icon={icon} size={15} />
           {label}
         </button>
@@ -1477,22 +1396,21 @@ function ProfileRow({ label, value, onSave, last, numeric, step, min, max, ...in
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '10px 14px', borderBottom: last ? 'none' : `1px solid ${T.rule}`,
-      gap: 10,
-    }}>
-      <span style={{ color: T.ink, fontSize: 13.5, letterSpacing: -0.1 }}>{label}</span>
+      gap: 10 }}>
+      <span style={{ color: T.ink, fontSize: remSize(13.5), letterSpacing: tracking(13.5) }}>{label}</span>
       {numeric ? (
         // Numeric profile fields (e.g. weight) get the decimal keypad and
         // accept a comma or a dot. Save on blur (the input's blur bubbles).
         <NumberField value={v} onChange={setV} onBlur={() => onSave(v)}
           ariaLabel={label} step={step} min={min} max={max} placeholder=""
-          style={{ width: 80, padding: '6px 10px', fontSize: 13, textAlign: 'right', borderRadius: 8 }} />
+          style={{ width: 80, padding: '6px 10px', fontSize: remSize(13), letterSpacing: tracking(13), textAlign: 'right', borderRadius: 8 }} />
       ) : (
         <input value={v} onChange={(e) => setV(e.target.value)} onBlur={() => onSave(v)}
           aria-label={label}
           {...inputProps}
           style={{
             width: 80, background: T.surface2, border: `1px solid ${T.rule}`,
-            borderRadius: 8, padding: '6px 10px', color: T.ink, fontSize: 13,
+            borderRadius: 8, padding: '6px 10px', color: T.ink, fontSize: remSize(13), letterSpacing: tracking(13),
             fontFamily: fontSans, outline: 'none', textAlign: 'right',
           }}/>
       )}
@@ -1505,23 +1423,19 @@ function GenderPicker({ value, onChange, last }) {
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '10px 14px', borderBottom: last ? 'none' : `1px solid ${T.rule}`,
-      gap: 10,
-    }}>
-      <span style={{ color: T.ink, fontSize: 13.5, letterSpacing: -0.1 }}>Sexe</span>
+      gap: 10 }}>
+      <span style={{ color: T.ink, fontSize: remSize(13.5), letterSpacing: tracking(13.5) }}>Sexe</span>
       <div role="radiogroup" aria-label="Sexe" style={{
         display: 'flex', gap: 4, padding: 3,
-        background: T.surface2, borderRadius: 10, border: `1px solid ${T.rule}`,
-      }}>
+        background: T.surface2, borderRadius: 10, border: `1px solid ${T.rule}` }}>
         {[['', '—'], ['male', 'Homme'], ['female', 'Femme']].map(([k, label]) => (
           <button key={k || 'none'} type="button" role="radio" aria-checked={value === k}
             onClick={() => onChange(k)} style={{
               padding: '6px 10px', borderRadius: 7, textAlign: 'center',
-              fontSize: 11, cursor: 'pointer', letterSpacing: -0.1,
-              background: value === k ? T.ink : 'transparent',
+              fontSize: remSize(11), letterSpacing: tracking(11), cursor: 'pointer', background: value === k ? T.ink : 'transparent',
               color: value === k ? T.bg : T.ink2,
               fontWeight: value === k ? 600 : 400, minWidth: 38,
-              border: 'none', fontFamily: 'inherit',
-            }}>{label}</button>
+              border: 'none', fontFamily: 'inherit' }}>{label}</button>
         ))}
       </div>
     </div>
@@ -1532,14 +1446,49 @@ function SettingsGroup({ label, children }) {
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{
-        fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase',
-        color: T.muted, fontWeight: 500, marginBottom: 8, padding: '0 4px',
-      }}>{label}</div>
+        fontSize: remSize(10), letterSpacing: tracking(10, { caps: true }), textTransform: 'uppercase',
+        color: T.muted, fontWeight: 500, marginBottom: 8, padding: '0 4px' }}>{label}</div>
       <div style={{
         background: T.surface, border: `1px solid ${T.rule}`, borderRadius: 14,
-        overflow: 'hidden',
-      }}>{children}</div>
+        overflow: 'hidden' }}>{children}</div>
     </div>
+  );
+}
+
+// Interrupteur de retour haptique. Le retour tactile est un service rendu à
+// l'utilisateur, pas une signature : il doit pouvoir le couper. La valeur vit
+// en localStorage (lue à chaud dans des handlers de geste, sans await).
+function HapticsRow({ last }) {
+  const [on, setOn] = React.useState(() => hapticsEnabled());
+  const toggle = () => {
+    const next = !on;
+    setHapticsEnabled(next);
+    setOn(next);
+    if (next) haptic('commit');   // on fait SENTIR ce qu'on vient d'activer
+  };
+  return (
+    <button type="button" role="switch" aria-checked={on} onClick={toggle}
+      className="alco-press-soft" style={{
+        width: '100%', display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', padding: '12px 14px', gap: 10,
+        borderTop: 'none', borderLeft: 'none', borderRight: 'none',
+        borderBottom: last ? 'none' : `1px solid ${T.rule}`,
+        background: 'transparent', fontFamily: 'inherit', cursor: 'pointer',
+        color: 'inherit', textAlign: 'left', touchAction: 'manipulation' }}>
+      <span style={{ color: T.ink, ...type(13.5) }}>Retour haptique</span>
+      <span aria-hidden="true" style={{
+        width: 40, height: 24, borderRadius: 99, flexShrink: 0,
+        background: on ? T.accent : T.surface3,
+        border: `1px solid ${on ? T.accent : T.rule}`,
+        display: 'flex', alignItems: 'center', padding: 2,
+        transition: `background ${MOTION.fast}ms ${MOTION.ease}` }}>
+        <span style={{
+          width: 18, height: 18, borderRadius: 99, background: on ? T.accentInk : T.muted,
+          transform: `translateX(${on ? 16 : 0}px)`,
+          transition: `transform ${MOTION.fast}ms ${MOTION.ease}`,
+        }} />
+      </span>
+    </button>
   );
 }
 
@@ -1547,7 +1496,7 @@ function SettingRow({ label, value, icon, danger, last, onClick }) {
   const Tag = onClick ? 'button' : 'div';
   const extra = onClick ? { type: 'button' } : {};
   return (
-    <Tag {...extra} onClick={onClick} style={{
+    <Tag {...extra} onClick={onClick} className={onClick ? 'alco-press-soft' : undefined} style={{
       width: '100%',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '12px 14px',
@@ -1555,16 +1504,14 @@ function SettingRow({ label, value, icon, danger, last, onClick }) {
       borderBottom: last ? 'none' : `1px solid ${T.rule}`,
       cursor: onClick ? 'pointer' : 'default', gap: 10,
       background: 'transparent', fontFamily: 'inherit',
-      color: 'inherit', textAlign: 'left',
-    }}>
+      color: 'inherit', textAlign: 'left' }}>
       <span style={{
-        color: danger ? T.accent2 : T.ink, fontSize: 13.5, letterSpacing: -0.1,
-        display: 'flex', alignItems: 'center', gap: 10,
-      }}>
+        color: danger ? T.accent2 : T.ink, ...type(13.5),
+        display: 'flex', alignItems: 'center', gap: 10 }}>
         {icon && <SvgIcon icon={icon} size={14} color={T.muted}/>}
         {label}
       </span>
-      {value !== undefined ? <span style={{ color: T.muted, fontSize: 12.5 }}>{value}</span>
+      {value !== undefined ? <span style={{ color: T.muted, ...type(12.5) }}>{value}</span>
         : (!danger && onClick) && <SvgIcon icon={Ic.chev} size={14} color={T.muted} />}
     </Tag>
   );
@@ -1574,18 +1521,16 @@ function ToggleRow({ label, sub, on, onToggle, last }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '12px 14px', borderBottom: last ? 'none' : `1px solid ${T.rule}`, gap: 12,
-    }}>
+      padding: '12px 14px', borderBottom: last ? 'none' : `1px solid ${T.rule}`, gap: 12 }}>
       <div style={{ minWidth: 0 }}>
-        <div style={{ color: T.ink, fontSize: 13.5, letterSpacing: -0.1 }}>{label}</div>
-        {sub && <div style={{ color: T.muted, fontSize: 11, marginTop: 2, lineHeight: 1.4 }}>{sub}</div>}
+        <div style={{ color: T.ink, fontSize: remSize(13.5), letterSpacing: tracking(13.5) }}>{label}</div>
+        {sub && <div style={{ color: T.muted, fontSize: remSize(11), letterSpacing: tracking(11), marginTop: 2, lineHeight: 1.4 }}>{sub}</div>}
       </div>
       <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={onToggle} style={{
         width: 42, height: 25, borderRadius: 99, flexShrink: 0, position: 'relative',
         cursor: 'pointer', padding: 0, fontFamily: 'inherit',
         background: on ? T.accent : T.surface3, border: `1px solid ${on ? T.accent : T.rule}`,
-        transition: 'background 0.18s ease',
-      }}>
+        transition: 'background 0.18s ease' }}>
         <span style={{
           position: 'absolute', top: 2, left: on ? 19 : 2, width: 19, height: 19,
           borderRadius: 99, background: on ? T.accentInk : T.muted, transition: 'left 0.18s ease',

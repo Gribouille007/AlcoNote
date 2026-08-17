@@ -126,7 +126,9 @@ test('couleur : slider au clavier → setting cat.color.id.<id> + carte recolor�
   // l'abonnement useCatPalette, le memo bloquait le re-render et la carte
   // gardait l'ancienne couleur (« je change la couleur, rien ne se passe »).
   await ctx.waitFor(() => {
-    const card = ctx.qa('[role="button"]').find((el) =>
+    // La carte est un <button> natif (pas un div `role="button"`) depuis le
+    // correctif « nested-interactive » : on la retrouve par son libellé.
+    const card = ctx.qa('button').find((el) =>
       /Ouvrir la catégorie Bière/.test(el.getAttribute('aria-label') || ''));
     return card && / 359\)/.test(card.innerHTML);
   }, { label: 'carte recolorée dans le DOM (repaint malgré React.memo)' });
@@ -146,7 +148,9 @@ test('couleur : « Auto » supprime la surcharge (retour au défaut)', async () 
     { label: 'teinte par défaut restaurée' });
   // Et le DOM de la carte suit (repaint malgré React.memo).
   await ctx.waitFor(() => {
-    const card = ctx.qa('[role="button"]').find((el) =>
+    // La carte est un <button> natif (pas un div `role="button"`) depuis le
+    // correctif « nested-interactive » : on la retrouve par son libellé.
+    const card = ctx.qa('button').find((el) =>
       /Ouvrir la catégorie Bière/.test(el.getAttribute('aria-label') || ''));
     return card && / 80\)/.test(card.innerHTML) && !/ 359\)/.test(card.innerHTML);
   }, { label: 'carte revenue à la teinte par défaut dans le DOM' });

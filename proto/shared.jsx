@@ -41,6 +41,20 @@ const THEMES = {
     // `bacZoneColor` (stats-charts). `T.good` fournit la zone sobre.
     bacWarn:   'oklch(72% 0.16 60)',
     bacDanger: 'oklch(68% 0.20 25)',
+    // ── Matières translucides (chrome flottant / feuilles) ──────────
+    // Une barre d'onglets n'est pas une bande opaque qui mange l'écran :
+    // c'est une couche de matière SOUS laquelle le contenu défile. Les
+    // fonds ci-dessous sont volontairement alpha (le flou derrière fait le
+    // reste) ; `glassEdge` est l'arête claire du dessus — la lumière
+    // accrochée par la matière, qui la détache du contenu sans filet 1px.
+    // `glassSolid` est le repli opaque quand l'utilisateur demande moins de
+    // transparence ou plus de contraste.
+    glassChrome: 'oklch(18% 0.01 55 / 0.72)',
+    glassPanel:  'oklch(19% 0.01 55 / 0.86)',
+    glassSolid:  'oklch(16% 0.008 50)',
+    glassEdge:   'oklch(100% 0 0 / 0.07)',
+    shadowChrome: '0 -10px 34px rgba(0,0,0,0.38)',
+    shadowSheet:  '0 -24px 70px rgba(0,0,0,0.55)',
     isDark:   true,
   },
   light: {
@@ -85,6 +99,13 @@ const THEMES = {
     // `bacZoneColor` (stats-charts). `T.good` fournit la zone sobre.
     bacWarn:   'oklch(58% 0.16 55)',
     bacDanger: 'oklch(54% 0.20 25)',
+    // Matières translucides — cf. le commentaire du thème sombre.
+    glassChrome: 'oklch(100% 0 0 / 0.70)',
+    glassPanel:  'oklch(100% 0 0 / 0.86)',
+    glassSolid:  'oklch(98% 0.006 85)',
+    glassEdge:   'oklch(100% 0 0 / 0.75)',
+    shadowChrome: '0 -10px 34px rgba(60,40,20,0.10)',
+    shadowSheet:  '0 -24px 70px rgba(60,40,20,0.20)',
     isDark:   false,
   },
 };
@@ -97,6 +118,29 @@ function setTheme(name) {
   for (const k of Object.keys(T)) delete T[k];
   Object.assign(T, next);
   T._name = name;
+}
+
+// ── Pont tokens → variables CSS ───────────────────────────────────
+// Les matières translucides et les effets de bord vivent dans une feuille de
+// style (seul endroit d'où l'on peut répondre à `prefers-reduced-transparency`
+// / `prefers-contrast`, impossible en style inline). Elles lisent donc les
+// couleurs via des variables CSS, republiées à chaque changement de thème —
+// `T` reste la source unique, le CSS n'en est qu'un miroir.
+function applyThemeCssVars() {
+  if (typeof document === 'undefined' || !document.documentElement) return;
+  const s = document.documentElement.style;
+  if (!s || typeof s.setProperty !== 'function') return;
+  const vars = {
+    '--alco-bg': T.bg, '--alco-surface': T.surface, '--alco-surface2': T.surface2,
+    '--alco-ink': T.ink, '--alco-ink2': T.ink2, '--alco-muted': T.muted,
+    '--alco-rule': T.rule, '--alco-accent': T.accent, '--alco-accent-ink': T.accentInk,
+    '--alco-glass-chrome': T.glassChrome, '--alco-glass-panel': T.glassPanel,
+    '--alco-glass-solid': T.glassSolid, '--alco-glass-edge': T.glassEdge,
+    '--alco-shadow-chrome': T.shadowChrome, '--alco-shadow-sheet': T.shadowSheet,
+  };
+  for (const k of Object.keys(vars)) {
+    try { s.setProperty(k, vars[k]); } catch {}
+  }
 }
 
 window.__themeListeners = window.__themeListeners || new Set();
@@ -117,6 +161,7 @@ function applyTheme(name) {
   try { window.dbManager && window.dbManager.setSetting && window.dbManager.setSetting('theme', name); } catch {}
   document.documentElement.setAttribute('data-theme', name);
   document.body.className = `theme-${name}`;
+  applyThemeCssVars();
   window.__themeListeners.forEach(f => f());
 }
 
@@ -130,21 +175,322 @@ function applyTheme(name) {
   if (THEMES[saved]) setTheme(saved);
   document.documentElement.setAttribute('data-theme', T._name);
   document.body.className = `theme-${T._name}`;
+  applyThemeCssVars();
 })();
 
 const fontSans = '"Geist", ui-sans-serif, system-ui, sans-serif';
 const fontSerif = '"Instrument Serif", "Times New Roman", serif';
 const fontNum = '"Geist Mono", ui-monospace, monospace';
 
-// ── Motion : source unique de vérité des durées/easing ─────────────
-// Aucun composant ne code une durée en dur : tout passe par MOTION
-// (cf. CLAUDE.md › DA). Registre sobre, sans rebond.
+// ── Matières : géométrie des couches translucides ──────────────────
+// Les COULEURS des matières vivent dans THEMES (glassChrome/glassPanel/…) ;
+// ici, ce qui n'est pas une couleur : rayon de flou et saturation. Règle de
+// hiérarchie : une grande surface se lit plus ÉPAISSE qu'une petite — plus
+// de flou, ombre plus profonde. Une barre d'onglets n'a donc pas le même
+// flou qu'une feuille plein écran.
+const MATERIAL = Object.freeze({
+  blur: Object.freeze({ chrome: 20, sheet: 30 }),
+  saturate: 180,
+  // Hauteur du dégradé de bord (là où le contenu passe SOUS le chrome
+  // flottant) : un fondu court, jamais un filet de 1px.
+  edgeFade: 28,
+});
+
+// ── Typographie : l'approche et l'interlignage suivent la taille ───
+// Une seule valeur d'approche (letter-spacing) pour toutes les tailles est
+// forcément fausse quelque part : en grandissant, les lettres paraissent
+// trop espacées (il faut RESSERRER) ; en rapetissant, elles se collent (il
+// faut OUVRIR). On dérive donc l'approche de la taille, une bonne fois, au
+// lieu de la deviner ligne à ligne.
+//
+// Courbe : `a/px + b` (hyperbole, la forme des vraies tables optiques), calée
+// sur trois points : ~+0.02em à 9px, 0 à 14px (corps de texte), et une
+// asymptote à −0.035em pour les grandes tailles. Les capitales demandent en
+// plus une ouverture fixe (`caps`) : sans elle, un micro-label en majuscules
+// est illisible.
+const TRACKING_A = 0.49;
+const TRACKING_B = -0.035;
+// Ouverture supplémentaire des capitales. Volontairement SOBRE : les
+// micro-labels en majuscules vivent dans des grilles étroites (trois stats par
+// ligne), et une approche trop généreuse les fait passer à la ligne — un
+// libellé cassé en deux coûte plus de lisibilité qu'il n'en gagne.
+const TRACKING_CAPS = 0.03;
+
+function tracking(px, opts) {
+  const size = Number.isFinite(px) && px > 0 ? px : 14;
+  const caps = !!(opts && opts.caps);
+  const em = Math.max(-0.03, Math.min(0.05, TRACKING_A / size + TRACKING_B));
+  return `${((caps ? em + TRACKING_CAPS : em)).toFixed(4)}em`;
+}
+
+// L'interlignage suit la taille en sens INVERSE : serré sur un grand titre
+// (les lignes se cherchent), aéré sur du texte courant (les lignes se
+// suivent). Bornes : jamais sous 1.05 (les jambages se toucheraient), jamais
+// au-delà de 1.6 (le paragraphe se déliterait).
+function leading(px) {
+  const size = Number.isFinite(px) && px > 0 ? px : 14;
+  return Math.round(Math.max(1.05, Math.min(1.6, 1.9 - 0.032 * size)) * 1000) / 1000;
+}
+
+// Tailles en `rem` : le réglage « taille du texte » du navigateur/de l'OS
+// agit alors sur toute la typographie du système (racine à 100%, cf.
+// index.html) au lieu d'être ignoré.
+const TYPE_ROOT_PX = 16;
+function remSize(px) {
+  const size = Number.isFinite(px) ? px : 14;
+  return `${Math.round((size / TYPE_ROOT_PX) * 10000) / 10000}rem`;
+}
+
+// Style typographique complet pour une taille donnée. La hiérarchie se
+// construit en JEU (taille + graisse + interlignage + approche), jamais par
+// la taille seule : la graisse donne de la présence sans prendre de place.
+function type(px, opts) {
+  const o = opts || {};
+  const st = {
+    fontSize: remSize(px),
+    letterSpacing: tracking(px, o),
+    lineHeight: o.lineHeight != null ? o.lineHeight : leading(px),
+  };
+  if (o.family) st.fontFamily = o.family;
+  if (o.weight != null) st.fontWeight = o.weight;
+  if (o.italic) st.fontStyle = 'italic';
+  if (o.caps) st.textTransform = 'uppercase';
+  return st;
+}
+
+// Rôles nommés — la grille typographique de l'app. Un composant compose un
+// rôle plutôt que d'inventer un triplet taille/approche/interlignage.
+const TYPE = Object.freeze({
+  display: Object.freeze(type(24, { family: fontSerif, italic: true, weight: 400 })),
+  title:   Object.freeze(type(20, { family: fontSerif, italic: true, weight: 400 })),
+  heading: Object.freeze(type(18, { family: fontSerif, italic: true, weight: 400 })),
+  body:    Object.freeze(type(14)),
+  bodyStrong: Object.freeze(type(14, { weight: 500 })),
+  callout: Object.freeze(type(13)),
+  footnote: Object.freeze(type(11.5)),
+  // Micro-label en capitales (« EN DIRECT », « PÉRIODE ») : petite taille,
+  // graisse moyenne, approche ouverte — les trois vont ensemble.
+  label:   Object.freeze(type(10, { caps: true, weight: 500 })),
+  labelLg: Object.freeze(type(11, { caps: true, weight: 500 })),
+  // Nombres tabulaires : chasse fixe, approche neutre (les chiffres de Geist
+  // Mono sont déjà calibrés — y ajouter de l'approche casse l'alignement).
+  num:     Object.freeze({ fontFamily: fontNum, fontVariantNumeric: 'tabular-nums', letterSpacing: 0 }),
+});
+
+// ── Motion : source unique de vérité (durées, easing, ressorts) ────
+// Aucun composant ne code une durée, un easing ni un ressort en dur : tout
+// passe par MOTION (cf. CLAUDE.md › DA § Mouvement).
+//
+// Deux régimes coexistent, et le choix n'est PAS esthétique :
+//   • `fast`/`base` + `ease` — transitions NON gestuelles (fondu d'un toast,
+//     bascule d'un état, entrée d'une liste). Une durée fixe suffit : rien
+//     ne peut être attrapé en vol.
+//   • `spring.*` — tout ce que le doigt peut toucher (feuilles, swipe,
+//     réordonnancement). Un ressort part TOUJOURS de la valeur affichée et
+//     accepte une nouvelle cible en cours de route : c'est ce qui rend le
+//     mouvement interruptible et réversible (cf. § Ressorts plus bas).
 const MOTION = Object.freeze({
   fast: 180, base: 220,
+  // Démontage d'une feuille : le temps qu'il faut au ressort de sortie pour
+  // l'emmener hors écran. Ce n'est PAS la durée de l'animation (un ressort
+  // n'en a pas) — juste le moment où il n'y a plus rien à voir.
+  exit: 300,
   stagger: 38,                          // ms entre deux items d'une liste
   ease: 'cubic-bezier(.2,.6,.2,1)',     // calme, sans overshoot
+  // Miroir exact de `ease` (points de contrôle inversés : g(t) = 1 − f(1−t)).
+  // Une transition réversible joue `ease` à l'aller et `easeReverse` au
+  // retour, sinon le chemin de retour n'a pas le même « poids » que l'aller.
+  easeReverse: 'cubic-bezier(.8,0,.8,.4)',
   press: 0.97,                          // scale au tap
+  // Ressorts en vocabulaire Apple — `damping` (taux d'amortissement : 1 =
+  // critique, aucun dépassement) + `response` (secondes pour rejoindre la
+  // cible ; ce n'est PAS une durée, un ressort n'en a pas). Le rebond est
+  // réservé aux gestes qui portaient de l'élan (lancer, relâcher) : un menu
+  // qui apparaît sans geste ne rebondit jamais.
+  spring: Object.freeze({
+    ui:    Object.freeze({ damping: 1,   response: 0.35 }), // défaut, sans rebond
+    move:  Object.freeze({ damping: 1,   response: 0.4 }),  // repositionnement
+    sheet: Object.freeze({ damping: 0.8, response: 0.3 }),  // feuille / tiroir
+    flick: Object.freeze({ damping: 0.8, response: 0.4 }),  // objet lancé
+  }),
+  decel: 0.998,        // taux de décélération (projection d'élan, feel scroll)
+  decelSnappy: 0.99,   // variante plus sèche (listes courtes)
+  rubber: 0.55,        // constante d'élastique aux bornes
+  slop: 10,            // hystérésis avant d'engager une direction (px)
 });
+
+// ── Ressorts : intégration exacte, pure et testable ────────────────
+// `springStep` avance l'état d'un ressort de `dt` secondes vers `target`. La
+// solution est ANALYTIQUE (pas d'Euler) : le résultat ne dépend donc pas de
+// la cadence des frames — une frame sautée ne change ni la trajectoire ni le
+// point d'arrivée, et un pas de temps énorme (onglet revenu au premier plan)
+// ne fait pas exploser l'intégration.
+const SPRING_REST_DISTANCE = 0.01;   // « arrivé » sous ce reste de distance
+const SPRING_REST_VELOCITY = 0.05;   // vitesse résiduelle négligeable
+
+function springOmega(config) {
+  const response = Math.max(0.0001, (config && config.response) || MOTION.spring.ui.response);
+  return (2 * Math.PI) / response;
+}
+
+function springStep(state, target, config, dt) {
+  const x0 = (state && Number.isFinite(state.x)) ? state.x : 0;
+  const v0 = (state && Number.isFinite(state.v)) ? state.v : 0;
+  const to = Number.isFinite(target) ? target : 0;
+  if (!(dt > 0)) return { x: x0, v: v0 };
+  const z = Math.max(0, (config && config.damping != null) ? config.damping : MOTION.spring.ui.damping);
+  const w = springOmega(config);
+  const d0 = x0 - to;                 // on intègre le DÉPLACEMENT vers la cible
+  let d, v;
+  if (z < 1) {
+    // Sous-amorti : dépasse puis oscille (rebond).
+    const wd = w * Math.sqrt(1 - z * z);
+    const e = Math.exp(-z * w * dt);
+    const c = Math.cos(wd * dt), s = Math.sin(wd * dt);
+    const B = (v0 + z * w * d0) / wd;
+    d = e * (d0 * c + B * s);
+    v = e * ((B * wd - z * w * d0) * c - (z * w * B + d0 * wd) * s);
+  } else if (z === 1) {
+    // Critique : rejoint la cible au plus vite SANS jamais la dépasser.
+    const e = Math.exp(-w * dt);
+    const k = v0 + w * d0;
+    d = (d0 + k * dt) * e;
+    v = (v0 - w * k * dt) * e;
+  } else {
+    // Sur-amorti : deux exponentielles, approche lente et molle.
+    const r = w * Math.sqrt(z * z - 1);
+    const r1 = -z * w + r, r2 = -z * w - r;
+    const c1 = (v0 - r2 * d0) / (r1 - r2);
+    const c2 = d0 - c1;
+    const e1 = Math.exp(r1 * dt), e2 = Math.exp(r2 * dt);
+    d = c1 * e1 + c2 * e2;
+    v = c1 * r1 * e1 + c2 * r2 * e2;
+  }
+  if (!Number.isFinite(d) || !Number.isFinite(v)) return { x: to, v: 0 };
+  return { x: to + d, v };
+}
+
+// Le ressort est-il assez près de la cible ET assez lent pour qu'on l'y
+// pose ? Les deux conditions comptent : un ressort qui PASSE sur la cible à
+// pleine vitesse n'est pas au repos.
+function springAtRest(state, target, opts) {
+  const o = opts || {};
+  const restD = o.restDistance != null ? o.restDistance : SPRING_REST_DISTANCE;
+  const restV = o.restVelocity != null ? o.restVelocity : SPRING_REST_VELOCITY;
+  const x = (state && Number.isFinite(state.x)) ? state.x : 0;
+  const v = (state && Number.isFinite(state.v)) ? state.v : 0;
+  const to = Number.isFinite(target) ? target : 0;
+  return Math.abs(x - to) <= restD && Math.abs(v) <= restV;
+}
+
+// ── Élan : où le geste VA, pas où il s'arrête ─────────────────────
+// Décroissance exponentielle (la formule du sample code Apple), pas le
+// `v²/(2a)` des manuels : c'est elle qui donne le « feel » de la
+// décélération de scroll. On projette le point d'arrivée du doigt, PUIS on
+// choisit la cible la plus proche de ce point — un flick court mais rapide
+// doit donc emporter la décision autant qu'un long glissement lent.
+function projectMomentum(velocity, decelerationRate = MOTION.decel) {
+  const v = Number.isFinite(velocity) ? velocity : 0;
+  const d = Math.min(0.99999, Math.max(0, Number.isFinite(decelerationRate) ? decelerationRate : MOTION.decel));
+  return (v / 1000) * d / (1 - d);
+}
+
+// Bord souple : plus on tire au-delà de la borne, moins l'élément suit.
+// Un arrêt net se lit « figé/cassé » ; une résistance progressive se lit
+// « ça répond, mais il n'y a rien de plus par là ». L'asymptote vaut
+// `dimension`, donc on ne peut jamais tirer indéfiniment.
+function rubberband(overshoot, dimension, constant = MOTION.rubber) {
+  const o = Number.isFinite(overshoot) ? overshoot : 0;
+  const dim = Number.isFinite(dimension) ? dimension : 0;
+  const c = Number.isFinite(constant) ? constant : MOTION.rubber;
+  if (!(dim > 0) || !(c > 0)) return 0;
+  return (o * dim * c) / (dim + c * Math.abs(o));
+}
+
+// Applique les bornes en gardant un débordement élastique de part et
+// d'autre. `dimension` = amplitude de résistance (typiquement la taille de
+// l'élément) ; `null` en borne = côté libre.
+function clampRubber(value, min, max, dimension, constant = MOTION.rubber) {
+  const v = Number.isFinite(value) ? value : 0;
+  if (min != null && v < min) return min + rubberband(v - min, dimension, constant);
+  if (max != null && v > max) return max + rubberband(v - max, dimension, constant);
+  return v;
+}
+
+// Point d'accrochage le plus proche d'une valeur (typiquement le point
+// d'arrivée PROJETÉ, pas la position de relâchement).
+function nearestSnapPoint(value, points) {
+  const list = (points || []).filter(Number.isFinite);
+  if (!list.length) return null;
+  const v = Number.isFinite(value) ? value : 0;
+  let best = list[0];
+  for (const p of list) if (Math.abs(p - v) < Math.abs(best - v)) best = p;
+  return best;
+}
+
+// Historique de position → vitesse de relâchement (px/s). On ne dérive
+// JAMAIS la vitesse des deux derniers points : un doigt qui s'immobilise une
+// frame avant de lâcher donnerait 0 et tuerait l'élan. On régresse sur une
+// petite fenêtre temporelle glissante.
+function createVelocityTracker(windowMs = 100, maxSamples = 12) {
+  let samples = [];
+  return {
+    reset() { samples = []; },
+    add(value, t) {
+      const ts = Number.isFinite(t) ? t : (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
+      samples.push({ value, t: ts });
+      const cutoff = ts - windowMs;
+      while (samples.length > 1 && samples[0].t < cutoff) samples.shift();
+      if (samples.length > maxSamples) samples = samples.slice(-maxSamples);
+    },
+    velocity() {
+      if (samples.length < 2) return 0;
+      const first = samples[0], last = samples[samples.length - 1];
+      const dt = (last.t - first.t) / 1000;
+      if (!(dt > 0)) return 0;
+      const v = (last.value - first.value) / dt;
+      return Number.isFinite(v) ? v : 0;
+    },
+    samples() { return samples.slice(); },
+  };
+}
+
+// ── Retour haptique (§ motion + sound + haptics) ───────────────────
+// Trois règles, dans cet ordre :
+//   1. CAUSALITÉ — déclenché par l'évènement causal lui-même (l'accrochage,
+//      la suppression validée), jamais « après coup » ni sur une intention.
+//   2. HARMONIE — appelé dans le MÊME handler que le changement visuel, donc
+//      sur la même frame. Jamais derrière un setTimeout.
+//   3. UTILITÉ — réservé aux moments qui comptent (commit, accrochage,
+//      succès, erreur). Sur-vibrer apprend à ignorer la vibration.
+// Sans moteur haptique (iOS Safari, desktop), c'est un no-op silencieux.
+const HAPTICS = Object.freeze({
+  tick: 6,             // franchissement d'un cran (roue, réordonnancement)
+  select: 10,          // sélection engagée
+  commit: 16,          // action validée (suppression, accrochage d'une feuille)
+  warning: [12, 40, 12],
+  error: [22, 60, 22],
+});
+
+function haptic(kind = 'select') {
+  try {
+    if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return false;
+    if (!hapticsEnabled()) return false;
+    const pattern = HAPTICS[kind] != null ? HAPTICS[kind] : HAPTICS.select;
+    navigator.vibrate(pattern);
+    return true;
+  } catch { return false; }
+}
+
+// Préférence utilisateur (Paramètres › Retour haptique). localStorage et non
+// Dexie : lue dans des handlers de geste, à chaud, sans await possible.
+const HAPTICS_KEY = 'alconote.haptics';
+function hapticsEnabled() {
+  try { return localStorage.getItem(HAPTICS_KEY) !== 'off'; } catch { return true; }
+}
+function setHapticsEnabled(on) {
+  try { localStorage.setItem(HAPTICS_KEY, on ? 'on' : 'off'); } catch {}
+}
 
 // ── Icons ──────────────────────────────────────────────────────────
 const Ic = {
@@ -196,8 +542,7 @@ function SvgIcon({ icon, size = 18, color, ariaHidden = true }) {
   return (
     <span aria-hidden={ariaHidden ? 'true' : undefined} style={{
       display: 'inline-flex', width: size, height: size,
-      color: color || 'currentColor',
-    }}>
+      color: color || 'currentColor' }}>
       {React.cloneElement(icon, { width: size, height: size })}
     </span>
   );
@@ -400,8 +745,7 @@ function SearchInput({ value, onChange, placeholder }) {
     <div style={{
       display: 'flex', alignItems: 'center', gap: 10,
       background: T.surface2, borderRadius: 14, padding: '12px 14px',
-      border: `1px solid ${T.rule}`,
-    }}>
+      border: `1px solid ${T.rule}` }}>
       <span style={{ color: T.muted, display: 'flex' }}>
         <SvgIcon icon={Ic.search} size={16} />
       </span>
@@ -411,16 +755,19 @@ function SearchInput({ value, onChange, placeholder }) {
         aria-label={placeholder || 'Rechercher'}
         style={{
           flex: 1, background: 'transparent', border: 'none', outline: 'none',
-          color: T.ink, fontFamily: fontSans, fontSize: 14, letterSpacing: -0.1,
+          color: T.ink, fontFamily: fontSans, ...TYPE.body,
           minWidth: 0,
         }}
       />
       {value && (
-        <span onClick={() => onChange('')} style={{
-          color: T.muted, display: 'flex', cursor: 'pointer',
-        }}>
+        // Un vrai <button> : atteignable au clavier, et il répond à l'appui
+        // (un <span> cliquable ne fait ni l'un ni l'autre).
+        <button type="button" className="alco-press" onClick={() => onChange('')}
+          aria-label="Effacer la recherche" style={{
+            ...ghostButton, color: T.muted, display: 'flex', cursor: 'pointer',
+            padding: 4, margin: -4, touchAction: 'manipulation' }}>
           <SvgIcon icon={Ic.close} size={14} />
-        </span>
+        </button>
       )}
     </div>
   );
@@ -431,9 +778,7 @@ function SectionHead({ children, right }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      color: T.muted, fontSize: 11, letterSpacing: 1.4, textTransform: 'uppercase',
-      fontWeight: 500, padding: '6px 2px',
-    }}>
+      color: T.muted, ...TYPE.labelLg, padding: '6px 2px' }}>
       <span>{children}</span>
       {right}
     </div>
@@ -443,17 +788,20 @@ function SectionHead({ children, right }) {
 // ── Pill ──────────────────────────────────────────────────────────
 function Pill({ active, onClick, children, color }) {
   return (
-    <button type="button" onClick={onClick} aria-pressed={active ? 'true' : 'false'}
+    // Le SURLIGNAGE part à l'appui (classe `alco-press`, donc instantané) ;
+    // l'ACTION se valide au relâchement — c'est ce qui laisse annuler un
+    // appui en glissant le doigt hors du bouton.
+    <button type="button" className="alco-press" aria-pressed={active ? 'true' : 'false'}
+      onClick={(e) => { haptic('tick'); onClick && onClick(e); }}
       style={{
         padding: '8px 12px', borderRadius: 99, cursor: 'pointer',
         background: active ? T.ink : 'transparent',
         color: active ? T.bg : T.ink2,
         border: active ? `1px solid ${T.ink}` : `1px solid ${T.rule}`,
-        fontSize: 12, fontWeight: active ? 500 : 400, letterSpacing: -0.1,
+        ...type(12, { weight: active ? 500 : 400 }),
         whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6,
-        flexShrink: 0, fontFamily: 'inherit',
-      }}>
-      {color && !active && <span style={{ color, fontSize: 10 }}>●</span>}
+        flexShrink: 0, fontFamily: 'inherit', touchAction: 'manipulation' }}>
+      {color && !active && <span style={{ color, fontSize: remSize(10), letterSpacing: tracking(10) }}>●</span>}
       {children}
     </button>
   );
@@ -473,6 +821,9 @@ function Stars({ rating, n, size = 13, interactive, onChange }) {
     if (!interactive) return;
     e.preventDefault();
     e.stopPropagation();
+    // Noter est de la manipulation directe : l'étoile s'allume sous le doigt,
+    // avec sa vibration, dans le même handler (donc la même frame).
+    if (i !== value) haptic('select');
     onChange && onChange(i);
   };
   // Pad each cell so the touch target is large enough on small icons
@@ -492,8 +843,7 @@ function Stars({ rating, n, size = 13, interactive, onChange }) {
             display: 'flex', cursor: interactive ? 'pointer' : 'default',
             padding: interactive ? `${pad}px ${Math.max(1, pad)}px` : 0,
             margin: interactive ? `-${pad}px 0` : 0,
-            touchAction: 'manipulation',
-          }}>
+            touchAction: 'manipulation' }}>
           <SvgIcon icon={Ic.star} size={size} />
         </span>
       ))}
@@ -637,7 +987,7 @@ function QuickAddButton({ onAdd, label, size = 32 }) {
         const s = start.current; start.current = null;
         lastPointerTs.current = e.timeStamp;
         press.release();
-        if (s && !s.moved) onAdd && onAdd();
+        if (s && !s.moved) { haptic('commit'); onAdd && onAdd(); }
       }}
       onPointerCancel={() => { start.current = null; press.release(); }}
       onKeyDown={(e) => {
@@ -750,14 +1100,156 @@ function useBackButton(active, onClose) {
 }
 
 // ── Sheet overlay (bottom sheet / left or right drawer) ──────────
-// L'animation d'ENTRÉE (slideUp / slideRight / slideLeft selon `side`) vit
-// ici, sur le wrapper du dialog — les sheets n'ont plus d'`animation:` à
-// poser sur leur racine. La SORTIE est pilotée par la prop `closing`
-// (fournie par useSheetClose) : scrim en fadeOut + sheet en sheetOut*,
-// `forwards` pour tenir l'état final jusqu'au démontage. Reduced-motion :
-// aucune animation, ni entrée ni sortie.
-function SheetOverlay({ children, onClose, side = 'bottom', label, closing = false }) {
+// Une feuille n'est pas une boîte qui apparaît : c'est un objet PHYSIQUE
+// qu'on pousse, qu'on rattrape et qu'on renvoie. Tout passe donc par un
+// ressort unique, partagé par le geste et l'animation :
+//   • ENTRÉE — depuis le bord, ressort sans rebond (aucun geste ne l'a
+//     lancée : un rebond « gratuit » sonnerait faux) ;
+//   • GESTE — suivi 1:1 du doigt, résistance élastique si on tire dans le
+//     mauvais sens, le voile s'éclaircit EN CONTINU avec la traînée (même
+//     ressort → même frame, jamais de décalage entre les deux) ;
+//   • RELÂCHE — le point d'arrivée est projeté depuis la vitesse ; un petit
+//     coup sec renvoie donc la feuille aussi sûrement qu'un long glissement.
+//     La vitesse du doigt est passée au ressort : aucune couture ;
+//   • SORTIE — même chemin qu'à l'entrée (ce qui est parti par le bas
+//     revient par le bas) ;
+//   • INTERRUPTION — une feuille qui se referme peut être RATTRAPÉE : la
+//     saisir annule la fermeture et elle repart du doigt, sans saut.
+// Reduced-motion : aucune translation, simple fondu, geste désactivé.
+const SHEET_FALLBACK_DIST = 420;   // repli si la mesure échoue (1er paint)
+const SHEET_FLING_V = 250;         // px/s : au-delà, le SIGNE de la vitesse décide
+const SHEET_DISMISS_FRACTION = 0.4;
+
+// Poignée de saisie d'une feuille : partagée par SheetOverlay (qui fournit
+// les handlers) et <SheetGrabber> (qui les pose). Une feuille du BAS ne peut
+// pas être traînable partout — le geste vertical appartient à son contenu
+// défilant ; seule la zone d'en-tête la saisit.
+const SheetDragContext = React.createContext(null);
+
+// En-tête saisissable d'une feuille : la barrette + tout ce qu'on lui donne
+// (titre, bouton fermer). Reste utilisable pendant la fermeture (c'est par
+// elle qu'on rattrape une feuille qui part).
+function SheetGrabber({ children, style }) {
+  const drag = React.useContext(SheetDragContext);
+  return (
+    <div {...(drag ? drag.handlers : null)} style={{
+      flexShrink: 0, cursor: drag ? 'grab' : 'default',
+      touchAction: drag ? 'none' : undefined,
+      pointerEvents: 'auto',
+      ...style }}>
+      <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
+        {/* La barrette n'est plus un ornement : c'est la PRISE de la feuille.
+            Elle se lit donc comme une commande (encre atténuée), pas comme un
+            filet de séparation. */}
+        <div aria-hidden="true" style={{
+          width: 42, height: 4, borderRadius: 99,
+          background: withAlpha(T.muted, 0.45),
+        }} />
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function SheetOverlay({ children, onClose, side = 'bottom', label, closing = false,
+                       onCancelClose, dismissible = true }) {
   const reduced = useReducedMotion();
+  const scrimRef = React.useRef(null);
+  const sheetRef = React.useRef(null);
+  const distRef = React.useRef(SHEET_FALLBACK_DIST);
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
+  const cancelRef = React.useRef(onCancelClose);
+  cancelRef.current = onCancelClose;
+  const closingRef = React.useRef(closing);
+  closingRef.current = closing;
+
+  const isSide = side === 'left' || side === 'right';
+  const axis = isSide ? 'x' : 'y';
+  const sign = side === 'left' ? -1 : 1;     // sens de la sortie sur l'axe
+
+  const measure = React.useCallback(() => {
+    const el = sheetRef.current;
+    if (el && el.getBoundingClientRect) {
+      const r = el.getBoundingClientRect();
+      const d = axis === 'y' ? r.height : r.width;
+      if (d > 0) distRef.current = d;
+    }
+    return distRef.current;
+  }, [axis]);
+
+  // SEUL point d'écriture du DOM : le geste et le ressort passent tous les
+  // deux par ici, ils ne peuvent donc pas se désynchroniser. Le voile suit
+  // la traînée en continu — il ne « saute » pas à la fin du geste.
+  const apply = React.useCallback((x) => {
+    const dist = distRef.current || SHEET_FALLBACK_DIST;
+    const el = sheetRef.current;
+    if (el) {
+      el.style.transform = axis === 'y'
+        ? `translate3d(0, ${x}px, 0)` : `translate3d(${x}px, 0, 0)`;
+    }
+    const sc = scrimRef.current;
+    if (sc) sc.style.opacity = String(Math.max(0, Math.min(1, 1 - Math.abs(x) / dist)));
+  }, [axis]);
+
+  const drag = useAxisDrag({
+    axis, apply,
+    enabled: dismissible && !reduced,
+    config: MOTION.spring.sheet,
+    onStart: () => {
+      measure();
+      // Rattrapage : saisir une feuille qui se referme ANNULE la fermeture.
+      // Sans ça, elle suivrait le doigt une seconde puis disparaîtrait quand
+      // même — le geste aurait été un mensonge.
+      if (closingRef.current && cancelRef.current) cancelRef.current();
+    },
+    bounds: () => {
+      const dist = distRef.current || SHEET_FALLBACK_DIST;
+      // Libre vers la sortie, élastique dans l'autre sens : on sent le fond.
+      return sign > 0
+        ? { min: 0, max: null, dimension: dist * 0.5 }
+        : { min: null, max: 0, dimension: dist * 0.5 };
+    },
+    decide: ({ velocity, projected }) => {
+      const dist = distRef.current || SHEET_FALLBACK_DIST;
+      const away = sign * velocity;          // > 0 : le doigt part vers la sortie
+      const dismiss = Math.abs(velocity) > SHEET_FLING_V
+        ? away > 0                            // lancé franc : le SIGNE décide
+        : sign * projected > dist * SHEET_DISMISS_FRACTION;  // sinon, l'arrivée projetée
+      return {
+        to: dismiss ? sign * dist : 0,
+        commit: dismiss,
+        config: MOTION.spring.sheet,
+      };
+    },
+    onCommit: () => {
+      haptic('commit');
+      if (onCloseRef.current) onCloseRef.current();
+    },
+  });
+
+  // Pose la feuille hors écran AVANT le premier paint (pas de flash à la
+  // position ouverte), en pixels réels pour que geste et ressort partagent
+  // la même unité que le `translate…(100%)` du style initial.
+  React.useLayoutEffect(() => {
+    if (reduced) return;
+    drag.spring.snap(sign * measure());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Cible du ressort : ouverte, ou sortie. On ne touche à rien pendant un
+  // geste — le doigt est prioritaire sur toute animation.
+  React.useEffect(() => {
+    if (reduced || drag.dragging) return;
+    const dist = measure();
+    drag.spring.set(closing ? sign * dist : 0, {
+      // L'entrée n'a été lancée par aucun geste : pas de rebond. La sortie
+      // hérite de l'élan du doigt quand il y en a eu un.
+      config: closing ? MOTION.spring.sheet : MOTION.spring.ui,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closing, reduced, drag.dragging]);
+
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose && onClose(); };
     document.addEventListener('keydown', onKey);
@@ -767,47 +1259,54 @@ function SheetOverlay({ children, onClose, side = 'bottom', label, closing = fal
   // mount = push a back-trap, unmount = remove it. Covers every sheet
   // (Add / Detail / EditEntry / EditFamily / Settings / EditCategory).
   useBackButton(true, onClose);
-  const isSide = side === 'left' || side === 'right';
-  const enter = side === 'left' ? 'slideRight' : side === 'right' ? 'slideLeft' : 'slideUp';
-  const exit = side === 'left' ? 'sheetOutLeft' : side === 'right' ? 'sheetOutRight' : 'sheetOutDown';
+
+  const initialTransform = side === 'bottom' ? 'translate3d(0, 100%, 0)'
+    : side === 'left' ? 'translate3d(-100%, 0, 0)' : 'translate3d(100%, 0, 0)';
+
   return (
-    <div role="presentation" onClick={onClose} style={{
+    <div role="presentation" onClick={closing ? undefined : onClose} style={{
       position: 'fixed', inset: 0, background: T.scrim,
       zIndex: 100, display: 'flex',
       alignItems: side === 'bottom' ? 'flex-end' : 'stretch',
       justifyContent: side === 'right' ? 'flex-end'
                      : side === 'left' ? 'flex-start' : 'stretch',
-      animation: reduced ? undefined
-        : closing ? `fadeOut ${MOTION.fast}ms ${MOTION.ease} forwards`
-        : `fade ${MOTION.base}ms ${MOTION.ease}`,
-      // Plus aucune interaction pendant la sortie (évite un double-tap qui
-      // relancerait une action sur une sheet déjà en train de partir).
-      pointerEvents: closing ? 'none' : undefined,
-    }}>
-      <div role="dialog" aria-modal="true" aria-label={label} onClick={e => e.stopPropagation()} style={{
-        width: isSide ? 'auto' : '100%',
-        maxWidth: isSide ? '100%' : 'min(560px, 100%)',
-        margin: side === 'bottom' ? '0 auto' : 0,
-        height: isSide ? '100%' : 'auto',
-        display: 'flex', flexDirection: 'column',
-        animation: reduced ? undefined
-          : closing ? `${exit} ${MOTION.fast}ms ${MOTION.ease} forwards`
-          : `${enter} ${MOTION.base}ms ${MOTION.ease}`,
-      }}>
-        {children}
-      </div>
+      // Le voile est piloté par le ressort (`apply`) — il commence donc
+      // transparent et s'installe avec la feuille, à la même frame.
+      opacity: reduced ? 1 : 0,
+      ...(reduced ? { animation: closing ? `fadeOut ${MOTION.fast}ms ${MOTION.ease} forwards` : undefined } : null),
+    }} ref={scrimRef}>
+      <SheetDragContext.Provider value={drag}>
+        <div role="dialog" aria-modal="true" aria-label={label} ref={sheetRef}
+          onClick={e => e.stopPropagation()}
+          {...(isSide && dismissible && !reduced ? drag.handlers : null)}
+          style={{
+            width: isSide ? 'auto' : '100%',
+            maxWidth: isSide ? '100%' : 'min(560px, 100%)',
+            margin: side === 'bottom' ? '0 auto' : 0,
+            height: isSide ? '100%' : 'auto',
+            display: 'flex', flexDirection: 'column',
+            transform: reduced ? undefined : initialTransform,
+            // Le compositeur est prévenu : la feuille va bouger.
+            willChange: reduced ? undefined : 'transform',
+            // Pendant la sortie, le CONTENU devient inerte (plus de double-tap
+            // sur une action déjà lancée) mais la poignée reste vivante :
+            // c'est ce qui permet de rattraper la feuille au vol.
+            pointerEvents: closing ? 'none' : undefined }}>
+          {children}
+        </div>
+      </SheetDragContext.Provider>
     </div>
   );
 }
 
-// Fermeture animée d'une sheet / vue : retourne `[closing, close]`.
-// `close()` déclenche l'animation de sortie (en passant `closing` à
-// SheetOverlay, ou à toute racine qui mappe closing → animation `forwards`)
-// puis appelle `onClose` après MOTION.fast — les sorties sont volontairement
-// plus brèves que les entrées. Idempotent (un double-tap pendant la sortie ne
-// referme pas deux fois) ; reduced-motion → fermeture immédiate. `open` ré-arme
-// le hook pour les sheets montées en continu (AddDrinkSheet, SettingsDrawer) ;
-// les sheets montées conditionnellement laissent le défaut `true`.
+// Fermeture animée d'une sheet / vue : retourne `[closing, close, cancelClose]`.
+// `close()` bascule `closing` (SheetOverlay lance alors le ressort de sortie)
+// puis démonte après MOTION.exit. Idempotent (un double-tap pendant la sortie
+// ne referme pas deux fois) ; reduced-motion → fermeture immédiate.
+// `cancelClose()` DÉSARME une fermeture en cours — c'est lui qui rend la
+// feuille rattrapable au doigt (cf. SheetOverlay › onStart).
+// `open` ré-arme le hook pour les sheets montées en continu (AddDrinkSheet,
+// SettingsDrawer) ; les sheets montées conditionnellement laissent `true`.
 function useSheetClose(onClose, open = true) {
   const reduced = useReducedMotion();
   const [closing, setClosing] = React.useState(false);
@@ -831,9 +1330,15 @@ function useSheetClose(onClose, open = true) {
     setClosing(true);
     timerRef.current = setTimeout(() => {
       if (onCloseRef.current) onCloseRef.current();
-    }, MOTION.fast);
+    }, MOTION.exit);
   }, []);
-  return [closing, close];
+  const cancelClose = React.useCallback(() => {
+    if (!armedRef.current) return;
+    clearTimeout(timerRef.current);
+    armedRef.current = false;
+    setClosing(false);
+  }, []);
+  return [closing, close, cancelClose];
 }
 
 // ── Styled confirmation dialog (replaces native confirm()) ────────
@@ -905,38 +1410,31 @@ function ConfirmHost() {
       onClick={() => close(false)} style={{
       position: 'fixed', inset: 0, background: T.scrim,
       display: 'grid', placeItems: 'center', zIndex: 200,
-      animation: 'fade 0.18s ease', padding: 16,
-    }}>
+      animation: 'fade 0.18s ease', padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{
         background: T.bg, color: T.ink, borderRadius: 18,
         border: `1px solid ${T.rule}`,
         padding: '22px 22px 18px', maxWidth: 360, width: '100%',
         boxShadow: DIALOG_SHADOW,
-        animation: 'scaleIn 0.18s ease',
-      }}>
+        animation: 'scaleIn 0.18s ease' }}>
         <div id="alco-confirm-title" style={{
-          fontFamily: fontSerif, fontSize: 22, fontStyle: 'italic',
-          letterSpacing: -0.3, marginBottom: 10,
-        }}>{state.title || 'Confirmer'}</div>
+          ...type(22, { family: fontSerif, italic: true }), marginBottom: 10 }}>{state.title || 'Confirmer'}</div>
         <div style={{
-          color: T.ink2, fontSize: 13.5, lineHeight: 1.45,
-          letterSpacing: -0.05, marginBottom: 22,
-        }}>{state.message}</div>
+          color: T.ink2, ...type(13.5), marginBottom: 22 }}>{state.message}</div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => close(false)} style={{
+          <button className="alco-press" onClick={() => close(false)} style={{
             flex: 1, padding: '12px', borderRadius: 12,
             background: T.surface2, color: T.ink2,
-            border: `1px solid ${T.rule}`, fontSize: 13,
-            fontFamily: fontSans, cursor: 'pointer',
-          }}>{state.cancelText || 'Annuler'}</button>
-          <button onClick={() => close(true)} autoFocus style={{
-            flex: 1.4, padding: '12px', borderRadius: 12,
-            background: state.danger ? T.dangerBtn : T.accent,
-            color: state.danger ? T.dangerBtnInk : T.accentInk,
-            border: 'none', fontSize: 13, fontWeight: 600,
-            fontFamily: fontSans, cursor: 'pointer', letterSpacing: 0.1,
-            boxShadow: `0 4px 18px ${withAlpha(state.danger ? T.dangerBtn : T.accent, state.danger ? 0.5 : 0.4)}`,
-          }}>{state.confirmText || 'Confirmer'}</button>
+            border: `1px solid ${T.rule}`, ...type(13),
+            fontFamily: fontSans, cursor: 'pointer', touchAction: 'manipulation' }}>{state.cancelText || 'Annuler'}</button>
+          <button className="alco-press" autoFocus
+            onClick={() => { haptic(state.danger ? 'warning' : 'commit'); close(true); }} style={{
+              flex: 1.4, padding: '12px', borderRadius: 12,
+              background: state.danger ? T.dangerBtn : T.accent,
+              color: state.danger ? T.dangerBtnInk : T.accentInk,
+              border: 'none', ...type(13, { weight: 600 }),
+              fontFamily: fontSans, cursor: 'pointer', touchAction: 'manipulation',
+              boxShadow: `0 4px 18px ${withAlpha(state.danger ? T.dangerBtn : T.accent, state.danger ? 0.5 : 0.4)}` }}>{state.confirmText || 'Confirmer'}</button>
         </div>
       </div>
     </div>
@@ -1007,24 +1505,16 @@ function useSWVersion() {
   s.id = 'alco-base-anim';
   s.textContent = `
     @keyframes fade { from { opacity: 0 } to { opacity: 1 } }
-    @keyframes slideUp { from { transform: translateY(16px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
-    @keyframes slideRight { from { transform: translateX(-16px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
-    @keyframes slideLeft { from { transform: translateX(16px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
     @keyframes scaleIn { from { transform: scale(.96); opacity: 0 } to { transform: scale(1); opacity: 1 } }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
     /* Entrée par défaut listes & onglets : montée courte + fondu, sans rebond. */
     @keyframes alcoRise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
-    /* Sorties miroir des entrées de sheet (jouées par SheetOverlay quand
-       \`closing\` est vrai, cf. useSheetClose) : même distance, même easing. */
+    /* Fondu de sortie. Les feuilles et les pages ne se déplacent PLUS par
+       keyframes : leur translation est pilotée par un ressort (§ SheetOverlay,
+       FriendStatsView), seul moyen d'être attrapées et inversées en vol. Ce
+       fondu ne sert donc plus que du chrome non gestuel (voile, toast) et le
+       repli « moins de mouvement ». */
     @keyframes fadeOut { from { opacity: 1 } to { opacity: 0 } }
-    @keyframes sheetOutDown { from { transform: translateY(0); opacity: 1 } to { transform: translateY(16px); opacity: 0 } }
-    @keyframes sheetOutLeft { from { transform: translateX(0); opacity: 1 } to { transform: translateX(-16px); opacity: 0 } }
-    @keyframes sheetOutRight { from { transform: translateX(0); opacity: 1 } to { transform: translateX(16px); opacity: 0 } }
-    /* Transition « page » (vue plein écran type fiche ami) : pousse depuis la
-       droite à l'ouverture, ressort vers la droite au retour — cohérent avec
-       le geste système « revenir en arrière ». */
-    @keyframes pageIn { from { transform: translateX(28px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
-    @keyframes pageOut { from { transform: translateX(0); opacity: 1 } to { transform: translateX(28px); opacity: 0 } }
     /* Toast : montée + fondu (le translateX(-50%) du centrage doit vivre DANS
        les keyframes, sinon l'animation de transform écrase le centrage). */
     @keyframes toastIn { from { transform: translate(-50%, 10px); opacity: 0 } to { transform: translate(-50%, 0); opacity: 1 } }
@@ -1100,6 +1590,112 @@ function useSWVersion() {
     .alco-wheel::-webkit-scrollbar { display: none; }
     .alco-wheel-item { scroll-snap-align: center; }
     @media (prefers-reduced-motion: reduce) { .alco-wheel { scroll-behavior: auto; } }
+
+    /* ── Matières translucides ─────────────────────────────────────
+       Le chrome flottant (barre d'onglets, feuilles) est une COUCHE DE
+       MATIÈRE sous laquelle le contenu défile, pas une bande opaque qui
+       mange l'écran. Les couleurs viennent de \`T\` via les variables CSS
+       (applyThemeCssVars) : la feuille de style ne connaît aucune couleur en
+       propre, elle est le seul endroit d'où l'on peut répondre aux
+       préférences système ci-dessous.
+       \`--alco-glass-edge\` en ombre INTERNE haute = l'arête claire d'une
+       matière réelle, qui la détache du contenu sans filet de 1px. */
+    /* Deux poids de matière, et le choix n'est pas décoratif :
+       • « .alco-material » — chrome flottant (barre d'onglets). Fin, très
+         translucide : le contenu DOIT rester devinable dessous, c'est ce qui
+         dit « la liste continue ».
+       • « .alco-material-panel » — panneau parallèle (tiroir Paramètres). Plus
+         épais : on garde le fil de ce qu'on faisait derrière, sans le lire.
+       Une tâche MODALE (ajouter/éditer une boisson), elle, ne prend PAS de
+       matière : elle est opaque et s'accompagne d'un voile qui assombrit le
+       reste. On ne remplit pas un formulaire au-dessus d'un texte fantôme —
+       le but d'un modal est de concentrer, pas d'exhiber la profondeur. */
+    .alco-material, .alco-material-panel {
+      background: var(--alco-glass-chrome);
+      -webkit-backdrop-filter: blur(${MATERIAL.blur.chrome}px) saturate(${MATERIAL.saturate}%);
+      backdrop-filter: blur(${MATERIAL.blur.chrome}px) saturate(${MATERIAL.saturate}%);
+    }
+    /* Grande surface = matière plus ÉPAISSE : flou plus fort qu'une barre. */
+    .alco-material-panel {
+      background: var(--alco-glass-panel);
+      -webkit-backdrop-filter: blur(${MATERIAL.blur.sheet}px) saturate(${MATERIAL.saturate}%);
+      backdrop-filter: blur(${MATERIAL.blur.sheet}px) saturate(${MATERIAL.saturate}%);
+    }
+    /* Surface d'une feuille modale : opaque, posée sur le voile. */
+    .alco-material-sheet { background: var(--alco-glass-solid); }
+    .alco-material-edge { box-shadow: inset 0 1px 0 var(--alco-glass-edge); }
+
+    /* Fondu de bord d'une bande défilante (rangée de pilules qui déborde) :
+       le contenu s'efface au bord au lieu d'être tranché net — on voit qu'il
+       y en a plus, sans filet ni ombre portée. Masque en couleurs-mots
+       clés uniquement (aucune couleur littérale : cf. CLAUDE.md › DA). */
+    .alco-fade-x {
+      -webkit-mask-image: linear-gradient(to right, transparent, black ${MATERIAL.edgeFade / 2}px, black calc(100% - ${MATERIAL.edgeFade}px), transparent);
+      mask-image: linear-gradient(to right, transparent, black ${MATERIAL.edgeFade / 2}px, black calc(100% - ${MATERIAL.edgeFade}px), transparent);
+    }
+
+    /* Vibrance : au-dessus d'une matière, le texte ne peut pas être un gris
+       plat — le fond change sous lui. Encre pleine, graisse un cran
+       au-dessus, approche très légèrement ouverte. */
+    .alco-vibrant { color: var(--alco-ink); font-weight: 500; }
+
+    /* ── Réponse au toucher ────────────────────────────────────────
+       Le retour vit sur l'APPUI (\`:active\` = pointerdown), jamais sur le
+       relâchement : attendre le clic donne une interface morte. En CSS et
+       non en JS, pour que ça marche aussi dans une liste mappée où l'on ne
+       peut pas poser de hook par élément.
+       Une grande surface bouge MOINS qu'un petit bouton (à déplacement égal,
+       elle paraîtrait sauter) : d'où la variante \`-soft\`. */
+    /* Socle universel : TOUT ce qui se tape s'assombrit à l'appui, quelle que
+       soit sa taille, sans qu'un composant ait à y penser. Pas de géométrie
+       ici — une opacité ne peut jamais « mal tomber », d'une pastille de
+       12px à une ligne pleine largeur. Le déplacement, lui, est opt-in via
+       les classes ci-dessous, là où il flatte la cible. */
+    button:not(:disabled):active,
+    [role="button"]:not([aria-disabled="true"]):active,
+    [role="tab"]:active, [role="radio"]:active,
+    [role="switch"]:active, [role="option"]:active,
+    [role="slider"]:active {
+      opacity: 0.82;
+    }
+    button, [role="button"], [role="tab"], [role="radio"],
+    [role="switch"], [role="option"], [role="slider"] {
+      transition: opacity ${MOTION.fast}ms ${MOTION.ease};
+    }
+    .alco-press { transition: transform ${MOTION.fast}ms ${MOTION.ease}, opacity ${MOTION.fast}ms ${MOTION.ease}; }
+    .alco-press:active { transform: scale(${MOTION.press}); opacity: 0.9; }
+    .alco-press-soft { transition: transform ${MOTION.fast}ms ${MOTION.ease}, opacity ${MOTION.fast}ms ${MOTION.ease}; }
+    .alco-press-soft:active { transform: scale(0.988); opacity: 0.94; }
+    /* Moins de mouvement : le retour reste, mais en opacité seule (aucun
+       déplacement, donc rien de vestibulaire). */
+    @media (prefers-reduced-motion: reduce) {
+      .alco-press, .alco-press-soft { transition: opacity ${MOTION.fast}ms ${MOTION.ease}; }
+      .alco-press:active, .alco-press-soft:active { transform: none; opacity: 0.82; }
+    }
+
+    /* Repli : sans backdrop-filter (Firefox par défaut, vieux WebKit), une
+       couche « translucide » deviendrait une vitre sale illisible. */
+    @supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+      .alco-material, .alco-material-panel { background: var(--alco-glass-solid); }
+    }
+
+    /* Moins de transparence : matière givrée → opaque, flou coupé. */
+    @media (prefers-reduced-transparency: reduce) {
+      .alco-material, .alco-material-panel {
+        background: var(--alco-glass-solid);
+        -webkit-backdrop-filter: none; backdrop-filter: none;
+      }
+    }
+    /* Contraste renforcé : fond quasi opaque ET bordure franche — la
+       séparation ne repose plus du tout sur la matière. */
+    @media (prefers-contrast: more) {
+      .alco-material, .alco-material-panel, .alco-material-sheet {
+        background: var(--alco-glass-solid);
+        -webkit-backdrop-filter: none; backdrop-filter: none;
+        border-color: var(--alco-ink2);
+      }
+      .alco-material-edge { box-shadow: none; }
+    }
   `;
   document.head.appendChild(s);
 })();
@@ -1149,30 +1745,316 @@ function useSWVersion() {
 // Une seule couche d'animation, consommée partout. Tout respecte
 // prefers-reduced-motion et MOTION. Aucun keyframe par composant.
 
-// prefers-reduced-motion partagé via UN seul listener global : une
-// liste peut monter des centaines de lignes, un store unique évite
+// Préférences système partagées via UN seul listener global par requête :
+// une liste peut monter des centaines de lignes, un store unique évite
 // autant d'abonnements matchMedia.
-const _reducedMotion = {
-  mq: (typeof window !== 'undefined' && window.matchMedia)
-    ? window.matchMedia('(prefers-reduced-motion: reduce)') : null,
-  subs: new Set(),
-};
-if (_reducedMotion.mq) {
-  const notify = () => _reducedMotion.subs.forEach(fn => fn());
-  if (_reducedMotion.mq.addEventListener) _reducedMotion.mq.addEventListener('change', notify);
-  else if (_reducedMotion.mq.addListener) _reducedMotion.mq.addListener(notify);
+//
+// Les trois préférences sont INDÉPENDANTES et ne veulent pas dire la même
+// chose : « moins d'animation » n'est pas « moins de transparence », qui
+// n'est pas « plus de contraste ». On répond aux trois séparément.
+function createMediaStore(query) {
+  const store = {
+    mq: (typeof window !== 'undefined' && window.matchMedia) ? window.matchMedia(query) : null,
+    subs: new Set(),
+  };
+  if (store.mq) {
+    const notify = () => store.subs.forEach(fn => fn());
+    if (store.mq.addEventListener) store.mq.addEventListener('change', notify);
+    else if (store.mq.addListener) store.mq.addListener(notify);
+  }
+  return store;
 }
-function useReducedMotion() {
-  const [reduced, setReduced] = React.useState(() => !!(_reducedMotion.mq && _reducedMotion.mq.matches));
+
+function useMediaPref(store) {
+  const [on, setOn] = React.useState(() => !!(store.mq && store.mq.matches));
   React.useEffect(() => {
-    const mq = _reducedMotion.mq;
+    const mq = store.mq;
     if (!mq) return;
-    const fn = () => setReduced(mq.matches);
-    _reducedMotion.subs.add(fn);
+    const fn = () => setOn(mq.matches);
+    store.subs.add(fn);
     fn();
-    return () => { _reducedMotion.subs.delete(fn); };
-  }, []);
-  return reduced;
+    return () => { store.subs.delete(fn); };
+  }, [store]);
+  return on;
+}
+
+const _reducedMotion = createMediaStore('(prefers-reduced-motion: reduce)');
+const _reducedTransparency = createMediaStore('(prefers-reduced-transparency: reduce)');
+const _moreContrast = createMediaStore('(prefers-contrast: more)');
+
+// Moins de mouvement ≠ aucun retour : les glissements/ressorts deviennent de
+// courts fondus, les dépassements disparaissent, mais les changements
+// d'opacité et de couleur qui aident à COMPRENDRE restent.
+function useReducedMotion() { return useMediaPref(_reducedMotion); }
+// Matières translucides → givrées/opaques (fond plus dense, flou coupé).
+function useReducedTransparency() { return useMediaPref(_reducedTransparency); }
+// Contraste renforcé → fonds quasi opaques et bordure franche.
+function useHighContrast() { return useMediaPref(_moreContrast); }
+// Une matière n'est « vitrée » que si l'utilisateur veut bien des deux.
+function useGlass() {
+  return !useReducedTransparency() && !useHighContrast();
+}
+
+// ── Pilote de ressort (écrit le DOM, pas l'état React) ─────────────
+// Un ressort à 60 fps ne peut pas passer par setState : re-rendre l'arbre
+// d'une feuille à chaque frame la ferait saccader. Le pilote appelle
+// `apply(x, v)` à chaque frame, et `apply` écrit une `transform` sur un nœud
+// via son ref — propriété compositée, aucun layout.
+//
+// Ce que ce pilote garantit, et qui fait toute la différence à l'usage :
+//   • `set()` repart TOUJOURS de la valeur affichée et de la vitesse
+//     courante — retargeter en plein vol ne provoque aucun saut ;
+//   • la vitesse est CONSERVÉE d'une cible à l'autre (pas de « mur » au
+//     moment où un geste s'inverse) ;
+//   • `set(to, { velocity })` accepte la vitesse de relâchement du doigt :
+//     l'animation continue exactement à la vitesse du geste, sans couture.
+function createSpringDriver(apply, opts = {}) {
+  const nowMs = () => (typeof performance !== 'undefined' && performance.now)
+    ? performance.now() : Date.now();
+  const schedule = (fn) => (typeof requestAnimationFrame === 'function')
+    ? requestAnimationFrame(fn) : setTimeout(() => fn(nowMs()), 16);
+  const unschedule = (h) => {
+    if (!h) return;
+    if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(h);
+    else clearTimeout(h);
+  };
+
+  const state = { x: Number.isFinite(opts.from) ? opts.from : 0, v: 0 };
+  let target = state.x;
+  let config = opts.config || MOTION.spring.ui;
+  let reduced = !!opts.reduced;
+  const restOpts = { restDistance: opts.restDistance, restVelocity: opts.restVelocity };
+  let onRest = opts.onRest || null;
+  let handle = 0;
+  let last = 0;
+
+  const emit = () => { if (apply) apply(state.x, state.v); };
+  const finish = () => {
+    handle = 0;
+    const cb = onRest;
+    if (cb) cb(target);
+  };
+  const tick = (t) => {
+    handle = 0;
+    const now = Number.isFinite(t) ? t : nowMs();
+    // Pas de temps borné : revenir au premier plan après une minute en
+    // arrière-plan ne doit pas intégrer 60 s d'un coup (l'élément
+    // téléporterait). 64 ms ≈ 4 frames — au-delà, on repart calmement.
+    const dt = Math.min(0.064, Math.max(0, (now - last) / 1000));
+    last = now;
+    const next = springStep(state, target, config, dt);
+    state.x = next.x; state.v = next.v;
+    if (springAtRest(state, target, restOpts)) {
+      state.x = target; state.v = 0;
+      emit();
+      finish();
+      return;
+    }
+    emit();
+    handle = schedule(tick);
+  };
+  const start = () => {
+    if (handle) return;
+    last = nowMs();
+    handle = schedule(tick);
+  };
+
+  return {
+    // Nouvelle cible. `velocity` remplace la vitesse courante (relâchement
+    // d'un geste) ; sans elle, la vitesse en cours est CONSERVÉE — c'est ce
+    // qui évite la discontinuité quand un geste s'inverse.
+    set(to, o) {
+      const opt = o || {};
+      target = Number.isFinite(to) ? to : 0;
+      if (opt.config) config = opt.config;
+      if (Number.isFinite(opt.velocity)) state.v = opt.velocity;
+      if (reduced || opt.immediate) {
+        unschedule(handle); handle = 0;
+        state.x = target; state.v = 0;
+        emit();
+        if (onRest) onRest(target);
+        return;
+      }
+      if (springAtRest(state, target, restOpts)) {
+        unschedule(handle); handle = 0;
+        state.x = target; state.v = 0;
+        emit();
+        if (onRest) onRest(target);
+        return;
+      }
+      start();
+    },
+    // Pose la valeur sans animer : c'est le chemin du suivi 1:1 pendant un
+    // geste (le doigt EST l'animation).
+    snap(value, velocity) {
+      unschedule(handle); handle = 0;
+      state.x = Number.isFinite(value) ? value : 0;
+      state.v = Number.isFinite(velocity) ? velocity : 0;
+      target = state.x;
+      emit();
+    },
+    stop() {
+      unschedule(handle); handle = 0;
+      state.v = 0;
+      target = state.x;
+    },
+    value() { return state.x; },
+    velocity() { return state.v; },
+    target() { return target; },
+    animating() { return !!handle; },
+    setReduced(v) { reduced = !!v; },
+    setConfig(c) { if (c) config = c; },
+    setOnRest(fn) { onRest = fn || null; },
+  };
+}
+
+// Pilote de ressort au cycle de vie d'un composant. `apply` est lu via un
+// ref : le pilote est créé UNE fois (l'animation survit aux re-renders) et
+// appelle toujours la dernière closure.
+function useSpringDriver(apply, opts) {
+  const reduced = useReducedMotion();
+  const applyRef = React.useRef(apply);
+  applyRef.current = apply;
+  const ref = React.useRef(null);
+  if (!ref.current) {
+    ref.current = createSpringDriver(
+      (x, v) => { if (applyRef.current) applyRef.current(x, v); },
+      { ...(opts || {}), reduced }
+    );
+  }
+  React.useEffect(() => { ref.current.setReduced(reduced); }, [reduced]);
+  React.useEffect(() => () => ref.current.stop(), []);
+  return ref.current;
+}
+
+// ── Geste de traînée sur un axe (1:1 → élan → ressort) ─────────────
+// Le socle commun de tout ce qui se tire au doigt : feuille qu'on repousse,
+// ligne qu'on balaye. Il implémente, une seule fois et correctement, ce qui
+// est faux presque partout :
+//   • suivi 1:1 en respectant l'endroit où l'utilisateur a saisi l'objet ;
+//   • capture du pointeur pour que le suivi survive à la sortie de la zone ;
+//   • hystérésis avant d'engager une direction, puis les gestes concurrents
+//     (scroll vertical) sont abandonnés sans ambiguïté ;
+//   • bords élastiques au lieu d'un arrêt sec ;
+//   • à la RELÂCHE : le point d'arrivée est PROJETÉ depuis la vitesse, et
+//     c'est ce point projeté qui décide — pas la position du doigt ;
+//   • la vitesse du doigt est passée au ressort : aucune couture entre le
+//     geste et l'animation ;
+//   • une saisie pendant l'animation l'interrompt et repart de la valeur
+//     affichée — on peut rattraper une feuille en train de se fermer.
+//
+// `apply(value)` est le SEUL point d'écriture du DOM (geste comme ressort),
+// donc les deux régimes ne peuvent pas se désynchroniser.
+function useAxisDrag({
+  axis = 'x', apply, bounds, decide, onStart, onMove, onCommit,
+  slop = MOTION.slop, config = MOTION.spring.sheet, enabled = true,
+  clickGuard = true,
+}) {
+  // `useSpringDriver` lit déjà `apply` via un ref : le pilote est créé une
+  // fois et appelle toujours la dernière closure.
+  const spring = useSpringDriver(apply, { config });
+  const cb = React.useRef({});
+  cb.current = { bounds, decide, onStart, onMove, onCommit };
+  const enabledRef = React.useRef(enabled);
+  enabledRef.current = enabled;
+
+  const g = React.useRef(null);          // geste en cours
+  const tracker = React.useRef(null);
+  if (!tracker.current) tracker.current = createVelocityTracker();
+  const movedRef = React.useRef(false);  // un vrai glissement (≠ tap) a eu lieu
+  const [dragging, setDragging] = React.useState(false);
+
+  const coord = (e) => (axis === 'y' ? e.clientY : e.clientX);
+  const cross = (e) => (axis === 'y' ? e.clientX : e.clientY);
+
+  const onPointerDown = (e) => {
+    if (!enabledRef.current) return;
+    if (g.current) return;                       // un seul doigt pilote
+    // Interruption : on saisit la valeur AFFICHÉE (pas la cible logique) et
+    // on coupe le ressort — sinon l'objet saute là où il « aurait dû » être.
+    const from = spring.value();
+    spring.stop();
+    g.current = {
+      pointerId: e.pointerId,
+      start: coord(e), startCross: cross(e),
+      from, lock: null, target: e.currentTarget,
+    };
+    tracker.current.reset();
+    tracker.current.add(from, e.timeStamp);
+    movedRef.current = false;
+    if (cb.current.onStart) cb.current.onStart({ from });
+  };
+
+  const onPointerMove = (e) => {
+    const st = g.current;
+    if (!st || e.pointerId !== st.pointerId) return;
+    const d = coord(e) - st.start;
+    const dCross = cross(e) - st.startCross;
+    if (!st.lock) {
+      // Tous les gestes plausibles restent candidats jusqu'à ce que
+      // l'intention soit claire ; on tranche alors franchement.
+      if (Math.abs(d) < 6 && Math.abs(dCross) < 6) return;
+      st.lock = Math.abs(d) > Math.abs(dCross) ? 'axis' : 'cross';
+      if (st.lock === 'axis') {
+        try { st.target && st.target.setPointerCapture && st.target.setPointerCapture(e.pointerId); } catch {}
+        setDragging(true);
+      }
+    }
+    if (st.lock !== 'axis') return;
+    if (Math.abs(d) > slop) movedRef.current = true;
+    const b = cb.current.bounds ? (cb.current.bounds() || {}) : {};
+    const raw = st.from + d;
+    const next = clampRubber(raw, b.min, b.max, b.dimension != null ? b.dimension : 120, b.constant);
+    tracker.current.add(next, e.timeStamp);
+    spring.snap(next);                           // suivi 1:1, aucune animation
+    if (cb.current.onMove) cb.current.onMove(next, { raw, delta: d });
+  };
+
+  const release = (e) => {
+    const st = g.current;
+    if (!st || (e && e.pointerId != null && e.pointerId !== st.pointerId)) return;
+    g.current = null;
+    setDragging(false);
+    try {
+      if (st.target && st.target.releasePointerCapture) st.target.releasePointerCapture(st.pointerId);
+    } catch {}
+    if (st.lock !== 'axis') { tracker.current.reset(); return; }
+    const from = spring.value();
+    const velocity = tracker.current.velocity();
+    tracker.current.reset();
+    const projected = from + projectMomentum(velocity);
+    const verdict = cb.current.decide
+      ? cb.current.decide({ from, velocity, projected })
+      : null;
+    if (!verdict) return;
+    const to = Number.isFinite(verdict.to) ? verdict.to : from;
+    if (verdict.commit && cb.current.onCommit) {
+      // Le ressort et l'effet du commit partent ensemble : l'action n'attend
+      // pas la fin de l'animation (et l'animation n'attend pas l'action).
+      cb.current.onCommit({ to, velocity, projected });
+    }
+    spring.set(to, { velocity, config: verdict.config || config });
+  };
+
+  // Un vrai glissement ne doit jamais se terminer en clic sur ce qu'il a
+  // survolé. On avale le clic fantôme en phase de CAPTURE, avant qu'il
+  // n'atteigne le moindre bouton interne.
+  const onClickCapture = (e) => {
+    if (!clickGuard || !movedRef.current) return;
+    movedRef.current = false;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  return {
+    dragging,
+    spring,
+    handlers: {
+      onPointerDown, onPointerMove,
+      onPointerUp: release, onPointerCancel: release,
+      ...(clickGuard ? { onClickCapture } : null),
+    },
+  };
 }
 
 // Entrée de liste en cascade. Fonction pure → à *spreader* dans le
@@ -1251,8 +2133,7 @@ function Collapse({ open, children, duration = MOTION.base, style }) {
       display: 'grid',
       gridTemplateRows: expanded ? '1fr' : '0fr',
       transition: `grid-template-rows ${duration}ms ${MOTION.ease}`,
-      ...style,
-    }}>
+      ...style }}>
       <div style={{ overflow: 'hidden', minHeight: 0 }}>
         {render ? children : null}
       </div>
@@ -1269,8 +2150,8 @@ function Collapse({ open, children, duration = MOTION.base, style }) {
 function inputBaseStyle() {
   return {
     width: '100%', background: T.surface2, border: `1px solid ${T.rule}`,
-    borderRadius: 12, padding: '12px 14px', color: T.ink, fontSize: 14,
-    fontFamily: fontSans, outline: 'none', letterSpacing: -0.1,
+    borderRadius: 12, padding: '12px 14px', color: T.ink, ...type(14),
+    fontFamily: fontSans, outline: 'none',
     boxSizing: 'border-box',
   };
 }
@@ -1280,9 +2161,8 @@ function FieldGroup({ label, children }) {
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{
-        fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase',
-        color: T.muted, fontWeight: 500, marginBottom: 7,
-      }}>{label}</div>
+        fontSize: remSize(10), letterSpacing: tracking(10, { caps: true }), textTransform: 'uppercase',
+        color: T.muted, fontWeight: 500, marginBottom: 7 }}>{label}</div>
       {children}
     </div>
   );
@@ -1332,7 +2212,7 @@ function NumberField({
       autoComplete="off" enterKeyHint="done"
       style={suffix ? {
         flex: 1, background: 'transparent', border: 'none', outline: 'none',
-        color: T.ink, fontSize: 15, fontFamily: fontSans, minWidth: 0,
+        color: T.ink, ...type(15), fontFamily: fontSans, minWidth: 0,
       } : { ...inputBaseStyle(), ...(style || {}) }}
     />
   );
@@ -1341,10 +2221,9 @@ function NumberField({
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
       background: T.surface2, border: `1px solid ${T.rule}`, borderRadius: 12,
-      padding: '10px 14px', ...(style || {}),
-    }}>
+      padding: '10px 14px', ...(style || {}) }}>
       {inputEl}
-      <span style={{ color: T.muted, fontSize: 13 }}>{suffix}</span>
+      <span style={{ color: T.muted, fontSize: remSize(13), letterSpacing: tracking(13) }}>{suffix}</span>
     </div>
   );
 }
@@ -1390,7 +2269,9 @@ function WheelPicker({ items, value, onChange, itemHeight = 36, visibleCount = 5
     if (Math.abs(el.scrollTop - target) > 0.5 && el.scrollTo) {
       el.scrollTo({ top: target, behavior: reduced ? 'auto' : 'smooth' });
     }
-    if (items[idx] !== value) onChangeRef.current(items[idx]);
+    // L'accrochage EST l'évènement causal : la vibration part avec lui, pas
+    // avant (l'intention) ni après (l'animation).
+    if (items[idx] !== value) { haptic('tick'); onChangeRef.current(items[idx]); }
   };
   const onScroll = () => {
     clearTimeout(settleRef.current);
@@ -1401,7 +2282,7 @@ function WheelPicker({ items, value, onChange, itemHeight = 36, visibleCount = 5
     const el = scrollerRef.current;
     if (el && el.scrollTo) el.scrollTo({ top: wheelOffsetForIndex(i, itemHeight), behavior: reduced ? 'auto' : 'smooth' });
     else if (el) el.scrollTop = wheelOffsetForIndex(i, itemHeight);
-    if (items[i] !== value) onChange(items[i]);
+    if (items[i] !== value) { haptic('tick'); onChange(items[i]); }
   };
 
   const pad = ((visibleCount - 1) / 2) * itemHeight;
@@ -1431,8 +2312,7 @@ function WheelPicker({ items, value, onChange, itemHeight = 36, visibleCount = 5
               color: i === selIdx ? T.ink : T.muted,
               fontWeight: i === selIdx ? 600 : 400,
               opacity: i === selIdx ? 1 : 0.55, cursor: 'pointer',
-              transition: reduced ? undefined : 'font-size 0.12s ease, opacity 0.12s ease',
-            }}>{it}</button>
+              transition: reduced ? undefined : 'font-size 0.12s ease, opacity 0.12s ease' }}>{it}</button>
         ))}
         <div style={{ height: pad }} />
       </div>
@@ -1444,7 +2324,7 @@ function WheelPicker({ items, value, onChange, itemHeight = 36, visibleCount = 5
 // 00-59). `value` = 'HH:MM', `onConfirm('HH:MM')` au OK. Fermeture animée
 // via useSheetClose, comme toutes les sheets.
 function TimeWheelSheet({ value, onConfirm, onClose }) {
-  const [closing, close] = useSheetClose(onClose);
+  const [closing, close, cancelClose] = useSheetClose(onClose);
   const pad2 = (n) => String(n).padStart(2, '0');
   const parse = (v) => {
     const m = /^(\d{1,2}):(\d{1,2})$/.exec(v || '');
@@ -1462,36 +2342,34 @@ function TimeWheelSheet({ value, onConfirm, onClose }) {
   const confirm = () => { onConfirm(`${pad2(h)}:${pad2(mm)}`); close(); };
 
   return (
-    <SheetOverlay onClose={close} closing={closing} side="bottom" label="Choisir l'heure">
-      <div style={{
-        background: T.bg, borderRadius: '22px 22px 0 0',
+    <SheetOverlay onClose={close} closing={closing} onCancelClose={cancelClose}
+      side="bottom" label="Choisir l'heure">
+      <div className="alco-material-sheet alco-material-edge" style={{
+        borderRadius: '22px 22px 0 0',
         borderTop: `1px solid ${T.rule}`, borderLeft: `1px solid ${T.rule}`,
         borderRight: `1px solid ${T.rule}`, overflow: 'hidden',
-        padding: '0 0 18px',
-      }}>
-        <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
-          <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }} />
-        </div>
-        <div style={{
-          textAlign: 'center', padding: '6px 22px 12px',
-          fontFamily: fontSerif, fontStyle: 'italic', fontSize: 20, color: T.ink, letterSpacing: -0.3,
-        }}>Heure</div>
+        padding: '0 0 18px', boxShadow: T.shadowSheet }}>
+        <SheetGrabber>
+          <div style={{
+            textAlign: 'center', padding: '6px 22px 12px',
+            ...type(20, { family: fontSerif, italic: true }), color: T.ink }}>Heure</div>
+        </SheetGrabber>
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, padding: '0 22px' }}>
           <WheelPicker items={hours} value={pad2(h)} onChange={(v) => setH(parseInt(v, 10))} ariaLabel="Heures" />
-          <div style={{ fontFamily: fontNum, fontSize: 24, color: T.muted }}>:</div>
+          <div style={{ fontFamily: fontNum, fontSize: remSize(24), letterSpacing: tracking(24), color: T.muted }}>:</div>
           <WheelPicker items={mins} value={pad2(mm)} onChange={(v) => setMm(parseInt(v, 10))} ariaLabel="Minutes" />
         </div>
         <div style={{ display: 'flex', gap: 10, padding: '14px 22px 0' }}>
-          <button type="button" onClick={close} style={{
+          <button type="button" className="alco-press" onClick={close} style={{
             flex: 1, padding: '12px 0', borderRadius: 12, cursor: 'pointer',
             background: T.surface2, border: `1px solid ${T.rule}`, color: T.ink,
-            fontFamily: 'inherit', fontSize: 14,
-          }}>Annuler</button>
-          <button type="button" onClick={confirm} style={{
-            flex: 1, padding: '12px 0', borderRadius: 12, cursor: 'pointer',
-            background: T.accent, border: 'none', color: T.accentInk,
-            fontFamily: 'inherit', fontSize: 14, fontWeight: 600,
-          }}>OK</button>
+            fontFamily: 'inherit', ...TYPE.body, touchAction: 'manipulation' }}>Annuler</button>
+          <button type="button" className="alco-press"
+            onClick={() => { haptic('commit'); confirm(); }} style={{
+              flex: 1, padding: '12px 0', borderRadius: 12, cursor: 'pointer',
+              background: T.accent, border: 'none', color: T.accentInk,
+              fontFamily: 'inherit', ...type(14, { weight: 600 }),
+              touchAction: 'manipulation' }}>OK</button>
         </div>
       </div>
     </SheetOverlay>
@@ -1505,11 +2383,12 @@ function TimeField({ value, onChange, ariaLabel = 'Heure' }) {
   const [open, setOpen] = React.useState(false);
   return (
     <>
-      <button type="button" aria-label={ariaLabel} onClick={() => setOpen(true)} style={{
-        ...inputBaseStyle(), padding: '10px 12px', cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-      }}>
-        <span style={{ fontFamily: fontNum, fontSize: 15, color: value ? T.ink : T.muted }}>{value || '--:--'}</span>
+      <button type="button" className="alco-press-soft" aria-label={ariaLabel}
+        onClick={() => setOpen(true)} style={{
+          ...inputBaseStyle(), padding: '10px 12px', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+          touchAction: 'manipulation' }}>
+        <span style={{ ...type(15), ...TYPE.num, color: value ? T.ink : T.muted }}>{value || '--:--'}</span>
         <SvgIcon icon={Ic.clock} size={15} color={T.muted} />
       </button>
       {open && (
@@ -1532,13 +2411,13 @@ function CategoryChips({ categories, value, onChange, ariaLabel = 'Catégorie' }
         const on = canonicalCat(value) === canonicalCat(c.name);
         return (
           <button key={c.id || c.name} type="button" role="radio" aria-checked={on}
-            onClick={() => onChange(c.name)} style={{
-              padding: '8px 12px', borderRadius: 10, fontSize: 12,
+            className="alco-press"
+            onClick={() => { if (!on) haptic('select'); onChange(c.name); }} style={{
+              padding: '8px 12px', borderRadius: 10, ...type(12),
               border: `1px solid ${on ? T.accent : T.rule}`,
               background: on ? T.accentSoft : 'transparent',
               color: on ? T.accent : T.ink2,
-              cursor: 'pointer', letterSpacing: -0.1, fontFamily: 'inherit',
-            }}>{c.name}</button>
+              cursor: 'pointer', fontFamily: 'inherit', touchAction: 'manipulation' }}>{c.name}</button>
         );
       })}
     </div>
@@ -1550,20 +2429,19 @@ function UnitToggle({ value, onChange, units = ['cL', 'L', 'EcoCup'] }) {
   return (
     <div role="radiogroup" aria-label="Unité" style={{
       display: 'flex', gap: 4, padding: 3,
-      background: T.surface2, borderRadius: 10, border: `1px solid ${T.rule}`,
-    }}>
+      background: T.surface2, borderRadius: 10, border: `1px solid ${T.rule}` }}>
       {units.map(u => {
         const on = value === u;
         return (
           <button key={u} type="button" role="radio" aria-checked={on}
-            onClick={() => onChange(u)} style={{
+            className="alco-press"
+            onClick={() => { if (!on) haptic('select'); onChange(u); }} style={{
               flex: 1, padding: '8px 0', borderRadius: 7, textAlign: 'center',
-              fontSize: 11.5, cursor: 'pointer', letterSpacing: -0.1,
+              cursor: 'pointer', ...type(11.5, { weight: on ? 600 : 400 }),
               background: on ? T.ink : 'transparent',
               color: on ? T.bg : T.ink2,
-              fontWeight: on ? 600 : 400, minWidth: 0,
-              border: 'none', fontFamily: 'inherit',
-            }}>{u}</button>
+              minWidth: 0, touchAction: 'manipulation',
+              border: 'none', fontFamily: 'inherit' }}>{u}</button>
         );
       })}
     </div>
@@ -1576,13 +2454,12 @@ function RatingField({ value, onChange, size = 18 }) {
     <div style={{
       background: T.surface2, border: `1px solid ${T.rule}`, borderRadius: 12,
       padding: '10px 14px', display: 'flex', alignItems: 'center',
-      justifyContent: 'space-between',
-    }}>
+      justifyContent: 'space-between' }}>
       <Stars n={value} interactive size={size} onChange={onChange} />
       {value > 0 && (
-        <button type="button" onClick={() => onChange(0)} style={{
-          ...ghostButton, color: T.muted, fontSize: 11, cursor: 'pointer',
-        }}>Effacer</button>
+        <button type="button" className="alco-press" onClick={() => onChange(0)} style={{
+          ...ghostButton, color: T.muted, ...type(11), cursor: 'pointer',
+          padding: 4, margin: -4, touchAction: 'manipulation' }}>Effacer</button>
       )}
     </div>
   );
@@ -1615,40 +2492,38 @@ function LocationField({ value, onChange, ariaLabel = 'Lieu' }) {
   return (
     <div aria-label={ariaLabel} style={{
       background: T.surface2, border: `1px solid ${T.rule}`, borderRadius: 12,
-      padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10,
-    }}>
+      padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
       <span style={{ color: value ? T.accent : T.muted, display: 'flex', flexShrink: 0 }}>
         <SvgIcon icon={Ic.pin} size={16} />
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
-          fontSize: 13, color: value ? T.ink : T.muted, letterSpacing: -0.1,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>
+          fontSize: remSize(13), letterSpacing: tracking(13), color: value ? T.ink : T.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {busy ? 'Localisation…' : (label || (value ? 'Position enregistrée' : 'Non localisé'))}
         </div>
         {acc != null && !busy && (
-          <div style={{ fontFamily: fontNum, fontSize: 10.5, color: T.muted, marginTop: 2 }}>
+          <div style={{ fontFamily: fontNum, fontSize: remSize(10.5), letterSpacing: tracking(10.5), color: T.muted, marginTop: 2 }}>
             ±{acc} m
           </div>
         )}
       </div>
       {value && !busy && (
-        <button type="button" onClick={() => onChange(null)} aria-label="Retirer le lieu" style={{
-          ...ghostButton, color: T.muted, cursor: 'pointer', display: 'flex', padding: 4,
-        }}>
+        <button type="button" className="alco-press" onClick={() => onChange(null)}
+          aria-label="Retirer le lieu" style={{
+            ...ghostButton, color: T.muted, cursor: 'pointer', display: 'flex', padding: 4,
+            touchAction: 'manipulation' }}>
           <SvgIcon icon={Ic.close} size={14} />
         </button>
       )}
-      <button type="button" onClick={locate} disabled={busy}
+      <button type="button" className="alco-press" onClick={locate} disabled={busy}
         aria-label={value ? 'Mettre à jour le lieu' : 'Localiser'} style={{
           display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
           padding: '8px 12px', borderRadius: 9, cursor: busy ? 'wait' : 'pointer',
           background: T.accentSoft, color: T.accent,
           border: `1px solid ${T.accentSoftBorder}`,
-          fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
-          animation: busy ? 'pulse 1s ease-in-out infinite' : 'none',
-        }}>
+          ...type(12, { weight: 500 }), fontFamily: 'inherit',
+          touchAction: 'manipulation',
+          animation: busy ? 'pulse 1s ease-in-out infinite' : 'none' }}>
         <SvgIcon icon={Ic.crosshair} size={14} />
         {value ? 'Réessayer' : 'Localiser'}
       </button>
@@ -1679,8 +2554,7 @@ function BacPill({ bac, ariaLabel, tone = 'accent', compact = false }) {
         background: bgSoft, border: `1px solid ${brdSoft}`,
         minWidth: 48, maxWidth: compact ? undefined : 86, justifyContent: 'center',
         opacity: known ? (active ? 1 : 0.7) : 0.45,
-        transition: 'padding 0.18s ease, border-radius 0.18s ease',
-      }}>
+        transition: 'padding 0.18s ease, border-radius 0.18s ease' }}>
       <div style={{
         width: compact ? 5 : 6, height: compact ? 5 : 6, borderRadius: 99, background: fg,
         boxShadow: active ? `0 0 8px ${fg}` : 'none', flexShrink: 0,
@@ -1688,17 +2562,23 @@ function BacPill({ bac, ariaLabel, tone = 'accent', compact = false }) {
       <span style={{
         color: fg, fontSize: compact ? 10 : 11, fontWeight: 600,
         ...(compact ? { lineHeight: 1 } : null),
-        fontFamily: fontNum, letterSpacing: 0, fontVariantNumeric: 'tabular-nums',
+        ...TYPE.num,
         overflow: 'hidden', textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap', minWidth: 0, flex: '0 1 auto',
-      }}>{known ? bac : '—'}</span>
+        whiteSpace: 'nowrap', minWidth: 0, flex: '0 1 auto' }}>{known ? bac : '—'}</span>
     </div>
   );
 }
 
 Object.assign(window, {
-  T, THEMES, applyTheme, useTheme,
+  T, THEMES, applyTheme, useTheme, applyThemeCssVars,
   fontSans, fontSerif, fontNum,
+  MATERIAL, TYPE, type, tracking, leading, remSize,
+  useReducedTransparency, useHighContrast, useGlass,
+  springStep, springAtRest, projectMomentum, rubberband, clampRubber,
+  nearestSnapPoint, createVelocityTracker,
+  createSpringDriver, useSpringDriver, useAxisDrag,
+  HAPTICS, haptic, hapticsEnabled, setHapticsEnabled,
+  SheetGrabber, SheetDragContext,
   BacPill,
   Ic, SvgIcon, CAT, catColor, catBg, withAlpha, CategoryIconsContext,
   CategoryColorsContext, defaultCatHue, applyCatHueOverrides, useCatPalette,

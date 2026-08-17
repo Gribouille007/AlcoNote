@@ -732,10 +732,10 @@ function StatsTab({
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: fontSerif,
-        fontSize: 18,
+        fontSize: remSize(18),
+        letterSpacing: tracking(18),
         color: T.ink,
-        fontStyle: 'italic',
-        letterSpacing: -0.3
+        fontStyle: 'italic'
       }
     }, "R\xE9organiser les sections"), /*#__PURE__*/React.createElement("button", {
       type: "button",
@@ -747,7 +747,8 @@ function StatsTab({
         background: T.accent,
         color: T.accentInk,
         fontWeight: 600,
-        fontSize: 12,
+        fontSize: remSize(12),
+        letterSpacing: tracking(12),
         padding: '8px 14px',
         borderRadius: 10,
         flexShrink: 0
@@ -755,7 +756,8 @@ function StatsTab({
     }, "Termin\xE9")), /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.muted,
-        fontSize: 10.5,
+        fontSize: remSize(10.5),
+        letterSpacing: tracking(10.5),
         padding: '0 4px 14px',
         lineHeight: 1.5
       }
@@ -829,14 +831,15 @@ function StatsEmptyState({
     style: {
       fontFamily: fontSerif,
       fontStyle: 'italic',
-      fontSize: 18,
+      fontSize: remSize(18),
+      letterSpacing: tracking(18),
       color: T.ink,
-      letterSpacing: -0.3,
       marginBottom: 8
     }
   }, "Pas de donn\xE9es disponibles"), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 12,
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
       color: T.muted,
       lineHeight: 1.6,
       maxWidth: 260,
@@ -879,9 +882,9 @@ function PeriodSwitcher({
       cursor: 'pointer',
       background: period === p.id ? T.accent : 'transparent',
       color: period === p.id ? T.accentInk : T.ink2,
-      fontSize: 12,
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
       fontWeight: period === p.id ? 600 : 400,
-      letterSpacing: -0.1,
       whiteSpace: 'nowrap',
       border: 'none',
       fontFamily: 'inherit'
@@ -928,10 +931,10 @@ function PeriodNav({
   }, arrowBtn(Ic.chevL, -1, 'Période précédente'), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
-      fontSize: 18,
+      fontSize: remSize(18),
+      letterSpacing: tracking(18),
       color: T.ink,
       fontStyle: 'italic',
-      letterSpacing: -0.3,
       textAlign: 'center',
       flex: 1,
       whiteSpace: 'nowrap',
@@ -998,16 +1001,16 @@ function StatSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12.5,
-      letterSpacing: 0.2,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500
     }
   }, title), sub && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10.5,
+      fontSize: remSize(10.5),
+      letterSpacing: tracking(10.5),
       marginTop: 2,
-      letterSpacing: 0.1,
       overflow: 'hidden',
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap'
@@ -1183,6 +1186,10 @@ function SectionReorderList({
   const [drag, setDrag] = React.useState(null); // { id, from, dy, pointerId }
   const dragRef = React.useRef(null);
   const startYRef = React.useRef(0);
+  // Dernier emplacement visé : franchir un cran se SENT (petite vibration),
+  // exactement comme un cran mécanique. C'est ce qui permet de réordonner
+  // sans regarder fixement l'écran.
+  const lastSlotRef = React.useRef(-1);
   const setDragBoth = d => {
     dragRef.current = d;
     setDrag(d);
@@ -1194,7 +1201,11 @@ function SectionReorderList({
     if (!d) return;
     const to = dragTargetIndex(d.from, d.dy, REORDER_STEP, ids.length);
     setDragBoth(null);
-    if (to !== d.from) onChange(moveInArray(ids, d.from, to));
+    lastSlotRef.current = -1;
+    if (to !== d.from) {
+      haptic('commit');
+      onChange(moveInArray(ids, d.from, to));
+    }
   };
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1212,7 +1223,9 @@ function SectionReorderList({
         right: 0,
         height: REORDER_ROW,
         transform: `translateY(${y}px) scale(${isDragged ? 1.02 : 1})`,
-        transition: isDragged ? 'none' : 'transform 0.18s ease',
+        // La ligne saisie suit le doigt à 1:1 (aucune transition) ; les
+        // autres glissent pour montrer la place qui se libère.
+        transition: isDragged ? 'none' : `transform ${MOTION.fast}ms ${MOTION.ease}`,
         zIndex: isDragged ? 2 : 1,
         display: 'flex',
         alignItems: 'center',
@@ -1226,7 +1239,8 @@ function SectionReorderList({
     }, /*#__PURE__*/React.createElement("span", {
       style: {
         color: T.muted,
-        fontSize: 10,
+        fontSize: remSize(10),
+        letterSpacing: tracking(10),
         fontFamily: fontNum,
         width: 14,
         textAlign: 'center',
@@ -1236,9 +1250,9 @@ function SectionReorderList({
       style: {
         flex: 1,
         minWidth: 0,
-        fontSize: 13,
+        fontSize: remSize(13),
+        letterSpacing: tracking(13),
         color: T.ink,
-        letterSpacing: -0.1,
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap'
@@ -1252,6 +1266,10 @@ function SectionReorderList({
           if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId);
         } catch {}
         startYRef.current = e.clientY;
+        lastSlotRef.current = i;
+        // La ligne se « décolle » sous le doigt : le retour part de
+        // l'appui, pas du relâchement.
+        haptic('select');
         setDragBoth({
           id: s.id,
           from: i,
@@ -1263,18 +1281,28 @@ function SectionReorderList({
         const d = dragRef.current;
         if (!d || d.id !== s.id || e.pointerId !== d.pointerId) return;
         if (e.cancelable) e.preventDefault();
+        const dy = e.clientY - startYRef.current;
+        const slot = dragTargetIndex(d.from, dy, REORDER_STEP, ids.length);
+        if (slot !== lastSlotRef.current) {
+          lastSlotRef.current = slot;
+          haptic('tick');
+        }
         setDragBoth({
           ...d,
-          dy: e.clientY - startYRef.current
+          dy
         });
       },
       onPointerUp: commit,
-      onPointerCancel: () => setDragBoth(null),
+      onPointerCancel: () => {
+        setDragBoth(null);
+        lastSlotRef.current = -1;
+      },
       onKeyDown: e => {
         if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
         e.preventDefault();
         const to = e.key === 'ArrowUp' ? i - 1 : i + 1;
         if (to < 0 || to >= ids.length) return;
+        haptic('tick');
         onChange(moveInArray(ids, i, to));
       },
       style: {
@@ -1320,8 +1348,10 @@ function ScopeChip({
   return /*#__PURE__*/React.createElement("span", {
     style: {
       color: T.muted,
-      fontSize: 9.5,
-      letterSpacing: 0.3,
+      fontSize: remSize(9.5),
+      letterSpacing: tracking(9.5, {
+        caps: true
+      }),
       textTransform: 'uppercase',
       fontWeight: 600,
       border: `1px solid ${T.rule}`,
@@ -1504,7 +1534,8 @@ function HeatmapSection({
   })) : /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 12,
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
       padding: '8px 0',
       textAlign: 'center',
       fontStyle: 'italic',
@@ -1531,7 +1562,8 @@ function SessionsSection({
   }, total === 0 ? /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 12,
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
       padding: '8px 0',
       textAlign: 'center',
       fontStyle: 'italic',
@@ -1571,8 +1603,8 @@ function SessionsSection({
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.ink,
-        fontSize: 13,
-        letterSpacing: -0.1,
+        fontSize: remSize(13),
+        letterSpacing: tracking(13),
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap'
@@ -1580,22 +1612,24 @@ function SessionsSection({
     }, fmtDateMedium(_fmtIso(d)), " \xB7 ", localTime(d)), /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.muted,
-        fontSize: 10.5,
+        fontSize: remSize(10.5),
+        letterSpacing: tracking(10.5),
         fontFamily: fontNum,
         marginTop: 2
       }
     }, fmtDurationHM(s.durationMs / 3600_000), " \xB7 ", s.drinkCount, " conso", s.drinkCount > 1 ? 's' : '')), /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: fontSerif,
-        fontSize: 17,
+        fontSize: remSize(17),
+        letterSpacing: tracking(17),
         color: T.ink,
-        letterSpacing: -0.3,
         whiteSpace: 'nowrap',
         flexShrink: 0
       }
     }, Math.round(s.peakBac), /*#__PURE__*/React.createElement("span", {
       style: {
-        fontSize: 9.5,
+        fontSize: remSize(9.5),
+        letterSpacing: tracking(9.5),
         color: T.muted,
         fontFamily: fontSans,
         marginLeft: 2
@@ -1604,15 +1638,16 @@ function SessionsSection({
   })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500,
-      marginBottom: 3,
-      letterSpacing: -0.1
+      marginBottom: 3
     }
   }, "Distribution des pics"), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       marginBottom: 12,
       fontStyle: 'italic',
       fontFamily: fontSerif
@@ -1771,7 +1806,7 @@ function GeneralSection({
   }), drinks.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(3, 1fr)',
+      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
       gap: 8,
       marginBottom: 12
     }
@@ -1786,10 +1821,10 @@ function GeneralSection({
   }))), catDist.length > 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       fontWeight: 500,
-      marginBottom: 12,
-      letterSpacing: -0.1
+      marginBottom: 12
     }
   }, "R\xE9partition par cat\xE9gorie"), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1820,7 +1855,8 @@ function GeneralSection({
         display: 'flex',
         alignItems: 'center',
         gap: 8,
-        fontSize: 11
+        fontSize: remSize(11),
+        letterSpacing: tracking(11)
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -1832,8 +1868,7 @@ function GeneralSection({
     }), /*#__PURE__*/React.createElement("span", {
       style: {
         color: T.ink,
-        flex: 1,
-        letterSpacing: -0.1
+        flex: 1
       }
     }, d.name), /*#__PURE__*/React.createElement("span", {
       style: {
@@ -1844,7 +1879,8 @@ function GeneralSection({
   })))), drinks.length === 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 12,
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
       padding: '12px 0',
       textAlign: 'center',
       fontStyle: 'italic',
@@ -1888,9 +1924,9 @@ const StatCell = React.memo(function StatCell({
       alignItems: 'baseline',
       gap: 6,
       fontFamily: fontSerif,
-      fontSize: 22,
+      fontSize: remSize(22),
+      letterSpacing: tracking(22),
       color: T.ink,
-      letterSpacing: -0.4,
       lineHeight: 1
     }
   }, icon && /*#__PURE__*/React.createElement("span", {
@@ -1912,9 +1948,11 @@ const StatCell = React.memo(function StatCell({
   }, value)), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 9.5,
+      fontSize: remSize(9.5),
+      letterSpacing: tracking(9.5, {
+        caps: true
+      }),
       marginTop: 5,
-      letterSpacing: 0.3,
       textTransform: 'uppercase',
       lineHeight: 1.2
     }
@@ -1966,17 +2004,19 @@ const HeroStatCard = React.memo(function HeroStatCard({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 9.5,
-      letterSpacing: 0.4,
+      fontSize: remSize(9.5),
+      letterSpacing: tracking(9.5, {
+        caps: true
+      }),
       textTransform: 'uppercase',
       marginBottom: 2
     }
   }, label), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
-      fontSize: 22,
+      fontSize: remSize(22),
+      letterSpacing: tracking(22),
       color: T.ink,
-      letterSpacing: -0.3,
       lineHeight: 1,
       fontStyle: 'italic'
     }
@@ -1984,10 +2024,10 @@ const HeroStatCard = React.memo(function HeroStatCard({
     style: {
       fontStyle: 'normal',
       fontFamily: fontSans,
-      fontSize: 12,
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
       color: T.ink2,
-      marginLeft: 6,
-      letterSpacing: 0
+      marginLeft: 6
     }
   }, suffix))));
 });
@@ -2063,7 +2103,8 @@ function TemporalSection({
     }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.muted,
-        fontSize: 12,
+        fontSize: remSize(12),
+        letterSpacing: tracking(12),
         padding: '8px 0',
         textAlign: 'center',
         fontStyle: 'italic',
@@ -2080,7 +2121,7 @@ function TemporalSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(2, 1fr)',
+      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
       gap: 8,
       marginBottom: 10
     }
@@ -2103,10 +2144,10 @@ function TemporalSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500,
-      marginBottom: 10,
-      letterSpacing: -0.1
+      marginBottom: 10
     }
   }, "Par heure"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
     minHeight: 150
@@ -2120,10 +2161,10 @@ function TemporalSection({
   }))), multiDay && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500,
-      marginBottom: 4,
-      letterSpacing: -0.1
+      marginBottom: 4
     }
   }, "Par jour de la semaine"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
     minHeight: 250,
@@ -2159,14 +2200,14 @@ function DeltaBadge({
       alignItems: 'center',
       gap: 3,
       color: fg,
-      fontSize: 9.5,
+      fontSize: remSize(9.5),
+      letterSpacing: tracking(9.5),
       fontFamily: fontNum,
       fontWeight: 600,
       background: bg,
       padding: '2px 6px',
       borderRadius: 99,
       border: `1px solid ${withAlpha(fg, 0.18)}`,
-      letterSpacing: 0,
       lineHeight: 1
     },
     "aria-label": `${ariaDir} de ${value} vs période précédente`
@@ -2193,17 +2234,19 @@ function MiniStat({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
-      fontSize: 22,
+      fontSize: remSize(22),
+      letterSpacing: tracking(22),
       color: T.ink,
-      letterSpacing: -0.3,
       lineHeight: 1
     }
   }, big), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10, {
+        caps: true
+      }),
       marginTop: 6,
-      letterSpacing: 0.3,
       textTransform: 'uppercase'
     }
   }, label));
@@ -2261,7 +2304,8 @@ function CategorySection({
     }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.muted,
-        fontSize: 12,
+        fontSize: remSize(12),
+        letterSpacing: tracking(12),
         padding: '8px 0',
         textAlign: 'center',
         fontStyle: 'italic',
@@ -2307,20 +2351,22 @@ function CategorySection({
       style: {
         flex: 1,
         color: T.ink,
-        fontSize: 14,
+        fontSize: remSize(14),
+        letterSpacing: tracking(14),
         fontWeight: 500
       }
     }, c.name), /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: fontNum,
-        fontSize: 13,
+        fontSize: remSize(13),
+        letterSpacing: tracking(13),
         color: T.accent,
         fontWeight: 500
       }
     }, c.count, "\xD7")), /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'grid',
-        gridTemplateColumns: 'repeat(2, 1fr)',
+        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
         gap: '5px 14px'
       }
     }, /*#__PURE__*/React.createElement(StatRow, {
@@ -2349,14 +2395,14 @@ function StatRow({
       display: 'flex',
       justifyContent: 'space-between',
       gap: 8,
-      fontSize: 11,
+      fontSize: remSize(11),
+      letterSpacing: tracking(11),
       borderTop: `1px dashed ${T.rule}`,
       paddingTop: 5
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
-      color: T.muted,
-      letterSpacing: 0.1
+      color: T.muted
     }
   }, label), /*#__PURE__*/React.createElement("span", {
     style: {
@@ -2411,7 +2457,8 @@ function TopDrinksSection({
     }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.muted,
-        fontSize: 12,
+        fontSize: remSize(12),
+        letterSpacing: tracking(12),
         padding: '8px 0',
         textAlign: 'center',
         fontStyle: 'italic',
@@ -2448,7 +2495,8 @@ function TopDrinksSection({
       display: 'grid',
       placeItems: 'center',
       flexShrink: 0,
-      fontSize: 11,
+      fontSize: remSize(11),
+      letterSpacing: tracking(11),
       fontWeight: 600,
       fontFamily: fontNum
     }
@@ -2467,8 +2515,8 @@ function TopDrinksSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 13,
-      letterSpacing: -0.1,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       overflow: 'hidden',
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap',
@@ -2481,15 +2529,16 @@ function TopDrinksSection({
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10.5,
-      letterSpacing: 0.1,
+      fontSize: remSize(10.5),
+      letterSpacing: tracking(10.5),
       fontFamily: fontNum
     }
   }, d.count, " fois \xB7 ", (d.volumeCl / 100).toFixed(2), "L \xB7 ", fmtDateMedium(d.lastDate))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontNum,
       color: T.accent,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       fontWeight: 500
     }
   }, d.count)))));
@@ -3047,8 +3096,10 @@ function ForecastToggle({
       borderRadius: 7,
       background: active ? T.accent : 'transparent',
       color: active ? T.accentInk : T.muted,
-      fontSize: 9.5,
-      letterSpacing: 0.3,
+      fontSize: remSize(9.5),
+      letterSpacing: tracking(9.5, {
+        caps: true
+      }),
       textTransform: 'uppercase',
       fontWeight: active ? 600 : 500,
       transition: 'background 0.18s ease, color 0.18s ease'
@@ -3106,31 +3157,33 @@ function ForecastMiniStats({
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 9.5,
-      letterSpacing: 0.3,
+      fontSize: remSize(9.5),
+      letterSpacing: tracking(9.5, {
+        caps: true
+      }),
       textTransform: 'uppercase'
     }
   }, label)), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
-      fontSize: 18,
+      fontSize: remSize(18),
+      letterSpacing: tracking(18),
       color: T.ink,
-      letterSpacing: -0.3,
       lineHeight: 1
     }
   }, value), unit && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 9,
+      fontSize: remSize(9),
+      letterSpacing: tracking(9),
       marginTop: 3,
-      fontFamily: fontNum,
-      letterSpacing: 0.2
+      fontFamily: fontNum
     }
   }, unit));
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(4, 1fr)',
+      gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
       gap: 6,
       marginBottom: 10
     }
@@ -3251,9 +3304,9 @@ function BACSection({
     style: {
       textAlign: 'center',
       color: level.color,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       fontWeight: 500,
-      letterSpacing: 0.1,
       marginBottom: 14
     }
   }, level.text), /*#__PURE__*/React.createElement("div", {
@@ -3288,21 +3341,24 @@ function BACSection({
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 9.5,
-      letterSpacing: 0.5,
+      fontSize: remSize(9.5),
+      letterSpacing: tracking(9.5, {
+        caps: true
+      }),
       textTransform: 'uppercase'
     }
   }, "Sobri\xE9t\xE9")), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
-      fontSize: 20,
-      color: T.ink,
-      letterSpacing: -0.3
+      fontSize: remSize(20),
+      letterSpacing: tracking(20),
+      color: T.ink
     }
   }, fmtTime(hoursToSober)), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10.5,
+      fontSize: remSize(10.5),
+      letterSpacing: tracking(10.5),
       fontFamily: fontNum,
       marginTop: 3
     }
@@ -3332,21 +3388,24 @@ function BACSection({
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 9.5,
-      letterSpacing: 0.5,
+      fontSize: remSize(9.5),
+      letterSpacing: tracking(9.5, {
+        caps: true
+      }),
       textTransform: 'uppercase'
     }
   }, "Conduite (<500)")), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
-      fontSize: 20,
-      color: T.ink,
-      letterSpacing: -0.3
+      fontSize: remSize(20),
+      letterSpacing: tracking(20),
+      color: T.ink
     }
   }, fmtTime(hoursToLegal)), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10.5,
+      fontSize: remSize(10.5),
+      letterSpacing: tracking(10.5),
       fontFamily: fontNum,
       marginTop: 3
     }
@@ -3370,23 +3429,26 @@ function BACSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 9.5,
-      letterSpacing: 0.5,
+      fontSize: remSize(9.5),
+      letterSpacing: tracking(9.5, {
+        caps: true
+      }),
       textTransform: 'uppercase',
       marginBottom: 4
     }
   }, "Taux moyen par session"), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink2,
-      fontSize: 11,
+      fontSize: remSize(11),
+      letterSpacing: tracking(11),
       lineHeight: 1.4
     }
   }, "Moyenne intra-session, puis moyenne sur la p\xE9riode")), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
-      fontSize: 24,
+      fontSize: remSize(24),
+      letterSpacing: tracking(24),
       color: T.ink,
-      letterSpacing: -0.3,
       lineHeight: 1,
       whiteSpace: 'nowrap',
       flexShrink: 0
@@ -3394,7 +3456,8 @@ function BACSection({
   }, Math.round(periodAvgSession), /*#__PURE__*/React.createElement("span", {
     style: {
       fontFamily: fontSans,
-      fontSize: 12,
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
       color: T.ink2,
       marginLeft: 5
     }
@@ -3407,17 +3470,18 @@ function BACSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500,
-      marginBottom: 8,
-      letterSpacing: -0.1
+      marginBottom: 8
     }
   }, "Projection d'alcool\xE9mie"), /*#__PURE__*/React.createElement(BACProjectionResponsive, {
     points: bacInfo.points
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       marginTop: 6,
       fontStyle: 'italic',
       fontFamily: fontSerif
@@ -3437,9 +3501,9 @@ function BACSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12.5,
-      fontWeight: 500,
-      letterSpacing: -0.1
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
+      fontWeight: 500
     }
   }, "Pr\xE9vision de session"), /*#__PURE__*/React.createElement(ForecastToggle, {
     enabled: forecastEnabled,
@@ -3456,7 +3520,8 @@ function BACSection({
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       marginTop: 6,
       fontStyle: 'italic',
       fontFamily: fontSerif
@@ -3468,10 +3533,10 @@ function BACSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500,
-      marginBottom: 10,
-      letterSpacing: -0.1
+      marginBottom: 10
     }
   }, "Consommations prises en compte (", bacInfo.drinks.length, ")", bacInfo.drinks.length > relevantDrinks.length ? ` · ${relevantDrinks.length} plus récentes` : ''), relevantDrinks.map((d, i) => /*#__PURE__*/React.createElement("div", {
     key: i,
@@ -3485,9 +3550,9 @@ function BACSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12,
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
       flex: 1,
-      letterSpacing: -0.1,
       overflow: 'hidden',
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap'
@@ -3495,13 +3560,15 @@ function BACSection({
   }, d.name), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink2,
-      fontSize: 10.5,
+      fontSize: remSize(10.5),
+      letterSpacing: tracking(10.5),
       fontFamily: fontNum
     }
   }, d.qty, " \xB7 ", d.abv, "%"), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       fontFamily: fontNum,
       minWidth: 52,
       textAlign: 'right'
@@ -3517,9 +3584,9 @@ function BACSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 13,
-      fontWeight: 500,
-      letterSpacing: -0.1
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
+      fontWeight: 500
     }
   }, "Records d'alcool\xE9mie"), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -3532,7 +3599,8 @@ function BACSection({
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10.5,
+      fontSize: remSize(10.5),
+      letterSpacing: tracking(10.5),
       fontFamily: fontNum,
       background: T.surface2,
       padding: '2px 8px',
@@ -3611,16 +3679,16 @@ function BACGauge({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
-      fontSize: 36,
+      fontSize: remSize(36),
+      letterSpacing: tracking(36),
       color: T.ink,
-      letterSpacing: -1,
       lineHeight: 1
     }
   }, bac), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
-      letterSpacing: 1,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       marginTop: 2
     }
   }, "MG/L")));
@@ -3678,14 +3746,15 @@ function BACRecordRow({
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       fontFamily: fontSerif,
-      fontSize: 17,
+      fontSize: remSize(17),
+      letterSpacing: tracking(17),
       color: T.ink,
-      letterSpacing: -0.3,
       fontStyle: isHighest ? 'italic' : 'normal'
     }
   }, record.bacValue, /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       color: T.muted,
       fontStyle: 'normal',
       fontFamily: fontSans,
@@ -3693,21 +3762,23 @@ function BACRecordRow({
     }
   }, "mg/L")), isHighest && /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 8.5,
+      fontSize: remSize(8.5),
+      letterSpacing: tracking(8.5, {
+        caps: true
+      }),
       color: T.accent,
       background: T.accentSoft,
       padding: '2px 6px',
       borderRadius: 99,
       border: `1px solid ${T.accentSoftBorder}`,
-      letterSpacing: 0.8,
       textTransform: 'uppercase',
       fontWeight: 600
     }
   }, "Record")), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10.5,
-      letterSpacing: 0.1,
+      fontSize: remSize(10.5),
+      letterSpacing: tracking(10.5),
       fontFamily: fontNum
     }
   }, dateLabel, " \xB7 ", record.drinkCount || 0, " conso", (record.drinkCount || 0) > 1 ? 's' : '')));
@@ -3783,7 +3854,7 @@ function MapDrinksSheet({
 }) {
   const groups = React.useMemo(() => groupDrinksForMap(drinks), [drinks]);
   const total = drinks ? drinks.length : 0;
-  const [closing, close] = useSheetClose(onClose);
+  const [closing, close, cancelClose] = useSheetClose(onClose);
   // Si toutes les boissons partagent un même libellé de lieu, on le met en
   // titre ; sinon un titre générique (le rond couvre plusieurs endroits).
   const sharedPlace = React.useMemo(() => {
@@ -3793,10 +3864,11 @@ function MapDrinksSheet({
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: close,
     closing: closing,
+    onCancelClose: cancelClose,
     label: sharedPlace || 'Consommations ici'
   }, /*#__PURE__*/React.createElement("div", {
+    className: "alco-material-sheet alco-material-edge",
     style: {
-      background: T.bg,
       borderRadius: '22px 22px 0 0',
       maxHeight: '85dvh',
       display: 'flex',
@@ -3804,22 +3876,10 @@ function MapDrinksSheet({
       borderTop: `1px solid ${T.rule}`,
       borderLeft: `1px solid ${T.rule}`,
       borderRight: `1px solid ${T.rule}`,
-      overflow: 'hidden'
+      overflow: 'hidden',
+      boxShadow: T.shadowSheet
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'grid',
-      placeItems: 'center',
-      padding: '10px 0 4px'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 42,
-      height: 4,
-      borderRadius: 99,
-      background: T.rule
-    }
-  })), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(SheetGrabber, null, /*#__PURE__*/React.createElement("div", {
     style: {
       padding: '14px 22px 16px',
       borderBottom: `1px solid ${T.rule}`,
@@ -3834,24 +3894,22 @@ function MapDrinksSheet({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontFamily: fontSerif,
-      fontStyle: 'italic',
-      fontSize: 22,
+      ...type(22, {
+        family: fontSerif,
+        italic: true
+      }),
       color: T.ink,
-      letterSpacing: -0.4,
-      lineHeight: 1.15,
       wordBreak: 'break-word'
     }
   }, sharedPlace || 'Consommations ici'), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 9.5,
-      letterSpacing: 0.3,
-      textTransform: 'uppercase',
+      ...TYPE.label,
       marginTop: 6
     }
   }, total, " boisson", total !== 1 ? 's' : '', " \xB7 ", groups.length, " type", groups.length !== 1 ? 's' : '')), /*#__PURE__*/React.createElement("button", {
     type: "button",
+    className: "alco-press",
     onClick: close,
     "aria-label": "Fermer",
     style: {
@@ -3866,12 +3924,13 @@ function MapDrinksSheet({
       border: `1px solid ${T.rule}`,
       padding: 0,
       fontFamily: 'inherit',
-      flexShrink: 0
+      flexShrink: 0,
+      touchAction: 'manipulation'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.close,
     size: 14
-  }))), /*#__PURE__*/React.createElement("div", {
+  })))), /*#__PURE__*/React.createElement("div", {
     style: {
       overflow: 'auto',
       padding: '14px 22px 20px'
@@ -3915,7 +3974,8 @@ function MapDrinksSheet({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSans,
-      fontSize: 14,
+      fontSize: remSize(14),
+      letterSpacing: tracking(14),
       color: T.ink,
       fontWeight: 500,
       whiteSpace: 'nowrap',
@@ -3925,7 +3985,8 @@ function MapDrinksSheet({
   }, g.name), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontNum,
-      fontSize: 11,
+      fontSize: remSize(11),
+      letterSpacing: tracking(11),
       color: T.muted,
       marginTop: 2
     }
@@ -3940,14 +4001,15 @@ function MapDrinksSheet({
     style: {
       color: T.muted,
       fontFamily: fontNum,
-      fontSize: 12
+      fontSize: remSize(12),
+      letterSpacing: tracking(12)
     }
   }, "\xD7"), /*#__PURE__*/React.createElement("span", {
     style: {
       color: T.ink,
       fontFamily: fontNum,
-      fontSize: 17,
-      letterSpacing: -0.3
+      fontSize: remSize(17),
+      letterSpacing: tracking(17)
     }
   }, g.count))))))));
 }
@@ -4256,7 +4318,8 @@ function MapSection({
       placeItems: 'center',
       background: T.surface2,
       color: T.muted,
-      fontSize: 11,
+      fontSize: remSize(11),
+      letterSpacing: tracking(11),
       padding: 24,
       textAlign: 'center',
       zIndex: 1200,
@@ -4458,7 +4521,8 @@ function TrendsSection({
     }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.muted,
-        fontSize: 12,
+        fontSize: remSize(12),
+        letterSpacing: tracking(12),
         padding: '8px 0',
         textAlign: 'center',
         fontStyle: 'italic',
@@ -4487,9 +4551,9 @@ function TrendsSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12.5,
-      fontWeight: 500,
-      letterSpacing: -0.1
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
+      fontWeight: 500
     }
   }, "Par mois"), /*#__PURE__*/React.createElement(ScopeChip, {
     label: "6 derniers mois"
@@ -4508,15 +4572,16 @@ function TrendsSection({
   }))), cumHasData && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500,
-      marginBottom: 3,
-      letterSpacing: -0.1
+      marginBottom: 3
     }
   }, "Cumul vs p\xE9riode pr\xE9c\xE9dente"), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       marginBottom: 10,
       fontStyle: 'italic',
       fontFamily: fontSerif
@@ -4658,16 +4723,17 @@ function AdvancedSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12.5,
-      fontWeight: 500,
-      letterSpacing: -0.1
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
+      fontWeight: 500
     }
   }, "Moyenne mobile"), /*#__PURE__*/React.createElement(ScopeChip, {
     label: "30 derniers jours"
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       marginBottom: 10,
       fontStyle: 'italic',
       fontFamily: fontSerif
@@ -4680,7 +4746,8 @@ function AdvancedSection({
   })) : /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 11,
+      fontSize: remSize(11),
+      letterSpacing: tracking(11),
       padding: '12px 0',
       textAlign: 'center'
     }
@@ -4703,15 +4770,16 @@ function AdvancedSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500,
-      marginBottom: 3,
-      letterSpacing: -0.1
+      marginBottom: 3
     }
   }, "Horloge des consommations"), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       marginBottom: 10,
       fontStyle: 'italic',
       fontFamily: fontSerif
@@ -4725,15 +4793,16 @@ function AdvancedSection({
   }))), showPeriodCards && bacAvailable && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500,
-      marginBottom: 3,
-      letterSpacing: -0.1
+      marginBottom: 3
     }
   }, "Distribution des sessions"), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       marginBottom: 12,
       fontStyle: 'italic',
       fontFamily: fontSerif
@@ -4741,10 +4810,12 @@ function AdvancedSection({
   }, "Dur\xE9e par session"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink2,
-      fontSize: 10.5,
+      fontSize: remSize(10.5),
+      letterSpacing: tracking(10.5, {
+        caps: true
+      }),
       marginBottom: 4,
       textAlign: 'center',
-      letterSpacing: 0.3,
       textTransform: 'uppercase'
     }
   }, "Dur\xE9e"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
@@ -5083,7 +5154,8 @@ function SpendingSection({
     }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.muted,
-        fontSize: 12,
+        fontSize: remSize(12),
+        letterSpacing: tracking(12),
         padding: '8px 0',
         textAlign: 'center',
         fontStyle: 'italic',
@@ -5100,7 +5172,7 @@ function SpendingSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(2, 1fr)',
+      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
       gap: 8,
       marginBottom: 10
     }
@@ -5123,10 +5195,10 @@ function SpendingSection({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500,
-      marginBottom: 12,
-      letterSpacing: -0.1
+      marginBottom: 12
     }
   }, "Par cat\xE9gorie"), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5155,7 +5227,8 @@ function SpendingSection({
       display: 'flex',
       alignItems: 'center',
       gap: 8,
-      fontSize: 11
+      fontSize: remSize(11),
+      letterSpacing: tracking(11)
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5168,7 +5241,6 @@ function SpendingSection({
     style: {
       color: T.ink,
       flex: 1,
-      letterSpacing: -0.1,
       overflow: 'hidden',
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap'
@@ -5181,10 +5253,10 @@ function SpendingSection({
   }, fmtPrice(c.total))))))), spend.data.length > 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500,
-      marginBottom: 10,
-      letterSpacing: -0.1
+      marginBottom: 10
     }
   }, "D\xE9penses ", spend.unitLabel), /*#__PURE__*/React.createElement(ChartAutoWidth, {
     minHeight: 160

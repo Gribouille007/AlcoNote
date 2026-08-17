@@ -112,16 +112,14 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
           </div>
           {cats.length === 0 && (
             <div style={{
-              color: T.muted, fontSize: 13, padding: '40px 0 16px', textAlign: 'center',
-            }}>Aucune catégorie pour le moment.</div>
+              color: T.muted, fontSize: remSize(13), letterSpacing: tracking(13), padding: '40px 0 16px', textAlign: 'center' }}>Aucune catégorie pour le moment.</div>
           )}
           <button type="button" onClick={onAddCategory}
             aria-label="Créer une nouvelle catégorie" style={{
               width: '100%', marginTop: 12, padding: '12px', borderRadius: 14,
               background: T.surface, border: `1px dashed ${T.rule}`, color: T.ink2,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, letterSpacing: -0.1,
-            }}>
+              cursor: 'pointer', fontFamily: 'inherit', fontSize: remSize(13), letterSpacing: tracking(13) }}>
             <SvgIcon icon={Ic.plus} size={15} /> Nouvelle catégorie
           </button>
         </>
@@ -137,8 +135,7 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
             ))}
             {matchedFams.length === 0 && (
               <div style={{
-                color: T.muted, fontSize: 13, padding: '40px 0', textAlign: 'center',
-              }}>Aucun résultat pour « {query} »</div>
+                color: T.muted, fontSize: remSize(13), letterSpacing: tracking(13), padding: '40px 0', textAlign: 'center' }}>Aucun résultat pour « {query} »</div>
             )}
           </div>
         </>
@@ -156,51 +153,57 @@ const CategoryCard = React.memo(function CategoryCard({ cat, onOpen, onEdit, ind
   const bg = catBg(cat.name);
   const reduced = useReducedMotion();
   const press = usePressScale();
+  // Deux boutons FRÈRES dans un conteneur non-interactif — « ouvrir la
+  // catégorie » et « modifier » — au lieu d'imbriquer le crayon dans une card
+  // `role="button"`. Même correctif que FriendRow : plus de button-in-button
+  // (violation a11y « nested-interactive », sérieuse : un lecteur d'écran ne
+  // sait plus ce qu'il annonce, et la navigation clavier piège le focus), et
+  // plus besoin de stopPropagation ni de gestion clavier maison — le <button>
+  // natif apporte Entrée/Espace gratuitement.
   return (
-    <div {...clickable(() => onOpen && onOpen(cat.name), `Ouvrir la catégorie ${cat.name} — ${cat.entries} entrée${cat.entries !== 1 ? 's' : ''}, ${cat.families} type${cat.families !== 1 ? 's' : ''}`)}
-      {...press.handlers} style={{
-      background: T.surface, borderRadius: 18, padding: 14,
-      border: `1px solid ${T.rule}`, cursor: 'pointer',
-      position: 'relative', overflow: 'hidden',
-      aspectRatio: '1 / 1.05',
-      display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-      ...press.style,
-      ...staggerStyle(index, { reduced }),
-    }}>
+    <div style={{ position: 'relative', ...staggerStyle(index, { reduced }) }}>
       <button type="button"
-        onClick={(e) => { e.stopPropagation(); onEdit && onEdit(cat.name); }}
+        onClick={() => onOpen && onOpen(cat.name)}
+        aria-label={`Ouvrir la catégorie ${cat.name} — ${cat.entries} entrée${cat.entries !== 1 ? 's' : ''}, ${cat.families} type${cat.families !== 1 ? 's' : ''}`}
+        {...press.handlers} style={{
+          width: '100%', textAlign: 'left', fontFamily: 'inherit',
+          background: T.surface, borderRadius: 18, padding: 14,
+          border: `1px solid ${T.rule}`, cursor: 'pointer',
+          overflow: 'hidden',
+          aspectRatio: '1 / 1.05',
+          display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+          ...press.style }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: 14, background: bg,
+          display: 'grid', placeItems: 'center', color,
+          boxShadow: `inset 0 0 20px ${bg}` }}>
+          <CategoryGlyph name={cat.name} />
+        </div>
+        <div style={{ width: '100%', minWidth: 0 }}>
+          <div style={{
+            fontFamily: fontSans, fontWeight: 500, fontSize: remSize(15), letterSpacing: tracking(15), color: T.ink,
+            marginBottom: 3,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cat.name}</div>
+          <div style={{
+            color: T.muted, fontSize: remSize(11), letterSpacing: tracking(11), display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color }}>●</span>
+            {cat.entries} entrée{cat.entries !== 1 ? 's' : ''}
+            <span style={{ opacity: 0.4 }}>·</span>
+            {cat.families} type{cat.families !== 1 ? 's' : ''}
+          </div>
+        </div>
+      </button>
+      <button type="button"
+        onClick={() => onEdit && onEdit(cat.name)}
         aria-label={`Modifier ${cat.name}`}
+        className="alco-press"
         style={{
           position: 'absolute', top: 10, right: 10, width: 26, height: 26,
           borderRadius: 8, background: T.surface2, border: `1px solid ${T.rule}`,
           display: 'grid', placeItems: 'center', color: T.muted, cursor: 'pointer',
-          zIndex: 2, padding: 0, fontFamily: 'inherit',
-        }}>
+          zIndex: 2, padding: 0, fontFamily: 'inherit', touchAction: 'manipulation' }}>
         <SvgIcon icon={Ic.edit} size={11} />
       </button>
-      <div style={{
-        width: 44, height: 44, borderRadius: 14, background: bg,
-        display: 'grid', placeItems: 'center', color,
-        boxShadow: `inset 0 0 20px ${bg}`,
-      }}>
-        <CategoryGlyph name={cat.name} />
-      </div>
-      <div>
-        <div style={{
-          fontFamily: fontSans, fontWeight: 500, fontSize: 15, color: T.ink,
-          letterSpacing: -0.2, marginBottom: 3,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>{cat.name}</div>
-        <div style={{
-          color: T.muted, fontSize: 11, letterSpacing: 0.1,
-          display: 'flex', alignItems: 'center', gap: 6,
-        }}>
-          <span style={{ color }}>●</span>
-          {cat.entries} entrée{cat.entries !== 1 ? 's' : ''}
-          <span style={{ opacity: 0.4 }}>·</span>
-          {cat.families} type{cat.families !== 1 ? 's' : ''}
-        </div>
-      </div>
     </div>
   );
 });
@@ -248,13 +251,11 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
     <div style={{ flex: 1, overflow: 'auto', padding: '0 18px 120px' }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
-        justifyContent: 'space-between',
-      }}>
+        justifyContent: 'space-between' }}>
         <button type="button" onClick={onBack} aria-label="Retour aux catégories" style={{
           ...ghostButton,
           color: T.ink2, display: 'flex', alignItems: 'center', gap: 6,
-          fontSize: 13, cursor: 'pointer',
-        }}>
+          fontSize: remSize(13), letterSpacing: tracking(13), cursor: 'pointer' }}>
           <SvgIcon icon={Ic.chevL} size={16} />
           <span>Catégories</span>
         </button>
@@ -262,17 +263,15 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
           ...ghostButton,
           display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
           padding: '6px 10px', borderRadius: 10, background: T.surface2,
-          border: `1px solid ${T.rule}`, color: T.ink2, fontSize: 11,
-        }}>
+          border: `1px solid ${T.rule}`, color: T.ink2, fontSize: remSize(11), letterSpacing: tracking(11) }}>
           <SvgIcon icon={Ic.edit} size={11} />
           <span>Modifier</span>
         </button>
       </div>
       <div style={{
-        fontFamily: fontSerif, fontSize: 36, color: T.ink,
-        letterSpacing: -0.8, lineHeight: 1, marginBottom: 4,
-      }}>{category}</div>
-      <div style={{ color: T.muted, fontSize: 12, marginBottom: 18, letterSpacing: 0.1 }}>
+        fontFamily: fontSerif, fontSize: remSize(36), letterSpacing: tracking(36), color: T.ink,
+        lineHeight: 1, marginBottom: 4 }}>{category}</div>
+      <div style={{ color: T.muted, fontSize: remSize(12), letterSpacing: tracking(12), marginBottom: 18 }}>
         {sortedLen} variante{sortedLen !== 1 ? 's' : ''} ·
         {' '}{entriesTotal} entrées au total
       </div>
@@ -284,7 +283,7 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
       ))}
 
       {rows.length === 0 && (
-        <div style={{ color: T.muted, fontSize: 13, padding: '40px 0', textAlign: 'center' }}>
+        <div style={{ color: T.muted, fontSize: remSize(13), letterSpacing: tracking(13), padding: '40px 0', textAlign: 'center' }}>
           Aucun résultat
         </div>
       )}
@@ -317,39 +316,31 @@ const FamilyRow = React.memo(function FamilyRow({ family: f, variantIndex = 0, v
       marginBottom: isLastOfGroup ? 8 : 0,
       cursor: 'pointer', position: 'relative',
       ...press.style,
-      ...staggerStyle(index, { reduced }),
-    }}>
+      ...staggerStyle(index, { reduced }) }}>
       <div style={{
         width: 40, height: 40, borderRadius: 12, background: catBg(f.category),
         display: 'grid', placeItems: 'center', color,
-        flexShrink: 0, position: 'relative',
-      }}>
+        flexShrink: 0, position: 'relative' }}>
         <CategoryGlyph name={f.category} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
-          fontSize: 14.5, color: T.ink, fontWeight: 500, letterSpacing: -0.2,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>{f.name}{variantCount > 1 && (
+          fontSize: remSize(14.5), letterSpacing: tracking(14.5), color: T.ink, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}{variantCount > 1 && (
           <span style={{
-            marginLeft: 8, fontSize: 10, color: T.muted, fontFamily: fontNum,
-            letterSpacing: 0.4, fontWeight: 400,
-          }}>{variantIndex + 1}/{variantCount}</span>
+            marginLeft: 8, fontSize: remSize(10), letterSpacing: tracking(10), color: T.muted, fontFamily: fontNum,
+            fontWeight: 400 }}>{variantIndex + 1}/{variantCount}</span>
         )}</div>
         <div style={{
-          color: T.muted, fontSize: 11.5, marginTop: 3, letterSpacing: 0.1,
-          display: 'flex', gap: 6, alignItems: 'center',
-        }}>
+          color: T.muted, fontSize: remSize(11.5), letterSpacing: tracking(11.5), marginTop: 3, display: 'flex', gap: 6, alignItems: 'center' }}>
           <span>{f.quantity} {f.unit}</span>
           <span style={{ opacity: 0.4 }}>·</span>
           <span>{f.alcohol}°</span>
         </div>
       </div>
       <div title={`${totalEntries} entrée${totalEntries > 1 ? 's' : ''}`} style={{
-        fontFamily: fontNum, fontSize: 14, fontWeight: 600,
-        color: T.ink2, letterSpacing: 0.2, lineHeight: 1,
-        fontVariantNumeric: 'tabular-nums', marginRight: 6, flexShrink: 0,
-      }}>×{totalEntries}</div>
+        fontFamily: fontNum, fontSize: remSize(14), letterSpacing: tracking(14), fontWeight: 600,
+        color: T.ink2, lineHeight: 1,
+        fontVariantNumeric: 'tabular-nums', marginRight: 6, flexShrink: 0 }}>×{totalEntries}</div>
       <QuickAddButton
         onAdd={() => onDirectAdd && onDirectAdd(f)}
         label={`Ajouter ${f.name} (${f.quantity} ${f.unit}, ${f.alcohol}°) à nouveau`}
@@ -391,7 +382,7 @@ function EditCategorySheet({ category, onClose, mode = 'edit', onRenamed }) {
   const savingRef = React.useRef(false);
   const removingRef = React.useRef(false);
   // Fermeture animée (sortie de sheet).
-  const [closing, close] = useSheetClose(onClose);
+  const [closing, close, cancelClose] = useSheetClose(onClose);
 
   // What the picker should highlight. After "Réinitialiser" we fall
   // back to the same logic <CategoryGlyph> uses when there's no
@@ -661,39 +652,32 @@ function EditCategorySheet({ category, onClose, mode = 'edit', onRenamed }) {
   };
 
   return (
-    <SheetOverlay onClose={close} closing={closing} label={isCreate ? 'Nouvelle catégorie' : 'Modifier la catégorie'}>
-      <div style={{
-        background: T.bg, borderRadius: '22px 22px 0 0',
-        padding: '18px 20px 28px',
+    <SheetOverlay onClose={close} closing={closing} onCancelClose={cancelClose} label={isCreate ? 'Nouvelle catégorie' : 'Modifier la catégorie'}>
+      <div className="alco-material-sheet alco-material-edge" style={{
+        borderRadius: '22px 22px 0 0',
+        padding: '8px 20px 28px',
         borderTop: `1px solid ${T.rule}`,
         borderLeft: `1px solid ${T.rule}`,
         borderRight: `1px solid ${T.rule}`,
         overflowX: 'hidden', overflowY: 'auto', maxHeight: '92dvh',
-      }}>
-        <div style={{ display: 'grid', placeItems: 'center', paddingBottom: 10 }}>
-          <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }}/>
-        </div>
-        <div style={{
-          fontFamily: fontSerif, fontSize: 22, color: T.ink,
-          letterSpacing: -0.3, fontStyle: 'italic', marginBottom: 18,
-          textAlign: 'center',
-        }}>{isCreate ? 'Nouvelle catégorie' : 'Modifier la catégorie'}</div>
+        boxShadow: T.shadowSheet }}>
+        <SheetGrabber>
+          <div style={{
+            ...type(22, { family: fontSerif, italic: true }), color: T.ink,
+            marginBottom: 18, textAlign: 'center' }}>{isCreate ? 'Nouvelle catégorie' : 'Modifier la catégorie'}</div>
+        </SheetGrabber>
 
         <div style={{
-          color: T.muted, fontSize: 10, letterSpacing: 1.2,
-          textTransform: 'uppercase', marginBottom: 8,
-        }}>Nom</div>
+          color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10, { caps: true }), textTransform: 'uppercase', marginBottom: 8 }}>Nom</div>
         <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Nom de la catégorie" style={{
           width: '100%', background: T.surface2, border: `1px solid ${T.rule}`,
           borderRadius: 12, padding: '12px 14px', color: T.ink,
-          fontFamily: fontSans, fontSize: 14, outline: 'none',
+          fontFamily: fontSans, fontSize: remSize(14), letterSpacing: tracking(14), outline: 'none',
           marginBottom: 18, boxSizing: 'border-box',
         }}/>
 
         <div style={{
-          color: T.muted, fontSize: 10, letterSpacing: 1.2,
-          textTransform: 'uppercase', marginBottom: 8,
-        }}>Icône</div>
+          color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10, { caps: true }), textTransform: 'uppercase', marginBottom: 8 }}>Icône</div>
         <div role="radiogroup" aria-label="Icône de catégorie"
           style={{ display: 'flex', gap: 10, marginBottom: 22, flexWrap: 'wrap' }}>
           {GLYPH_OPTIONS.map(g => {
@@ -709,8 +693,7 @@ function EditCategorySheet({ category, onClose, mode = 'edit', onRenamed }) {
                 color: selected ? catColor(g, T.isDark ? 80 : 50) : T.ink2,
                 cursor: 'pointer', padding: 0, fontFamily: 'inherit',
                 transition: 'background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
-                boxShadow: selected ? `0 0 0 3px ${withAlpha(catColor(g, T.isDark ? 75 : 55), 0.18)}` : 'none',
-              }}>
+                boxShadow: selected ? `0 0 0 3px ${withAlpha(catColor(g, T.isDark ? 75 : 55), 0.18)}` : 'none' }}>
                 <CategoryGlyph glyph={g} size={26} />
               </button>
             );
@@ -728,8 +711,7 @@ function EditCategorySheet({ category, onClose, mode = 'edit', onRenamed }) {
                 display: 'grid', placeItems: 'center',
                 color: glyph === '__reset__' ? T.ink : T.muted,
                 cursor: 'pointer', padding: 0, fontFamily: 'inherit',
-                transition: 'background 0.15s ease, border-color 0.15s ease',
-              }}>
+                transition: 'background 0.15s ease, border-color 0.15s ease' }}>
               <SvgIcon icon={Ic.refresh} size={18} />
             </button>
           )}
@@ -737,11 +719,9 @@ function EditCategorySheet({ category, onClose, mode = 'edit', onRenamed }) {
 
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          marginBottom: 8,
-        }}>
+          marginBottom: 8 }}>
           <div style={{
-            color: T.muted, fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase',
-          }}>Couleur</div>
+            color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10, { caps: true }), textTransform: 'uppercase' }}>Couleur</div>
           <button type="button" onClick={() => setHue(null)}
             aria-label="Couleur automatique"
             aria-pressed={isAuto}
@@ -752,8 +732,7 @@ function EditCategorySheet({ category, onClose, mode = 'edit', onRenamed }) {
               border: `1px solid ${isAuto ? T.accent : T.rule}`,
               background: isAuto ? T.accentSoft : 'transparent',
               color: isAuto ? T.accent : T.muted,
-              fontSize: 10, letterSpacing: 0.3, textTransform: 'uppercase',
-            }}>
+              fontSize: remSize(10), letterSpacing: tracking(10, { caps: true }), textTransform: 'uppercase' }}>
             <SvgIcon icon={Ic.refresh} size={11} /> Auto
           </button>
         </div>
@@ -762,8 +741,7 @@ function EditCategorySheet({ category, onClose, mode = 'edit', onRenamed }) {
           <div style={{
             width: 44, height: 44, borderRadius: 12, flexShrink: 0,
             background: previewBg, border: `1px solid ${T.rule}`,
-            display: 'grid', placeItems: 'center', color: previewColor,
-          }}>
+            display: 'grid', placeItems: 'center', color: previewColor }}>
             <CategoryGlyph glyph={displayedGlyph} size={22} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -793,8 +771,7 @@ function EditCategorySheet({ category, onClose, mode = 'edit', onRenamed }) {
               style={{
                 position: 'relative', height: 22, borderRadius: 99,
                 background: hueTrack, border: `1px solid ${T.rule}`,
-                cursor: 'pointer', touchAction: 'none', outline: 'none',
-              }}>
+                cursor: 'pointer', touchAction: 'none', outline: 'none' }}>
               {/* Pouce */}
               <div aria-hidden="true" style={{
                 position: 'absolute', top: '50%', left: `${(effHue / 359) * 100}%`,
@@ -806,8 +783,7 @@ function EditCategorySheet({ category, onClose, mode = 'edit', onRenamed }) {
               }} />
             </div>
             <div style={{
-              color: T.muted, fontSize: 10, marginTop: 6, fontFamily: fontNum, letterSpacing: 0.2,
-            }}>{isAuto ? `Auto · teinte ${effHue}°` : `Teinte ${effHue}°`}</div>
+              color: T.muted, fontSize: remSize(10), letterSpacing: tracking(10), marginTop: 6, fontFamily: fontNum }}>{isAuto ? `Auto · teinte ${effHue}°` : `Teinte ${effHue}°`}</div>
           </div>
         </div>
 
@@ -815,18 +791,16 @@ function EditCategorySheet({ category, onClose, mode = 'edit', onRenamed }) {
           <div style={{
             color: T.accent2, background: T.dangerSoftBg,
             border: `1px solid ${T.dangerSoftBorder}`,
-            padding: '8px 12px', borderRadius: 10, fontSize: 12,
-            marginBottom: 14,
-          }}>{err}</div>
+            padding: '8px 12px', borderRadius: 10, fontSize: remSize(12), letterSpacing: tracking(12),
+            marginBottom: 14 }}>{err}</div>
         )}
 
         <button type="button" onClick={busy ? undefined : save} disabled={busy} style={{
           width: '100%', padding: '14px', textAlign: 'center', borderRadius: 12,
           background: T.accent, color: T.accentInk,
-          fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer',
+          fontSize: remSize(13), letterSpacing: tracking(13), fontWeight: 600, cursor: busy ? 'wait' : 'pointer',
           opacity: busy ? 0.5 : 1, border: 'none', fontFamily: 'inherit',
-          boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
-        }}>{busy ? (isCreate ? 'Création…' : 'Enregistrement…') : (isCreate ? 'Créer la catégorie' : 'Enregistrer')}</button>
+          boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}` }}>{busy ? (isCreate ? 'Création…' : 'Enregistrement…') : (isCreate ? 'Créer la catégorie' : 'Enregistrer')}</button>
 
         {!isCreate && (
           <button type="button" onClick={busy ? undefined : remove} disabled={busy} style={{
@@ -835,11 +809,10 @@ function EditCategorySheet({ category, onClose, mode = 'edit', onRenamed }) {
             background: T.dangerSoftBg,
             color: T.accent2,
             border: `1px solid ${T.dangerSoftBorder}`,
-            fontSize: 12.5, fontWeight: 500, cursor: busy ? 'wait' : 'pointer',
+            fontSize: remSize(12.5), letterSpacing: tracking(12.5), fontWeight: 500, cursor: busy ? 'wait' : 'pointer',
             opacity: busy ? 0.5 : 1, display: 'flex',
             alignItems: 'center', justifyContent: 'center', gap: 6,
-            fontFamily: 'inherit',
-          }}>
+            fontFamily: 'inherit' }}>
             <SvgIcon icon={Ic.trash} size={13} />
             Supprimer la catégorie
           </button>
