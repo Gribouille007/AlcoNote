@@ -2576,16 +2576,12 @@ function SettingRow({
     icon: icon,
     size: 14,
     color: T.muted
-  }), label), value !== undefined ? /*#__PURE__*/React.createElement("span", {
+  }), label), value !== undefined && /*#__PURE__*/React.createElement("span", {
     style: {
       color: T.muted,
       ...type(12.5)
     }
-  }, value) : !danger && onClick && /*#__PURE__*/React.createElement(SvgIcon, {
-    icon: Ic.chev,
-    size: 14,
-    color: T.muted
-  }));
+  }, value));
 }
 // Interrupteur (switch) DA pour les options de partage.
 function ToggleRow({

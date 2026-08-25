@@ -162,6 +162,10 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
 }
 
 const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAdd, onDelete, first, index = 0, stagger = false }) {
+  // Abonnement thème : `T` est un objet MUTÉ sur place, donc invisible pour
+  // React — un composant memoïsé dont les props n'ont pas bougé garderait les
+  // couleurs de l'ancien thème (bug « la liste reste sombre en clair »).
+  useTheme();
   const reduced = useReducedMotion();
   const d = new Date(day + 'T00:00');
   const today = new Date(); today.setHours(0,0,0,0);
@@ -240,8 +244,10 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
 });
 const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectAdd, onDelete, first, last }) {
   // Abonnement palette : repaint sur changement de teinte de catégorie
-  // malgré React.memo (cf. useCatPalette dans shared.jsx).
+  // malgré React.memo (cf. useCatPalette dans shared.jsx). Et abonnement
+  // thème pour la même raison : `T` est muté sur place, un memo l'ignore.
   useCatPalette();
+  useTheme();
   const color = catColor(e.family.category, 70);
   const t = e.ts.slice(11, 16);
   const swipe = useSwipeToDelete(() => onDelete && onDelete(e));
@@ -249,19 +255,35 @@ const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectA
     <div style={{
       position: 'relative', overflow: 'hidden',
       borderBottom: last ? 'none' : `1px solid ${T.rule}` }}>
-      {/* Couche d'action révélée par le geste : elle apparaît et grandit
-          VERS le doigt (opacité + échelle pilotées par `apply`), au lieu
-          d'être déjà là, entière, derrière la ligne. */}
-      <div ref={swipe.actionRef} style={{
-        position: 'absolute', inset: 0, background: T.dangerBg,
-        display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-        paddingRight: 18, color: T.dangerBtnInk, ...type(12, { weight: 500 }), gap: 8,
-        cursor: 'pointer', opacity: 0, transformOrigin: 'right center',
-      }}
-        onClick={() => onDelete && onDelete(e)}>
-        <SvgIcon icon={Ic.trash} size={15} />
-        <span>Supprimer</span>
-      </div>
+      {/* Plateau d'action, DÉCOUVERT par la ligne qui s'écarte — ce n'est pas
+          une couche qui apparaît par-dessus. Il occupe toute la ligne pour
+          que le rouge accompagne un balayage franc jusqu'au bout, mais son
+          contenu reste dans une colonne fixe au bord droit : le mot ne
+          glisse pas sous le doigt. Un SEUL élément interactif (le plateau
+          est le bouton) — jamais deux imbriqués. */}
+      <button type="button" ref={swipe.actionRef}
+        onClick={() => onDelete && onDelete(e)}
+        tabIndex={swipe.open ? 0 : -1}
+        // Fermé, le plateau est invisible ET recouvert : l'annoncer ferait un
+        // « Supprimer … » fantôme par ligne dans un lecteur d'écran.
+        aria-hidden={swipe.open ? undefined : 'true'}
+        aria-label={`Supprimer ${e.family.name}`}
+        style={{
+          position: 'absolute', inset: 0, background: T.dangerBtn,
+          display: 'flex', alignItems: 'stretch', justifyContent: 'flex-end',
+          border: 'none', padding: 0, margin: 0, fontFamily: 'inherit',
+          color: T.dangerBtnInk, cursor: 'pointer', opacity: 0,
+          // Fermé, le plateau est intégralement recouvert par la ligne : on le
+          // met hors d'atteinte du pointeur pour qu'aucun tap ne puisse le
+          // trouver « à travers » un arrondi ou un pixel de débord.
+          pointerEvents: swipe.open ? 'auto' : 'none' }}>
+        <span style={{
+          width: SWIPE_ACTION_W, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+          <SvgIcon icon={Ic.trash} size={17} />
+          <span style={{ ...type(10.5, { weight: 500 }) }}>Supprimer</span>
+        </span>
+      </button>
       {/* Aucun `willChange` ici : il serait posé sur CHAQUE ligne, en
           permanence — une couche composée par ligne, avec son backing store.
           Il est armé par le geste et rendu au repos (cf. useSwipeToDelete). */}
@@ -270,6 +292,13 @@ const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectA
         padding: '12px 10px 12px 18px',
         position: 'relative', background: T.surface,
         touchAction: 'pan-y' }}>
+        {/* Ouverte, la ligne devient INERTE : ce voile intercepte le tap avant
+            « + » et « Modifier », qui agissent tous deux au relâchement. Sans
+            lui, vouloir refermer le plateau ajoutait une boisson au passage.
+            Il ne bloque pas le geste : le pointeur remonte jusqu'à la ligne,
+            qui reste traînable — et le clic est cueilli en capture au-dessus. */}
+        {swipe.open && <div aria-hidden="true" style={{
+          position: 'absolute', inset: 0, zIndex: 3, cursor: 'pointer' }} />}
         <div style={{
           position: 'absolute', left: -2, top: 0, bottom: 0,
           width: 20 }}>
@@ -313,31 +342,106 @@ const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectA
 });
 
 // Balayage pour supprimer — geste physique complet, bâti sur `useAxisDrag`
-// (cf. shared.jsx) et non sur un compteur de pixels :
-//   • la ligne colle au doigt, et RÉSISTE élastiquement si on la pousse à
-//     droite (il n'y a rien de ce côté-là : elle le dit au lieu de bloquer) ;
-//   • franchir le seuil se SENT (petite vibration) — on sait avant de lâcher
-//     que ça supprimera ;
-//   • la couche rouge se révèle progressivement et grandit VERS le doigt :
-//     les frames intermédiaires annoncent le résultat au lieu d'interpoler
-//     bêtement ;
-//   • à la relâche, c'est le point d'arrivée PROJETÉ depuis la vitesse qui
-//     tranche : un petit coup sec suffit, sans traverser tout l'écran ;
-//   • la vitesse du doigt est passée au ressort — la ligne continue sur son
-//     élan, sans couture entre le geste et l'animation ;
-//   • retour au repos en amorti CRITIQUE : un dépassement ferait
-//     réapparaître le rouge du mauvais côté.
-// Retourne les refs à poser (la ligne, la couche d'action) : le mouvement
+// (cf. shared.jsx) et non sur un compteur de pixels.
+//
+// Le geste a TROIS positions de repos, et c'est ce qui le rend facile :
+//   • fermé (0) ;
+//   • OUVERT (-SWIPE_ACTION_W) — la ligne s'accroche là et découvre un vrai
+//     bouton « Supprimer » que l'on tape tranquillement. C'est le cran qui
+//     manquait : sans lui le geste était tout-ou-rien, il fallait franchir un
+//     seuil du premier coup, sinon la ligne se rétractait et tout était à
+//     refaire (« difficile ») ;
+//   • supprimé (hors écran) — pour qui balaye franchement, ou relance la
+//     ligne d'un coup sec depuis le cran ouvert : l'action part sans repasser
+//     par la case bouton.
+//
+// Qui tranche entre les trois :
+//   • la DISTANCE réellement parcourue décide de la suppression — au-delà de
+//     la moitié de la ligne, l'intention ne fait plus de doute. La projection
+//     d'élan ne peut donc pas supprimer toute seule sur un petit geste vif ;
+//   • entre « fermé » et « ouvert », c'est le point d'arrivée PROJETÉ depuis
+//     la vitesse qui choisit le cran le plus proche : un flick court suffit à
+//     ouvrir, sans traverser l'écran.
+//
+// Le reste du contrat vient de `useAxisDrag` : suivi 1:1, résistance
+// élastique du côté où il n'y a rien, reprise en vol, avalement du clic
+// fantôme, vitesse du doigt passée au ressort (aucune couture entre le geste
+// et l'animation).
+//
+// Retourne les refs à poser (la ligne, le plateau d'action) : le mouvement
 // s'écrit dans le DOM, jamais via un état React re-rendu à chaque frame.
-const SWIPE_COMMIT_PX = 72;   // engagement de la suppression
-const SWIPE_FLING_V = 300;    // px/s : au-delà, le signe de la vitesse décide
-const SWIPE_RUBBER_DIM = 90;  // amplitude de résistance du mauvais côté
+const SWIPE_ACTION_W = 88;      // largeur du plateau d'action (= cran ouvert)
+const SWIPE_COMMIT_RATIO = 0.5; // fraction de la ligne au-delà de laquelle c'est supprimé
+const SWIPE_COMMIT_MIN = 150;   // …avec un plancher, pour les lignes étroites
+const SWIPE_FLING_V = 320;      // px/s : au-delà, c'est un lancer, pas un glissement
+const SWIPE_RUBBER_DIM = 90;    // amplitude de résistance du mauvais côté
+
+// Point de non-retour, en fonction de la largeur RÉELLE de la ligne : le même
+// geste doit vouloir dire la même chose sur un petit téléphone et sur la
+// maquette large du desktop.
+function swipeCommitThreshold(width) {
+  const w = Number.isFinite(width) && width > 0 ? width : 420;
+  return -Math.max(SWIPE_COMMIT_MIN, w * SWIPE_COMMIT_RATIO);
+}
+
+// Verdict du balayage — fonction PURE (donc testable) : depuis l'état du
+// relâchement, elle dit sur lequel des trois crans la ligne se pose. Aucune
+// décision de geste ne vit dans le JSX ni dans un handler (cf. CLAUDE.md :
+// les calculs sont des helpers purs exportés).
+function swipeVerdict({ from, velocity, projected, width, fromOpen = false }) {
+  const w = Number.isFinite(width) && width > 0 ? width : 420;
+  const x = Number.isFinite(from) ? from : 0;
+  const v = Number.isFinite(velocity) ? velocity : 0;
+  const p = Number.isFinite(projected) ? projected : x;
+  // Suppression, cas général : le doigt est allé au-delà du point de
+  // non-retour. C'est la DISTANCE parcourue qui commande — jamais la seule
+  // projection d'élan, sinon un geste court mais vif supprimerait par surprise
+  // et le cran ouvert deviendrait inatteignable.
+  if (x <= swipeCommitThreshold(w)) return { to: -w, commit: true, open: false };
+  // Raccourci : la ligne était DÉJÀ ouverte au repos et on la relance d'un
+  // coup sec. L'intention ne fait pas de doute, inutile de traverser l'écran.
+  // Réservé à ce cas précis : au milieu d'un premier balayage, la vitesse ne
+  // doit rien pouvoir supprimer.
+  if (fromOpen && v < -SWIPE_FLING_V && x <= -SWIPE_ACTION_W) {
+    return { to: -w, commit: true, open: false };
+  }
+  // Sinon, le cran le plus proche du point d'arrivée PROJETÉ : un flick court
+  // suffit à ouvrir. Un lancer vers la droite referme, quelle que soit la
+  // projection.
+  const to = nearestSnapPoint(v > SWIPE_FLING_V ? 0 : p, [0, -SWIPE_ACTION_W]);
+  return { to, commit: false, open: to === -SWIPE_ACTION_W };
+}
+
+// Une seule ligne ouverte à la fois dans toute la liste. Deux plateaux rouges
+// ouverts en même temps, ce sont deux suppressions à un tap et plus aucune
+// idée de laquelle est armée : saisir une ligne referme l'autre. Registre au
+// niveau MODULE (et non un contexte React) : la fermeture part d'un handler
+// de geste, à chaud, sans re-render intermédiaire.
+let openSwipeRow = null;
+function closeOpenSwipeRow(except) {
+  if (!openSwipeRow || openSwipeRow === except) return;
+  const closer = openSwipeRow.close;
+  openSwipeRow = null;
+  if (closer) closer();
+}
 
 function useSwipeToDelete(onAction) {
   const rowRef = React.useRef(null);
   const actionRef = React.useRef(null);
   const widthRef = React.useRef(0);
   const armedRef = React.useRef(false);
+  // Position de repos courante, lue à chaud par les handlers. Le state React
+  // qui la double ne sert qu'à l'accessibilité du bouton (cf. plus bas) : il
+  // ne change qu'aux crans, jamais pendant le mouvement.
+  const openRef = React.useRef(false);
+  // État de repos AU DÉBUT du geste : c'est lui qui autorise le raccourci
+  // « relance sèche depuis le cran ouvert » (cf. swipeVerdict).
+  const wasOpenRef = React.useRef(false);
+  // Un vrai glissement vient-il d'avoir lieu ? Le clic FANTÔME qui suit un
+  // glissement ne doit pas refermer la ligne que ce glissement vient d'ouvrir.
+  const draggedRef = React.useRef(false);
+  const [open, setOpen] = React.useState(false);
+  const selfRef = React.useRef({ close: null });
   // La couche composée n'existe que le temps du geste : armée quand l'axe est
   // engagé (onMove), rendue au repos du ressort (onRest). Une liste de plusieurs
   // centaines de lignes ne peut pas garder autant de calques en mémoire.
@@ -348,9 +452,12 @@ function useSwipeToDelete(onAction) {
     if (row) row.style.transform = `translate3d(${x}px, 0, 0)`;
     const act = actionRef.current;
     if (act) {
-      const p = Math.max(0, Math.min(1, -x / SWIPE_COMMIT_PX));
+      // Le plateau est full-bleed : il s'élargit tout seul à mesure que la
+      // ligne le découvre, sans rien à animer. Seul son CONTENU (icône + mot)
+      // se révèle — il reste collé au bord droit, comme sur iOS, et
+      // n'apparaît qu'une fois qu'il a la place d'être lu.
+      const p = Math.max(0, Math.min(1, -x / SWIPE_ACTION_W));
       act.style.opacity = String(p);
-      act.style.transform = `scale(${(0.92 + 0.08 * p).toFixed(3)})`;
     }
   }, []);
 
@@ -359,35 +466,98 @@ function useSwipeToDelete(onAction) {
     config: MOTION.spring.ui,
     onStart: () => {
       armedRef.current = false;
+      draggedRef.current = false;
+      wasOpenRef.current = openRef.current;
+      closeOpenSwipeRow(selfRef.current);
       const row = rowRef.current;
       if (row && row.getBoundingClientRect) {
         const w = row.getBoundingClientRect().width;
         if (w > 0) widthRef.current = w;
       }
     },
+    // Vers la gauche rien ne borne (on peut aller jusqu'à la suppression) ;
+    // vers la droite il n'y a RIEN — la ligne le dit en résistant plutôt
+    // qu'en bloquant net.
     bounds: () => ({ min: null, max: 0, dimension: SWIPE_RUBBER_DIM }),
     onMove: (x) => {
       // `onMove` n'est appelé qu'une fois l'axe engagé : un simple tap (ou un
       // défilement vertical) ne promeut donc jamais la ligne.
       hint(true);
-      const past = x <= -SWIPE_COMMIT_PX;
+      draggedRef.current = true;
+      // Franchir le point de non-retour se SENT : on sait avant de lâcher que
+      // ça supprimera au lieu de s'arrêter au cran ouvert.
+      const past = x <= swipeCommitThreshold(widthRef.current);
       if (past !== armedRef.current) { armedRef.current = past; haptic('tick'); }
     },
     onRest: () => hint(false),
-    decide: ({ velocity, projected }) => {
-      const commit = Math.abs(velocity) > SWIPE_FLING_V
-        ? velocity < 0
-        : projected < -SWIPE_COMMIT_PX;
+    decide: ({ from, velocity, projected }) => {
+      const v = swipeVerdict({
+        from, velocity, projected,
+        width: widthRef.current, fromOpen: wasOpenRef.current,
+      });
+      setOpenState(v.open);
       return {
-        to: commit ? -(widthRef.current || 420) : 0,
-        commit,
-        config: commit ? MOTION.spring.flick : MOTION.spring.ui,
+        to: v.to, commit: v.commit,
+        config: v.commit ? MOTION.spring.flick : MOTION.spring.ui,
       };
     },
     onCommit: () => { haptic('commit'); onAction && onAction(); },
   });
 
-  return { rowRef, actionRef, dragging: drag.dragging, handlers: drag.handlers };
+  // Le SEUL setState du geste : il se produit au verdict, pas une frame
+  // d'animation ne re-rend l'arbre.
+  function setOpenState(next) {
+    if (openRef.current === next) return;
+    openRef.current = next;
+    setOpen(next);
+    if (next) { openSwipeRow = selfRef.current; haptic('select'); }
+    else if (openSwipeRow === selfRef.current) openSwipeRow = null;
+  }
+
+  const close = React.useCallback(() => {
+    if (!openRef.current) return;
+    openRef.current = false;
+    setOpen(false);
+    if (openSwipeRow === selfRef.current) openSwipeRow = null;
+    // Le ressort repart de la valeur AFFICHÉE : refermer pendant que la ligne
+    // bouge encore ne provoque aucun saut (et `apply` remet le plateau au clair).
+    drag.spring.set(0, { config: MOTION.spring.ui });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  selfRef.current.close = close;
+
+  // Démontage (suppression, filtre, changement de jour) : la ligne ne doit pas
+  // rester inscrite comme « celle qui est ouverte », sinon la suivante attend
+  // une fermeture qui ne viendra jamais.
+  React.useEffect(() => {
+    const self = selfRef.current;
+    return () => { if (openSwipeRow === self) openSwipeRow = null; };
+  }, []);
+
+  const handlers = {
+    ...drag.handlers,
+    // Ouverte, la ligne n'est plus une ligne : le premier tap la referme, il
+    // n'ouvre pas la fiche derrière. En phase de CAPTURE, avant tout bouton
+    // interne — et sauf sur le plateau lui-même, dont c'est le rôle d'agir.
+    onClickCapture: (e) => {
+      // Le garde anti-clic fantôme de `useAxisDrag` passe D'ABORD : le clic
+      // qui n'est que la queue d'un glissement ne doit rien déclencher — et
+      // surtout pas refermer la ligne que ce glissement vient d'ouvrir.
+      if (drag.handlers.onClickCapture) drag.handlers.onClickCapture(e);
+      if (draggedRef.current) { draggedRef.current = false; return; }
+      if (openRef.current && !(actionRef.current && actionRef.current.contains(e.target))) {
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+      }
+    },
+  };
+
+  return { rowRef, actionRef, dragging: drag.dragging, open, close, handlers };
 }
 
-Object.assign(window, { HistoryTab, DayGroup, EntryRow, useSwipeToDelete });
+Object.assign(window, {
+  HistoryTab, DayGroup, EntryRow, useSwipeToDelete, closeOpenSwipeRow,
+  swipeVerdict, swipeCommitThreshold,
+  SWIPE_ACTION_W, SWIPE_COMMIT_RATIO, SWIPE_COMMIT_MIN, SWIPE_FLING_V,
+});

@@ -1518,8 +1518,12 @@ function SettingRow({ label, value, icon, danger, last, onClick }) {
         {icon && <SvgIcon icon={icon} size={14} color={T.muted}/>}
         {label}
       </span>
-      {value !== undefined ? <span style={{ color: T.muted, ...type(12.5) }}>{value}</span>
-        : (!danger && onClick) && <SvgIcon icon={Ic.chev} size={14} color={T.muted} />}
+      {/* Pas de chevron d'affordance : la rangée entière est le bouton, elle
+          répond déjà à l'appui (`.alco-press-soft`), et un chevron VERS LE BAS
+          annonçait à tort un dépliage alors que la rangée lance une action
+          (export, import, copie). Une valeur à droite, quand il y en a une,
+          est la seule chose que ce bord ait à dire. */}
+      {value !== undefined && <span style={{ color: T.muted, ...type(12.5) }}>{value}</span>}
     </Tag>
   );
 }

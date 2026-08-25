@@ -1362,6 +1362,10 @@ function GeneralSection({
 // re-render of the parent doesn't ripple through every tile when only
 // one of them actually changed.
 const StatCell = React.memo(function StatCell({ value, label, icon, delta, period, index = 0 }) {
+  // Abonnement thème : `T` est un objet MUTÉ sur place, donc invisible pour
+  // React — un composant memoïsé dont les props n'ont pas bougé garderait
+  // les couleurs de l'ancien thème (bug « la liste reste sombre en clair »).
+  useTheme();
   const reduced = useReducedMotion();
   // La cascade se joue à l'ouverture de la section (les cellules sont montées
   // par <Collapse>) puis PLUS JAMAIS : sans cette garde elle rejoue à chaque
@@ -1397,6 +1401,10 @@ const StatCell = React.memo(function StatCell({ value, label, icon, delta, perio
 // it visual weight matching the BAC gauge below; same primitive could
 // host future hero metrics (longest sober streak, …) without dupe.
 const HeroStatCard = React.memo(function HeroStatCard({ icon, label, value, suffix }) {
+  // Abonnement thème : `T` est un objet MUTÉ sur place, donc invisible pour
+  // React — un composant memoïsé dont les props n'ont pas bougé garderait
+  // les couleurs de l'ancien thème (bug « la liste reste sombre en clair »).
+  useTheme();
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,

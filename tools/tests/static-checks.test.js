@@ -135,6 +135,50 @@ test('DA : composant React.memo qui peint catColor/catBg → useCatPalette() obl
     'composants memoïsés peignant une couleur de catégorie sans abonnement palette');
 });
 
+test('DA : composant React.memo qui lit T.* → useTheme() obligatoire', () => {
+  // Même piège que la palette de catégories, une couche plus bas : `T` n'est
+  // pas un state React mais un objet MUTÉ SUR PLACE par setTheme(). Le
+  // changement est donc invisible pour React — un composant memoïsé dont les
+  // props n'ont pas bougé ne se re-rend pas et repeint l'ancien thème (bug
+  // historique « je passe en clair, la liste et les charts restent sombres »).
+  // useTheme() s'abonne à __themeListeners et force le re-render : tout
+  // composant memoïsé qui lit un token doit l'appeler.
+  const offenders = [];
+  // Corps d'une fonction par équilibrage d'accolades depuis `from`.
+  const bodyAt = (src, from) => {
+    const open = src.indexOf('{', src.indexOf(')', from));
+    if (open === -1) return '';
+    let depth = 0;
+    for (let i = open; i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}') { depth--; if (depth === 0) return src.slice(open, i + 1); }
+    }
+    return '';
+  };
+  for (const f of jsxFiles) {
+    const src = read(path.join('proto', f));
+    const memoised = new Map();
+    let m;
+    // Forme 1 — `React.memo(function Nom(…) {…})`, memoïsé à la déclaration.
+    const inline = /React\.memo\(function\s+(\w+)/g;
+    while ((m = inline.exec(src)) !== null) memoised.set(m[1], bodyAt(src, m.index));
+    // Forme 2 — `Nom = React.memo(Nom);`, memoïsé au boundary (stats-charts).
+    const wrapped = /^\s*(\w+)\s*=\s*React\.memo\((\w+)\);/gm;
+    while ((m = wrapped.exec(src)) !== null) {
+      if (m[1] !== m[2]) continue;
+      const decl = src.indexOf('function ' + m[1] + '(');
+      if (decl !== -1) memoised.set(m[1], bodyAt(src, decl));
+    }
+    for (const [name, body] of memoised) {
+      if (/\bT\.[a-zA-Z]/.test(body) && !body.includes('useTheme()')) {
+        offenders.push(`proto/${f} › ${name}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [],
+    `composants memoïsés lisant un token de thème sans useTheme() :\n${offenders.join('\n')}`);
+});
+
 // ── Typographie : l'approche suit la TAILLE, jamais une valeur en dur ──
 test('DA : aucune taille/approche en dur — remSize()/tracking()/type() partout', () => {
   // Une seule valeur d'approche pour toutes les tailles est forcément fausse
@@ -218,7 +262,10 @@ test('perf : `will-change` n’est jamais posé en style PERMANENT', () => {
   ]);
   const offenders = [];
   for (const f of jsxFiles) {
-    const file = path.join('proto', f);
+    // Chemin POSIX explicite : `path.join` produirait `proto\app.jsx` sous
+    // Windows, que la liste blanche (en slashes) ne reconnaîtrait pas — le
+    // check échouait sur la seule exception légitime, hors de tout bug réel.
+    const file = `proto/${f}`;
     if (allowed.has(file)) continue;
     read(file).split('\n').forEach((line, i) => {
       if (/^\s*(\/\/|\*|\{?\/\*)/.test(line)) return;   // commentaires
@@ -343,6 +390,50 @@ test('build : chaque proto/X.jsx a son proto/dist/X.js', () => {
     const dist = path.join(ROOT, 'proto', 'dist', f.replace(/\.jsx$/, '.js'));
     assert.ok(fs.existsSync(dist), `dist manquant pour proto/${f} — lancer npm run build`);
   }
+});
+
+test('orientation : l’app refuse le paysage — les trois mécanismes en place', () => {
+  // Aucun ne suffit seul : le manifeste ne vaut que pour une PWA installée
+  // sous Android, l'API `lock()` n'existe pas sur iOS, et seul le garde CSS
+  // couvre iOS Safari (et l'instant d'avant le boot de React).
+  const manifest = JSON.parse(read('manifest.json'));
+  assert.match(String(manifest.orientation || ''), /^portrait/,
+    'manifest.json : orientation portrait');
+
+  const shared = read('proto/shared.jsx');
+  assert.match(shared, /function installOrientationLock\(/,
+    'verrou d’orientation absent de shared.jsx');
+  assert.match(shared, /orientation\.lock\('portrait'\)|o\.lock\('portrait'\)/,
+    'screen.orientation.lock(\'portrait\') attendu');
+
+  const html = read('index.html');
+  assert.match(html, /id="alco-rotate"/, 'garde CSS absent du HTML');
+  assert.match(html, /@media \(orientation: landscape\) and \(max-height: \d+px\)/,
+    'le garde doit viser le paysage SUR UN TÉLÉPHONE — un desktop en 1280×800 ' +
+    'est en paysage lui aussi et n’a aucune raison d’être bloqué');
+  // Le garde masque le contenu au lieu de seulement le recouvrir : un lecteur
+  // d'écran ne doit pas continuer à parcourir une app qu'on vient de refuser.
+  assert.match(html, /#root, #alco-splash \{ visibility: hidden; \}/,
+    'le contenu doit être masqué sous le garde');
+});
+
+test('DA : plus de chevron « vers le bas » sur les rangées d’action des Paramètres', () => {
+  // Un chevron VERS LE BAS annonce un dépliage. Sur une rangée qui lance une
+  // action (Exporter, Importer, copier le code), il promettait autre chose que
+  // ce qui se passe — et n'ajoutait aucune information : la rangée entière est
+  // le bouton, et elle répond déjà à l'appui.
+  const src = read('proto/modals.jsx');
+  const start = src.indexOf('function SettingRow(');
+  assert.ok(start > 0, 'SettingRow introuvable');
+  const open = src.indexOf('{', src.indexOf(')', start));
+  let depth = 0, end = open;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+  }
+  const body = src.slice(open, end + 1);
+  assert.ok(!/Ic\.chev\b/.test(body),
+    'SettingRow ne doit plus rendre Ic.chev (chevron vers le bas)');
 });
 
 // ── Service worker ─────────────────────────────────────────────────

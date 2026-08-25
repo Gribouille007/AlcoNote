@@ -1902,6 +1902,10 @@ const StatCell = React.memo(function StatCell({
   period,
   index = 0
 }) {
+  // Abonnement thème : `T` est un objet MUTÉ sur place, donc invisible pour
+  // React — un composant memoïsé dont les props n'ont pas bougé garderait
+  // les couleurs de l'ancien thème (bug « la liste reste sombre en clair »).
+  useTheme();
   const reduced = useReducedMotion();
   // La cascade se joue à l'ouverture de la section (les cellules sont montées
   // par <Collapse>) puis PLUS JAMAIS : sans cette garde elle rejoue à chaque
@@ -1975,6 +1979,10 @@ const HeroStatCard = React.memo(function HeroStatCard({
   value,
   suffix
 }) {
+  // Abonnement thème : `T` est un objet MUTÉ sur place, donc invisible pour
+  // React — un composant memoïsé dont les props n'ont pas bougé garderait
+  // les couleurs de l'ancien thème (bug « la liste reste sombre en clair »).
+  useTheme();
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',

@@ -23,6 +23,18 @@ valeur en dur.
   `rgb()`, ni `oklch(...)` inline dans les composants. Les exceptions
   (couleurs OKLCH dans `BAC_LEVELS`, `bacColor`, niveaux d'alerte) sont
   centralisées et nommées.
+- **Abonnement au thème** : `T` n'est pas un state React, c'est un objet
+  **muté sur place** par `setTheme()` — la bascule clair/sombre est donc
+  INVISIBLE pour React. Un composant se re-rend parce que son parent se
+  re-rend… sauf s'il est `React.memo` : ses props n'ont pas bougé, il
+  repeint l'ancien thème (bug historique « je passe en clair, la liste
+  et les charts restent sombres »). **Tout composant `React.memo` qui lit
+  un `T.*` appelle `useTheme()`** — le hook s'abonne à
+  `__themeListeners` et force le re-render. Même piège, même remède que
+  `useCatPalette()` ci-dessous ; les deux sont cumulatifs et vérifiés par
+  static-checks (les deux formes sont couvertes :
+  `React.memo(function X…)` et `X = React.memo(X)` au bas de
+  `stats-charts.jsx`).
 - **Couleurs de catégorie** : `catColor`/`catBg`/`defaultCatHue`
   canonicalisent le nom en interne (`canonicalCat`) — jamais de lookup
   `CAT[nom brut]`. La palette vit dans le registre module `CAT` (muté
@@ -176,12 +188,19 @@ Node ≥ 20, zéro framework) :
   ressorts (dépassement selon l'amortissement, indépendance à la cadence,
   conservation de la vitesse au retarget), projection d'élan, élastique,
   fenêtre de vitesse, et courbe d'approche typographique.
+  `unit-swipe.test.js` couvre le verdict du balayage de suppression
+  (les trois crans, et l'invariant « la vitesse seule ne supprime jamais »).
 - **DB** (`db*.test.js`) : `js/database.js` sur `fake-indexeddb`
   (conversions d'unités, settings, migrations v4→v5, import/export).
 - **Intégration** (`app-*.test.js`) : la vraie app compilée bootée sous
   jsdom + fake-indexeddb + transport de partage mock
   (`helpers/boot-app.js`). Toujours appeler `cleanup()` dans `after()`
-  (ferme la fenêtre jsdom → purge les intervalles 60 s BAC/share).
+  (ferme la fenêtre jsdom → purge les intervalles 60 s BAC/share). Dont
+  `app-gestures.test.js` : ce que seul l'arbre RÉEL peut prouver — le
+  thème repeint jusque dans les composants `React.memo` (lignes
+  d'historique ET charts), la roue crante (un tick et une valeur par cran
+  franchi, aucun tick pour un saut programmé), et le balayage s'arrête au
+  cran ouvert.
 - **Checks statiques** (`static-checks.test.js`) : lint DA sur les
   sources (couleurs en dur, tailles/approches en dur, `<input
   type="number">`, `<svg>` inline, `window.confirm`), gel des constantes
@@ -222,13 +241,39 @@ Définies dans `shared.jsx` (chargé en premier, donc disponibles partout) :
   `RatingField({ value, onChange, size })`, `FieldGroup({ label, children })`.
 - `TimeField({ value, onChange, ariaLabel })` : champ « Heure » (state
   `'HH:MM'`) stylé comme un input, qui ouvre une **roue iOS**
-  (`TimeWheelSheet` → deux `WheelPicker` heures/minutes). Remplace
-  `<input type="time">` (peu fluide sur Android). Le `WheelPicker` utilise
-  l'accrochage CSS natif (`.alco-wheel`, scroll-snap) + `wheelIndexForOffset`
-  pour l'accrochage au relâchement ; **chaque item est un bouton
-  tap-to-select** (seul chemin testable sous jsdom — pas de scroll réel) et
-  les flèches clavier déplacent la sélection. La **date** reste un
+  (`TimeWheelSheet` → un `WheelGroup` de deux `WheelPicker`). Remplace
+  `<input type="time">` (peu fluide sur Android). La **date** reste un
   `<input type="date">` natif.
+
+  **La roue CRANTE sous le doigt.** Chaque fois que le centre passe sur un
+  item, `WheelPicker` vibre (`haptic('tick')`) ET notifie `onChange` — sur
+  la MÊME frame, comme la roue par défaut d'iOS. Ne jamais revenir à une
+  notification à l'arrêt du défilement : on n'avait alors qu'une seule
+  vibration, détachée du geste, et un item « sélectionné » qui n'attrapait
+  le centre qu'après coup. Trois pièces rendent ça sûr :
+  - `liveRef` — dernier cran FRANCHI. Il distingue « le doigt vient de
+    passer un cran » (tick + notification) de « la valeur a changé depuis
+    l'extérieur » (repositionnement silencieux). Sans lui, l'effet de
+    repositionnement corrigerait `scrollTop` à chaque cran et arracherait
+    la roue des doigts.
+  - `programmaticRef` — un défilement PROGRAMMÉ (tap sur un cran lointain,
+    flèche clavier) traverse des dizaines de crans sans tous les faire
+    vibrer. Il n'est armé que si le défilement va réellement avoir lieu, et
+    tout contact du doigt le lève.
+  - le galbe est piloté par la POSITION de défilement
+    (`animation-timeline: view(y)`, CSS pur, sous `@supports`) : le relief
+    suit le doigt exactement sans qu'une seule frame de JS ne s'en mêle.
+    Repli discret en trois paliers (styles inline) sur les moteurs sans
+    timeline — une animation CSS l'emporte sur un style inline, la
+    substitution se fait donc sans condition à tester.
+
+  La maille vit dans le spec **`WHEEL`** (hauteur de cran, crans visibles,
+  largeur de colonne, paliers du repli) — jamais un nombre en dur dans le
+  composant. `WheelGroup` porte UNE bande de sélection en travers de
+  plusieurs colonnes : « 07:30 » se lit comme une valeur, pas comme deux
+  listes voisines. Chaque item reste un **bouton tap-to-select** (seul
+  chemin testable sous jsdom — pas de scroll réel) et les flèches clavier
+  déplacent la sélection.
 
 Les sheets d'add/édition (`AddDrinkSheet`, `EditEntrySheet`,
 `EditFamilySheet`) et le poids (Paramètres › `ProfileRow numeric`)
@@ -332,6 +377,40 @@ toucher de l'app, jamais un détail.
 **Règle** : un nouveau geste passe par `useAxisDrag`. Réécrire des
 `onPointerDown/Move/Up` à la main, c'est réintroduire les bugs qu'il
 corrige (vérifié par static-checks pour les trois gestes existants).
+
+**Balayage pour supprimer** (`useSwipeToDelete`, history.jsx) — trois
+positions de repos, et c'est ce qui le rend facile :
+- fermé (0) ;
+- **OUVERT** (`-SWIPE_ACTION_W`) : la ligne s'accroche là et découvre un
+  vrai bouton « Supprimer » qu'on tape tranquillement. C'est le cran qui
+  manquait : sans lui le geste était tout-ou-rien, il fallait franchir un
+  seuil du premier coup, sinon la ligne se rétractait et tout était à
+  refaire ;
+- supprimé (hors écran).
+
+Qui tranche, et pourquoi : la **DISTANCE** réellement parcourue décide de
+la suppression (au-delà de la moitié de la ligne — une fraction de la
+largeur MESURÉE, pas un nombre de pixels : le même geste doit vouloir dire
+la même chose sur un petit téléphone et sur la maquette large). La
+projection d'élan, elle, ne choisit qu'entre « fermé » et « ouvert » — un
+flick court suffit à ouvrir. Sans cette séparation, un geste bref mais vif
+projetait au-delà du seuil et supprimait par surprise. Seule exception :
+la ligne **déjà ouverte au repos** (`fromOpen`) qu'on relance d'un coup
+sec — là l'intention ne fait pas de doute.
+
+Tout ça vit dans `swipeVerdict({ from, velocity, projected, width,
+fromOpen })`, **fonction pure exportée** (`unit-swipe.test.js` : cas
+nominaux + invariants sur des balayages entiers) — jamais une décision de
+geste enfouie dans un handler. Trois détails qui ne se voient qu'à
+l'usage :
+- une **seule ligne ouverte** à la fois (registre au niveau module, pas un
+  contexte : la fermeture part d'un handler de geste, à chaud) ;
+- ouverte, la ligne devient **inerte** (voile au-dessus du contenu) : « + »
+  et « Modifier » agissent au relâchement, sans voile un tap destiné à
+  refermer ajoutait une boisson au passage ;
+- le **clic fantôme** qui suit un vrai glissement est avalé AVANT la règle
+  « ouverte, un tap referme » — sinon le geste refermait aussitôt ce qu'il
+  venait d'ouvrir.
 
 `apply` doit rester le SEUL point d'écriture du DOM pour un geste donné :
 le doigt et le ressort passent par la même fonction, ils ne peuvent donc
@@ -637,6 +716,30 @@ double-tap / Ctrl+molette dans `installZoomGuards()`, shared.jsx). Ne
 jamais réintroduire un mécanisme qui en dépend ; le zoom interne de la
 carte Leaflet reste fonctionnel.
 
+**Orientation** : l'app est PORTRAIT, toujours. Une mise en page pensée
+pour une colonne de pouce n'a rien à dire en paysage — les feuilles du bas
+mangent l'écran, la barre d'onglets touche le contenu, la jauge BAC n'a
+plus de hauteur. Aucun mécanisme ne couvre seul tous les moteurs, il en
+faut donc trois, et il faut les GARDER tous les trois :
+1. `"orientation": "portrait-primary"` (manifest.json) — Android, PWA
+   installée ;
+2. `installOrientationLock()` (shared.jsx) → `screen.orientation.lock()`,
+   verrou RÉEL mais qui n'existe que sur Android (et seulement en plein
+   écran / installé). Il échoue silencieusement partout ailleurs : c'est
+   le cas NORMAL, pas une erreur (il jette en synchrone sur certains
+   moteurs, rejette une promesse sur d'autres — les deux sont attrapés),
+   et il est reposé au retour au premier plan ;
+3. le garde `#alco-rotate` (index.html) — le SEUL recours sur iOS Safari,
+   qui ignore les deux premiers. Markup + styles vivent dans le HTML : il
+   couvre donc aussi l'instant d'avant le boot de React, et une
+   média-requête ne peut pas se désynchroniser d'un état JS.
+La requête vise le paysage **sur un écran de téléphone**
+(`(orientation: landscape) and (max-height: 520px)`) : un desktop ou une
+tablette en 1280×800 est en paysage lui aussi et n'a aucune raison d'être
+bloqué. Le garde masque le contenu (`visibility: hidden`) au lieu de
+seulement le recouvrir — un lecteur d'écran ne doit pas continuer à
+parcourir une app qu'on vient de refuser. Vérifié par static-checks.
+
 ### Sheets / overlays
 
 - `SheetOverlay` accepte `side: 'bottom' | 'left' | 'right'` et porte
@@ -684,6 +787,13 @@ carte Leaflet reste fonctionnel.
   (`role`, `aria-label`, `tabIndex` au besoin).
 - Préférer `Confirm.ask({ title, message, confirmText, danger })` au
   `window.confirm` natif.
+- **Rangées de réglage** (`SettingRow`) : pas de chevron d'affordance. Un
+  chevron VERS LE BAS annonce un dépliage ; sur une rangée qui lance une
+  action (Exporter, Importer, copier le code) il promettait autre chose
+  que ce qui se passe, et n'ajoutait aucune information — la rangée
+  entière EST le bouton et répond déjà à l'appui (`.alco-press-soft`).
+  Seule une valeur à droite (« Membres · 3 ») a quelque chose à dire.
+  Vérifié par static-checks.
 
 ### Icônes
 
@@ -965,7 +1075,13 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
 - Edit d'une famille : toutes les entrées migrées d'un coup.
 - Suppression d'une entrée depuis le détail : si dernière, sheet se
   ferme ; sinon timeline mise à jour.
-- Swipe gauche dans Historique → suppression.
+- **Balayage dans Historique** : un petit balayage vers la gauche ACCROCHE
+  la ligne sur le plateau « Supprimer » (elle ne se rétracte plus) ; taper
+  le plateau supprime ; taper ailleurs sur la ligne la referme SANS ajouter
+  de boisson ni ouvrir la fiche ; ouvrir une autre ligne referme la
+  première ; un balayage franc au-delà de la moitié de la ligne supprime
+  directement (vibration au franchissement du point de non-retour) ; un
+  balayage bref mais vif n'efface JAMAIS par surprise.
 - BAC : ajouter une bière maintenant et vérifier que la pilule
   d'en-tête monte, que la projection se courbe, que le scrubber suit
   le doigt.
@@ -980,8 +1096,23 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
   courbe (jusqu'à 0) rentre dans le graphe, sans fin coupée au bord droit.
 - **Calendrier / Sessions** : la heatmap colore les jours selon les
   grammes ; la liste Sessions montre date, durée, pic ; tap → tooltip.
-- **Heure (roue)** : le champ Heure ouvre une roue ; faire défiler/​taper
-  une heure et une minute, OK → l'heure est posée ; fluide sur Android.
+- **Heure (roue)** : le champ Heure ouvre une roue ; le défilement CRANTE —
+  une petite vibration à CHAQUE minute/heure franchie, et le chiffre centré
+  change en même temps que le doigt (pas à l'arrêt) ; les crans voisins
+  s'inclinent et s'éloignent comme les faces d'un cylindre ; taper un cran
+  lointain n'égrène PAS toutes les vibrations du trajet ; OK → l'heure est
+  posée ; fluide sur Android.
+- **Thème** : basculer clair ↔ sombre depuis Paramètres, puis parcourir les
+  TROIS onglets — aucune carte, ligne d'historique, cellule de stat ni
+  chart ne doit rester peint dans l'ancien thème.
+- **Orientation** : tourner le téléphone en paysage sur chaque onglet et
+  avec une feuille ouverte → l'app ne bascule jamais ; sur iOS le garde
+  « Tourne ton téléphone » couvre l'écran et disparaît au retour en
+  portrait, sans rien perdre de l'état en cours. Sur un écran large
+  (tablette, desktop), le garde ne doit JAMAIS apparaître.
+- **Paramètres** : les rangées d'action (Exporter, Importer, Code
+  d'invitation…) n'affichent plus de chevron ; les valeurs à droite
+  (Membres) restent.
 - **Couleur de catégorie** : « Modifier » → slider Teinte ; la pastille/
   l'icône se recolorent en direct ; « Auto » revient au défaut ; la
   couleur persiste au reload et survit à un renommage. **Changer

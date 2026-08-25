@@ -720,6 +720,11 @@ function SvgBarChart({
   valueLabel,
   ariaLabel = 'Diagramme en barres'
 }) {
+  // Abonnement thème : les couleurs sont lues sur `T`, un objet MUTÉ sur
+  // place — invisible pour React. Ces primitives sont memoïsées au boundary
+  // (bas de fichier) : sans cet abonnement, un chart garde la palette de
+  // l'ancien thème tant que ses données ne bougent pas.
+  useTheme();
   const pad = CHART.pad.bar;
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
@@ -845,6 +850,7 @@ function SvgRadar({
   valueLabel,
   ariaLabel = 'Radar par jour'
 }) {
+  useTheme(); // cf. SvgBarChart : `T` est muté sur place, un memo l'ignore.
   const cx = size / 2,
     cy = size / 2;
   const r = size / 2 - CHART.pad.radar;
@@ -1011,6 +1017,7 @@ function SvgDonut({
   thickness = CHART.donut.thickness,
   ariaLabel = 'Répartition par catégorie'
 }) {
+  useTheme(); // cf. SvgBarChart : `T` est muté sur place, un memo l'ignore.
   const cx = size / 2,
     cy = size / 2;
   const r = size / 2 - thickness / 2 - 2;
@@ -1158,6 +1165,7 @@ function SvgLineChart({
   // Traits de série teintés via catColor → abonnement palette (React.memo
   // bloquerait sinon le repaint sur changement de teinte, cf. useCatPalette).
   useCatPalette();
+  useTheme(); // cf. SvgBarChart : `T` est muté sur place, un memo l'ignore.
   const idSuffix = React.useId().replace(/:/g, '');
   const pad = CHART.pad.cartesian;
   const w = width - pad.l - pad.r;
@@ -1315,6 +1323,7 @@ function SvgPolarClock({
   size = 260,
   ariaLabel = 'Horloge des consommations sur 24 heures'
 }) {
+  useTheme(); // cf. SvgBarChart : `T` est muté sur place, un memo l'ignore.
   const cx = size / 2,
     cy = size / 2;
   const rOuter = size / 2 - CHART.pad.clockOuter;
@@ -1483,6 +1492,7 @@ function SvgBACProjection({
   height = 200,
   nowMs = Date.now()
 }) {
+  useTheme(); // cf. SvgBarChart : `T` est muté sur place, un memo l'ignore.
   // Hooks always run first and unconditionally so React's hook order
   // stays stable even when the component is rendered with empty input.
   const idSuffix = React.useId().replace(/:/g, '');
@@ -1832,6 +1842,7 @@ function SvgBACForecast({
   height = 200,
   nowMs = Date.now()
 }) {
+  useTheme(); // cf. SvgBarChart : `T` est muté sur place, un memo l'ignore.
   const idSuffix = React.useId().replace(/:/g, '');
   const svgRef = React.useRef(null);
   const [scrubT, setScrubT] = React.useState(null);
@@ -2267,6 +2278,7 @@ function SvgHistogram({
   valueLabel,
   ariaLabel = 'Histogramme de distribution'
 }) {
+  useTheme(); // cf. SvgBarChart : `T` est muté sur place, un memo l'ignore.
   const pad = CHART.pad.bar;
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
@@ -2395,6 +2407,7 @@ function SvgCalendarHeatmap({
   width = 320,
   ariaLabel = 'Calendrier de consommation'
 }) {
+  useTheme(); // cf. SvgBarChart : `T` est muté sur place, un memo l'ignore.
   const svgRef = React.useRef(null);
   const [hover, setHover] = React.useState(null);
   const {

@@ -1638,13 +1638,43 @@ function useSWVersion() {
     .alco-wheel {
       overflow-y: auto; scroll-snap-type: y mandatory;
       -webkit-overflow-scrolling: touch; scrollbar-width: none;
-      -webkit-mask-image: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent);
-      mask-image: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent);
+      /* Masque en couleurs-mots clés uniquement (jamais un littéral) : la
+         roue s'efface à ses deux bords au lieu d'être tranchée net. */
+      -webkit-mask-image: linear-gradient(180deg, transparent, black 20%, black 80%, transparent);
+      mask-image: linear-gradient(180deg, transparent, black 20%, black 80%, transparent);
       overscroll-behavior: contain;
+      /* Le geste vertical de la roue lui appartient : sans cela, le
+         défilement de la feuille au-dessus le lui dispute. */
+      touch-action: pan-y;
     }
     .alco-wheel::-webkit-scrollbar { display: none; }
     .alco-wheel-item { scroll-snap-align: center; }
-    @media (prefers-reduced-motion: reduce) { .alco-wheel { scroll-behavior: auto; } }
+    /* Galbe de la roue — le cran centré est de face, les autres s'inclinent et
+       s'éloignent, comme les faces d'un cylindre. Piloté par la POSITION de
+       défilement (timeline « view »), donc jamais par une frame de JS : le
+       relief suit le doigt exactement, même pendant un lancer, et rien ne se
+       re-rend. La perspective est posée DANS la transform (et non sur le
+       scroller) pour ne pas ouvrir un contexte 3D partagé au-dessus de tous
+       les crans. La propriété « animation-timeline » vient APRÈS le
+       raccourci « animation », qui la remettrait sinon à « auto ». */
+    @supports (animation-timeline: view()) {
+      .alco-wheel-item {
+        animation: alcoWheelDepth linear both;
+        animation-timeline: view(y);
+      }
+      @keyframes alcoWheelDepth {
+        0%   { transform: perspective(460px) rotateX(58deg) scale(0.78); opacity: 0.28; }
+        50%  { transform: perspective(460px) rotateX(0deg) scale(1); opacity: 1; }
+        100% { transform: perspective(460px) rotateX(-58deg) scale(0.78); opacity: 0.28; }
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .alco-wheel { scroll-behavior: auto; }
+      /* « Moins d'animation » : la roue reste plate et parfaitement lisible.
+         Le crantage haptique, lui, RESTE — moins d'animation ne veut pas dire
+         moins de retour (cf. § Mouvement). */
+      .alco-wheel-item { animation: none; transform: none; opacity: 1; }
+    }
 
     /* ── Matières translucides ─────────────────────────────────────
        Le chrome flottant (barre d'onglets, feuilles) est une COUCHE DE
@@ -1803,6 +1833,42 @@ function useSWVersion() {
   window.addEventListener('wheel', (e) => {
     if (e.ctrlKey) e.preventDefault();
   }, { passive: false });
+})();
+
+// ── Verrou d'orientation : l'app est portrait, toujours ────────────
+// Une mise en page pensée pour une colonne de pouce n'a rien à dire en
+// paysage : les feuilles du bas mangent l'écran, la barre d'onglets touche
+// le contenu, la jauge BAC n'a plus de hauteur. On refuse donc le paysage —
+// et comme aucun mécanisme ne couvre seul tous les moteurs, il en faut trois :
+//   1. `orientation: portrait-primary` (manifest.json) — Android, PWA
+//      installée ;
+//   2. `screen.orientation.lock()` ci-dessous — verrou RÉEL, mais il n'existe
+//      que sur Android (et seulement en plein écran / installé) ;
+//   3. le garde CSS `#alco-rotate` (index.html) — le seul recours sur iOS
+//      Safari, qui ignore les deux premiers. C'est lui le filet de sécurité :
+//      la média-requête ne peut pas se désynchroniser.
+// L'appel ci-dessous échoue SILENCIEUSEMENT partout ailleurs (il jette en
+// synchrone sur certains moteurs, rejette une promesse sur d'autres) : les
+// deux chemins sont attrapés, un échec est le cas NORMAL, pas une erreur.
+(function installOrientationLock() {
+  if (typeof window === 'undefined' || window.__alcoOrientationLock) return;
+  if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+  window.__alcoOrientationLock = true;
+  const lock = () => {
+    try {
+      const o = window.screen && window.screen.orientation;
+      if (!o || typeof o.lock !== 'function') return;
+      const p = o.lock('portrait');
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch {}
+  };
+  lock();
+  // Le verrou saute quand l'app quitte le plein écran ou revient d'arrière-plan :
+  // on le repose, sans jamais insister davantage.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) lock();
+  });
+  document.addEventListener('fullscreenchange', lock);
 })();
 
 // ── Motion : hooks & primitives réutilisables ──────────────────────
@@ -2362,85 +2428,217 @@ function wheelIndexForOffset(scrollTop, itemH, count) {
   return Math.max(0, Math.min(count - 1, i));
 }
 
-// Colonne défilante : items centrés sur une bande de sélection, accrochage
-// au relâchement (scroll natif → fluide), tap direct sur un item (chemin
-// testable sous jsdom où le scroll réel n'existe pas), clavier (listbox +
-// flèches). `value` est la valeur sélectionnée (string), `onChange(value)`.
-function WheelPicker({ items, value, onChange, itemHeight = 36, visibleCount = 5, ariaLabel }) {
+// Spec de la roue — la maille du composant en UN endroit (cf. CHART pour les
+// figures). Ce sont des DIMENSIONS, pas de la typographie : les tailles de
+// texte, elles, passent par la grille `type()`.
+const WHEEL = Object.freeze({
+  itemHeight: 36,        // hauteur d'un cran : la maille de tout le reste
+  visibleCount: 5,       // crans visibles — impair, sinon il n'y a pas de centre
+  colWidth: 72,          // largeur d'une colonne
+  // Repli de relief quand le moteur n'a pas de timeline de défilement : trois
+  // paliers (centre / voisin / lointain). Le galbe continu vit en CSS.
+  fallback: Object.freeze([
+    Object.freeze({ scale: 1, opacity: 1 }),
+    Object.freeze({ scale: 0.88, opacity: 0.5 }),
+    Object.freeze({ scale: 0.78, opacity: 0.28 }),
+  ]),
+});
+
+// Le galbe continu est-il pris en charge par le moteur (timeline de
+// défilement) ? Si oui, le repli inline est non seulement inutile — l'animation
+// CSS l'emporte — mais coûteux : ce serait 60 transforms réécrites à CHAQUE
+// cran franchi, pendant un lancer, pour un résultat que le compositeur produit
+// déjà tout seul. Résolu UNE fois, puis mémorisé.
+let _wheelDepthInCss = null;
+function wheelDepthInCss() {
+  if (_wheelDepthInCss == null) {
+    try {
+      _wheelDepthInCss = !!(typeof CSS !== 'undefined' && CSS && CSS.supports
+        && CSS.supports('animation-timeline', 'view()'));
+    } catch { _wheelDepthInCss = false; }
+  }
+  return _wheelDepthInCss;
+}
+
+// Bande de sélection : le cran « choisi » est celui qui est DANS la bande.
+// Extraite pour que WheelPicker (colonne seule) et WheelGroup (plusieurs
+// colonnes sous une seule bande) la dessinent exactement pareil.
+function wheelBandStyle(pad, itemHeight) {
+  return {
+    position: 'absolute', left: 0, right: 0, top: pad, height: itemHeight,
+    background: T.surface3, border: `1px solid ${T.rule}`,
+    borderRadius: 10, pointerEvents: 'none',
+  };
+}
+
+// Colonne défilante : items centrés sur une bande de sélection, défilement
+// natif (donc fluide sur Android), tap direct sur un item (chemin testable
+// sous jsdom où le scroll réel n'existe pas), clavier (listbox + flèches).
+// `value` est la valeur sélectionnée (string), `onChange(value)`.
+//
+// Le cran se franchit SOUS LE DOIGT : chaque fois que le centre de la roue
+// passe sur un item, on vibre et on notifie — sur la même frame, comme la
+// roue par défaut d'iOS. C'est ce qui donne le crantage. Attendre l'arrêt du
+// défilement (l'ancien comportement) donnait une seule vibration détachée du
+// geste, et un item « sélectionné » qui n'attrapait le centre qu'après coup.
+function WheelPicker({ items, value, onChange, itemHeight = WHEEL.itemHeight,
+                       visibleCount = WHEEL.visibleCount, width = WHEEL.colWidth,
+                       showBand = true, ariaLabel }) {
   const scrollerRef = React.useRef(null);
   const reduced = useReducedMotion();
   const selIdx = Math.max(0, items.indexOf(value));
   const settleRef = React.useRef(0);
+  const rafRef = React.useRef(0);
+  // Dernier cran FRANCHI. C'est la mémoire du geste : elle distingue « le
+  // doigt vient de passer un cran » (→ tick + notification) de « la valeur a
+  // changé depuis l'extérieur » (→ on se repositionne, en silence).
+  const liveRef = React.useRef(selIdx);
+  // Un défilement PROGRAMMÉ (tap sur un cran lointain, flèche clavier)
+  // traverse des dizaines de crans : il ne doit pas tous les faire vibrer.
+  const programmaticRef = React.useRef(false);
   const onChangeRef = React.useRef(onChange);
   onChangeRef.current = onChange;
 
-  // Place la sélection au centre au montage / quand `value` change de
-  // l'extérieur (pas suite à notre propre scroll, déjà aligné).
+  // Un cran franchi = un tick + la valeur, sur la MÊME frame.
+  const commit = React.useCallback((idx) => {
+    if (idx === liveRef.current || items[idx] == null) return;
+    liveRef.current = idx;
+    haptic('tick');
+    onChangeRef.current(items[idx]);
+  }, [items]);
+
+  // Repositionnement quand `value` change depuis l'EXTÉRIEUR seulement. Si le
+  // cran vient de notre propre défilement, le scroller est déjà à sa place :
+  // le corriger ici arracherait la roue des doigts à chaque cran.
   React.useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
+    if (selIdx === liveRef.current) return;
+    liveRef.current = selIdx;
     const target = wheelOffsetForIndex(selIdx, itemHeight);
     if (Math.abs(el.scrollTop - target) > 1) el.scrollTop = target;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selIdx, itemHeight]);
 
-  React.useEffect(() => () => clearTimeout(settleRef.current), []);
+  React.useEffect(() => () => {
+    clearTimeout(settleRef.current);
+    if (rafRef.current && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(rafRef.current);
+    }
+  }, []);
 
+  const track = () => {
+    rafRef.current = 0;
+    const el = scrollerRef.current;
+    if (!el) return;
+    commit(wheelIndexForOffset(el.scrollTop, itemHeight, items.length));
+  };
+
+  // Fin de course. L'accrochage natif (scroll-snap) a normalement déjà rangé
+  // la roue ; ce repli ne sert qu'aux moteurs qui l'ignorent. Il ne re-notifie
+  // rien de neuf : le cran a été franchi sous le doigt, bien avant l'arrêt.
   const settle = () => {
+    programmaticRef.current = false;
     const el = scrollerRef.current;
     if (!el) return;
     const idx = wheelIndexForOffset(el.scrollTop, itemHeight, items.length);
+    commit(idx);                    // filet : cran avalé par un lancer très rapide
     const target = wheelOffsetForIndex(idx, itemHeight);
     if (Math.abs(el.scrollTop - target) > 0.5 && el.scrollTo) {
       el.scrollTo({ top: target, behavior: reduced ? 'auto' : 'smooth' });
     }
-    // L'accrochage EST l'évènement causal : la vibration part avec lui, pas
-    // avant (l'intention) ni après (l'animation).
-    if (items[idx] !== value) { haptic('tick'); onChangeRef.current(items[idx]); }
   };
+
   const onScroll = () => {
     clearTimeout(settleRef.current);
-    settleRef.current = setTimeout(settle, 120);
+    settleRef.current = setTimeout(settle, 90);
+    if (programmaticRef.current || rafRef.current) return;
+    rafRef.current = (typeof requestAnimationFrame === 'function')
+      ? requestAnimationFrame(track)
+      : setTimeout(track, 16);
   };
 
   const pick = (i) => {
     const el = scrollerRef.current;
-    if (el && el.scrollTo) el.scrollTo({ top: wheelOffsetForIndex(i, itemHeight), behavior: reduced ? 'auto' : 'smooth' });
-    else if (el) el.scrollTop = wheelOffsetForIndex(i, itemHeight);
-    if (items[i] !== value) { haptic('tick'); onChange(items[i]); }
+    const top = wheelOffsetForIndex(i, itemHeight);
+    // Marquer le défilement comme PROGRAMMÉ n'a de sens que s'il va réellement
+    // avoir lieu : taper le cran DÉJÀ centré ne produit aucun évènement de
+    // défilement, donc rien ne viendrait lever le drapeau — et la roue
+    // cesserait de cranter jusqu'au contact suivant.
+    if (el && Math.abs((el.scrollTop || 0) - top) > 0.5) programmaticRef.current = true;
+    commit(i);                      // l'appui EST l'évènement : tick immédiat
+    if (el && el.scrollTo) el.scrollTo({ top, behavior: reduced ? 'auto' : 'smooth' });
+    else if (el) el.scrollTop = top;
   };
 
   const pad = ((visibleCount - 1) / 2) * itemHeight;
   const containerH = visibleCount * itemHeight;
+  // Roue plate : soit le moteur fait le galbe en CSS, soit l'utilisateur a
+  // demandé moins d'animation — dans les deux cas, rien à écrire par cran.
+  const flat = reduced || wheelDepthInCss();
 
   return (
-    <div style={{ position: 'relative', height: containerH, width: 70, flex: '0 0 auto' }}>
-      {/* Bande de sélection centrale */}
-      <div aria-hidden="true" style={{
-        position: 'absolute', left: 4, right: 4, top: pad, height: itemHeight,
-        borderTop: `1px solid ${T.rule}`, borderBottom: `1px solid ${T.rule}`,
-        background: T.surface3, borderRadius: 8, pointerEvents: 'none',
-      }} />
+    <div style={{ position: 'relative', height: containerH, width, flex: '0 0 auto' }}>
+      {showBand && <div aria-hidden="true" style={wheelBandStyle(pad, itemHeight)} />}
       <div ref={scrollerRef} className="alco-wheel" role="listbox" aria-label={ariaLabel}
-        onScroll={onScroll} style={{ height: containerH, position: 'relative' }}>
+        onScroll={onScroll}
+        // Reprendre la roue au doigt rend TOUJOURS le crantage : un défilement
+        // programmé encore en vol ne doit pas museler le geste qui l'interrompt.
+        onPointerDown={() => { programmaticRef.current = false; }}
+        style={{ height: containerH, position: 'relative' }}>
         <div style={{ height: pad }} />
-        {items.map((it, i) => (
-          <button key={it} type="button" role="option" aria-selected={i === selIdx}
-            className="alco-wheel-item" onClick={() => pick(i)}
-            onKeyDown={(e) => {
-              if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); pick(i - 1); }
-              else if (e.key === 'ArrowDown' && i < items.length - 1) { e.preventDefault(); pick(i + 1); }
-            }}
-            style={{
-              ...ghostButton, display: 'block', width: '100%', height: itemHeight,
-              fontFamily: fontNum, fontSize: i === selIdx ? 19 : 15,
-              color: i === selIdx ? T.ink : T.muted,
-              fontWeight: i === selIdx ? 600 : 400,
-              opacity: i === selIdx ? 1 : 0.55, cursor: 'pointer',
-              transition: reduced ? undefined : 'font-size 0.12s ease, opacity 0.12s ease' }}>{it}</button>
-        ))}
+        {items.map((it, i) => {
+          const on = i === selIdx;
+          const step = flat ? null
+            : WHEEL.fallback[Math.min(Math.abs(i - selIdx), WHEEL.fallback.length - 1)];
+          return (
+            <button key={it} type="button" role="option" aria-selected={on}
+              className="alco-wheel-item" onClick={() => pick(i)}
+              // Un seul arrêt de tabulation par colonne : la liste se parcourt
+              // ensuite aux flèches, comme une vraie listbox.
+              tabIndex={on ? 0 : -1}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); pick(i - 1); }
+                else if (e.key === 'ArrowDown' && i < items.length - 1) { e.preventDefault(); pick(i + 1); }
+                else if (e.key === 'Home') { e.preventDefault(); pick(0); }
+                else if (e.key === 'End') { e.preventDefault(); pick(items.length - 1); }
+              }}
+              style={{
+                ...ghostButton, width: '100%', height: itemHeight,
+                display: 'grid', placeItems: 'center', cursor: 'pointer',
+                ...type(19), ...TYPE.num,
+                color: on ? T.ink : T.ink2,
+                fontWeight: on ? 600 : 400,
+                // Relief de REPLI, posé UNIQUEMENT là où le CSS ne sait pas
+                // faire le galbe continu (cf. wheelDepthInCss). Même là où on
+                // le pose, l'animation CSS l'emporterait : la substitution est
+                // propre des deux côtés.
+                transform: step ? `scale(${step.scale})` : undefined,
+                opacity: step ? step.opacity : undefined,
+                transition: step
+                  ? `transform ${MOTION.fast}ms ${MOTION.ease}, opacity ${MOTION.fast}ms ${MOTION.ease}, color ${MOTION.fast}ms ${MOTION.ease}`
+                  : `color ${MOTION.fast}ms ${MOTION.ease}`,
+              }}>{it}</button>
+          );
+        })}
         <div style={{ height: pad }} />
       </div>
+    </div>
+  );
+}
+
+// Plusieurs colonnes, UNE roue. La bande de sélection traverse tout le groupe
+// (colonnes ET séparateur) au lieu d'être redécoupée par colonne : c'est ce
+// qui fait lire « 07:30 » comme une seule valeur et non deux listes voisines.
+function WheelGroup({ children, itemHeight = WHEEL.itemHeight,
+                      visibleCount = WHEEL.visibleCount, ariaLabel }) {
+  const pad = ((visibleCount - 1) / 2) * itemHeight;
+  return (
+    <div role="group" aria-label={ariaLabel} style={{
+      position: 'relative', display: 'flex', alignItems: 'center',
+      justifyContent: 'center', gap: 4 }}>
+      <div aria-hidden="true" style={wheelBandStyle(pad, itemHeight)} />
+      {children}
     </div>
   );
 }
@@ -2466,6 +2664,14 @@ function TimeWheelSheet({ value, onConfirm, onClose }) {
   const mins = React.useMemo(() => Array.from({ length: 60 }, (_, i) => pad2(i)), []);
   const confirm = () => { onConfirm(`${pad2(h)}:${pad2(mm)}`); close(); };
 
+  // Micro-légende d'une colonne — elle dit ce que la colonne compte, ce qu'un
+  // « 07 » seul ne dit pas.
+  const colLabel = (t) => (
+    <div style={{
+      width: WHEEL.colWidth, textAlign: 'center',
+      color: T.muted, ...TYPE.label }}>{t}</div>
+  );
+
   return (
     <SheetOverlay onClose={close} closing={closing} onCancelClose={cancelClose}
       side="bottom" label="Choisir l'heure">
@@ -2482,10 +2688,23 @@ function TimeWheelSheet({ value, onConfirm, onClose }) {
             textAlign: 'center', padding: '6px 22px 12px',
             ...type(20, { family: fontSerif, italic: true }), color: T.ink }}>Heure</div>
         </SheetGrabber>
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, padding: '0 22px' }}>
-          <WheelPicker items={hours} value={pad2(h)} onChange={(v) => setH(parseInt(v, 10))} ariaLabel="Heures" />
-          <div style={{ fontFamily: fontNum, fontSize: remSize(24), letterSpacing: tracking(24), color: T.muted }}>:</div>
-          <WheelPicker items={mins} value={pad2(mm)} onChange={(v) => setMm(parseInt(v, 10))} ariaLabel="Minutes" />
+        <div style={{ padding: '0 22px' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'center', alignItems: 'center',
+            gap: 4, marginBottom: 6 }}>
+            {colLabel('Heures')}
+            <div style={{ width: 18 }} />
+            {colLabel('Minutes')}
+          </div>
+          <WheelGroup ariaLabel="Heure">
+            <WheelPicker items={hours} value={pad2(h)} showBand={false}
+              onChange={(v) => setH(parseInt(v, 10))} ariaLabel="Heures" />
+            <div aria-hidden="true" style={{
+              width: 18, textAlign: 'center', color: T.ink2,
+              ...type(20), ...TYPE.num }}>:</div>
+            <WheelPicker items={mins} value={pad2(mm)} showBand={false}
+              onChange={(v) => setMm(parseInt(v, 10))} ariaLabel="Minutes" />
+          </WheelGroup>
         </div>
         <div style={{ display: 'flex', gap: 10, padding: '14px 22px 0' }}>
           <button type="button" className="alco-press" onClick={close} style={{
@@ -2725,5 +2944,6 @@ Object.assign(window, {
   useSWVersion,
   inputBaseStyle, inputS: inputBaseStyle, FieldGroup, parseDecimal,
   NumberField, CategoryChips, UnitToggle, RatingField, LocationField,
-  wheelOffsetForIndex, wheelIndexForOffset, WheelPicker, TimeWheelSheet, TimeField,
+  wheelOffsetForIndex, wheelIndexForOffset, WHEEL, wheelBandStyle, wheelDepthInCss,
+  WheelPicker, WheelGroup, TimeWheelSheet, TimeField,
 });
