@@ -21,7 +21,8 @@ function FriendRow({
   onOpen,
   favorite,
   onToggleFav,
-  index = 0
+  index = 0,
+  stagger = false
 }) {
   const press = usePressScale();
   const reduced = useReducedMotion();
@@ -32,7 +33,7 @@ function FriendRow({
       alignItems: 'stretch',
       borderBottom: `1px solid ${T.rule}`,
       ...staggerStyle(index, {
-        reduced
+        reduced: reduced || !stagger
       })
     }
   }, member.shareBac && /*#__PURE__*/React.createElement("button", {
@@ -82,7 +83,8 @@ function FriendRow({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 15,
+      fontSize: remSize(15),
+      letterSpacing: tracking(15),
       fontWeight: 600,
       color: T.ink,
       overflow: 'hidden',
@@ -91,9 +93,11 @@ function FriendRow({
     }
   }, name), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 9.5,
+      fontSize: remSize(9.5),
+      letterSpacing: tracking(9.5, {
+        caps: true
+      }),
       color: T.muted,
-      letterSpacing: 0.3,
       textTransform: 'uppercase',
       marginTop: 2,
       fontWeight: 500
@@ -166,7 +170,8 @@ function GroupAdminPanel({
     style: {
       flex: 1,
       minWidth: 0,
-      fontSize: 14,
+      fontSize: remSize(14),
+      letterSpacing: tracking(14),
       color: T.ink,
       overflow: 'hidden',
       textOverflow: 'ellipsis',
@@ -187,7 +192,8 @@ function GroupAdminPanel({
       background: T.dangerSoftBg,
       border: `1px solid ${T.dangerSoftBorder}`,
       color: T.accent2,
-      fontSize: 11.5,
+      fontSize: remSize(11.5),
+      letterSpacing: tracking(11.5),
       fontWeight: 500
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
@@ -197,9 +203,9 @@ function GroupAdminPanel({
     style: {
       marginTop: 8,
       color: T.muted,
-      fontSize: 10.5,
-      lineHeight: 1.5,
-      letterSpacing: 0.1
+      fontSize: remSize(10.5),
+      letterSpacing: tracking(10.5),
+      lineHeight: 1.5
     }
   }, "Visible uniquement par la personne qui a cr\xE9\xE9 le groupe \u2014 le serveur re-v\xE9rifie ce droit \xE0 chaque retrait."));
 }
@@ -238,7 +244,8 @@ function GroupFooter() {
       padding: '10px 12px',
       cursor: 'pointer',
       color: T.accent2,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       fontWeight: 600,
       alignSelf: 'center'
     }
@@ -256,7 +263,8 @@ function FriendsEmpty() {
         padding: '40px 20px',
         textAlign: 'center',
         color: T.muted,
-        fontSize: 13,
+        fontSize: remSize(13),
+        letterSpacing: tracking(13),
         lineHeight: 1.6
       }
     }, "Le partage n'est pas configur\xE9 sur cette installation.");
@@ -281,13 +289,15 @@ function FriendsEmpty() {
       style: {
         fontFamily: fontSerif,
         fontStyle: 'italic',
-        fontSize: 22,
+        fontSize: remSize(22),
+        letterSpacing: tracking(22),
         color: T.ink,
         marginBottom: 8
       }
     }, "Partage entre amis"), /*#__PURE__*/React.createElement("div", {
       style: {
-        fontSize: 13,
+        fontSize: remSize(13),
+        letterSpacing: tracking(13),
         color: T.muted,
         lineHeight: 1.6,
         maxWidth: 300,
@@ -347,13 +357,15 @@ function FriendsEmpty() {
     style: {
       fontFamily: fontSerif,
       fontStyle: 'italic',
-      fontSize: 22,
+      fontSize: remSize(22),
+      letterSpacing: tracking(22),
       color: T.ink,
       marginBottom: 6
     }
   }, "Rejoins tes amis"), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       color: T.muted,
       lineHeight: 1.5
     }
@@ -364,7 +376,8 @@ function FriendsEmpty() {
     style: {
       padding: '13px 18px',
       borderRadius: 14,
-      fontSize: 14,
+      fontSize: remSize(14),
+      letterSpacing: tracking(14),
       fontWeight: 600,
       background: T.accent,
       color: T.accentInk,
@@ -379,7 +392,8 @@ function FriendsEmpty() {
       alignItems: 'center',
       gap: 10,
       color: T.muted,
-      fontSize: 11
+      fontSize: remSize(11),
+      letterSpacing: tracking(11)
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -411,8 +425,10 @@ function FriendsEmpty() {
       border: `1px solid ${T.rule}`,
       color: T.ink,
       fontFamily: fontNum,
-      fontSize: 14,
-      letterSpacing: 1,
+      fontSize: remSize(14),
+      letterSpacing: tracking(14, {
+        caps: true
+      }),
       textTransform: 'uppercase'
     }
   }), /*#__PURE__*/React.createElement("button", {
@@ -422,7 +438,8 @@ function FriendsEmpty() {
     style: {
       padding: '12px 18px',
       borderRadius: 12,
-      fontSize: 14,
+      fontSize: remSize(14),
+      letterSpacing: tracking(14),
       fontWeight: 600,
       background: T.surface2,
       color: T.ink,
@@ -439,6 +456,9 @@ function FriendsTab({
   const s = useShare();
   const members = useGroupMembers();
   const bacMap = useFriendsBac(members);
+  // Cascade d'entrée une seule fois : un pull toutes les 10 min ne doit pas
+  // faire re-cascader la liste, ni un retour sur l'onglet.
+  const entering = useEnterOnce();
   const hasGroup = s.enabled && !!s.groupId;
   const onRefresh = async () => {
     const err = await shareEngine.refreshNow();
@@ -460,9 +480,11 @@ function FriendsTab({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 9.5,
+      fontSize: remSize(9.5),
+      letterSpacing: tracking(9.5, {
+        caps: true
+      }),
       color: T.muted,
-      letterSpacing: 0.3,
       textTransform: 'uppercase',
       fontWeight: 500
     }
@@ -477,7 +499,8 @@ function FriendsTab({
       alignItems: 'center',
       gap: 6,
       color: T.accent,
-      fontSize: 12,
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
       fontWeight: 600,
       cursor: 'pointer',
       opacity: s.syncing ? 0.5 : 1,
@@ -494,7 +517,8 @@ function FriendsTab({
       background: T.surface2,
       border: `1px solid ${T.rule}`,
       color: T.ink2,
-      fontSize: 11.5,
+      fontSize: remSize(11.5),
+      letterSpacing: tracking(11.5),
       lineHeight: 1.4,
       textAlign: 'center'
     }
@@ -506,7 +530,8 @@ function FriendsTab({
       background: T.dangerSoftBg,
       border: `1px solid ${T.dangerSoftBorder}`,
       color: T.accent2,
-      fontSize: 11.5,
+      fontSize: remSize(11.5),
+      letterSpacing: tracking(11.5),
       lineHeight: 1.4
     }
   }, s.errorDetail), /*#__PURE__*/React.createElement("div", {
@@ -522,13 +547,15 @@ function FriendsTab({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 14,
+      fontSize: remSize(14),
+      letterSpacing: tracking(14),
       color: T.ink,
       marginBottom: 8
     }
   }, "Aucun ami pour l'instant"), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       color: T.muted,
       lineHeight: 1.6
     }
@@ -545,6 +572,7 @@ function FriendsTab({
     bac: bacMap[m.userId],
     onOpen: onOpenFriend,
     index: i,
+    stagger: entering,
     favorite: s.favoriteId === m.userId,
     onToggleFav: () => shareEngine.toggleFavorite(m.userId)
   }))), hasGroup && /*#__PURE__*/React.createElement(GroupAdminPanel, {
@@ -562,17 +590,26 @@ function fmtRelTime(ts) {
 }
 
 // Vue plein écran : stats d'un ami via StatsTab + contextes surchargés.
-// Transition « page » : pousse depuis la droite à l'ouverture (pageIn),
-// ressort vers la droite à la fermeture (pageOut) — cohérent avec le geste
-// système « revenir en arrière », qu'elle gère elle-même via useBackButton
-// (montée = piège posé, fermée = piège retiré, comme une sheet).
+// Transition « page » : pousse depuis la droite à l'ouverture, ressort vers
+// la droite à la fermeture — cohérent avec le geste système « revenir en
+// arrière », qu'elle gère elle-même via useBackButton (montée = piège posé,
+// fermée = piège retiré, comme une sheet). La translation est portée par un
+// RESSORT et non des keyframes : la page se repousse aussi au doigt depuis le
+// bord gauche, et peut être rattrapée en pleine fermeture.
+// Geste « revenir en arrière » sur une page : largeur de la zone de saisie
+// au bord gauche, vitesse au-delà de laquelle le signe décide, et fraction
+// de largeur qui vaut validation quand le geste est lent.
+const PAGE_EDGE_PX = 28;
+const PAGE_FLING_V = 250;
+const PAGE_DISMISS_FRACTION = 0.35;
+const PAGE_FALLBACK_W = 400;
 function FriendStatsView({
   friend,
   onClose
 }) {
   const s = useShare();
   const reduced = useReducedMotion();
-  const [closing, close] = useSheetClose(onClose);
+  const [closing, close, cancelClose] = useSheetClose(onClose);
   useBackButton(true, close);
   const isFav = s.favoriteId === friend.userId;
   const friendDrinks = useSharedDrinks(friend.userId);
@@ -606,7 +643,85 @@ function FriendStatsView({
     userWeight: friend.bacWeight != null ? friend.bacWeight : undefined,
     userGender: friend.bacGender || undefined
   }), [friend.bacWeight, friend.bacGender]);
+
+  // ── Retour au doigt ────────────────────────────────────────────
+  // La fiche est une PAGE poussée depuis la droite : on doit pouvoir la
+  // repousser du doigt, pas seulement la fermer au bouton. Même moteur que
+  // les feuilles (suivi 1:1, bord élastique, arrivée projetée depuis la
+  // vitesse, reprise en vol), avec une règle de plus : le geste ne part que
+  // du BORD GAUCHE, et il vit dans une BANDE À LUI (cf. le rendu plus bas).
+  // Ailleurs, la page contient ses propres défilements horizontaux (sélecteur
+  // de période, listes de pilules) qui restent prioritaires — deux gestes ne
+  // se disputent jamais la même zone. Poser le geste sur la page entière (même
+  // avec un garde `clientX`) obligeait à y poser aussi un `touch-action`, qui
+  // s'intersecte avec celui de TOUS les descendants : les rangées de pilules
+  // ne se faisaient plus défiler du tout.
+  const pageRef = React.useRef(null);
+  const widthRef = React.useRef(0);
+  const measure = React.useCallback(() => {
+    const el = pageRef.current;
+    if (el && el.getBoundingClientRect) {
+      const w = el.getBoundingClientRect().width;
+      if (w > 0) widthRef.current = w;
+    }
+    return widthRef.current || PAGE_FALLBACK_W;
+  }, []);
+  // La page entière est une couche composée le TEMPS du mouvement seulement :
+  // laissée promue, elle garde un backing store plein écran (et tout le
+  // StatsTab avec) pendant toute la consultation.
+  const hint = useLayerHint(pageRef);
+  const applyPage = React.useCallback(x => {
+    const el = pageRef.current;
+    if (el) {
+      hint(true);
+      el.style.transform = `translate3d(${x}px, 0, 0)`;
+    }
+  }, [hint]);
+  const drag = useAxisDrag({
+    axis: 'x',
+    apply: applyPage,
+    enabled: !reduced,
+    config: MOTION.spring.sheet,
+    onStart: () => {
+      measure();
+      if (closing) cancelClose();
+    },
+    onRest: () => hint(false),
+    bounds: () => ({
+      min: 0,
+      max: null,
+      dimension: measure() * 0.5
+    }),
+    decide: ({
+      velocity,
+      projected
+    }) => {
+      const w = measure();
+      const back = Math.abs(velocity) > PAGE_FLING_V ? velocity > 0 : projected > w * PAGE_DISMISS_FRACTION;
+      return {
+        to: back ? w : 0,
+        commit: back,
+        config: MOTION.spring.sheet
+      };
+    },
+    onCommit: () => {
+      haptic('commit');
+      close();
+    }
+  });
+  React.useLayoutEffect(() => {
+    if (!reduced) drag.spring.snap(measure());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  React.useEffect(() => {
+    if (reduced || drag.dragging) return;
+    drag.spring.set(closing ? measure() : 0, {
+      config: closing ? MOTION.spring.sheet : MOTION.spring.ui
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closing, reduced, drag.dragging]);
   return /*#__PURE__*/React.createElement("div", {
+    ref: pageRef,
     style: {
       position: 'fixed',
       inset: 0,
@@ -615,20 +730,41 @@ function FriendStatsView({
       color: T.ink,
       display: 'flex',
       flexDirection: 'column',
-      animation: reduced ? undefined : closing ? `pageOut ${MOTION.fast}ms ${MOTION.ease} forwards` : `pageIn ${MOTION.base}ms ${MOTION.ease}`,
+      // Entrée/sortie par la DROITE, comme le geste système « revenir en
+      // arrière » : ce qui est arrivé par la droite repart par la droite.
+      // Le ressort prend le relais dès qu'un doigt touche la page.
+      transform: reduced ? undefined : 'translate3d(100%, 0, 0)',
+      animation: reduced && closing ? `fadeOut ${MOTION.fast}ms ${MOTION.ease} forwards` : undefined,
       pointerEvents: closing ? 'none' : undefined
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, !reduced && /*#__PURE__*/React.createElement("div", _extends({}, drag.handlers, {
+    "aria-hidden": "true",
+    style: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: PAGE_EDGE_PX,
+      zIndex: 1,
+      // Reste vivante pendant la sortie : c'est par elle qu'on rattrape
+      // une page qui part (même règle que SheetGrabber).
+      pointerEvents: 'auto',
+      touchAction: 'none'
+    }
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 'calc(env(safe-area-inset-top) + 14px) 16px 12px',
       display: 'flex',
       alignItems: 'center',
       gap: 12,
       flexShrink: 0,
+      position: 'relative',
+      zIndex: 2,
       borderBottom: `1px solid ${T.rule}`
     }
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
+    className: "alco-press",
     onClick: close,
     "aria-label": "Retour",
     style: {
@@ -642,7 +778,8 @@ function FriendStatsView({
       cursor: 'pointer',
       border: `1px solid ${T.rule}`,
       padding: 0,
-      fontFamily: 'inherit'
+      fontFamily: 'inherit',
+      touchAction: 'manipulation'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.back,
@@ -656,9 +793,9 @@ function FriendStatsView({
     style: {
       fontFamily: fontSerif,
       fontStyle: 'italic',
-      fontSize: 19,
+      fontSize: remSize(19),
+      letterSpacing: tracking(19),
       color: T.ink,
-      letterSpacing: -0.3,
       lineHeight: 1.1,
       overflow: 'hidden',
       textOverflow: 'ellipsis',
@@ -666,9 +803,11 @@ function FriendStatsView({
     }
   }, friend.displayName || 'Anonyme'), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 9.5,
+      fontSize: remSize(9.5),
+      letterSpacing: tracking(9.5, {
+        caps: true
+      }),
       color: T.muted,
-      letterSpacing: 0.5,
       textTransform: 'uppercase',
       marginTop: 2,
       fontWeight: 500

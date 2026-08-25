@@ -117,6 +117,10 @@ function CategoryGrid({
   onAddCategory
 }) {
   const q = (query || '').toLowerCase();
+  // Cascade d'entrée : une fois, au montage. Sans garde elle rejoue à chaque
+  // retour sur l'onglet (display:none → grid redémarre les animations CSS) ET
+  // à chaque frappe dans la recherche (les délais changent avec les index).
+  const entering = useEnterOnce();
   const matchedFams = React.useMemo(() => {
     if (!q) return [];
     return families.filter(f => f.name.toLowerCase().includes(q) || f.category.toLowerCase().includes(q));
@@ -139,11 +143,13 @@ function CategoryGrid({
     cat: c,
     index: i,
     onOpen: onOpen,
-    onEdit: onEditCat
+    onEdit: onEditCat,
+    stagger: entering
   }))), cats.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       padding: '40px 0 16px',
       textAlign: 'center'
     }
@@ -165,8 +171,8 @@ function CategoryGrid({
       gap: 8,
       cursor: 'pointer',
       fontFamily: 'inherit',
-      fontSize: 13,
-      letterSpacing: -0.1
+      fontSize: remSize(13),
+      letterSpacing: tracking(13)
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.plus,
@@ -180,11 +186,13 @@ function CategoryGrid({
     family: f,
     index: i,
     onOpen: onOpenFamily,
-    onDirectAdd: onDirectAdd
+    onDirectAdd: onDirectAdd,
+    stagger: entering
   })), matchedFams.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       padding: '40px 0',
       textAlign: 'center'
     }
@@ -194,8 +202,13 @@ const CategoryCard = React.memo(function CategoryCard({
   cat,
   onOpen,
   onEdit,
-  index = 0
+  index = 0,
+  stagger = false
 }) {
+  // Abonnement thème : `T` est un objet MUTÉ sur place, donc invisible pour
+  // React — un composant memoïsé dont les props n'ont pas bougé garderait
+  // les couleurs de l'ancien thème (bug « la liste reste sombre en clair »).
+  useTheme();
   // Repaint garanti quand une teinte de catégorie change : le contexte
   // traverse React.memo (les props `cat` ne bougent pas sur un changement
   // de couleur seul). Cf. useCatPalette (shared.jsx).
@@ -204,31 +217,93 @@ const CategoryCard = React.memo(function CategoryCard({
   const bg = catBg(cat.name);
   const reduced = useReducedMotion();
   const press = usePressScale();
-  return /*#__PURE__*/React.createElement("div", _extends({}, clickable(() => onOpen && onOpen(cat.name), `Ouvrir la catégorie ${cat.name} — ${cat.entries} entrée${cat.entries !== 1 ? 's' : ''}, ${cat.families} type${cat.families !== 1 ? 's' : ''}`), press.handlers, {
+  // Deux boutons FRÈRES dans un conteneur non-interactif — « ouvrir la
+  // catégorie » et « modifier » — au lieu d'imbriquer le crayon dans une card
+  // `role="button"`. Même correctif que FriendRow : plus de button-in-button
+  // (violation a11y « nested-interactive », sérieuse : un lecteur d'écran ne
+  // sait plus ce qu'il annonce, et la navigation clavier piège le focus), et
+  // plus besoin de stopPropagation ni de gestion clavier maison — le <button>
+  // natif apporte Entrée/Espace gratuitement.
+  return /*#__PURE__*/React.createElement("div", {
     style: {
+      position: 'relative',
+      ...staggerStyle(index, {
+        reduced: reduced || !stagger
+      })
+    }
+  }, /*#__PURE__*/React.createElement("button", _extends({
+    type: "button",
+    onClick: () => onOpen && onOpen(cat.name),
+    "aria-label": `Ouvrir la catégorie ${cat.name} — ${cat.entries} entrée${cat.entries !== 1 ? 's' : ''}, ${cat.families} type${cat.families !== 1 ? 's' : ''}`
+  }, press.handlers, {
+    style: {
+      width: '100%',
+      textAlign: 'left',
+      fontFamily: 'inherit',
       background: T.surface,
       borderRadius: 18,
       padding: 14,
       border: `1px solid ${T.rule}`,
       cursor: 'pointer',
-      position: 'relative',
       overflow: 'hidden',
       aspectRatio: '1 / 1.05',
       display: 'flex',
       flexDirection: 'column',
       justifyContent: 'space-between',
-      ...press.style,
-      ...staggerStyle(index, {
-        reduced
-      })
+      ...press.style
     }
-  }), /*#__PURE__*/React.createElement("button", {
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 44,
+      height: 44,
+      borderRadius: 14,
+      background: bg,
+      display: 'grid',
+      placeItems: 'center',
+      color,
+      boxShadow: `inset 0 0 20px ${bg}`
+    }
+  }, /*#__PURE__*/React.createElement(CategoryGlyph, {
+    name: cat.name
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: '100%',
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: fontSans,
+      fontWeight: 500,
+      fontSize: remSize(15),
+      letterSpacing: tracking(15),
+      color: T.ink,
+      marginBottom: 3,
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis'
+    }
+  }, cat.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: remSize(11),
+      letterSpacing: tracking(11),
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color
+    }
+  }, "\u25CF"), cat.entries, " entr\xE9e", cat.entries !== 1 ? 's' : '', /*#__PURE__*/React.createElement("span", {
+    style: {
+      opacity: 0.4
+    }
+  }, "\xB7"), cat.families, " type", cat.families !== 1 ? 's' : ''))), /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: e => {
-      e.stopPropagation();
-      onEdit && onEdit(cat.name);
-    },
+    onClick: () => onEdit && onEdit(cat.name),
     "aria-label": `Modifier ${cat.name}`,
+    className: "alco-press",
     style: {
       position: 'absolute',
       top: 10,
@@ -244,54 +319,13 @@ const CategoryCard = React.memo(function CategoryCard({
       cursor: 'pointer',
       zIndex: 2,
       padding: 0,
-      fontFamily: 'inherit'
+      fontFamily: 'inherit',
+      touchAction: 'manipulation'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.edit,
     size: 11
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
-      background: bg,
-      display: 'grid',
-      placeItems: 'center',
-      color,
-      boxShadow: `inset 0 0 20px ${bg}`
-    }
-  }, /*#__PURE__*/React.createElement(CategoryGlyph, {
-    name: cat.name
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontFamily: fontSans,
-      fontWeight: 500,
-      fontSize: 15,
-      color: T.ink,
-      letterSpacing: -0.2,
-      marginBottom: 3,
-      whiteSpace: 'nowrap',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis'
-    }
-  }, cat.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: T.muted,
-      fontSize: 11,
-      letterSpacing: 0.1,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color
-    }
-  }, "\u25CF"), cat.entries, " entr\xE9e", cat.entries !== 1 ? 's' : '', /*#__PURE__*/React.createElement("span", {
-    style: {
-      opacity: 0.4
-    }
-  }, "\xB7"), cat.families, " type", cat.families !== 1 ? 's' : '')));
+  })));
 });
 function FamilyList({
   category,
@@ -302,6 +336,10 @@ function FamilyList({
   onEditCat,
   onEditFamily
 }) {
+  // Vue montée à l'ouverture d'une catégorie : la cascade se joue donc bien à
+  // chaque entrée dans le détail — mais une seule fois, pas à chaque bump de
+  // données ni à chaque retour sur l'onglet.
+  const entering = useEnterOnce();
   // Sort families: identical-name groups stay contiguous, ordered by
   // total entries inside the group, then by quantity asc inside each
   // group. We keep one line per (name, qty, unit, abv) variant so the
@@ -378,7 +416,8 @@ function FamilyList({
       display: 'flex',
       alignItems: 'center',
       gap: 6,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       cursor: 'pointer'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
@@ -399,7 +438,8 @@ function FamilyList({
       background: T.surface2,
       border: `1px solid ${T.rule}`,
       color: T.ink2,
-      fontSize: 11
+      fontSize: remSize(11),
+      letterSpacing: tracking(11)
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.edit,
@@ -407,18 +447,18 @@ function FamilyList({
   }), /*#__PURE__*/React.createElement("span", null, "Modifier"))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
-      fontSize: 36,
+      fontSize: remSize(36),
+      letterSpacing: tracking(36),
       color: T.ink,
-      letterSpacing: -0.8,
       lineHeight: 1,
       marginBottom: 4
     }
   }, category), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 12,
-      marginBottom: 18,
-      letterSpacing: 0.1
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
+      marginBottom: 18
     }
   }, sortedLen, " variante", sortedLen !== 1 ? 's' : '', " \xB7", ' ', entriesTotal, " entr\xE9es au total"), rows.map(({
     f,
@@ -431,11 +471,13 @@ function FamilyList({
     variantIndex: idx,
     variantCount: total,
     onOpen: onOpen,
-    onDirectAdd: onDirectAdd
+    onDirectAdd: onDirectAdd,
+    stagger: entering
   })), rows.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       padding: '40px 0',
       textAlign: 'center'
     }
@@ -447,8 +489,13 @@ const FamilyRow = React.memo(function FamilyRow({
   variantCount = 1,
   onOpen,
   onDirectAdd,
-  index = 0
+  index = 0,
+  stagger = false
 }) {
+  // Abonnement thème : `T` est un objet MUTÉ sur place, donc invisible pour
+  // React — un composant memoïsé dont les props n'ont pas bougé garderait
+  // les couleurs de l'ancien thème (bug « la liste reste sombre en clair »).
+  useTheme();
   // Cf. CategoryCard : abonnement palette → repaint sur changement de teinte.
   useCatPalette();
   const color = catColor(f.category, 70);
@@ -475,7 +522,7 @@ const FamilyRow = React.memo(function FamilyRow({
       position: 'relative',
       ...press.style,
       ...staggerStyle(index, {
-        reduced
+        reduced: reduced || !stagger
       })
     }
   }), /*#__PURE__*/React.createElement("div", {
@@ -499,10 +546,10 @@ const FamilyRow = React.memo(function FamilyRow({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 14.5,
+      fontSize: remSize(14.5),
+      letterSpacing: tracking(14.5),
       color: T.ink,
       fontWeight: 500,
-      letterSpacing: -0.2,
       whiteSpace: 'nowrap',
       overflow: 'hidden',
       textOverflow: 'ellipsis'
@@ -510,18 +557,18 @@ const FamilyRow = React.memo(function FamilyRow({
   }, f.name, variantCount > 1 && /*#__PURE__*/React.createElement("span", {
     style: {
       marginLeft: 8,
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       color: T.muted,
       fontFamily: fontNum,
-      letterSpacing: 0.4,
       fontWeight: 400
     }
   }, variantIndex + 1, "/", variantCount)), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 11.5,
+      fontSize: remSize(11.5),
+      letterSpacing: tracking(11.5),
       marginTop: 3,
-      letterSpacing: 0.1,
       display: 'flex',
       gap: 6,
       alignItems: 'center'
@@ -534,10 +581,10 @@ const FamilyRow = React.memo(function FamilyRow({
     title: `${totalEntries} entrée${totalEntries > 1 ? 's' : ''}`,
     style: {
       fontFamily: fontNum,
-      fontSize: 14,
+      fontSize: remSize(14),
+      letterSpacing: tracking(14),
       fontWeight: 600,
       color: T.ink2,
-      letterSpacing: 0.2,
       lineHeight: 1,
       fontVariantNumeric: 'tabular-nums',
       marginRight: 6,
@@ -595,7 +642,7 @@ function EditCategorySheet({
   const savingRef = React.useRef(false);
   const removingRef = React.useRef(false);
   // Fermeture animée (sortie de sheet).
-  const [closing, close] = useSheetClose(onClose);
+  const [closing, close, cancelClose] = useSheetClose(onClose);
 
   // What the picker should highlight. After "Réinitialiser" we fall
   // back to the same logic <CategoryGlyph> uses when there's no
@@ -867,47 +914,38 @@ function EditCategorySheet({
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: close,
     closing: closing,
+    onCancelClose: cancelClose,
     label: isCreate ? 'Nouvelle catégorie' : 'Modifier la catégorie'
   }, /*#__PURE__*/React.createElement("div", {
+    className: "alco-material-sheet alco-material-edge",
     style: {
-      background: T.bg,
       borderRadius: '22px 22px 0 0',
-      padding: '18px 20px 28px',
+      padding: '8px 20px 28px',
       borderTop: `1px solid ${T.rule}`,
       borderLeft: `1px solid ${T.rule}`,
       borderRight: `1px solid ${T.rule}`,
       overflowX: 'hidden',
       overflowY: 'auto',
-      maxHeight: '92dvh'
+      maxHeight: '92dvh',
+      boxShadow: T.shadowSheet
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(SheetGrabber, null, /*#__PURE__*/React.createElement("div", {
     style: {
-      display: 'grid',
-      placeItems: 'center',
-      paddingBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 42,
-      height: 4,
-      borderRadius: 99,
-      background: T.rule
-    }
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontFamily: fontSerif,
-      fontSize: 22,
+      ...type(22, {
+        family: fontSerif,
+        italic: true
+      }),
       color: T.ink,
-      letterSpacing: -0.3,
-      fontStyle: 'italic',
       marginBottom: 18,
       textAlign: 'center'
     }
-  }, isCreate ? 'Nouvelle catégorie' : 'Modifier la catégorie'), /*#__PURE__*/React.createElement("div", {
+  }, isCreate ? 'Nouvelle catégorie' : 'Modifier la catégorie')), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
-      letterSpacing: 1.2,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10, {
+        caps: true
+      }),
       textTransform: 'uppercase',
       marginBottom: 8
     }
@@ -923,7 +961,8 @@ function EditCategorySheet({
       padding: '12px 14px',
       color: T.ink,
       fontFamily: fontSans,
-      fontSize: 14,
+      fontSize: remSize(14),
+      letterSpacing: tracking(14),
       outline: 'none',
       marginBottom: 18,
       boxSizing: 'border-box'
@@ -931,8 +970,10 @@ function EditCategorySheet({
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
-      letterSpacing: 1.2,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10, {
+        caps: true
+      }),
       textTransform: 'uppercase',
       marginBottom: 8
     }
@@ -1007,8 +1048,10 @@ function EditCategorySheet({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
-      letterSpacing: 1.2,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10, {
+        caps: true
+      }),
       textTransform: 'uppercase'
     }
   }, "Couleur"), /*#__PURE__*/React.createElement("button", {
@@ -1028,8 +1071,10 @@ function EditCategorySheet({
       border: `1px solid ${isAuto ? T.accent : T.rule}`,
       background: isAuto ? T.accentSoft : 'transparent',
       color: isAuto ? T.accent : T.muted,
-      fontSize: 10,
-      letterSpacing: 0.3,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10, {
+        caps: true
+      }),
       textTransform: 'uppercase'
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
@@ -1114,10 +1159,10 @@ function EditCategorySheet({
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
-      fontSize: 10,
+      fontSize: remSize(10),
+      letterSpacing: tracking(10),
       marginTop: 6,
-      fontFamily: fontNum,
-      letterSpacing: 0.2
+      fontFamily: fontNum
     }
   }, isAuto ? `Auto · teinte ${effHue}°` : `Teinte ${effHue}°`))), err && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1126,7 +1171,8 @@ function EditCategorySheet({
       border: `1px solid ${T.dangerSoftBorder}`,
       padding: '8px 12px',
       borderRadius: 10,
-      fontSize: 12,
+      fontSize: remSize(12),
+      letterSpacing: tracking(12),
       marginBottom: 14
     }
   }, err), /*#__PURE__*/React.createElement("button", {
@@ -1140,7 +1186,8 @@ function EditCategorySheet({
       borderRadius: 12,
       background: T.accent,
       color: T.accentInk,
-      fontSize: 13,
+      fontSize: remSize(13),
+      letterSpacing: tracking(13),
       fontWeight: 600,
       cursor: busy ? 'wait' : 'pointer',
       opacity: busy ? 0.5 : 1,
@@ -1161,7 +1208,8 @@ function EditCategorySheet({
       background: T.dangerSoftBg,
       color: T.accent2,
       border: `1px solid ${T.dangerSoftBorder}`,
-      fontSize: 12.5,
+      fontSize: remSize(12.5),
+      letterSpacing: tracking(12.5),
       fontWeight: 500,
       cursor: busy ? 'wait' : 'pointer',
       opacity: busy ? 0.5 : 1,

@@ -37,12 +37,28 @@
   </noscript>
 
   <style>
+    html {
+      /* Racine à 100% : la grille typographique de l'app est exprimée en
+         `rem` (cf. shared.jsx › TYPE), donc le réglage « taille du texte »
+         du navigateur/de l'OS agit réellement sur toute l'interface au lieu
+         d'être ignoré. Ne jamais fixer une taille en px ici. */
+      font-size: 100%;
+      /* Les fontes variables ajustent leur dessin à la taille rendue. */
+      font-optical-sizing: auto;
+      /* PAS de `text-rendering: optimizeLegibility` : il force le crénage et
+         les ligatures sur TOUT le texte de l'app, donc un coût de mise en
+         page sur chaque ligne de chaque liste. Geist et Instrument Serif sont
+         déjà bien crénées par défaut — on payait le ralentissement sans rien
+         gagner à l'œil (mesuré sur iPhone, PWA installée). */
+    }
     html, body {
       margin: 0; padding: 0;
       width: 100%;
       min-height: 100vh; min-height: 100dvh;
       font-family: "Geist", system-ui, sans-serif;
-      transition: background 0.35s ease;
+      /* Le passage clair↔sombre est adouci : un saut de luminosité brutal
+         plein écran est agressif (et déconseillé en accessibilité). */
+      transition: background 0.35s ease, color 0.35s ease;
       overflow: hidden;
       overscroll-behavior: none;
       /* Zoom de page définitivement désactivé : seuls les pans (scroll)
@@ -89,6 +105,17 @@
       background: radial-gradient(ellipse at top, oklch(22% 0.01 55), oklch(14% 0.008 50) 75%);
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    /* Moins d'animation : plus aucune transition de fond plein écran, et les
+       animations résiduelles sont réduites à un battement (on ne met pas
+       `none` : certaines animations portent un état final `forwards`). */
+    @media (prefers-reduced-motion: reduce) {
+      html, body { transition: none; }
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
     /* Disable text selection across the whole app — the surface acts
        like a native UI, not a document. Inputs/textareas/contenteditable
        still allow selection so the user can type and edit values. */
@@ -112,6 +139,60 @@
     * { scrollbar-width: none; }
     /* iOS-friendly date/time inputs */
     input[type="date"], input[type="time"] { min-height: 1.4em; }
+    /* ── Garde d'orientation : l'app est portrait, toujours ────────────
+       Trois mécanismes, aucun ne suffisant seul :
+         1. `orientation: portrait-primary` dans manifest.json — honoré par
+            Android/Chrome quand la PWA est installée ;
+         2. `screen.orientation.lock('portrait')` (shared.jsx) — verrou réel
+            là où l'API existe (Android, plein écran) ;
+         3. ce garde CSS — le SEUL recours sur iOS Safari, qui ignore les deux
+            précédents. Il couvre aussi l'instant avant le boot de React.
+       La requête vise le paysage SUR UN ÉCRAN DE TÉLÉPHONE (`max-height`) :
+       un desktop ou une tablette en 1280×800 est en paysage lui aussi, et
+       n'a aucune raison d'être bloqué. */
+    #alco-rotate { display: none; }
+    @media (orientation: landscape) and (max-height: 520px) {
+      #alco-rotate {
+        position: fixed; inset: 0; z-index: 2147483000;
+        display: grid; place-items: center; gap: 0;
+        padding: 24px;
+        text-align: center;
+        /* Le fond du garde est celui de l'app : pas de flash de couleur
+           étrangère quand l'appareil bascule. */
+        background: radial-gradient(ellipse at top, oklch(22% 0.01 55), oklch(14% 0.008 50) 75%);
+        color: oklch(96% 0.008 85);
+      }
+      html[data-theme="light"] #alco-rotate {
+        background: radial-gradient(ellipse at top, oklch(99% 0.006 85), oklch(93% 0.01 75) 75%);
+        color: oklch(22% 0.012 55);
+      }
+      /* Le contenu de l'app derrière est masqué, pas seulement recouvert :
+         un lecteur d'écran ne doit pas continuer à le parcourir. */
+      #root, #alco-splash { visibility: hidden; }
+    }
+    #alco-rotate .alco-rotate-inner {
+      display: flex; flex-direction: column; align-items: center; gap: 14px;
+      max-width: 320px;
+    }
+    #alco-rotate .alco-rotate-phone {
+      width: 34px; height: 54px; border-radius: 7px;
+      border: 2px solid currentColor; opacity: 0.75;
+      /* Le pictogramme MONTRE le geste attendu : il pivote du paysage vers le
+         portrait, marque un temps, recommence. Sous « réduire les animations »
+         la règle globale plus haut le fige — le message texte suffit alors. */
+      animation: alcoRotateHint 2.6s ease-in-out infinite;
+    }
+    @keyframes alcoRotateHint {
+      0%, 22%   { transform: rotate(-90deg); }
+      45%, 100% { transform: rotate(0deg); }
+    }
+    #alco-rotate .alco-rotate-title {
+      font-family: "Instrument Serif", serif; font-style: italic;
+      font-size: 1.375rem; line-height: 1.2;
+    }
+    #alco-rotate .alco-rotate-sub {
+      font-size: 0.8125rem; line-height: 1.45; opacity: 0.62;
+    }
     /* loading splash — only visible until the React tree mounts. The
        App component removes this element from the DOM as soon as it
        runs, so a transient empty-root state during a re-render can
@@ -151,6 +232,18 @@
 <body>
   <div id="root"></div>
   <div id="alco-splash">AlcoNote</div>
+
+  <!-- Garde d'orientation (cf. le bloc de style plus haut). Présent dès le
+       HTML : il couvre l'app avant même que React ne boote, et reste correct
+       sans une ligne de JS — la média-requête est la seule source de vérité. -->
+  <div id="alco-rotate" role="alertdialog" aria-live="assertive"
+       aria-label="Rotation requise">
+    <div class="alco-rotate-inner">
+      <div class="alco-rotate-phone" aria-hidden="true"></div>
+      <div class="alco-rotate-title">Tourne ton téléphone</div>
+      <div class="alco-rotate-sub">AlcoNote se lit en portrait.</div>
+    </div>
+  </div>
 
   <!-- Persistence + barcode scanner (logic only — UI in proto/).
        All scripts are deferred: they download in parallel during HTML

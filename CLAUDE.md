@@ -23,6 +23,18 @@ valeur en dur.
   `rgb()`, ni `oklch(...)` inline dans les composants. Les exceptions
   (couleurs OKLCH dans `BAC_LEVELS`, `bacColor`, niveaux d'alerte) sont
   centralisées et nommées.
+- **Abonnement au thème** : `T` n'est pas un state React, c'est un objet
+  **muté sur place** par `setTheme()` — la bascule clair/sombre est donc
+  INVISIBLE pour React. Un composant se re-rend parce que son parent se
+  re-rend… sauf s'il est `React.memo` : ses props n'ont pas bougé, il
+  repeint l'ancien thème (bug historique « je passe en clair, la liste
+  et les charts restent sombres »). **Tout composant `React.memo` qui lit
+  un `T.*` appelle `useTheme()`** — le hook s'abonne à
+  `__themeListeners` et force le re-render. Même piège, même remède que
+  `useCatPalette()` ci-dessous ; les deux sont cumulatifs et vérifiés par
+  static-checks (les deux formes sont couvertes :
+  `React.memo(function X…)` et `X = React.memo(X)` au bas de
+  `stats-charts.jsx`).
 - **Couleurs de catégorie** : `catColor`/`catBg`/`defaultCatHue`
   canonicalisent le nom en interne (`canonicalCat`) — jamais de lookup
   `CAT[nom brut]`. La palette vit dans le registre module `CAT` (muté
@@ -40,8 +52,19 @@ valeur en dur.
   tabulaires (mesures, dates, pourcentages, durées) ; `fontSans` (par
   défaut) pour le reste. Police montée à `font-family: 'inherit'` sur
   les `<button>` et `<input>`.
-- **Labels secondaires** : `T.muted`, `fontSize: 9.5–10`,
-  `letterSpacing: 0.3`, `textTransform: 'uppercase'`.
+- **Tailles & approche** : JAMAIS `fontSize: 13` ni `letterSpacing: 0.3`
+  en dur (vérifié par static-checks). Une taille passe par `remSize(px)`
+  (donc en `rem` : le réglage « taille du texte » du système agit
+  vraiment), et l'approche est DÉRIVÉE de la taille par `tracking(px)` —
+  négative sur les grands titres, neutre au corps de texte, ouverte sur
+  les micro-labels (`tracking(px, { caps: true })` pour les capitales).
+  En pratique on compose `...type(px, opts)` ou un rôle nommé
+  `...TYPE.display|title|heading|body|bodyStrong|callout|footnote|label|
+  labelLg`. Pour un nombre tabulaire, `...TYPE.num` se met en DERNIER
+  (sa chasse fixe doit gagner). Exception : les `fontSize={…}` des SVG
+  de `stats-charts.jsx` sont des unités de viewBox, pas des px CSS —
+  ils restent des nombres et vivent dans le spec `CHART`.
+- **Labels secondaires** : `T.muted` + `...TYPE.label` (ou `labelLg`).
 - **Icônes** : toujours via `<SvgIcon icon={Ic.xxx} size={N} />`. Ne
   jamais inliner un `<svg>` ad-hoc — l'ajouter à `Ic` dans
   `shared.jsx`.
@@ -67,14 +90,60 @@ valeur en dur.
   numérique mobile (`inputMode="decimal"`) et accepte le point **ou** la
   virgule. Son state reste une *string* ; convertir avec
   `parseDecimal(str)` (virgule→point, `NaN` si vide/invalide) au submit.
-- **Animations** : utiliser celles déjà injectées dans `shared.jsx`
-  (`fade`, `slideUp`, `slideRight`, `slideLeft`, `scaleIn`, `pulse`,
-  les sorties `fadeOut`/`sheetOutDown`/`sheetOutLeft`/`sheetOutRight`,
-  les transitions de page `pageIn`/`pageOut`, `toastIn`/`toastOut`).
-  Durées/easing via `MOTION` (`base` 220 ms en entrée, `fast` 180 ms en
-  sortie) ; transitions : `0.18–0.22s ease`. Toute fermeture de
+- **Mouvement** : deux régimes, et le choix n'est PAS esthétique.
+  *Ce que le doigt peut toucher* (feuilles, balayage, retour de page,
+  réordonnancement, indicateur d'onglet) est piloté par un **ressort**
+  (`MOTION.spring.*` + `useAxisDrag`/`useSpringDriver`) : il part de la
+  valeur AFFICHÉE, accepte une nouvelle cible en vol et hérite de la
+  vitesse du doigt. *Le reste* (toast, entrée de liste, repli) garde une
+  durée fixe (`MOTION.fast`/`base` + `MOTION.ease`). Jamais de durée,
+  d'easing ni de ressort en dur : tout vient de `MOTION`. Recette
+  complète : § « Mouvement — un geste qui répond ». Toute fermeture de
   sheet/vue passe par `useSheetClose` (cf. § Sheets) — jamais de
   démontage sec d'un overlay.
+- **Coût d'une couche** : `will-change: transform` n'accélère rien — il
+  demande la PROMOTION de l'élément en couche composée, avec son backing
+  store en mémoire graphique. Il s'ARME juste avant le mouvement et se
+  DÉSARME au repos, via `setLayerHint`/`useLayerHint` + le `onRest` du
+  ressort — **jamais en style permanent sur un item de liste** (une
+  couche par ligne : quelques centaines d'entrées suffisent à faire tuer
+  le process web par iOS, et l'app « redémarre toute seule »). Vérifié
+  par static-checks ; seul l'indicateur d'onglet (un élément de 3 px)
+  fait exception.
+- **Entrée de liste** : une cascade se joue **une seule fois**. Les
+  onglets ne sont pas démontés (`display:none`) et une animation CSS
+  REDÉMARRE au retour à l'affichage : sans garde, toute la liste
+  re-cascade à chaque bascule d'onglet. Un `useEnterOnce()` au niveau de
+  la LISTE (ou de l'item quand le fil de props est trop long, cf.
+  `StatCell`) éteint `staggerStyle` après la première entrée.
+- **Réponse au toucher** : le retour visuel vit sur l'APPUI, jamais sur
+  le relâchement. Le socle est CSS et universel (`:active` → opacité sur
+  tout `button`/`role="button"`/`radio`/`tab`/`switch`), **sans
+  transition** : l'assombrissement tombe sur la frame de l'appui, et
+  aucune propriété animable n'est posée sur tous les boutons de l'arbre.
+  Ajouter
+  `className="alco-press"` (petites cibles) ou `"alco-press-soft"`
+  (cards, lignes pleine largeur) pour le léger recul d'échelle. L'ACTION,
+  elle, se valide au relâchement — pour qu'un appui reste annulable en
+  glissant hors de la cible.
+- **Retour haptique** : `haptic('tick' | 'select' | 'commit' | 'warning'
+  | 'error')`, appelé dans le MÊME handler que le changement visuel (donc
+  la même frame). Réservé aux moments qui comptent — accrochage,
+  validation, suppression ; jamais sur un simple survol ni en continu
+  (un slider ne vibre pas). Coupable dans Paramètres › Retour haptique.
+- **Matières** : le chrome flottant et les panneaux sont des couches de
+  matière (`.alco-material`, `.alco-material-panel` + `.alco-material-edge`),
+  jamais des bandes opaques bordées d'un filet 1px. Une tâche **modale**
+  (formulaire) reste OPAQUE (`.alco-material-sheet`) sur un voile qui
+  assombrit : on ne remplit pas un champ au-dessus d'un texte fantôme.
+  ⚠ Une matière **translucide** (celles qui portent un `backdrop-filter`)
+  ne vit JAMAIS sous un ancêtre transformé ou promu : le moteur n'a alors
+  plus de fond à échantillonner et le flou s'éteint — sur WebKit, pile à
+  la fin de l'animation d'entrée. **L'élément flouté est celui qui
+  bouge** : une feuille passe donc sa classe de matière par
+  `SheetOverlay`'s `sheetClassName` (posée sur l'élément transformé), pas
+  sur un `<div>` enfant. Les matières opaques ne sont pas concernées.
+  Vérifié par static-checks. Détails : § « Matières & profondeur ».
 - **Charts** : tous via les primitives de `stats-charts.jsx`
   (`SvgBarChart`, `SvgRadar`, `SvgDonut`, `SvgLineChart`,
   `SvgPolarClock`, `SvgBACProjection`, `SvgHistogram`). Géométrie/typo/
@@ -115,17 +184,30 @@ Node ≥ 20, zéro framework) :
 
 - **Unitaires purs** (`unit-*.test.js`) : helpers de `shared`/`data`/
   `stats` chargés depuis `proto/dist/` avec des stubs globaux minimaux
-  (`helpers/stub-globals.js`).
+  (`helpers/stub-globals.js`). Dont `unit-motion.test.js` : physique des
+  ressorts (dépassement selon l'amortissement, indépendance à la cadence,
+  conservation de la vitesse au retarget), projection d'élan, élastique,
+  fenêtre de vitesse, et courbe d'approche typographique.
+  `unit-swipe.test.js` couvre le verdict du balayage de suppression
+  (les trois crans, et l'invariant « la vitesse seule ne supprime jamais »).
 - **DB** (`db*.test.js`) : `js/database.js` sur `fake-indexeddb`
   (conversions d'unités, settings, migrations v4→v5, import/export).
 - **Intégration** (`app-*.test.js`) : la vraie app compilée bootée sous
   jsdom + fake-indexeddb + transport de partage mock
   (`helpers/boot-app.js`). Toujours appeler `cleanup()` dans `after()`
-  (ferme la fenêtre jsdom → purge les intervalles 60 s BAC/share).
+  (ferme la fenêtre jsdom → purge les intervalles 60 s BAC/share). Dont
+  `app-gestures.test.js` : ce que seul l'arbre RÉEL peut prouver — le
+  thème repeint jusque dans les composants `React.memo` (lignes
+  d'historique ET charts), la roue crante (un tick et une valeur par cran
+  franchi, aucun tick pour un saut programmé), et le balayage s'arrête au
+  cran ouvert.
 - **Checks statiques** (`static-checks.test.js`) : lint DA sur les
-  sources (couleurs en dur, `<input type="number">`, `<svg>` inline,
-  `window.confirm`), cohérence `sw.js` (triple version identique,
-  `STATIC_FILES` ⊇ scripts d'`index.html`).
+  sources (couleurs en dur, tailles/approches en dur, `<input
+  type="number">`, `<svg>` inline, `window.confirm`), gel des constantes
+  de mouvement, câblage effectif de `useAxisDrag` sur les trois gestes,
+  backticks non échappés dans le CSS injecté, présence des trois
+  préférences d'accessibilité, cohérence `sw.js` (triple version
+  identique, `STATIC_FILES` ⊇ scripts d'`index.html`).
 
 Toute nouvelle feature doit arriver avec ses tests ; `npm test` doit
 être vert avant de pousser.
@@ -159,13 +241,39 @@ Définies dans `shared.jsx` (chargé en premier, donc disponibles partout) :
   `RatingField({ value, onChange, size })`, `FieldGroup({ label, children })`.
 - `TimeField({ value, onChange, ariaLabel })` : champ « Heure » (state
   `'HH:MM'`) stylé comme un input, qui ouvre une **roue iOS**
-  (`TimeWheelSheet` → deux `WheelPicker` heures/minutes). Remplace
-  `<input type="time">` (peu fluide sur Android). Le `WheelPicker` utilise
-  l'accrochage CSS natif (`.alco-wheel`, scroll-snap) + `wheelIndexForOffset`
-  pour l'accrochage au relâchement ; **chaque item est un bouton
-  tap-to-select** (seul chemin testable sous jsdom — pas de scroll réel) et
-  les flèches clavier déplacent la sélection. La **date** reste un
+  (`TimeWheelSheet` → un `WheelGroup` de deux `WheelPicker`). Remplace
+  `<input type="time">` (peu fluide sur Android). La **date** reste un
   `<input type="date">` natif.
+
+  **La roue CRANTE sous le doigt.** Chaque fois que le centre passe sur un
+  item, `WheelPicker` vibre (`haptic('tick')`) ET notifie `onChange` — sur
+  la MÊME frame, comme la roue par défaut d'iOS. Ne jamais revenir à une
+  notification à l'arrêt du défilement : on n'avait alors qu'une seule
+  vibration, détachée du geste, et un item « sélectionné » qui n'attrapait
+  le centre qu'après coup. Trois pièces rendent ça sûr :
+  - `liveRef` — dernier cran FRANCHI. Il distingue « le doigt vient de
+    passer un cran » (tick + notification) de « la valeur a changé depuis
+    l'extérieur » (repositionnement silencieux). Sans lui, l'effet de
+    repositionnement corrigerait `scrollTop` à chaque cran et arracherait
+    la roue des doigts.
+  - `programmaticRef` — un défilement PROGRAMMÉ (tap sur un cran lointain,
+    flèche clavier) traverse des dizaines de crans sans tous les faire
+    vibrer. Il n'est armé que si le défilement va réellement avoir lieu, et
+    tout contact du doigt le lève.
+  - le galbe est piloté par la POSITION de défilement
+    (`animation-timeline: view(y)`, CSS pur, sous `@supports`) : le relief
+    suit le doigt exactement sans qu'une seule frame de JS ne s'en mêle.
+    Repli discret en trois paliers (styles inline) sur les moteurs sans
+    timeline — une animation CSS l'emporte sur un style inline, la
+    substitution se fait donc sans condition à tester.
+
+  La maille vit dans le spec **`WHEEL`** (hauteur de cran, crans visibles,
+  largeur de colonne, paliers du repli) — jamais un nombre en dur dans le
+  composant. `WheelGroup` porte UNE bande de sélection en travers de
+  plusieurs colonnes : « 07:30 » se lit comme une valeur, pas comme deux
+  listes voisines. Chaque item reste un **bouton tap-to-select** (seul
+  chemin testable sous jsdom — pas de scroll réel) et les flèches clavier
+  déplacent la sélection.
 
 Les sheets d'add/édition (`AddDrinkSheet`, `EditEntrySheet`,
 `EditFamilySheet`) et le poids (Paramètres › `ProfileRow numeric`)
@@ -214,6 +322,180 @@ quand la cible change (évite des champs figés sur l'ancienne cible).
   (aria-label « Appliquer le prix suggéré … ») qui ré-active `priceAuto`
   d'un tap — jamais d'écrasement sans ce geste explicite. Toute
   évolution du prix passe par cet helper, pas par un calcul local.
+
+### Mouvement — un geste qui répond
+
+Tout le moteur vit dans `shared.jsx` (§ Ressorts / Élan / Geste). Les
+helpers sont **purs et testés** (`unit-motion.test.js`) ; les constantes
+sont **gelées** par `static-checks` — les changer, c'est changer le
+toucher de l'app, jamais un détail.
+
+**Les quatre pièces**
+
+- `springStep(state, target, config, dt)` — intégration ANALYTIQUE d'un
+  ressort (`{ damping, response }`, vocabulaire Apple : 1 = amorti
+  critique, aucun dépassement ; `response` = secondes pour rejoindre la
+  cible, PAS une durée). Analytique = indépendant de la cadence : une
+  frame sautée ne change ni la trajectoire ni le point d'arrivée.
+- `projectMomentum(v, decel)` — où le geste VA (décroissance
+  exponentielle, la formule du sample code Apple ; surtout pas `v²/2a`).
+  On projette le point d'arrivée PUIS on décide — c'est ce qui fait qu'un
+  petit coup sec emporte la décision autant qu'un long glissement.
+- `rubberband(overshoot, dim)` / `clampRubber(v, min, max, dim)` — bord
+  SOUPLE. Un arrêt net se lit « figé » ; une résistance progressive se lit
+  « ça répond, mais il n'y a rien de plus par là ».
+- `createVelocityTracker(ms)` — vitesse de relâchement mesurée sur une
+  FENÊTRE glissante. Jamais sur les deux derniers points : un doigt qui
+  s'immobilise une frame avant de lâcher donnerait 0 et tuerait l'élan.
+- `axisLock(delta, cross)` — quelle direction le geste a choisie, avec le
+  **défilement prioritaire** : l'axe ne l'emporte que s'il domine
+  franchement (`MOTION.axisBias`), au-delà de `MOTION.lockPx`. Un pouce
+  qui défile décrit un arc ; avec un simple `|d| > |cross|` sa dérive de
+  deux pixels engageait le geste, figeait la liste et faisait avaler le
+  tap suivant par le garde anti-clic fantôme.
+
+**Les deux hooks**
+
+- `useSpringDriver(apply, opts)` — un ressort qui écrit dans le DOM via
+  `apply(x, v)` (une `transform`, propriété compositée). JAMAIS de
+  `setState` par frame : re-rendre l'arbre d'une feuille à 60 fps la fait
+  saccader. `set(to, { velocity, config })` repart TOUJOURS de la valeur
+  affichée et CONSERVE la vitesse — pas de « mur » quand un geste
+  s'inverse. `snap(v)` pose la valeur sans animer (le suivi 1:1).
+- `useAxisDrag({ axis, apply, bounds, decide, onCommit, … })` — le socle
+  de tout ce qui se tire au doigt. Il fait, une fois et correctement :
+  suivi 1:1 depuis le point de saisie, capture du pointeur, hystérésis
+  puis engagement franc d'une direction (le geste concurrent est
+  abandonné), bords élastiques, projection d'élan à la relâche, passage
+  de la vitesse au ressort, **reprise en vol** (saisir pendant
+  l'animation repart de la valeur affichée), et avalement du clic
+  fantôme. `decide({ from, velocity, projected })` rend
+  `{ to, commit, config }` : au-delà d'une vitesse franche c'est le SIGNE
+  de la vitesse qui tranche, en dessous c'est l'arrivée PROJETÉE — jamais
+  la position de relâchement seule.
+
+**Règle** : un nouveau geste passe par `useAxisDrag`. Réécrire des
+`onPointerDown/Move/Up` à la main, c'est réintroduire les bugs qu'il
+corrige (vérifié par static-checks pour les trois gestes existants).
+
+**Balayage pour supprimer** (`useSwipeToDelete`, history.jsx) — trois
+positions de repos, et c'est ce qui le rend facile :
+- fermé (0) ;
+- **OUVERT** (`-SWIPE_ACTION_W`) : la ligne s'accroche là et découvre un
+  vrai bouton « Supprimer » qu'on tape tranquillement. C'est le cran qui
+  manquait : sans lui le geste était tout-ou-rien, il fallait franchir un
+  seuil du premier coup, sinon la ligne se rétractait et tout était à
+  refaire ;
+- supprimé (hors écran).
+
+Qui tranche, et pourquoi : la **DISTANCE** réellement parcourue décide de
+la suppression (au-delà de la moitié de la ligne — une fraction de la
+largeur MESURÉE, pas un nombre de pixels : le même geste doit vouloir dire
+la même chose sur un petit téléphone et sur la maquette large). La
+projection d'élan, elle, ne choisit qu'entre « fermé » et « ouvert » — un
+flick court suffit à ouvrir. Sans cette séparation, un geste bref mais vif
+projetait au-delà du seuil et supprimait par surprise. Seule exception :
+la ligne **déjà ouverte au repos** (`fromOpen`) qu'on relance d'un coup
+sec — là l'intention ne fait pas de doute.
+
+Tout ça vit dans `swipeVerdict({ from, velocity, projected, width,
+fromOpen })`, **fonction pure exportée** (`unit-swipe.test.js` : cas
+nominaux + invariants sur des balayages entiers) — jamais une décision de
+geste enfouie dans un handler. Trois détails qui ne se voient qu'à
+l'usage :
+- une **seule ligne ouverte** à la fois (registre au niveau module, pas un
+  contexte : la fermeture part d'un handler de geste, à chaud) ;
+- ouverte, la ligne devient **inerte** (voile au-dessus du contenu) : « + »
+  et « Modifier » agissent au relâchement, sans voile un tap destiné à
+  refermer ajoutait une boisson au passage ;
+- le **clic fantôme** qui suit un vrai glissement est avalé AVANT la règle
+  « ouverte, un tap referme » — sinon le geste refermait aussitôt ce qu'il
+  venait d'ouvrir.
+
+`apply` doit rester le SEUL point d'écriture du DOM pour un geste donné :
+le doigt et le ressort passent par la même fonction, ils ne peuvent donc
+pas se désynchroniser (et un voile qui suit la traînée bouge à la même
+frame que la feuille). `onRest` est son pendant : le moment où le
+mouvement est FINI, donc où l'on rend la couche composée
+(`useLayerHint`).
+
+**Chaque geste a sa zone, et il l'a à lui.** Deux gestes ne se disputent
+jamais la même surface, et un `touch-action` ne se pose jamais « pour
+faire large » : il s'intersecte avec celui de TOUS les descendants (une
+racine en `pan-y` supprime le défilement horizontal de tout ce qu'elle
+contient — bug historique du sélecteur de période dans la fiche ami).
+Trois formes, selon ce que le contenu revendique :
+- zone dédiée en `touch-action: none` quand le contenu voisin défile dans
+  les deux sens — poignée d'une feuille du bas (`SheetGrabber`), bande de
+  bord gauche de la fiche ami ;
+- `touch-action: pan-y` quand seul l'axe horizontal nous revient — tiroir
+  latéral traînable partout, ligne d'historique balayable ;
+- rien du tout quand la zone n'a aucun geste JS.
+
+**Reduced-motion** : `useReducedMotion()` coupe translations et ressorts
+(fondu court à la place) et désactive le drag-to-dismiss ; le retour à
+l'appui, lui, RESTE (en opacité seule). Moins d'animation ne veut pas
+dire moins de retour.
+
+### Matières & profondeur
+
+Trois poids, et le choix se justifie :
+
+- `.alco-material` — chrome flottant (barre d'onglets). Fin, très
+  translucide : le contenu DOIT rester devinable dessous, c'est ce qui
+  dit « la liste continue ». La barre est en `position: absolute` et les
+  zones défilantes réservent 120 px en bas — le contenu passe donc
+  réellement SOUS elle. Aucun filet 1px : la séparation vient du flou et
+  de l'arête claire (`.alco-material-edge`, ombre interne haute).
+- `.alco-material-panel` — panneau parallèle (tiroir Paramètres) : plus
+  épais, on garde le fil de ce qu'on faisait derrière sans le lire.
+- `.alco-material-sheet` — tâche MODALE (ajout/édition) : **opaque**, sur
+  un voile qui assombrit. Concentrer, pas exhiber la profondeur.
+
+**Où poser une matière translucide.** Un `backdrop-filter` échantillonne
+ce qui est peint DERRIÈRE lui — et un ancêtre transformé ou promu
+(`will-change`) ne lui laisse plus rien à échantillonner : le flou
+s'éteint, sur WebKit exactement au moment où la couche est promue, donc
+juste après l'animation d'entrée. Une feuille passe donc sa classe de
+matière par `SheetOverlay`'s **`sheetClassName`**, qui la pose sur
+l'élément que le ressort transforme — jamais sur un `<div>` enfant. Même
+raison pour ne pas imbriquer une zone défilante sous le filtre : elle
+sortirait du chemin composité. Les matières OPAQUES
+(`.alco-material-sheet`) échappent à tout ça — sans filtre, aucun
+backdrop à perdre. Vérifié par static-checks.
+
+Les rayons de flou (`MATERIAL.blur`) sont volontairement modestes : leur
+coût croît avec le rayon et il est repayé à chaque frame tant que le
+contenu défile dessous. Au-delà d'une quinzaine de pixels on ne gagne
+plus de lisibilité, seulement des images par seconde.
+
+Les couleurs vivent dans `THEMES` (`glassChrome`/`glassPanel`/
+`glassSolid`/`glassEdge`/`shadowChrome`/`shadowSheet`) et sont republiées
+en variables CSS par `applyThemeCssVars()` à chaque changement de thème —
+la feuille de style est le SEUL endroit d'où l'on peut répondre à
+`prefers-reduced-transparency` et `prefers-contrast`, impossible en style
+inline. Ne jamais écrire une couleur dans le CSS injecté : `var(--alco-…)`
+uniquement.
+
+**Trois préférences INDÉPENDANTES**, trois réponses (hooks
+`useReducedMotion` / `useReducedTransparency` / `useHighContrast`, plus
+les média-requêtes CSS) : moins d'animation, matière givrée → opaque,
+fonds quasi opaques + bordure franche. Un repli `@supports not
+(backdrop-filter)` couvre les navigateurs sans flou — sans lui, une
+couche « translucide » y devient une vitre sale illisible.
+
+**Vibrance** : au-dessus d'une matière, le contenu défile derrière le
+texte — un gris pâle y devient illisible. Les libellés du chrome restent
+en encre (`T.ink2` au minimum), jamais en `T.muted`.
+
+**Bord de défilement** : une bande qui déborde (rangée de pilules) porte
+`className="alco-fade-x"` — le contenu s'efface au bord au lieu d'être
+tranché net. Masque en couleurs-mots clés (`black`/`transparent`)
+uniquement, jamais de littéral de couleur.
+
+⚠️ Le CSS de base est un **template literal** : tout backtick dans un
+commentaire le FERME, l'IIFE jette et l'app entière ne démarre plus.
+Utiliser « … » dans les commentaires CSS (vérifié par static-checks).
 
 ### Charts — construire une figure parfaite
 
@@ -346,6 +628,12 @@ et ne changent JAMAIS silencieusement :
    (`const BAC_ELIM_RATE = 150;`…) doivent exister verbatim dans les
    sources.
 
+Le **mouvement** suit le même principe : les ressorts nommés
+(`MOTION.spring.*`), le taux de décélération, la constante d'élastique et
+la courbe d'approche typographique sont gelés par `static-checks` et
+vérifiés par `unit-motion.test.js`. Les modifier change le toucher de
+toute l'app — jamais en passant.
+
 Si un test de gel échoue : c'est soit un bug à corriger, soit un
 changement de formule VOULU — auquel cas mettre à jour **les deux
 verrous dans le même commit**, en expliquant le pourquoi dans le
@@ -428,25 +716,67 @@ double-tap / Ctrl+molette dans `installZoomGuards()`, shared.jsx). Ne
 jamais réintroduire un mécanisme qui en dépend ; le zoom interne de la
 carte Leaflet reste fonctionnel.
 
+**Orientation** : l'app est PORTRAIT, toujours. Une mise en page pensée
+pour une colonne de pouce n'a rien à dire en paysage — les feuilles du bas
+mangent l'écran, la barre d'onglets touche le contenu, la jauge BAC n'a
+plus de hauteur. Aucun mécanisme ne couvre seul tous les moteurs, il en
+faut donc trois, et il faut les GARDER tous les trois :
+1. `"orientation": "portrait-primary"` (manifest.json) — Android, PWA
+   installée ;
+2. `installOrientationLock()` (shared.jsx) → `screen.orientation.lock()`,
+   verrou RÉEL mais qui n'existe que sur Android (et seulement en plein
+   écran / installé). Il échoue silencieusement partout ailleurs : c'est
+   le cas NORMAL, pas une erreur (il jette en synchrone sur certains
+   moteurs, rejette une promesse sur d'autres — les deux sont attrapés),
+   et il est reposé au retour au premier plan ;
+3. le garde `#alco-rotate` (index.html) — le SEUL recours sur iOS Safari,
+   qui ignore les deux premiers. Markup + styles vivent dans le HTML : il
+   couvre donc aussi l'instant d'avant le boot de React, et une
+   média-requête ne peut pas se désynchroniser d'un état JS.
+La requête vise le paysage **sur un écran de téléphone**
+(`(orientation: landscape) and (max-height: 520px)`) : un desktop ou une
+tablette en 1280×800 est en paysage lui aussi et n'a aucune raison d'être
+bloqué. Le garde masque le contenu (`visibility: hidden`) au lieu de
+seulement le recouvrir — un lecteur d'écran ne doit pas continuer à
+parcourir une app qu'on vient de refuser. Vérifié par static-checks.
+
 ### Sheets / overlays
 
 - `SheetOverlay` accepte `side: 'bottom' | 'left' | 'right'` et porte
-  lui-même l'animation d'ENTRÉE (`slideUp`/`slideRight`/`slideLeft`)
-  sur le wrapper du dialog — **ne plus poser d'`animation:` sur la
-  racine d'une sheet**.
+  lui-même le MOUVEMENT de la feuille — **ne jamais poser d'`animation:`
+  ni de `transform` sur la racine d'une sheet**. Un ressort unique pilote
+  l'entrée (depuis le bord, sans rebond : aucun geste ne l'a lancée), le
+  suivi du doigt, et la sortie (même chemin qu'à l'entrée). Le voile suit
+  la traînée EN CONTINU depuis ce même ressort.
+- **Traîner pour fermer** : une feuille du bas se repousse par son
+  en-tête — chaque sheet rend son en-tête dans `<SheetGrabber>` (la
+  barrette + le titre + le bouton fermer). C'est volontairement restreint
+  à l'en-tête : le geste vertical du CONTENU appartient à son défilement.
+  Les tiroirs latéraux, eux, se traînent depuis n'importe où (l'axe
+  horizontal n'entre en conflit avec rien).
 - **Fermeture animée** : chaque sheet fait
-  `const [closing, close] = useSheetClose(onClose)` (passer `open` en
-  2ᵉ argument pour les sheets montées en continu : AddDrinkSheet,
-  SettingsDrawer), passe `onClose={close} closing={closing}` à
+  `const [closing, close, cancelClose] = useSheetClose(onClose)` (passer
+  `open` en 2ᵉ argument pour les sheets montées en continu :
+  AddDrinkSheet, SettingsDrawer), passe
+  `onClose={close} closing={closing} onCancelClose={cancelClose}` à
   `SheetOverlay` et appelle `close()` partout en interne (X, Annuler,
-  succès de submit…). `close()` joue la sortie (`MOTION.fast`) puis
-  appelle le vrai `onClose` ; idempotent ; immédiat en
-  prefers-reduced-motion. Exception : remplacer une sheet par une autre
-  (ex. `onAddAgain`) reste un swap instantané via le parent.
-- `FriendStatsView` suit le même hook avec les keyframes `pageIn`/
-  `pageOut` (transition de page, pousse depuis la droite) et possède
-  son `useBackButton(true, close)` — comme une sheet, montée = piège
-  Retour posé.
+  succès de submit…). `close()` lance le ressort de sortie puis démonte
+  après `MOTION.exit` ; idempotent ; immédiat en prefers-reduced-motion.
+  Exception : remplacer une sheet par une autre (ex. `onAddAgain`) reste
+  un swap instantané via le parent.
+- **Rattraper une feuille qui part** : `cancelClose()` désarme une
+  fermeture en cours ; `SheetOverlay` l'appelle dès qu'un doigt saisit la
+  poignée. Pendant la sortie, le CONTENU devient inerte (plus de
+  double-tap sur une action déjà lancée) mais la poignée reste vivante —
+  c'est ce qui rend la feuille rattrapable au vol. Ne jamais remettre un
+  `pointerEvents: 'none'` global sur l'overlay.
+- `FriendStatsView` suit le même hook, avec sa propre translation à
+  ressort (pousse depuis la droite, repart vers la droite) et son
+  `useBackButton(true, close)` — comme une sheet, montée = piège Retour
+  posé. Elle se repousse aussi au doigt, **depuis le bord gauche
+  uniquement** : ailleurs, ses défilements horizontaux (sélecteur de
+  période) restent prioritaires. Deux gestes ne se disputent jamais la
+  même zone.
 - **Back système** : les pièges d'historique portent le state
   `__alcoBack` ; au boot, `shared.jsx` consomme un piège resté courant
   (app tuée avec un overlay ouvert) sinon le premier geste retour
@@ -457,6 +787,13 @@ carte Leaflet reste fonctionnel.
   (`role`, `aria-label`, `tabIndex` au besoin).
 - Préférer `Confirm.ask({ title, message, confirmText, danger })` au
   `window.confirm` natif.
+- **Rangées de réglage** (`SettingRow`) : pas de chevron d'affordance. Un
+  chevron VERS LE BAS annonce un dépliage ; sur une rangée qui lance une
+  action (Exporter, Importer, copier le code) il promettait autre chose
+  que ce qui se passe, et n'ajoutait aucune information — la rangée
+  entière EST le bouton et répond déjà à l'appui (`.alco-press-soft`).
+  Seule une valeur à droite (« Membres · 3 ») a quelque chose à dire.
+  Vérifié par static-checks.
 
 ### Icônes
 
@@ -738,7 +1075,13 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
 - Edit d'une famille : toutes les entrées migrées d'un coup.
 - Suppression d'une entrée depuis le détail : si dernière, sheet se
   ferme ; sinon timeline mise à jour.
-- Swipe gauche dans Historique → suppression.
+- **Balayage dans Historique** : un petit balayage vers la gauche ACCROCHE
+  la ligne sur le plateau « Supprimer » (elle ne se rétracte plus) ; taper
+  le plateau supprime ; taper ailleurs sur la ligne la referme SANS ajouter
+  de boisson ni ouvrir la fiche ; ouvrir une autre ligne referme la
+  première ; un balayage franc au-delà de la moitié de la ligne supprime
+  directement (vibration au franchissement du point de non-retour) ; un
+  balayage bref mais vif n'efface JAMAIS par surprise.
 - BAC : ajouter une bière maintenant et vérifier que la pilule
   d'en-tête monte, que la projection se courbe, que le scrubber suit
   le doigt.
@@ -753,8 +1096,23 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
   courbe (jusqu'à 0) rentre dans le graphe, sans fin coupée au bord droit.
 - **Calendrier / Sessions** : la heatmap colore les jours selon les
   grammes ; la liste Sessions montre date, durée, pic ; tap → tooltip.
-- **Heure (roue)** : le champ Heure ouvre une roue ; faire défiler/​taper
-  une heure et une minute, OK → l'heure est posée ; fluide sur Android.
+- **Heure (roue)** : le champ Heure ouvre une roue ; le défilement CRANTE —
+  une petite vibration à CHAQUE minute/heure franchie, et le chiffre centré
+  change en même temps que le doigt (pas à l'arrêt) ; les crans voisins
+  s'inclinent et s'éloignent comme les faces d'un cylindre ; taper un cran
+  lointain n'égrène PAS toutes les vibrations du trajet ; OK → l'heure est
+  posée ; fluide sur Android.
+- **Thème** : basculer clair ↔ sombre depuis Paramètres, puis parcourir les
+  TROIS onglets — aucune carte, ligne d'historique, cellule de stat ni
+  chart ne doit rester peint dans l'ancien thème.
+- **Orientation** : tourner le téléphone en paysage sur chaque onglet et
+  avec une feuille ouverte → l'app ne bascule jamais ; sur iOS le garde
+  « Tourne ton téléphone » couvre l'écran et disparaît au retour en
+  portrait, sans rien perdre de l'état en cours. Sur un écran large
+  (tablette, desktop), le garde ne doit JAMAIS apparaître.
+- **Paramètres** : les rangées d'action (Exporter, Importer, Code
+  d'invitation…) n'affichent plus de chevron ; les valeurs à droite
+  (Membres) restent.
 - **Couleur de catégorie** : « Modifier » → slider Teinte ; la pastille/
   l'icône se recolorent en direct ; « Auto » revient au défaut ; la
   couleur persiste au reload et survit à un renommage. **Changer
@@ -782,7 +1140,42 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
   panneau (et le serveur refuse de toute façon).
 - **Sheets** : chaque fermeture (X, Annuler, succès, backdrop, Escape,
   Retour système) glisse vers sa sortie au lieu de disparaître sec ;
-  aucune interaction possible pendant la sortie.
+  le contenu est inerte pendant la sortie (pas de double-tap).
+- **Sheets — traîner pour fermer** : pousser l'en-tête vers le bas fait
+  suivre la feuille au doigt et éclaircit le voile EN CONTINU ; la
+  relâcher à mi-course la ferme, un petit coup sec aussi ; un glissement
+  court la ramène en place sans rebond. Tirer vers le HAUT résiste
+  (élastique) au lieu de bloquer net. Le défilement du contenu marche
+  toujours (le geste ne part que de l'en-tête).
+- **Sheets — rattraper** : lancer la fermeture puis re-saisir la poignée
+  pendant qu'elle part → elle repart du doigt, sans saut, et ne se ferme
+  plus. Idem pour la fiche ami depuis le bord gauche.
+- **Tiroir Paramètres — la matière TIENT** : ouvrir le tiroir et le
+  regarder ≥ 5 s → le flou reste, il ne « retombe » pas en aplat une
+  seconde après l'entrée. Défiler la liste des réglages est fluide.
+  Défiler verticalement au pouce (arc, donc un peu oblique) ne fait PAS
+  partir le tiroir ; tirer franchement à gauche le ferme toujours ; un
+  tap sur une ligne répond du premier coup.
+- **Fiche ami — défilements internes** : le sélecteur de période se fait
+  défiler horizontalement partout SAUF sur la bande du bord gauche, qui
+  reste le geste de retour. Le bouton Retour reste tapable.
+- **Onglets — pas de re-cascade** : aller-retour Catégories ↔ Historique
+  ↔ Stats → la liste ne rejoue ni son entrée ni sa cascade à chaque
+  bascule (seulement la première fois qu'on regarde l'onglet).
+- **Historique — mémoire** : sur un historique fourni, défiler de bout en
+  bout plusieurs fois puis naviguer 5 min dans l'app → aucune relance
+  spontanée de la PWA (une couche composée par ligne était la cause).
+- **Balayage** : franchir le seuil de suppression se sent (vibration) ;
+  relâcher avant annule sans rebond ; un flick court suffit à supprimer.
+- **Haptique** : Paramètres › Retour haptique coupe toutes les vibrations
+  (accrochage de roue, réordonnancement, suppression) ; le réglage
+  survit au rechargement.
+- **Accessibilité système** : activer « réduire les animations » → plus
+  aucune translation, les feuilles apparaissent en fondu, l'appui répond
+  encore (opacité). Activer « réduire la transparence » ou « contraste
+  élevé » → la barre d'onglets et le tiroir deviennent opaques.
+- **Taille du texte** : augmenter la taille de police du navigateur/de
+  l'OS agrandit toute la typographie de l'app (elle est en `rem`).
 - Carte : un drink avec coordonnées doit apparaître ; sans coords,
   message vide.
 - Tiroir paramètres : ouvre depuis la gauche, slide animé.

@@ -135,6 +135,249 @@ test('DA : composant React.memo qui peint catColor/catBg → useCatPalette() obl
     'composants memoïsés peignant une couleur de catégorie sans abonnement palette');
 });
 
+test('DA : composant React.memo qui lit T.* → useTheme() obligatoire', () => {
+  // Même piège que la palette de catégories, une couche plus bas : `T` n'est
+  // pas un state React mais un objet MUTÉ SUR PLACE par setTheme(). Le
+  // changement est donc invisible pour React — un composant memoïsé dont les
+  // props n'ont pas bougé ne se re-rend pas et repeint l'ancien thème (bug
+  // historique « je passe en clair, la liste et les charts restent sombres »).
+  // useTheme() s'abonne à __themeListeners et force le re-render : tout
+  // composant memoïsé qui lit un token doit l'appeler.
+  const offenders = [];
+  // Corps d'une fonction par équilibrage d'accolades depuis `from`.
+  const bodyAt = (src, from) => {
+    const open = src.indexOf('{', src.indexOf(')', from));
+    if (open === -1) return '';
+    let depth = 0;
+    for (let i = open; i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}') { depth--; if (depth === 0) return src.slice(open, i + 1); }
+    }
+    return '';
+  };
+  for (const f of jsxFiles) {
+    const src = read(path.join('proto', f));
+    const memoised = new Map();
+    let m;
+    // Forme 1 — `React.memo(function Nom(…) {…})`, memoïsé à la déclaration.
+    const inline = /React\.memo\(function\s+(\w+)/g;
+    while ((m = inline.exec(src)) !== null) memoised.set(m[1], bodyAt(src, m.index));
+    // Forme 2 — `Nom = React.memo(Nom);`, memoïsé au boundary (stats-charts).
+    const wrapped = /^\s*(\w+)\s*=\s*React\.memo\((\w+)\);/gm;
+    while ((m = wrapped.exec(src)) !== null) {
+      if (m[1] !== m[2]) continue;
+      const decl = src.indexOf('function ' + m[1] + '(');
+      if (decl !== -1) memoised.set(m[1], bodyAt(src, decl));
+    }
+    for (const [name, body] of memoised) {
+      if (/\bT\.[a-zA-Z]/.test(body) && !body.includes('useTheme()')) {
+        offenders.push(`proto/${f} › ${name}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [],
+    `composants memoïsés lisant un token de thème sans useTheme() :\n${offenders.join('\n')}`);
+});
+
+// ── Typographie : l'approche suit la TAILLE, jamais une valeur en dur ──
+test('DA : aucune taille/approche en dur — remSize()/tracking()/type() partout', () => {
+  // Une seule valeur d'approche pour toutes les tailles est forcément fausse
+  // quelque part (cf. CLAUDE.md › DA § Typographie). Et une taille en px
+  // ignore le réglage « taille du texte » du système : tout passe par la
+  // grille (remSize/tracking/type/TYPE).
+  const offenders = [];
+  for (const f of jsxFiles) {
+    const src = read(path.join('proto', f));
+    const lines = src.split('\n');
+    // Le bloc TYPE de shared.jsx EST le système : c'est là que vivent les
+    // constantes de la courbe et la définition des rôles.
+    const allowed = f === 'shared.jsx'
+      ? blockRanges(lines, /^const TRACKING_A = /, /^const TYPE = Object\.freeze\(\{[\s\S]*/)
+        .concat(blockRanges(lines, /^const TYPE = Object\.freeze\(\{/, /^\}\);/))
+      : [];
+    lines.forEach((line, i) => {
+      if (inRanges(allowed, i)) return;
+      if (/^\s*(\/\/|\*)/.test(line)) return;
+      if (/\bfontSize:\s*-?\d/.test(line)) offenders.push(`fontSize en dur — proto/${f}:${i + 1}`);
+      if (/\bletterSpacing:\s*-?\d/.test(line)) offenders.push(`letterSpacing en dur — proto/${f}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(offenders, [],
+    `Taille/approche hors grille typographique :\n${offenders.join('\n')}`);
+});
+
+// ── Mouvement : le moteur est bien celui qui pilote les gestes ─────
+test('gel — constantes de mouvement (ressorts, décélération, élastique)', () => {
+  // Même logique que le gel des formules : le « toucher » de l'app ne doit
+  // pas dériver en silence. Changement voulu ? Mettre à jour CE test ET
+  // unit-motion.test.js dans le même commit.
+  const src = read('proto/shared.jsx');
+  const frozen = [
+    /ui:\s+Object\.freeze\(\{ damping: 1,\s+response: 0\.35 \}\)/,
+    /move:\s+Object\.freeze\(\{ damping: 1,\s+response: 0\.4 \}\)/,
+    /sheet:\s+Object\.freeze\(\{ damping: 0\.8, response: 0\.3 \}\)/,
+    /flick:\s+Object\.freeze\(\{ damping: 0\.8, response: 0\.4 \}\)/,
+    /decel: 0\.998,/,
+    /rubber: 0\.55,/,
+    /const TRACKING_A = 0\.49;/,
+    /const TRACKING_B = -0\.035;/,
+    /lockPx: 6,/,
+    /axisBias: 1\.4,/,
+  ];
+  for (const re of frozen) {
+    assert.match(src, re,
+      `${re} introuvable — CONSTANTE DE MOUVEMENT GELÉE (CLAUDE.md § Mouvement). ` +
+      'Changement voulu ? Mettre à jour CE test ET unit-motion.test.js dans le même commit.');
+  }
+});
+
+test('gestes : feuilles, balayage et retour de page passent par useAxisDrag', () => {
+  // Le suivi 1:1, la capture du pointeur, l'élastique, la projection d'élan
+  // et la reprise en vol vivent DANS useAxisDrag. Réécrire un geste à la main
+  // à côté, c'est réintroduire les bugs qu'il corrige.
+  const wired = [
+    ['proto/shared.jsx', 'SheetOverlay (feuilles / tiroirs)'],
+    ['proto/history.jsx', 'balayage pour supprimer'],
+    ['proto/friends.jsx', 'retour de page au doigt'],
+  ];
+  for (const [file, what] of wired) {
+    assert.ok(read(file).includes('useAxisDrag({'), `${what} : useAxisDrag attendu dans ${file}`);
+  }
+});
+
+test('perf : `will-change` n’est jamais posé en style PERMANENT', () => {
+  // `will-change: transform` ne rend rien plus fluide : il demande la
+  // PROMOTION de l'élément en couche composée, avec son backing store en
+  // mémoire graphique. Sur un item de liste, c'est une couche PAR LIGNE —
+  // quelques centaines d'entrées suffisent à faire tuer le process web par
+  // iOS (« l'app redémarre toute seule »). Et un ancêtre ainsi promu coupe le
+  // backdrop d'une matière descendante, qui s'éteint.
+  // La seule écriture autorisée passe par setLayerHint/useLayerHint, qui
+  // arment au geste et RENDENT la couche au repos.
+  const allowed = new Set([
+    // Indicateur d'onglet : UN élément de 3px qui bouge à chaque bascule.
+    'proto/app.jsx',
+    // Définition du helper lui-même.
+    'proto/shared.jsx',
+  ]);
+  const offenders = [];
+  for (const f of jsxFiles) {
+    // Chemin POSIX explicite : `path.join` produirait `proto\app.jsx` sous
+    // Windows, que la liste blanche (en slashes) ne reconnaîtrait pas — le
+    // check échouait sur la seule exception légitime, hors de tout bug réel.
+    const file = `proto/${f}`;
+    if (allowed.has(file)) continue;
+    read(file).split('\n').forEach((line, i) => {
+      if (/^\s*(\/\/|\*|\{?\/\*)/.test(line)) return;   // commentaires
+      if (/\bwillChange\s*:/.test(line)) offenders.push(`${file}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(offenders, [],
+    `will-change permanent (utiliser useLayerHint) :\n${offenders.join('\n')}`);
+  // Et le helper existe bien, avec sa remise à zéro.
+  const shared = read('proto/shared.jsx');
+  assert.match(shared, /function setLayerHint\(/, 'setLayerHint absent');
+  assert.match(shared, /function useLayerHint\(/, 'useLayerHint absent');
+});
+
+test('perf : pas de `text-rendering: optimizeLegibility` global', () => {
+  // Il force le crénage et les ligatures sur TOUT le texte de l'app : un coût
+  // de mise en page sur chaque ligne de chaque liste, pour un gain nul avec
+  // les fontes du projet.
+  // Commentaires retirés : la règle est justifiée EN COMMENTAIRE sur place,
+  // et cette explication cite forcément le nom de la propriété bannie.
+  const html = read('index.html').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(!/text-rendering:\s*optimizeLegibility/.test(html),
+    'optimizeLegibility ralentit toute la mise en page du texte');
+});
+
+test('matières : une matière TRANSLUCIDE vit sur l’élément qui bouge', () => {
+  // Sous un ancêtre transformé/promu, WebKit n'a plus de fond à échantillonner
+  // et le flou s'éteint — sur iOS, pile à la fin de l'animation d'entrée
+  // (« le translucide se retire après une seconde »). SheetOverlay expose donc
+  // `sheetClassName`, posé sur l'élément qu'il transforme lui-même.
+  const shared = read('proto/shared.jsx');
+  assert.match(shared, /sheetClassName/, 'SheetOverlay doit exposer sheetClassName');
+  assert.match(shared, /className=\{sheetClassName\}/,
+    'sheetClassName doit être posé sur l’élément transformé (ref={sheetRef})');
+  const offenders = [];
+  for (const f of jsxFiles) {
+    read(path.join('proto', f)).split('\n').forEach((line, i) => {
+      // Les matières OPAQUES (alco-material-sheet) ne sont pas concernées :
+      // sans backdrop-filter, aucun backdrop à perdre.
+      if (/className="[^"]*alco-material-panel/.test(line) &&
+          !/sheetClassName=/.test(line)) {
+        offenders.push(`proto/${f}:${i + 1}`);
+      }
+    });
+  }
+  assert.deepEqual(offenders, [],
+    `matière translucide posée sur un enfant (passer par sheetClassName) :\n${offenders.join('\n')}`);
+});
+
+test('gestes : le geste ne dispute jamais sa zone au défilement', () => {
+  // Un `touch-action` posé sur une racine s'intersecte avec celui de TOUS ses
+  // descendants : la fiche ami perdait le défilement horizontal de son
+  // sélecteur de période. Le geste vit donc dans une bande à lui.
+  const friends = read('proto/friends.jsx');
+  assert.match(friends, /width: PAGE_EDGE_PX/,
+    'le retour de page doit avoir sa bande de saisie dédiée');
+  assert.ok(!/pointerEvents: closing \? 'none' : undefined,\n\s+touchAction: 'pan-y' \}\}>/.test(friends),
+    'plus de touch-action sur la racine de la fiche ami');
+  // Un tiroir latéral, lui, se traîne partout : le vertical doit alors rester
+  // au navigateur, sinon le doigt bouge le tiroir ET défile la liste.
+  assert.match(read('proto/shared.jsx'), /touchAction: isSide && dismissible && !reduced \? 'pan-y'/,
+    'les tiroirs latéraux doivent laisser le pan vertical au navigateur');
+});
+
+test('CSS injecté : aucun backtick non échappé (casserait tout le module)', () => {
+  // Le CSS de base vit dans un template literal. Un backtick oublié dans un
+  // commentaire le FERME : l'IIFE jette, l'évaluation de shared.js s'arrête
+  // net et l'app entière ne démarre plus (aucun token, aucun composant).
+  const src = read('proto/shared.jsx');
+  const start = src.indexOf('s.textContent = `');
+  assert.ok(start > 0, 'bloc CSS injecté introuvable');
+  const body = src.slice(start + 's.textContent = `'.length);
+  const end = body.indexOf('\n  `;');
+  assert.ok(end > 0, 'fin du bloc CSS introuvable');
+  const inner = body.slice(0, end);
+  const bad = [];
+  inner.split('\n').forEach((line, i) => {
+    for (let c = 0; c < line.length; c++) {
+      if (line[c] === '`' && line[c - 1] !== '\\') bad.push(`ligne ${i + 1} : ${line.trim().slice(0, 70)}`);
+    }
+  });
+  assert.deepEqual(bad, [], `Backtick non échappé dans le CSS injecté :\n${bad.join('\n')}`);
+});
+
+test('accessibilité : les trois préférences système sont honorées', () => {
+  // « Moins d'animation » ≠ « moins de transparence » ≠ « plus de contraste » :
+  // trois réglages indépendants, trois réponses distinctes.
+  const shared = read('proto/shared.jsx');
+  for (const q of ['prefers-reduced-motion: reduce',
+                   'prefers-reduced-transparency: reduce',
+                   'prefers-contrast: more']) {
+    assert.ok(shared.includes(q), `média-requête ${q} absente de shared.jsx`);
+  }
+  for (const hook of ['useReducedMotion', 'useReducedTransparency', 'useHighContrast']) {
+    assert.ok(shared.includes(`function ${hook}(`), `hook ${hook} absent`);
+  }
+  // Sans backdrop-filter (Firefox par défaut), une matière « translucide »
+  // deviendrait une vitre sale : il FAUT un repli opaque.
+  assert.match(shared, /@supports not \(\(backdrop-filter/,
+    'repli @supports pour les navigateurs sans backdrop-filter');
+});
+
+test('matières : la barre d’onglets flotte (pas de filet 1px de séparation)', () => {
+  const app = read('proto/app.jsx');
+  assert.match(app, /className="alco-material alco-material-edge"/,
+    'la barre d’onglets doit porter la matière + son arête');
+  assert.match(app, /position: 'absolute', left: 0, right: 0, bottom: 0/,
+    'la barre d’onglets doit être une couche flottante (contenu défilant dessous)');
+  assert.ok(!/borderTop: `1px solid \$\{T\.rule\}`,\n\s+flexShrink/.test(app),
+    'plus de filet 1px sous le chrome : la séparation vient de la matière');
+});
+
 test('conventions : chaque proto/*.jsx expose ses symboles via Object.assign(window', () => {
   for (const f of jsxFiles) {
     const src = read(path.join('proto', f));
@@ -147,6 +390,50 @@ test('build : chaque proto/X.jsx a son proto/dist/X.js', () => {
     const dist = path.join(ROOT, 'proto', 'dist', f.replace(/\.jsx$/, '.js'));
     assert.ok(fs.existsSync(dist), `dist manquant pour proto/${f} — lancer npm run build`);
   }
+});
+
+test('orientation : l’app refuse le paysage — les trois mécanismes en place', () => {
+  // Aucun ne suffit seul : le manifeste ne vaut que pour une PWA installée
+  // sous Android, l'API `lock()` n'existe pas sur iOS, et seul le garde CSS
+  // couvre iOS Safari (et l'instant d'avant le boot de React).
+  const manifest = JSON.parse(read('manifest.json'));
+  assert.match(String(manifest.orientation || ''), /^portrait/,
+    'manifest.json : orientation portrait');
+
+  const shared = read('proto/shared.jsx');
+  assert.match(shared, /function installOrientationLock\(/,
+    'verrou d’orientation absent de shared.jsx');
+  assert.match(shared, /orientation\.lock\('portrait'\)|o\.lock\('portrait'\)/,
+    'screen.orientation.lock(\'portrait\') attendu');
+
+  const html = read('index.html');
+  assert.match(html, /id="alco-rotate"/, 'garde CSS absent du HTML');
+  assert.match(html, /@media \(orientation: landscape\) and \(max-height: \d+px\)/,
+    'le garde doit viser le paysage SUR UN TÉLÉPHONE — un desktop en 1280×800 ' +
+    'est en paysage lui aussi et n’a aucune raison d’être bloqué');
+  // Le garde masque le contenu au lieu de seulement le recouvrir : un lecteur
+  // d'écran ne doit pas continuer à parcourir une app qu'on vient de refuser.
+  assert.match(html, /#root, #alco-splash \{ visibility: hidden; \}/,
+    'le contenu doit être masqué sous le garde');
+});
+
+test('DA : plus de chevron « vers le bas » sur les rangées d’action des Paramètres', () => {
+  // Un chevron VERS LE BAS annonce un dépliage. Sur une rangée qui lance une
+  // action (Exporter, Importer, copier le code), il promettait autre chose que
+  // ce qui se passe — et n'ajoutait aucune information : la rangée entière est
+  // le bouton, et elle répond déjà à l'appui.
+  const src = read('proto/modals.jsx');
+  const start = src.indexOf('function SettingRow(');
+  assert.ok(start > 0, 'SettingRow introuvable');
+  const open = src.indexOf('{', src.indexOf(')', start));
+  let depth = 0, end = open;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+  }
+  const body = src.slice(open, end + 1);
+  assert.ok(!/Ic\.chev\b/.test(body),
+    'SettingRow ne doit plus rendre Ic.chev (chevron vers le bas)');
 });
 
 // ── Service worker ─────────────────────────────────────────────────
