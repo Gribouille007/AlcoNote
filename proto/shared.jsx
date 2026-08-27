@@ -41,6 +41,12 @@ const THEMES = {
     // `bacZoneColor` (stats-charts). `T.good` fournit la zone sobre.
     bacWarn:   'oklch(72% 0.16 60)',
     bacDanger: 'oklch(68% 0.20 25)',
+    // Équivalent sRGB de `bg`, pour <meta name="theme-color"> : la barre
+    // système est peinte par le moteur du navigateur/de l'OS, dont les
+    // parseurs les plus anciens ignorent oklch() (et retomberaient alors sur
+    // une barre blanche au-dessus d'une app sombre). Garder synchronisé avec
+    // `bg` — c'est la MÊME couleur, exprimée pour un parseur minimal.
+    metaColor: '#100c0a',
     isDark:   true,
   },
   light: {
@@ -85,6 +91,8 @@ const THEMES = {
     // `bacZoneColor` (stats-charts). `T.good` fournit la zone sobre.
     bacWarn:   'oklch(58% 0.16 55)',
     bacDanger: 'oklch(54% 0.20 25)',
+    // Équivalent sRGB de `bg` (cf. thème sombre).
+    metaColor: '#faf8f4',
     isDark:   false,
   },
 };
@@ -110,13 +118,32 @@ function useTheme() {
   return T._name;
 }
 
+// Reflète le thème courant sur le DOCUMENT (hors arbre React) : attribut
+// `data-theme` (fond dégradé + `color-scheme` d'index.html, qui repeint les
+// widgets NATIFS — date/heure, scrollbars, autofill), classe body héritée, et
+// `<meta name="theme-color">` (barre système du navigateur / de la PWA).
+// SOURCE UNIQUE : appelée au boot, à chaque applyTheme et par AppShell — sans
+// quoi une bascule laisserait des surfaces hors-React sur l'ancien thème.
+function syncThemeToDocument() {
+  if (typeof document === 'undefined') return;
+  const name = T._name;
+  document.documentElement.setAttribute('data-theme', name);
+  if (document.body) document.body.className = `theme-${name}`;
+  let meta = document.querySelector('meta[name="theme-color"]');
+  if (!meta && document.head) {
+    meta = document.createElement('meta');
+    meta.setAttribute('name', 'theme-color');
+    document.head.appendChild(meta);
+  }
+  if (meta) meta.setAttribute('content', T.metaColor);
+}
+
 function applyTheme(name) {
   setTheme(name);
   try { localStorage.setItem('alconote.theme', name); } catch {}
   // Persist to dbManager too so legacy code stays in sync
   try { window.dbManager && window.dbManager.setSetting && window.dbManager.setSetting('theme', name); } catch {}
-  document.documentElement.setAttribute('data-theme', name);
-  document.body.className = `theme-${name}`;
+  syncThemeToDocument();
   window.__themeListeners.forEach(f => f());
 }
 
@@ -128,8 +155,7 @@ function applyTheme(name) {
     saved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
   }
   if (THEMES[saved]) setTheme(saved);
-  document.documentElement.setAttribute('data-theme', T._name);
-  document.body.className = `theme-${T._name}`;
+  syncThemeToDocument();
 })();
 
 const fontSans = '"Geist", ui-sans-serif, system-ui, sans-serif';
@@ -1087,19 +1113,6 @@ function useSWVersion() {
       color: var(--alco-accent-ink, #1a1a1a);
       border-color: var(--alco-accent, #c98a3a);
     }
-    /* Roue horaire (WheelPicker) : défilement vertical avec accrochage iOS et
-       masque de fondu haut/bas. La barre de défilement est masquée ; le geste
-       de scroll reste natif (donc fluide sur Android). */
-    .alco-wheel {
-      overflow-y: auto; scroll-snap-type: y mandatory;
-      -webkit-overflow-scrolling: touch; scrollbar-width: none;
-      -webkit-mask-image: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent);
-      mask-image: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent);
-      overscroll-behavior: contain;
-    }
-    .alco-wheel::-webkit-scrollbar { display: none; }
-    .alco-wheel-item { scroll-snap-align: center; }
-    @media (prefers-reduced-motion: reduce) { .alco-wheel { scroll-behavior: auto; } }
   `;
   document.head.appendChild(s);
 })();
@@ -1143,6 +1156,46 @@ function useSWVersion() {
   window.addEventListener('wheel', (e) => {
     if (e.ctrlKey) e.preventDefault();
   }, { passive: false });
+})();
+
+// ── Portrait verrouillé ────────────────────────────────────────────
+// L'app ne se met JAMAIS en paysage. Trois ceintures, aucune ne
+// couvrant seule tous les contextes :
+//   1. `"orientation": "portrait-primary"` dans manifest.json — la PWA
+//      installée est lancée et maintenue en portrait par l'OS ;
+//   2. ici : `screen.orientation.lock('portrait')`, le seul verrou DUR
+//      côté web. Il n'est accordé qu'en standalone/fullscreen (et jamais
+//      sur iOS) : on le (re)tente au boot, à chaque rotation et au retour
+//      au premier plan, car l'app peut entrer en standalone après le boot ;
+//   3. le voile `#alco-rotate` (index.html) — repli CSS pur pour les
+//      contextes où le verrou est refusé (onglet navigateur, iOS) : en
+//      paysage sur un écran tactile court, il recouvre l'UI et demande de
+//      remettre l'appareil droit. L'app n'est donc jamais UTILISABLE en
+//      paysage, même quand l'OS refuse de la contraindre.
+// Le repli ne cible ni les tablettes ni le desktop (cf. la media query) :
+// leur cadre « téléphone » centré reste légitime en écran large.
+(function installOrientationLock() {
+  if (typeof window === 'undefined' || window.__alcoOrientationLock) return;
+  if (typeof window.addEventListener !== 'function') return; // stubs de test Node
+  window.__alcoOrientationLock = true;
+  const lock = () => {
+    try {
+      const so = window.screen && window.screen.orientation;
+      if (!so || typeof so.lock !== 'function') return;
+      // `lock()` rejette (NotSupportedError / SecurityError) hors
+      // standalone : c'est un cas NORMAL, absorbé silencieusement — le
+      // voile CSS prend alors le relais.
+      const p = so.lock('portrait');
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch (e) { /* verrou non accordé : repli CSS */ }
+  };
+  lock();
+  window.addEventListener('orientationchange', lock);
+  if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') lock();
+    });
+  }
 })();
 
 // ── Motion : hooks & primitives réutilisables ──────────────────────
@@ -1349,175 +1402,24 @@ function NumberField({
   );
 }
 
-// ── Roue de sélection façon iOS (WheelPicker / TimeWheelSheet / TimeField)
-// Maths pures du défilement (testables) : offset ↔ index, accrochage au
-// plus proche, clamp aux bornes.
-function wheelOffsetForIndex(i, itemH) { return i * itemH; }
-function wheelIndexForOffset(scrollTop, itemH, count) {
-  const i = Math.round(scrollTop / Math.max(1, itemH));
-  return Math.max(0, Math.min(count - 1, i));
-}
-
-// Colonne défilante : items centrés sur une bande de sélection, accrochage
-// au relâchement (scroll natif → fluide), tap direct sur un item (chemin
-// testable sous jsdom où le scroll réel n'existe pas), clavier (listbox +
-// flèches). `value` est la valeur sélectionnée (string), `onChange(value)`.
-function WheelPicker({ items, value, onChange, itemHeight = 36, visibleCount = 5, ariaLabel }) {
-  const scrollerRef = React.useRef(null);
-  const reduced = useReducedMotion();
-  const selIdx = Math.max(0, items.indexOf(value));
-  const settleRef = React.useRef(0);
-  const onChangeRef = React.useRef(onChange);
-  onChangeRef.current = onChange;
-
-  // Place la sélection au centre au montage / quand `value` change de
-  // l'extérieur (pas suite à notre propre scroll, déjà aligné).
-  React.useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const target = wheelOffsetForIndex(selIdx, itemHeight);
-    if (Math.abs(el.scrollTop - target) > 1) el.scrollTop = target;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selIdx, itemHeight]);
-
-  React.useEffect(() => () => clearTimeout(settleRef.current), []);
-
-  const settle = () => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const idx = wheelIndexForOffset(el.scrollTop, itemHeight, items.length);
-    const target = wheelOffsetForIndex(idx, itemHeight);
-    if (Math.abs(el.scrollTop - target) > 0.5 && el.scrollTo) {
-      el.scrollTo({ top: target, behavior: reduced ? 'auto' : 'smooth' });
-    }
-    if (items[idx] !== value) onChangeRef.current(items[idx]);
-  };
-  const onScroll = () => {
-    clearTimeout(settleRef.current);
-    settleRef.current = setTimeout(settle, 120);
-  };
-
-  const pick = (i) => {
-    const el = scrollerRef.current;
-    if (el && el.scrollTo) el.scrollTo({ top: wheelOffsetForIndex(i, itemHeight), behavior: reduced ? 'auto' : 'smooth' });
-    else if (el) el.scrollTop = wheelOffsetForIndex(i, itemHeight);
-    if (items[i] !== value) onChange(items[i]);
-  };
-
-  const pad = ((visibleCount - 1) / 2) * itemHeight;
-  const containerH = visibleCount * itemHeight;
-
-  return (
-    <div style={{ position: 'relative', height: containerH, width: 70, flex: '0 0 auto' }}>
-      {/* Bande de sélection centrale */}
-      <div aria-hidden="true" style={{
-        position: 'absolute', left: 4, right: 4, top: pad, height: itemHeight,
-        borderTop: `1px solid ${T.rule}`, borderBottom: `1px solid ${T.rule}`,
-        background: T.surface3, borderRadius: 8, pointerEvents: 'none',
-      }} />
-      <div ref={scrollerRef} className="alco-wheel" role="listbox" aria-label={ariaLabel}
-        onScroll={onScroll} style={{ height: containerH, position: 'relative' }}>
-        <div style={{ height: pad }} />
-        {items.map((it, i) => (
-          <button key={it} type="button" role="option" aria-selected={i === selIdx}
-            className="alco-wheel-item" onClick={() => pick(i)}
-            onKeyDown={(e) => {
-              if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); pick(i - 1); }
-              else if (e.key === 'ArrowDown' && i < items.length - 1) { e.preventDefault(); pick(i + 1); }
-            }}
-            style={{
-              ...ghostButton, display: 'block', width: '100%', height: itemHeight,
-              fontFamily: fontNum, fontSize: i === selIdx ? 19 : 15,
-              color: i === selIdx ? T.ink : T.muted,
-              fontWeight: i === selIdx ? 600 : 400,
-              opacity: i === selIdx ? 1 : 0.55, cursor: 'pointer',
-              transition: reduced ? undefined : 'font-size 0.12s ease, opacity 0.12s ease',
-            }}>{it}</button>
-        ))}
-        <div style={{ height: pad }} />
-      </div>
-    </div>
-  );
-}
-
-// Bottom-sheet de choix de l'heure : deux roues (heures 00-23 / minutes
-// 00-59). `value` = 'HH:MM', `onConfirm('HH:MM')` au OK. Fermeture animée
-// via useSheetClose, comme toutes les sheets.
-function TimeWheelSheet({ value, onConfirm, onClose }) {
-  const [closing, close] = useSheetClose(onClose);
-  const pad2 = (n) => String(n).padStart(2, '0');
-  const parse = (v) => {
-    const m = /^(\d{1,2}):(\d{1,2})$/.exec(v || '');
-    if (!m) return { h: 0, m: 0 };
-    return {
-      h: Math.max(0, Math.min(23, parseInt(m[1], 10) || 0)),
-      m: Math.max(0, Math.min(59, parseInt(m[2], 10) || 0)),
-    };
-  };
-  const init = parse(value);
-  const [h, setH] = React.useState(init.h);
-  const [mm, setMm] = React.useState(init.m);
-  const hours = React.useMemo(() => Array.from({ length: 24 }, (_, i) => pad2(i)), []);
-  const mins = React.useMemo(() => Array.from({ length: 60 }, (_, i) => pad2(i)), []);
-  const confirm = () => { onConfirm(`${pad2(h)}:${pad2(mm)}`); close(); };
-
-  return (
-    <SheetOverlay onClose={close} closing={closing} side="bottom" label="Choisir l'heure">
-      <div style={{
-        background: T.bg, borderRadius: '22px 22px 0 0',
-        borderTop: `1px solid ${T.rule}`, borderLeft: `1px solid ${T.rule}`,
-        borderRight: `1px solid ${T.rule}`, overflow: 'hidden',
-        padding: '0 0 18px',
-      }}>
-        <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
-          <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }} />
-        </div>
-        <div style={{
-          textAlign: 'center', padding: '6px 22px 12px',
-          fontFamily: fontSerif, fontStyle: 'italic', fontSize: 20, color: T.ink, letterSpacing: -0.3,
-        }}>Heure</div>
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, padding: '0 22px' }}>
-          <WheelPicker items={hours} value={pad2(h)} onChange={(v) => setH(parseInt(v, 10))} ariaLabel="Heures" />
-          <div style={{ fontFamily: fontNum, fontSize: 24, color: T.muted }}>:</div>
-          <WheelPicker items={mins} value={pad2(mm)} onChange={(v) => setMm(parseInt(v, 10))} ariaLabel="Minutes" />
-        </div>
-        <div style={{ display: 'flex', gap: 10, padding: '14px 22px 0' }}>
-          <button type="button" onClick={close} style={{
-            flex: 1, padding: '12px 0', borderRadius: 12, cursor: 'pointer',
-            background: T.surface2, border: `1px solid ${T.rule}`, color: T.ink,
-            fontFamily: 'inherit', fontSize: 14,
-          }}>Annuler</button>
-          <button type="button" onClick={confirm} style={{
-            flex: 1, padding: '12px 0', borderRadius: 12, cursor: 'pointer',
-            background: T.accent, border: 'none', color: T.accentInk,
-            fontFamily: 'inherit', fontSize: 14, fontWeight: 600,
-          }}>OK</button>
-        </div>
-      </div>
-    </SheetOverlay>
-  );
-}
-
-// Champ « Heure » : bouton stylé comme un input (inputBaseStyle) qui ouvre
-// la roue. `value` = 'HH:MM', `onChange('HH:MM')`. Remplace l'<input
-// type="time"> natif (peu fluide sur Android) tout en gardant le même état.
+// ── Champ « Heure » ────────────────────────────────────────────────
+// <input type="time"> natif : le sélecteur d'heure DU SYSTÈME (roue iOS,
+// horloge Material sur Android, spinner desktop) — celui que l'utilisateur
+// connaît déjà, qui suit ses réglages (12 h/24 h, langue) et son
+// accessibilité. `value` reste 'HH:MM' (format normalisé de l'input natif,
+// indépendant de l'affichage localisé), `onChange('HH:MM')`.
+//
+// Un champ vidé remonte '' : les appelants retombent sur l'heure courante au
+// submit plutôt que d'écrire une heure fantôme.
 function TimeField({ value, onChange, ariaLabel = 'Heure' }) {
-  const [open, setOpen] = React.useState(false);
   return (
-    <>
-      <button type="button" aria-label={ariaLabel} onClick={() => setOpen(true)} style={{
-        ...inputBaseStyle(), padding: '10px 12px', cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-      }}>
-        <span style={{ fontFamily: fontNum, fontSize: 15, color: value ? T.ink : T.muted }}>{value || '--:--'}</span>
-        <SvgIcon icon={Ic.clock} size={15} color={T.muted} />
-      </button>
-      {open && (
-        <TimeWheelSheet value={value}
-          onConfirm={(v) => { onChange(v); setOpen(false); }}
-          onClose={() => setOpen(false)} />
-      )}
-    </>
+    <input type="time" value={value || ''} aria-label={ariaLabel}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        ...inputBaseStyle(), padding: '10px 12px', minWidth: 0, maxWidth: '100%',
+        width: '100%', fontFamily: fontNum, fontSize: 15,
+        WebkitAppearance: 'none', appearance: 'none',
+      }} />
   );
 }
 
@@ -1697,7 +1599,7 @@ function BacPill({ bac, ariaLabel, tone = 'accent', compact = false }) {
 }
 
 Object.assign(window, {
-  T, THEMES, applyTheme, useTheme,
+  T, THEMES, applyTheme, useTheme, syncThemeToDocument,
   fontSans, fontSerif, fontNum,
   BacPill,
   Ic, SvgIcon, CAT, catColor, catBg, withAlpha, CategoryIconsContext,
@@ -1715,5 +1617,5 @@ Object.assign(window, {
   useSWVersion,
   inputBaseStyle, inputS: inputBaseStyle, FieldGroup, parseDecimal,
   NumberField, CategoryChips, UnitToggle, RatingField, LocationField,
-  wheelOffsetForIndex, wheelIndexForOffset, WheelPicker, TimeWheelSheet, TimeField,
+  TimeField,
 });

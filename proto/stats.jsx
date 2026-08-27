@@ -1384,6 +1384,7 @@ function GeneralSection({
 // re-render of the parent doesn't ripple through every tile when only
 // one of them actually changed.
 const StatCell = React.memo(function StatCell({ value, label, icon, delta, period, index = 0 }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   const reduced = useReducedMotion();
   return (
     <div style={{
@@ -1419,6 +1420,7 @@ const StatCell = React.memo(function StatCell({ value, label, icon, delta, perio
 // it visual weight matching the BAC gauge below; same primitive could
 // host future hero metrics (longest sober streak, …) without dupe.
 const HeroStatCard = React.memo(function HeroStatCard({ icon, label, value, suffix }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
@@ -2786,6 +2788,10 @@ function MapDrinksSheet({ drinks, onClose }) {
 }
 
 function MapSection({ drinks, allDrinks, collapsed, toggleSection }) {
+  // Abonnement explicite : l'effet « thème » plus bas dépend de `T._name`,
+  // qui ne bouge QUE si ce composant se re-rend. Sans ce hook, le re-thème
+  // de la carte reposerait sur un re-render de parent — fragile.
+  useTheme();
   const isOpen = !collapsed.has('map');
   const containerRef = React.useRef(null);
   const mapRef = React.useRef(null);

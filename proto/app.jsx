@@ -54,10 +54,7 @@ function AppShell() {
   // changes — without a dep array this fired on every AppShell render
   // (60s BAC tick, every sheet open/close, toasts…) re-writing the same
   // attributes redundantly.
-  React.useEffect(() => {
-    document.documentElement.setAttribute('data-theme', T._name);
-    document.body.className = `theme-${T._name}`;
-  }, [themeName]);
+  React.useEffect(() => { syncThemeToDocument(); }, [themeName]);
 
   // Once React has rendered for the first time, drop the splash element
   // entirely so a future render error or transient empty-root state can

@@ -89,8 +89,7 @@ function AppShell() {
   // (60s BAC tick, every sheet open/close, toasts…) re-writing the same
   // attributes redundantly.
   React.useEffect(() => {
-    document.documentElement.setAttribute('data-theme', T._name);
-    document.body.className = `theme-${T._name}`;
+    syncThemeToDocument();
   }, [themeName]);
 
   // Once React has rendered for the first time, drop the splash element

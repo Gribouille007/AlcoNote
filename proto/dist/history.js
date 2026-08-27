@@ -198,6 +198,7 @@ const DayGroup = React.memo(function DayGroup({
   first,
   index = 0
 }) {
+  useTheme(); // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   const reduced = useReducedMotion();
   const d = new Date(day + 'T00:00');
   const today = new Date();
@@ -322,6 +323,7 @@ const EntryRow = React.memo(function EntryRow({
   first,
   last
 }) {
+  useTheme(); // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   // Abonnement palette : repaint sur changement de teinte de catégorie
   // malgré React.memo (cf. useCatPalette dans shared.jsx).
   useCatPalette();

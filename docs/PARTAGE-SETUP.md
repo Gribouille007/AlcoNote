@@ -47,8 +47,13 @@ Le SDK Supabase est chargé automatiquement à la demande (rien à ajouter).
    `v3.22.0`).
 2. **Paramètres** (menu en haut à gauche) → section **Partage entre amis** :
    active le partage, choisis un **pseudo**, puis **Créer un groupe**.
-3. Partage le **code d'invitation** ; tes amis le saisissent dans l'onglet
-   **Amis** (ou Paramètres) pour rejoindre.
+3. Partage le **code d'invitation** (Paramètres › Partage : un tap le copie ;
+   s'il manque, il est re-demandé au serveur). Tes amis le saisissent dans
+   l'onglet **Amis** → *Rejoindre*. La casse, le tiret et les espaces n'ont
+   aucune importance : `abcd efgh` vaut `ABCD-EFGH`. Les invitations
+   **n'expirent pas** — si « rejoindre » échouait avant, ré-exécute
+   `supabase/schema.sql` en entier (il dépérime les invitations existantes et
+   ajoute la fonction `ensure_invite`).
 4. (Optionnel) Active **Partager mon alcoolémie** pour que tes amis voient ton
    BAC en direct (partage poids + sexe).
 

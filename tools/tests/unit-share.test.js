@@ -83,3 +83,122 @@ test('pullFullHistory — hors-ligne : message franc, cursor jamais remis à zé
     delete global.dbManager.setSetting;
   }
 });
+
+// ── Codes d'invitation ────────────────────────────────────────────────────
+// Un code circule à l'oral, par SMS, en copier-coller depuis une conversation.
+// Il ne doit JAMAIS être refusé pour une histoire de casse, de tiret ou
+// d'espace : c'est la cause n°1 d'un « rejoindre » qui ne marche pas.
+
+test('normalizeInviteCode — casse, tirets, espaces, invisibles : même code', () => {
+  const { normalizeInviteCode } = global;
+  const canonical = 'ABCDEFGH';
+  for (const raw of ['ABCD-EFGH', 'abcd-efgh', ' ABCD EFGH ', 'abcdefgh',
+                     'ABCD—EFGH', 'A B C D E F G H', 'ABCD_EFGH', '\tABCD-efgh\n']) {
+    assert.equal(normalizeInviteCode(raw), canonical, `« ${raw} » → ${canonical}`);
+  }
+  assert.equal(normalizeInviteCode(''), '', 'chaîne vide');
+  assert.equal(normalizeInviteCode(null), '', 'null toléré');
+  assert.equal(normalizeInviteCode(undefined), '', 'undefined toléré');
+  assert.equal(normalizeInviteCode('----'), '', 'que des séparateurs → vide');
+});
+
+test('formatInviteCode — forme transmissible XXXX-XXXX, jamais tronquée', () => {
+  const { formatInviteCode, normalizeInviteCode } = global;
+  assert.equal(formatInviteCode('abcdefgh'), 'ABCD-EFGH', 'tiret réinséré');
+  assert.equal(formatInviteCode('ABCD-EFGH'), 'ABCD-EFGH', 'idempotent');
+  assert.equal(formatInviteCode(formatInviteCode('ab cd ef gh')), 'ABCD-EFGH', 'stable par ré-application');
+  assert.equal(formatInviteCode('ABC'), 'ABC', 'trop court : laissé tel quel');
+  assert.equal(formatInviteCode(''), '', 'vide');
+  // Un code plus long est groupé, jamais amputé (perdre des caractères
+  // rendrait le code invalide en silence).
+  assert.equal(formatInviteCode('ABCDEFGHIJ'), 'ABCD-EFGHIJ');
+  assert.equal(normalizeInviteCode(formatInviteCode('ABCDEFGHIJ')), 'ABCDEFGHIJ',
+    'aller-retour sans perte');
+});
+
+test('INVITE_ALPHABET — pas de I/O/0/1 (ambigus), miroir du serveur', () => {
+  const { INVITE_ALPHABET } = global;
+  for (const ch of ['I', 'O', '0', '1']) {
+    assert.ok(!INVITE_ALPHABET.includes(ch), `${ch} exclu de l'alphabet`);
+  }
+  assert.equal(INVITE_ALPHABET.length, 32);
+});
+
+// ── Transport Supabase : ce qui part réellement sur le fil ────────────────
+
+function fakeSupabase({ session = { user: { id: 'user-1' } }, rpcResult } = {}) {
+  const calls = { rpc: [], signIn: 0 };
+  const client = {
+    auth: {
+      getSession: async () => ({ data: { session } }),
+      signInAnonymously: async () => {
+        calls.signIn++;
+        return { data: { session: { user: { id: 'user-new' } } }, error: null };
+      },
+    },
+    rpc: async (fn, args) => {
+      calls.rpc.push({ fn, args });
+      return { data: rpcResult || { group_id: 'grp-1', invite_code: 'ABCD-EFGH' }, error: null };
+    },
+    from: () => ({ upsert: async () => ({ error: null }) }),
+  };
+  global.supabase = { createClient: () => client };
+  return calls;
+}
+
+test('joinGroup (Supabase) — le code part sous la forme STOCKÉE (XXXX-XXXX)', async () => {
+  // `invites.token` contient « ABCD-EFGH ». Un backend pas encore migré
+  // compare brutalement `token = upper(invite_token)` : envoyer « ABCDEFGH »
+  // ne matcherait rien. On envoie donc toujours la forme transmissible, quelle
+  // que soit la façon dont l'utilisateur a tapé le code.
+  const calls = fakeSupabase();
+  const t = global.SupabaseShareTransport({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_ANON_KEY: 'k' });
+  const res = await t.joinGroup('  abcd efgh ');
+  assert.deepEqual(calls.rpc[0], { fn: 'join_group', args: { invite_token: 'ABCD-EFGH' } });
+  assert.equal(res.groupId, 'grp-1');
+  assert.equal(res.inviteCode, 'ABCD-EFGH', 'code confirmé par le serveur');
+  delete global.supabase;
+});
+
+test('ensureInvite (Supabase) — RPC ensure_invite pour (re)obtenir un code', async () => {
+  const calls = fakeSupabase({ rpcResult: { group_id: 'grp-1', invite_code: 'WXYZ-2345' } });
+  const t = global.SupabaseShareTransport({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_ANON_KEY: 'k' });
+  const res = await t.ensureInvite('grp-1');
+  assert.deepEqual(calls.rpc[0], { fn: 'ensure_invite', args: { p_group_id: 'grp-1' } });
+  assert.equal(res.inviteCode, 'WXYZ-2345');
+  delete global.supabase;
+});
+
+test('ensureIdentity (Supabase) — hors-ligne : JAMAIS de nouvelle identité anonyme', async () => {
+  // Régression majeure : sans session récupérable et hors-ligne, forger une
+  // identité anonyme remplacerait la mienne — mes lignes serveur appartenant
+  // à l'ancien uid, je serais silencieusement sorti de mon groupe.
+  const calls = fakeSupabase({ session: null });
+  const t = global.SupabaseShareTransport({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_ANON_KEY: 'k' });
+  global.navigator.onLine = false;
+  try {
+    await assert.rejects(() => t.ensureIdentity(), /offline/i);
+    assert.equal(calls.signIn, 0, 'aucune création d’identité hors-ligne');
+  } finally {
+    global.navigator.onLine = true;
+  }
+  // En ligne, la même situation crée bien une identité.
+  const id = await t.ensureIdentity();
+  assert.equal(id.userId, 'user-new');
+  assert.equal(calls.signIn, 1);
+  delete global.supabase;
+});
+
+test('shareErrorMessage — invitation expirée / épuisée / invalide : messages DISTINCTS', () => {
+  const { shareErrorMessage } = global;
+  const expired = shareErrorMessage(new Error('expired invite'));
+  const used = shareErrorMessage(new Error('invite exhausted'));
+  const bad = shareErrorMessage(new Error('invalid invite'));
+  assert.match(expired, /expirée/i);
+  assert.match(used, /épuisée/i);
+  assert.match(bad, /invalide/i);
+  assert.notEqual(expired, bad, 'une invitation périmée n’est pas une faute de frappe');
+  assert.notEqual(used, bad);
+  assert.match(shareErrorMessage(new Error('not authenticated')), /session/i);
+  assert.match(shareErrorMessage(new Error('not a member')), /groupe/i);
+});

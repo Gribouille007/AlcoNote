@@ -155,6 +155,7 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
 }
 
 const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAdd, onDelete, first, index = 0 }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   const reduced = useReducedMotion();
   const d = new Date(day + 'T00:00');
   const today = new Date(); today.setHours(0,0,0,0);
@@ -236,6 +237,7 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
   );
 });
 const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectAdd, onDelete, first, last }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   // Abonnement palette : repaint sur changement de teinte de catégorie
   // malgré React.memo (cf. useCatPalette dans shared.jsx).
   useCatPalette();

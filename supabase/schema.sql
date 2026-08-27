@@ -140,7 +140,22 @@ drop policy if exists profiles_update on public.shared_profiles;
 create policy profiles_update on public.shared_profiles
   for update using (user_id = auth.uid()) with check (user_id = auth.uid());
 
--- ── RPC : créer / rejoindre / quitter un groupe ────────────────────────────
+-- ── Codes d'invitation ─────────────────────────────────────────────────────
+-- Forme canonique d'un code : MAJUSCULES sans séparateur. Un code se transmet
+-- à l'oral, par SMS, en copier-coller : « ab12-cd34 », « AB12 CD34 » et
+-- « AB12CD34 » désignent LE MÊME code. Toute comparaison passe par ici (côté
+-- client comme côté serveur) — sinon un tiret oublié = « code invalide ».
+create or replace function public.normalize_invite_code(raw text)
+returns text language sql immutable as $$
+  select upper(regexp_replace(coalesce(raw, ''), '[^A-Za-z0-9]', '', 'g'));
+$$;
+
+-- Recherche indexée d'un invite par code normalisé (non unique : deux codes
+-- distincts ne peuvent pas se normaliser pareil en pratique, et un index
+-- unique ferait échouer la migration sur une base historique douteuse).
+create index if not exists invites_token_norm_idx
+  on public.invites (public.normalize_invite_code(token));
+
 -- Génère un code lisible (sans I/O/0/1), format XXXX-XXXX.
 create or replace function public.gen_invite_code()
 returns text language sql volatile as $$
@@ -153,6 +168,20 @@ returns text language sql volatile as $$
   select substr(t, 1, 4) || '-' || substr(t, 5, 4) from picked;
 $$;
 
+-- ── Migration : les invitations ne périment plus ───────────────────────────
+-- Un code d'invitation est le SEUL moyen d'entrer dans un groupe et l'app
+-- n'offrait aucun moyen d'en régénérer un : une expiration (30 j) ou un
+-- compteur d'usages épuisé rendait le groupe DÉFINITIVEMENT inaccessible
+-- (« rejoindre ne marche plus du tout »). On lève les deux limites, ici pour
+-- les groupes existants et plus bas dans create_group pour les nouveaux.
+alter table public.invites alter column max_uses set default 1000000000;
+update public.invites
+   set expires_at = null,
+       max_uses   = greatest(max_uses, 1000000000)
+ where expires_at is not null or max_uses < 1000000000;
+
+-- ── RPC : créer / rejoindre / quitter un groupe ────────────────────────────
+
 create or replace function public.create_group()
 returns json
 language plpgsql security definer
@@ -164,29 +193,77 @@ begin
   insert into public.groups (created_by) values (auth.uid()) returning id into gid;
   insert into public.group_members (group_id, user_id) values (gid, auth.uid());
   code := public.gen_invite_code();
+  -- expires_at NULL = invitation permanente (cf. migration ci-dessus).
   insert into public.invites (token, group_id, created_by, expires_at)
-    values (code, gid, auth.uid(), now() + interval '30 days');
+    values (code, gid, auth.uid(), null);
   return json_build_object('group_id', gid, 'invite_code', code);
 end;
 $$;
 
+-- Rejoindre un groupe. Robuste par construction :
+--   · comparaison sur le code NORMALISÉ (casse, tirets, espaces indifférents) ;
+--   · un membre déjà présent re-rejoint sans erreur (idempotent) — c'est le
+--     chemin de la réinstallation / du changement d'appareil ;
+--   · le compteur d'usages n'avance que sur une VRAIE adhésion, jamais sur une
+--     re-adhésion, et l'invitation ne périme plus (cf. migration).
 create or replace function public.join_group(invite_token text)
 returns json
 language plpgsql security definer
 set search_path = public
 as $$
-declare inv public.invites;
+declare
+  inv     public.invites;
+  v_norm  text;
+  v_rows  int := 0;
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
-  select * into inv from public.invites where token = upper(invite_token);
+  v_norm := public.normalize_invite_code(invite_token);
+  if v_norm = '' then raise exception 'invalid invite'; end if;
+  select * into inv from public.invites
+    where public.normalize_invite_code(token) = v_norm
+    limit 1;
   if inv.token is null then raise exception 'invalid invite'; end if;
   if inv.expires_at is not null and inv.expires_at < now() then raise exception 'expired invite'; end if;
   if inv.uses >= inv.max_uses then raise exception 'invite exhausted'; end if;
   insert into public.group_members (group_id, user_id)
     values (inv.group_id, auth.uid())
     on conflict (group_id, user_id) do nothing;
-  update public.invites set uses = uses + 1 where token = inv.token;
-  return json_build_object('group_id', inv.group_id);
+  -- row_count vaut 1 sur une VRAIE adhésion, 0 sur un re-join (do nothing).
+  get diagnostics v_rows = row_count;
+  if v_rows > 0 then
+    update public.invites set uses = uses + 1 where token = inv.token;
+  end if;
+  return json_build_object('group_id', inv.group_id, 'invite_code', inv.token);
+end;
+$$;
+
+-- Code d'invitation COURANT d'un groupe, pour n'importe lequel de ses membres.
+-- Indispensable pour que « rejoindre » marche toujours : sans cette RPC, un
+-- membre qui a réinstallé l'app (ou qui a rejoint sans jamais créer) n'avait
+-- plus aucun code à transmettre, et un groupe dont l'invitation avait péri
+-- devenait fermé pour toujours. Réutilise une invitation valide s'il en existe
+-- une, en crée une sinon.
+create or replace function public.ensure_invite(p_group_id uuid)
+returns json
+language plpgsql security definer
+set search_path = public
+as $$
+declare code text;
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+  if not public.is_member(p_group_id) then raise exception 'not a member'; end if;
+  select token into code from public.invites
+    where group_id = p_group_id
+      and (expires_at is null or expires_at > now())
+      and uses < max_uses
+    order by created_at desc
+    limit 1;
+  if code is null then
+    code := public.gen_invite_code();
+    insert into public.invites (token, group_id, created_by, expires_at)
+      values (code, p_group_id, auth.uid(), null);
+  end if;
+  return json_build_object('group_id', p_group_id, 'invite_code', code);
 end;
 $$;
 
@@ -228,7 +305,9 @@ begin
 end;
 $$;
 
+grant execute on function public.normalize_invite_code(text) to anon, authenticated;
 grant execute on function public.create_group()              to anon, authenticated;
 grant execute on function public.join_group(text)            to anon, authenticated;
+grant execute on function public.ensure_invite(uuid)         to anon, authenticated;
 grant execute on function public.leave_group(uuid)           to anon, authenticated;
 grant execute on function public.remove_member(uuid, uuid)   to anon, authenticated;

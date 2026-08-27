@@ -196,6 +196,7 @@ const CategoryCard = React.memo(function CategoryCard({
   onEdit,
   index = 0
 }) {
+  useTheme(); // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   // Repaint garanti quand une teinte de catégorie change : le contexte
   // traverse React.memo (les props `cat` ne bougent pas sur un changement
   // de couleur seul). Cf. useCatPalette (shared.jsx).
@@ -449,6 +450,7 @@ const FamilyRow = React.memo(function FamilyRow({
   onDirectAdd,
   index = 0
 }) {
+  useTheme(); // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   // Cf. CategoryCard : abonnement palette → repaint sur changement de teinte.
   useCatPalette();
   const color = catColor(f.category, 70);

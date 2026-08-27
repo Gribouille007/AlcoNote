@@ -14,7 +14,7 @@ const {
   ethanolGrams, drinkAlcoholGrams, ETHANOL_DENSITY_G_PER_ML,
   fmtPrice, localDate, localTime, fmtDateMedium, fmtDayHeader,
   catColor, catBg, withAlpha,
-  applyCatHueOverrides, defaultCatHue, wheelIndexForOffset, wheelOffsetForIndex,
+  applyCatHueOverrides, defaultCatHue,
 } = global;
 
 test('canonicalCat — trim + normalisation NFC', () => {
@@ -168,13 +168,3 @@ test('RÉGRESSION : palette CANONIQUE — NFD/espaces résolvent la même couleu
   assert.equal(catColor(nfd, 60), catColor('Bière', 60), 'reset symétrique');
 });
 
-// ── Maths de la roue horaire ────────────────────────────────────────
-
-test('wheelOffsetForIndex / wheelIndexForOffset — aller-retour + clamp', () => {
-  assert.equal(wheelOffsetForIndex(5, 36), 180);
-  assert.equal(wheelIndexForOffset(180, 36, 24), 5, 'offset exact → index');
-  assert.equal(wheelIndexForOffset(180 + 17, 36, 24), 5, 'arrondi vers le plus proche (bas)');
-  assert.equal(wheelIndexForOffset(180 + 19, 36, 24), 6, 'arrondi vers le plus proche (haut)');
-  assert.equal(wheelIndexForOffset(-100, 36, 24), 0, 'clamp bas');
-  assert.equal(wheelIndexForOffset(99999, 36, 24), 23, 'clamp haut (count-1)');
-});

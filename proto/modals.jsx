@@ -137,7 +137,11 @@ function AddDrinkSheet({ open, prefill, onClose }) {
       const hasPrice = Number.isFinite(priceNum);
       const created = await addDrink({
         name: drinkName, category: cat, quantity: qtyNum,
-        unit, alcoholContent: alcNum, date, time,
+        unit, alcoholContent: alcNum,
+        // Les champs natifs date/heure peuvent être VIDÉS par l'utilisateur
+        // ('' remonté par l'input) : on retombe sur l'instant courant plutôt
+        // que d'écrire une date/heure fantôme (BAC et historique faussés).
+        date: date || _now().date, time: time || _now().time,
         location: locTouched ? loc : null,
         price: hasPrice ? priceNum : null,
         // « Prix habituel » coché ⇒ au prix de référence (suit les cascades) ;
@@ -896,8 +900,10 @@ function EditEntrySheet({ entry, onClose }) {
         quantity: qtyNum,
         unit,
         alcoholContent: parseDecimal(alc) || 0,
-        date,
-        time,
+        // Champs natifs vidés ('') : on conserve la valeur d'origine de
+        // l'entrée plutôt que d'écrire une date/heure fantôme.
+        date: date || raw.date,
+        time: time || raw.time,
         location: loc,
         price: hasPrice ? priceNum : null,
         // Saisir un prix sur UNE entrée la rend personnalisée (protégée des
@@ -1564,8 +1570,11 @@ function SettingRow({ label, value, icon, danger, last, onClick }) {
         {icon && <SvgIcon icon={icon} size={14} color={T.muted}/>}
         {label}
       </span>
-      {value !== undefined ? <span style={{ color: T.muted, fontSize: 12.5 }}>{value}</span>
-        : (!danger && onClick) && <SvgIcon icon={Ic.chev} size={14} color={T.muted} />}
+      {/* Pas de chevron de déroulement à droite : ces lignes déclenchent une
+          action immédiate (export, copie…), elles n'ouvrent aucun sous-menu —
+          la flèche n'annonçait rien et ajoutait du bruit. Seule la valeur
+          éventuelle est rendue à droite. */}
+      {value !== undefined && <span style={{ color: T.muted, fontSize: 12.5 }}>{value}</span>}
     </Tag>
   );
 }
@@ -1637,10 +1646,19 @@ function SharingSection() {
     try { await shareEngine.leaveGroup(); Toast.show('Groupe quitté'); }
     catch (e) { Toast.show(shareErrorMessage(e)); }
   };
+  // Copier le code d'invitation — en le RÉCUPÉRANT d'abord s'il manque. Le
+  // code local n'est qu'un cache (perdu à la réinstallation, absent quand on a
+  // rejoint depuis un autre appareil) : sans cette récupération, la ligne
+  // affichait « — » et le groupe devenait impossible à faire rejoindre.
   const onCopyCode = async () => {
-    if (!s.inviteCode) return;
-    try { await navigator.clipboard.writeText(s.inviteCode); Toast.show('Code copié'); }
-    catch (e) { Toast.show(s.inviteCode); }
+    let code = s.inviteCode;
+    if (!code) {
+      try { code = await shareEngine.ensureInviteCode({ force: true }); }
+      catch (e) { code = null; }
+      if (!code) { Toast.show("Code d'invitation indisponible — réessaie en ligne"); return; }
+    }
+    try { await navigator.clipboard.writeText(code); Toast.show('Code copié'); }
+    catch (e) { Toast.show(code); }
   };
   const onExportKey = async () => {
     try {

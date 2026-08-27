@@ -127,10 +127,69 @@ function GroupAdminPanel({ members }) {
   );
 }
 
-// Pied de l'onglet quand on est dans un groupe : action « Quitter le groupe ».
-// Le code d'invitation N'EST PLUS affiché ici (déjà dans un groupe) — il reste
-// accessible dans Paramètres › Partage, pour inviter d'autres personnes.
+// Saisie d'un code d'invitation — chemin UNIQUE pour rejoindre un groupe,
+// partagé par l'état d'amorçage et le pied de page « rejoindre un autre
+// groupe ». Le champ affiche/normalise le code en direct (XXXX-XXXX) : casse,
+// tirets et espaces d'un copier-coller n'ont aucune importance, et le bouton
+// ne s'active qu'avec un code plausible.
+function JoinGroupForm({ label = 'Rejoindre' }) {
+  const [code, setCode] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const norm = normalizeInviteCode(code);
+  const ready = norm.length >= 4 && !busy;
+
+  const join = async () => {
+    if (!ready) return;
+    setBusy(true);
+    try { await shareEngine.joinGroup(code); Toast.show('Groupe rejoint'); setCode(''); }
+    catch (e) { Toast.show(shareErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ display: 'flex', gap: 8 }}>
+      <input value={code}
+        onChange={e => setCode(formatInviteCode(e.target.value))}
+        onKeyDown={e => { if (e.key === 'Enter') join(); }}
+        placeholder="ABCD-EFGH" aria-label="Code d'invitation"
+        autoCapitalize="characters" autoCorrect="off" spellCheck={false}
+        style={{
+          flex: 1, minWidth: 0, padding: '12px 14px', borderRadius: 12,
+          background: T.surface3, border: `1px solid ${T.rule}`, color: T.ink,
+          fontFamily: fontNum, fontSize: 14, letterSpacing: 1, textTransform: 'uppercase',
+        }} />
+      <button type="button" onClick={join} disabled={!ready} style={{
+        padding: '12px 18px', borderRadius: 12, fontSize: 14, fontWeight: 600,
+        background: T.surface2, color: T.ink, border: `1px solid ${T.rule}`,
+        cursor: ready ? 'pointer' : 'default', fontFamily: 'inherit',
+        opacity: ready ? 1 : 0.5, flexShrink: 0,
+      }}>{busy ? '…' : label}</button>
+    </div>
+  );
+}
+
+// Pied de l'onglet quand on est dans un groupe : « Quitter le groupe » et,
+// replié derrière un lien, la saisie d'un autre code. Sans cette seconde
+// entrée, un membre coincé dans un groupe périmé n'avait AUCUN moyen d'en
+// rejoindre un autre sans quitter le sien d'abord (l'écran d'amorçage, seul
+// porteur du champ, ne s'affiche que hors groupe).
 function GroupFooter() {
+  const s = useShare();
+  const [joinOpen, setJoinOpen] = React.useState(false);
+  // Le code du groupe est affiché ICI, là où on regarde ses amis — c'est de
+  // cet écran qu'on invite quelqu'un. S'il manque (réinstallation, adhésion
+  // depuis un autre appareil), on le redemande au serveur une fois.
+  React.useEffect(() => {
+    if (s.groupId && !s.inviteCode) shareEngine.ensureInviteCode().catch(() => {});
+  }, [s.groupId, s.inviteCode]);
+
+  const onCopy = async () => {
+    const code = s.inviteCode || (await shareEngine.ensureInviteCode({ force: true }).catch(() => null));
+    if (!code) { Toast.show("Code d'invitation indisponible — réessaie en ligne"); return; }
+    try { await navigator.clipboard.writeText(code); Toast.show('Code copié'); }
+    catch (e) { Toast.show(code); }
+  };
+
   const onLeave = async () => {
     const ok = await Confirm.ask({
       title: 'Quitter le groupe ?',
@@ -143,6 +202,35 @@ function GroupFooter() {
   };
   return (
     <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <button type="button" onClick={onCopy}
+        aria-label={`Copier le code d'invitation ${s.inviteCode || ''}`.trim()}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 10, padding: '12px 14px', borderRadius: 14, cursor: 'pointer',
+          background: T.surface2, border: `1px solid ${T.rule}`, fontFamily: 'inherit',
+          textAlign: 'left',
+        }}>
+        <span style={{
+          fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase',
+          color: T.muted, fontWeight: 500,
+        }}>Code d'invitation</span>
+        <span style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          fontFamily: fontNum, fontSize: 14, letterSpacing: 1,
+          color: s.inviteCode ? T.ink : T.muted,
+        }}>
+          {s.inviteCode || '—'}
+          <SvgIcon icon={Ic.copy} size={13} color={T.muted} />
+        </span>
+      </button>
+      {joinOpen
+        ? <JoinGroupForm />
+        : (
+          <button type="button" onClick={() => setJoinOpen(true)} style={{
+            ...ghostButton, padding: '10px 12px', cursor: 'pointer',
+            color: T.ink2, fontSize: 13, alignSelf: 'center',
+          }}>Rejoindre un autre groupe</button>
+        )}
       <button type="button" onClick={onLeave} style={{
         ...ghostButton, padding: '10px 12px', cursor: 'pointer',
         color: T.accent2, fontSize: 13, fontWeight: 600, alignSelf: 'center',
@@ -154,7 +242,6 @@ function GroupFooter() {
 // État vide / d'amorçage : créer ou rejoindre un groupe.
 function FriendsEmpty() {
   const s = useShare();
-  const [code, setCode] = React.useState('');
   const [busy, setBusy] = React.useState(false);
 
   if (!s.available) {
@@ -187,13 +274,6 @@ function FriendsEmpty() {
     catch (e) { Toast.show(shareErrorMessage(e)); }
     finally { setBusy(false); }
   };
-  const join = async () => {
-    if (!code.trim()) return;
-    setBusy(true);
-    try { await shareEngine.joinGroup(code); Toast.show('Groupe rejoint'); }
-    catch (e) { Toast.show(shareErrorMessage(e)); }
-    finally { setBusy(false); }
-  };
 
   return (
     <div style={{ padding: '28px 18px', display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -221,21 +301,7 @@ function FriendsEmpty() {
         <div style={{ flex: 1, height: 1, background: T.rule }} />
       </div>
 
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input value={code} onChange={e => setCode(e.target.value.toUpperCase())}
-          placeholder="CODE-AMI" aria-label="Code d'invitation"
-          style={{
-            flex: 1, padding: '12px 14px', borderRadius: 12,
-            background: T.surface3, border: `1px solid ${T.rule}`, color: T.ink,
-            fontFamily: fontNum, fontSize: 14, letterSpacing: 1, textTransform: 'uppercase',
-          }} />
-        <button type="button" onClick={join} disabled={busy || !code.trim()} style={{
-          padding: '12px 18px', borderRadius: 12, fontSize: 14, fontWeight: 600,
-          background: T.surface2, color: T.ink, border: `1px solid ${T.rule}`,
-          cursor: (busy || !code.trim()) ? 'default' : 'pointer', fontFamily: 'inherit',
-          opacity: (busy || !code.trim()) ? 0.5 : 1,
-        }}>Rejoindre</button>
-      </div>
+      <JoinGroupForm />
     </div>
   );
 }
@@ -495,4 +561,7 @@ function HeaderBacStack() {
   );
 }
 
-Object.assign(window, { FriendsTab, FriendStatsView, FriendRow, GroupFooter, GroupAdminPanel, HeaderBacStack });
+Object.assign(window, {
+  FriendsTab, FriendStatsView, FriendRow, GroupFooter, GroupAdminPanel,
+  HeaderBacStack, JoinGroupForm,
+});

@@ -525,6 +525,7 @@ function SvgBarChart({
   data, width = 320, height = 140, color, formatX, formatTooltip, valueLabel,
   ariaLabel = 'Diagramme en barres',
 }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   const pad = CHART.pad.bar;
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
@@ -601,6 +602,7 @@ function SvgBarChart({
 
 // ── Radar (weekday distribution) ──────────────────────────────────
 function SvgRadar({ data, size = 220, color, valueLabel, ariaLabel = 'Radar par jour' }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   const cx = size / 2, cy = size / 2;
   const r = size / 2 - CHART.pad.radar;
   const n = data.length;
@@ -719,6 +721,7 @@ function SvgDonut({
   data, size = CHART.donut.size, thickness = CHART.donut.thickness,
   ariaLabel = 'Répartition par catégorie',
 }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   const cx = size / 2, cy = size / 2;
   const r = size / 2 - thickness / 2 - 2;
   const { total, segments } = donutSegments(data, cx, cy, r);
@@ -806,6 +809,7 @@ function SvgLineChart({
   tooltipUnits = [], extraLines = null,
   ariaLabel = 'Courbe d\'évolution',
 }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   // Traits de série teintés via catColor → abonnement palette (React.memo
   // bloquerait sinon le repaint sur changement de teinte, cf. useCatPalette).
   useCatPalette();
@@ -911,6 +915,7 @@ function SvgLineChart({
 }
 // ── Polar clock (24h consumption distribution) ───────────────────
 function SvgPolarClock({ hours, size = 260, ariaLabel = 'Horloge des consommations sur 24 heures' }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   const cx = size / 2, cy = size / 2;
   const rOuter = size / 2 - CHART.pad.clockOuter;
   const rInner = size / 2 * CHART.pad.clockInnerRatio;
@@ -1000,6 +1005,7 @@ function SvgPolarClock({ hours, size = 260, ariaLabel = 'Horloge des consommatio
 // the gradient runs green → orange → red so the curve is coloured by
 // its BAC level at every point without splitting into segments.
 function SvgBACProjection({ points, width = 320, height = 200, nowMs = Date.now() }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   // Hooks always run first and unconditionally so React's hook order
   // stays stable even when the component is rendered with empty input.
   const idSuffix = React.useId().replace(/:/g, '');
@@ -1249,6 +1255,7 @@ function SvgBACForecast({
   realPoints, projectedPoints, meanPeakBac, etaPeakHours, truncated = false,
   width = 320, height = 200, nowMs = Date.now(),
 }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   const idSuffix = React.useId().replace(/:/g, '');
   const svgRef = React.useRef(null);
   const [scrubT, setScrubT] = React.useState(null);
@@ -1576,6 +1583,7 @@ function SvgHistogram({
   buckets, width = 320, height = 150, color, valueLabel,
   ariaLabel = 'Histogramme de distribution',
 }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   const pad = CHART.pad.bar;
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
@@ -1664,6 +1672,7 @@ function SvgCalendarHeatmap({
   cells, cols = 1, scaleMax = 1, mode = 'monthGrid', width = 320,
   ariaLabel = 'Calendrier de consommation',
 }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   const svgRef = React.useRef(null);
   const [hover, setHover] = React.useState(null);
   const { padL, padT, padB, gapRatio, cellMin, cellMax } = CHART.heatmap;

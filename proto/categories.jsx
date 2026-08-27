@@ -148,6 +148,7 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
 }
 
 const CategoryCard = React.memo(function CategoryCard({ cat, onOpen, onEdit, index = 0 }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   // Repaint garanti quand une teinte de catégorie change : le contexte
   // traverse React.memo (les props `cat` ne bougent pas sur un changement
   // de couleur seul). Cf. useCatPalette (shared.jsx).
@@ -293,6 +294,7 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
 }
 
 const FamilyRow = React.memo(function FamilyRow({ family: f, variantIndex = 0, variantCount = 1, onOpen, onDirectAdd, index = 0 }) {
+  useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   // Cf. CategoryCard : abonnement palette → repaint sur changement de teinte.
   useCatPalette();
   const color = catColor(f.category, 70);
