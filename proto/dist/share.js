@@ -46,9 +46,30 @@ function _uid() {
   return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 }
 
+// Alphabet des codes d'invitation : ni I, ni O, ni 0, ni 1 (ambigus à l'oral
+// comme à l'écrit). Miroir exact de gen_invite_code() dans supabase/schema.sql.
+const INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+// Forme CANONIQUE d'un code : majuscules, aucun séparateur. Un code circule à
+// l'oral, par SMS, en copier-coller depuis une conversation : « ab12-cd34 »,
+// « AB12 CD34 » et « AB12CD34 » désignent le MÊME code. Toute comparaison
+// passe par ici, et la MÊME normalisation existe côté serveur
+// (public.normalize_invite_code, supabase/schema.sql) — un tiret oublié ne
+// doit jamais valoir « code invalide ».
+function normalizeInviteCode(raw) {
+  return String(raw == null ? '' : raw).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+// Forme AFFICHÉE : XXXX-XXXX (groupée, donc lisible et dictable). Ne tronque
+// jamais — un code plus long resterait entièrement visible plutôt que mutilé.
+function formatInviteCode(raw) {
+  const n = normalizeInviteCode(raw);
+  return n.length > 4 ? `${n.slice(0, 4)}-${n.slice(4)}` : n;
+}
+
 // Code d'invitation court et lisible (évite I/O/0/1).
 function _inviteCode() {
-  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const A = INVITE_ALPHABET;
   let s = '';
   for (let i = 0; i < 8; i++) s += A[Math.floor(Math.random() * A.length)];
   return s.slice(0, 4) + '-' + s.slice(4);
@@ -106,7 +127,15 @@ function shareErrorMessage(e) {
   if (/sdk supabase|chargement sdk/.test(msg)) return "SDK Supabase injoignable (vérifie ta connexion / CSP)";
   if (/failed to fetch|networkerror|network request failed|load failed/.test(msg)) return "Réseau indisponible — réessaie";
   if (/invalid api key|jwt|apikey|401/.test(msg) || code === '401') return "Clé Supabase invalide (vérifie share-config.js)";
-  if (/invalid invite|invite/.test(msg)) return "Code d'invitation invalide";
+  // Codes d'invitation : messages DISTINCTS et actionnables. « invalide » sur
+  // une invitation périmée envoyait chercher une faute de frappe dans un code
+  // pourtant correct (bug historique « rejoindre ne marche plus »).
+  if (/expired invite/.test(msg)) return "Invitation expirée — demande un nouveau code à ton ami";
+  if (/invite exhausted/.test(msg)) return "Invitation épuisée — demande un nouveau code à ton ami";
+  if (/invalid invite/.test(msg)) return "Code d'invitation invalide (8 caractères, ex. ABCD-EFGH)";
+  if (/not a member/.test(msg)) return "Tu ne fais pas partie de ce groupe";
+  if (/not authenticated|offline: identité/.test(msg)) return "Session de partage à rétablir — réessaie dans un instant";
+  if (/invite/.test(msg)) return "Code d'invitation invalide";
   return "Échec partage — voir la console (F12) pour le détail";
 }
 
@@ -245,6 +274,9 @@ function MockShareTransport() {
       }],
       drinks: [...lea, ...tom],
       mine: [],
+      // Code d'invitation du « serveur » mock : mémorisé pour qu'ensureInvite
+      // rende toujours un code (comme la RPC ensure_invite réelle).
+      inviteCode: _inviteCode(),
       // Renseigné par createGroup (moi) / laissé null par joinGroup (groupe
       // de démo au créateur inconnu → tout membre peut retirer).
       creatorId: null,
@@ -273,22 +305,39 @@ function MockShareTransport() {
       write(srv);
       return {
         groupId,
-        inviteCode: _inviteCode()
+        inviteCode: srv.inviteCode
       };
     },
-    async joinGroup(/* code */
-    ) {
+    // Le mock accepte DÉLIBÉRÉMENT n'importe quel code : c'est un fixture de
+    // développement (amis fictifs Léa/Tom), pas une barrière de sécurité — la
+    // validation réelle vit dans la RPC join_group (supabase/schema.sql). Il
+    // mémorise en revanche le code fourni, pour qu'ensureInvite le rende.
+    async joinGroup(code) {
       // En mock on (re)seed le même groupe de démonstration (créateur inconnu).
       let srv = read();
       if (!srv) {
         srv = seed('grp-demo');
-        write(srv);
       }
       srv.kickedSelf = false; // revenir dans le groupe ré-active ma membership
+      srv.inviteCode = formatInviteCode(code) || srv.inviteCode || _inviteCode();
       write(srv);
       return {
         groupId: srv.groupId,
-        inviteCode: _inviteCode()
+        inviteCode: srv.inviteCode
+      };
+    },
+    async ensureInvite() {
+      const srv = read();
+      if (!srv) return {
+        inviteCode: null
+      };
+      if (!srv.inviteCode) {
+        srv.inviteCode = _inviteCode();
+        write(srv);
+      }
+      return {
+        groupId: srv.groupId,
+        inviteCode: srv.inviteCode
       };
     },
     async leaveGroup() {
@@ -420,16 +469,27 @@ function SupabaseShareTransport(cfg) {
     kind: 'supabase',
     async ensureIdentity() {
       const sb = await ensureClient();
-      let {
+      const {
         data
       } = await sb.auth.getSession();
-      if (!data || !data.session) {
-        const res = await sb.auth.signInAnonymously();
-        if (res.error) throw res.error;
-        data = res.data;
+      if (data && data.session && data.session.user) return {
+        userId: data.session.user.id
+      };
+      // Aucune session utilisable. HORS-LIGNE on n'en crée SURTOUT pas une
+      // nouvelle : signInAnonymously() forgerait une identité différente qui
+      // remplacerait la mienne et me sortirait de mon groupe (mes lignes
+      // serveur appartiennent à l'ancien uid). On échoue franchement ;
+      // ensureIdentityNow retombe sur l'identité en cache et retentera en ligne.
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw new Error('offline: identité non vérifiable');
       }
+      const res = await sb.auth.signInAnonymously();
+      if (res.error) throw res.error;
+      const sess = res.data && (res.data.session || res.data);
+      const uid = sess && sess.user ? sess.user.id : null;
+      if (!uid) throw new Error('not authenticated');
       return {
-        userId: (data.session || data).user.id
+        userId: uid
       };
     },
     async setProfile(p) {
@@ -464,16 +524,37 @@ function SupabaseShareTransport(cfg) {
     },
     async joinGroup(code) {
       const sb = await ensureClient();
+      // Le code part sous sa forme TRANSMISSIBLE (XXXX-XXXX) : c'est celle
+      // stockée dans `invites.token`, donc la seule qu'un backend pas encore
+      // migré (comparaison brute `token = upper(...)`) sait reconnaître. Un
+      // backend à jour re-normalise de toute façon les deux côtés.
       const {
         data,
         error
       } = await sb.rpc('join_group', {
-        invite_token: code
+        invite_token: formatInviteCode(code)
       });
       if (error) throw error;
       return {
         groupId: data.group_id,
-        inviteCode: code
+        inviteCode: data.invite_code || code
+      };
+    },
+    // Code d'invitation courant du groupe (créé côté serveur s'il n'en existe
+    // plus de valide). Un backend pas encore migré ne connaît pas cette RPC :
+    // l'appelant traite l'échec comme « pas de code », sans casser le partage.
+    async ensureInvite(groupId) {
+      const sb = await ensureClient();
+      const {
+        data,
+        error
+      } = await sb.rpc('ensure_invite', {
+        p_group_id: groupId
+      });
+      if (error) throw error;
+      return {
+        groupId: data.group_id,
+        inviteCode: data.invite_code
       };
     },
     async leaveGroup() {
@@ -931,17 +1012,73 @@ async function _resetGroupLocal() {
   _emit();
 }
 
-// Crée l'identité (anonyme) à la demande — jamais au boot si le partage est
-// désactivé, pour ne pas créer un compte anonyme inutile à chaque ouverture.
+// Crée OU VÉRIFIE l'identité (anonyme) à la demande — jamais au boot si le
+// partage est désactivé, pour ne pas créer un compte anonyme inutile à chaque
+// ouverture.
+//
+// On interroge le transport à CHAQUE appel, même quand un userId est déjà en
+// mémoire : `share.userId` n'est qu'un cache Dexie, qui survit à la perte de
+// la session d'authentification (jeton périmé non rafraîchissable, stockage
+// du navigateur purgé, identité restaurée depuis une clé de récup.). Se fier
+// au cache laissait alors partir les RPC SANS jeton — `auth.uid()` NULL côté
+// serveur, donc « rejoindre un groupe » échouait pour toujours avec une
+// erreur opaque. Côté Supabase la vérification est locale (getSession) : ce
+// n'est un aller-retour réseau qu'à la (re)création de l'identité.
 async function ensureIdentityNow() {
-  if (shareState.userId) return shareState.userId;
-  const {
-    userId
-  } = await getTransport().ensureIdentity();
-  shareState.userId = userId;
-  await _sset('share.userId', userId);
-  _emit();
+  let userId = null;
+  try {
+    const res = await getTransport().ensureIdentity();
+    userId = res && res.userId || null;
+  } catch (e) {
+    // Backend injoignable : on retombe sur l'identité connue plutôt que de
+    // bloquer, et on laisse remonter si on n'en a aucune (l'UI affichera un
+    // message actionnable au lieu d'un échec muet).
+    if (shareState.userId) return shareState.userId;
+    throw e;
+  }
+  if (!userId) {
+    if (shareState.userId) return shareState.userId;
+    throw new Error('not authenticated');
+  }
+  if (userId !== shareState.userId) {
+    shareState.userId = userId;
+    await _sset('share.userId', userId);
+    _emit();
+  }
   return userId;
+}
+
+// Code d'invitation COURANT du groupe, garanti tant qu'on en est membre.
+// Le code stocké localement n'est qu'un CACHE : il disparaît à la
+// réinstallation, et il est absent d'un appareil qui a rejoint sans jamais
+// créer de groupe. Sans lui plus personne ne peut être invité — et un groupe
+// dont l'invitation avait péri devenait définitivement fermé. On le redemande
+// donc au serveur, qui en crée un si aucune invitation valide ne subsiste.
+// Best-effort : un backend pas encore migré (RPC ensure_invite absente)
+// laisse simplement le code local en place.
+async function ensureInviteCode({
+  force = false
+} = {}) {
+  if (!shareState.groupId) return null;
+  if (shareState.inviteCode && !force) return shareState.inviteCode;
+  const t = getTransport();
+  if (typeof t.ensureInvite !== 'function') return shareState.inviteCode || null;
+  let code = null;
+  try {
+    const res = await t.ensureInvite(shareState.groupId);
+    code = res && res.inviteCode ? formatInviteCode(res.inviteCode) : null;
+  } catch (e) {
+    try {
+      console.warn('[AlcoNote partage] code d’invitation indisponible', e);
+    } catch (_) {}
+    return shareState.inviteCode || null;
+  }
+  if (code && code !== shareState.inviteCode) {
+    shareState.inviteCode = code;
+    await _sset('share.inviteCode', code);
+    _emit();
+  }
+  return shareState.inviteCode || null;
 }
 
 // ── Profil (mon profil partagé : pseudo + paramètres BAC opt-in) ──────────
@@ -1046,12 +1183,12 @@ const shareEngine = {
       inviteCode
     } = await getTransport().createGroup();
     shareState.groupId = groupId;
-    shareState.inviteCode = inviteCode;
+    shareState.inviteCode = inviteCode ? formatInviteCode(inviteCode) : null;
     // Je viens de créer le groupe : j'en suis le créateur (le pull le
     // reconfirmera depuis groups.created_by).
     shareState.creatorId = shareState.userId;
     await _sset('share.groupId', groupId);
-    if (inviteCode) await _sset('share.inviteCode', inviteCode);
+    if (shareState.inviteCode) await _sset('share.inviteCode', shareState.inviteCode);
     await _sset('share.creatorId', shareState.creatorId);
     _emit();
     await publishMyProfile();
@@ -1063,26 +1200,65 @@ const shareEngine = {
     await reconcile();
     startTimer();
     pull();
+    // Filet : si le backend n'a pas renvoyé de code, on en obtient un tout de
+    // suite — un groupe sans code d'invitation est un groupe qu'on ne peut
+    // rejoindre d'aucune façon.
+    if (!shareState.inviteCode) ensureInviteCode({
+      force: true
+    }).catch(() => {});
     return {
       groupId,
-      inviteCode
+      inviteCode: shareState.inviteCode
     };
   },
+  // Rejoindre un groupe depuis un code d'invitation. Chemin le plus fragile du
+  // partage : il combine identité, réseau et état local. Chaque étape est donc
+  // explicitement blindée.
   async joinGroup(code) {
+    // 1. Le code est normalisé AVANT tout appel : casse, tirets et espaces
+    //    d'un copier-coller ne doivent jamais faire échouer une adhésion.
+    const norm = normalizeInviteCode(code);
+    if (!norm) throw new Error('invalid invite');
+    // 2. Identité VÉRIFIÉE (pas seulement lue en cache) : sans jeton valide la
+    //    RPC partirait anonyme et le serveur la refuserait (auth.uid() NULL).
     await ensureIdentityNow();
-    const {
-      groupId,
-      inviteCode
-    } = await getTransport().joinGroup((code || '').trim().toUpperCase());
+    const prevGroupId = shareState.groupId;
+    // Le transport reçoit la forme TRANSMISSIBLE (XXXX-XXXX), celle qui est
+    // stockée côté serveur — cf. SupabaseShareTransport.joinGroup.
+    const res = await getTransport().joinGroup(formatInviteCode(norm));
+    const groupId = res && res.groupId;
+    if (!groupId) throw new Error('invalid invite');
+    // 3. Changement de groupe : on quitte proprement l'ANCIEN (serveur puis
+    //    purge locale) avant d'adopter le nouveau. Sans ça le sharedPool
+    //    garderait les boissons des anciens amis, et le cursor de l'ancien
+    //    groupe traînerait dans les settings.
+    if (prevGroupId && prevGroupId !== groupId) {
+      try {
+        await getTransport().leaveGroup();
+      } catch (e) {
+        try {
+          console.warn('[AlcoNote partage] sortie de l’ancien groupe', e);
+        } catch (_) {}
+      }
+      await _resetGroupLocal();
+    }
     shareState.groupId = groupId;
-    shareState.inviteCode = (inviteCode || code || '').trim().toUpperCase();
+    shareState.inviteCode = formatInviteCode(res.inviteCode || norm);
+    // Créateur INCONNU tant que le pull ne l'a pas reconfirmé depuis
+    // groups.created_by : garder celui de l'ancien groupe afficherait à tort
+    // le panneau d'administration.
+    shareState.creatorId = null;
     await _sset('share.groupId', groupId);
+    await _sset('share.creatorId', null);
     if (shareState.inviteCode) await _sset('share.inviteCode', shareState.inviteCode);
     _emit();
     await publishMyProfile();
-    // Publie TOUT mon historique au groupe (index vide ⇒ tout « nouveau »),
-    // synchrone AVANT le pull (cf. createGroup) — sinon les autres membres ne
-    // verraient que mon delta après l'arrivée.
+    // 4. Le code accepté par le serveur EST désormais mon code à transmettre
+    //    (pas de refresh forcé : il vient d'être validé, aller en chercher un
+    //    autre ne ferait que remplacer un code valide par un autre).
+    //    Publie TOUT mon historique au groupe (index vide ⇒ tout « nouveau »),
+    //    synchrone AVANT le pull (cf. createGroup) — sinon les autres membres
+    //    ne verraient que mon delta après l'arrivée.
     await _savePubIndex({});
     await reconcile();
     startTimer();
@@ -1091,6 +1267,7 @@ const shareEngine = {
       groupId
     };
   },
+  ensureInviteCode,
   async leaveGroup() {
     // Le serveur supprime MES lignes (leave_group) ; les autres appareils
     // les purgent par diff de membres à leur prochain pull.
@@ -1171,7 +1348,10 @@ async function initShare() {
     shareState.creatorId = (await db.getSetting('share.creatorId')) || null;
     // N'amorce l'identité au boot que pour un utilisateur déjà actif ; sinon
     // on attend qu'il active le partage (évite un compte anonyme inutile).
-    if (!shareState.userId && shareState.enabled) {
+    // Pour un utilisateur ACTIF on la VÉRIFIE à chaque boot, même si un
+    // userId est en cache : c'est là qu'on répare une session perdue, avant
+    // que le premier pull ou une adhésion ne parte sans jeton.
+    if (shareState.enabled) {
       try {
         await ensureIdentityNow();
       } catch (e) {/* réessayé à l'activation */}
@@ -1190,6 +1370,11 @@ async function initShare() {
       startTimer();
       pull();
       scheduleReconcile();
+      // Code d'invitation manquant (réinstallation, adhésion depuis un autre
+      // appareil, groupe créé avant la RPC ensure_invite) : on le récupère en
+      // silence, sinon l'utilisateur n'a plus rien à transmettre pour qu'on
+      // le rejoigne.
+      if (!shareState.inviteCode) ensureInviteCode().catch(() => {});
       // Cicatrisation « une seule fois » : les membres déjà dans un groupe AVANT
       // le correctif de publication n'avaient jamais poussé leur back-catalog.
       // On republie tout l'historique une fois (index vidé ⇒ tout « nouveau »),
@@ -1333,5 +1518,8 @@ Object.assign(window, {
   useFriendsBac,
   localDrinkToShared,
   tsFromDateTime,
-  shareErrorMessage
+  shareErrorMessage,
+  normalizeInviteCode,
+  formatInviteCode,
+  INVITE_ALPHABET
 });

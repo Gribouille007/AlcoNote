@@ -1866,6 +1866,7 @@ const StatCell = React.memo(function StatCell({
   period,
   index = 0
 }) {
+  useTheme(); // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   const reduced = useReducedMotion();
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1933,6 +1934,7 @@ const HeroStatCard = React.memo(function HeroStatCard({
   value,
   suffix
 }) {
+  useTheme(); // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -3957,6 +3959,10 @@ function MapSection({
   collapsed,
   toggleSection
 }) {
+  // Abonnement explicite : l'effet « thème » plus bas dépend de `T._name`,
+  // qui ne bouge QUE si ce composant se re-rend. Sans ce hook, le re-thème
+  // de la carte reposerait sur un re-render de parent — fragile.
+  useTheme();
   const isOpen = !collapsed.has('map');
   const containerRef = React.useRef(null);
   const mapRef = React.useRef(null);

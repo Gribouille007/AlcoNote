@@ -85,6 +85,14 @@ valeur en dur.
   Recette complète : § « Charts — construire une figure parfaite ».
 - **Confirmations** : `Confirm.ask({...})`, jamais `window.confirm`.
 - **Toasts** : `Toast.show(msg, { undo })`, jamais d'alerte custom.
+- **Bascule de thème** : `T` est un objet **muté en place** par `setTheme()`
+  — invisible pour React, exactement comme le registre `CAT`. **Tout
+  composant `React.memo` qui lit un token `T.*` appelle `useTheme()`**
+  (sinon ses props n'ayant pas bougé, il garde les couleurs de l'ancien
+  thème : le bug « le mode sombre laisse des éléments clairs ») ; vérifié
+  par static-checks. Les surfaces HORS React (fond `<html>`, widgets
+  natifs via `color-scheme`, `<meta name="theme-color">`) passent toutes
+  par `syncThemeToDocument()` — source unique.
 
 Avant de pousser un nouveau composant : relire la liste ci-dessus en
 diagonale et vérifier chaque point. Une couleur en dur ou un
@@ -158,14 +166,14 @@ Définies dans `shared.jsx` (chargé en premier, donc disponibles partout) :
   `UnitToggle({ value, onChange, units })`,
   `RatingField({ value, onChange, size })`, `FieldGroup({ label, children })`.
 - `TimeField({ value, onChange, ariaLabel })` : champ « Heure » (state
-  `'HH:MM'`) stylé comme un input, qui ouvre une **roue iOS**
-  (`TimeWheelSheet` → deux `WheelPicker` heures/minutes). Remplace
-  `<input type="time">` (peu fluide sur Android). Le `WheelPicker` utilise
-  l'accrochage CSS natif (`.alco-wheel`, scroll-snap) + `wheelIndexForOffset`
-  pour l'accrochage au relâchement ; **chaque item est un bouton
-  tap-to-select** (seul chemin testable sous jsdom — pas de scroll réel) et
-  les flèches clavier déplacent la sélection. La **date** reste un
-  `<input type="date">` natif.
+  `'HH:MM'`) = **`<input type="time">` natif**, donc le sélecteur d'heure
+  **du système** (roue iOS, horloge Material sur Android, spinner desktop) —
+  celui que l'utilisateur connaît, qui suit ses réglages (12 h/24 h, langue)
+  et son accessibilité. **Ne jamais le remplacer par un picker maison** (une
+  roue custom a été retirée pour cette raison). La **date** est de même un
+  `<input type="date">` natif. Les deux peuvent remonter `''` quand on vide
+  le champ : les submits retombent sur l'instant courant (ajout) ou la valeur
+  d'origine (édition), jamais sur une date/heure fantôme.
 
 Les sheets d'add/édition (`AddDrinkSheet`, `EditEntrySheet`,
 `EditFamilySheet`) et le poids (Paramètres › `ProfileRow numeric`)
@@ -428,6 +436,20 @@ double-tap / Ctrl+molette dans `installZoomGuards()`, shared.jsx). Ne
 jamais réintroduire un mécanisme qui en dépend ; le zoom interne de la
 carte Leaflet reste fonctionnel.
 
+**Portrait** : l'app n'est JAMAIS utilisable en paysage. Trois ceintures,
+aucune ne couvrant seule tous les contextes :
+1. `"orientation": "portrait-primary"` dans `manifest.json` (PWA installée) ;
+2. `installOrientationLock()` (shared.jsx) : `screen.orientation.lock(
+   'portrait')`, retenté au boot, à chaque rotation et au retour au premier
+   plan — le verrou n'est accordé qu'en standalone/fullscreen, et jamais sur
+   iOS ; un refus est un cas NORMAL, absorbé en silence ;
+3. le voile `#alco-rotate` (index.html) : repli CSS pur, affiché par la media
+   query `(orientation: landscape) and (max-height: 560px) and (pointer:
+   coarse)` — donc téléphone couché uniquement, jamais tablette ni desktop
+   (dont le cadre « téléphone » centré en écran large reste légitime).
+Ne jamais concevoir un écran « qui a besoin de la largeur » : elle n'existe
+pas.
+
 ### Sheets / overlays
 
 - `SheetOverlay` accepte `side: 'bottom' | 'left' | 'right'` et porte
@@ -619,12 +641,43 @@ dupliquée** — un ami passe par les mêmes `aggregateGeneral`,
   devient invisible à leur pull pour toujours. Même convention que les
   tombstones. La détection de delta locale reste `drink.updatedAt`
   (`share.pubindex`).
+- **Codes d'invitation — « rejoindre doit marcher, toujours »** :
+  - Un code a une forme **canonique** (`normalizeInviteCode` : majuscules,
+    sans séparateur) et une forme **transmissible** (`formatInviteCode` :
+    `XXXX-XXXX`). Un code circule à l'oral / par SMS / en copier-coller :
+    casse, tiret et espaces ne doivent JAMAIS le faire refuser. La MÊME
+    normalisation existe côté serveur (`public.normalize_invite_code`) et
+    `join_group` compare des codes normalisés. Le client envoie la forme
+    transmissible (celle stockée dans `invites.token`), pour rester
+    compatible avec un backend pas encore migré.
+  - Une invitation **ne périme jamais** et ne s'épuise pas (`expires_at`
+    NULL, `max_uses` immense). L'ancien couple 30 jours / 50 usages, sans
+    aucun moyen de régénérer un code, fermait le groupe DÉFINITIVEMENT —
+    c'était le bug « rejoindre ne fonctionne plus du tout ». Ne jamais
+    réintroduire d'expiration sans exposer d'abord une régénération.
+  - `ensure_invite(group)` (RPC) rend le code courant du groupe, et en crée
+    un si aucun n'est valide. Côté client `shareEngine.ensureInviteCode()`
+    l'appelle au boot quand le code local manque (réinstallation, adhésion
+    depuis un autre appareil) et à la copie depuis Paramètres. Le code local
+    n'est qu'un CACHE, jamais la source de vérité.
+  - `ensureIdentityNow()` **vérifie** l'identité à chaque appel au lieu de
+    croire le cache `share.userId` : une session perdue faisait partir les
+    RPC sans jeton (`auth.uid()` NULL) et « rejoindre » échouait pour
+    toujours. Hors-ligne on ne forge JAMAIS une identité anonyme de
+    remplacement (elle sortirait l'utilisateur de son groupe) — on retombe
+    sur l'identité connue.
 - **Cycle de vie du groupe** :
   - *Quitter* : `leave_group` (RPC) supprime MES lignes serveur ;
     `_resetGroupLocal()` purge l'état local (sharedPool, cursor, clés
     `share.*` de groupe, pubindex) sans toucher aux tables perso.
   - *Revenir* : `joinGroup` remet `share.pubindex` à zéro → `reconcile()`
     republie TOUT le catalogue local — « ses données le suivent ».
+  - *Changer de groupe* : `joinGroup` sur un AUTRE groupe quitte d'abord
+    l'ancien côté serveur puis `_resetGroupLocal()` (sinon le pool garde les
+    boissons des anciens amis) et remet `creatorId` à null — le pull le
+    reconfirmera. Deux entrées UI vers `JoinGroupForm` (friends.jsx) :
+    l'écran d'amorçage hors groupe, et « Rejoindre un autre groupe » au pied
+    de l'onglet quand on est déjà dans un groupe.
   - *Retirer quelqu'un* : RPC `remove_member(group, user)` — autorisé au
     **créateur** (`groups.created_by`), ou à **tout membre** si
     `created_by` est NULL ; le serveur purge drinks + profil +
@@ -753,8 +806,19 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
   courbe (jusqu'à 0) rentre dans le graphe, sans fin coupée au bord droit.
 - **Calendrier / Sessions** : la heatmap colore les jours selon les
   grammes ; la liste Sessions montre date, durée, pic ; tap → tooltip.
-- **Heure (roue)** : le champ Heure ouvre une roue ; faire défiler/​taper
-  une heure et une minute, OK → l'heure est posée ; fluide sur Android.
+- **Heure (natif)** : le champ Heure ouvre le sélecteur DU SYSTÈME ; choisir
+  une heure la pose ; vider le champ n'enregistre jamais d'heure vide.
+- **Thème** : basculer Clair ↔ Sombre repeint TOUT du premier coup — cartes
+  de catégories, lignes d'historique, figures, ET les widgets natifs
+  (champs date/heure, barres de défilement) ; aucun élément ne reste sur
+  l'ancien thème, dans les deux sens.
+- **Paysage** : coucher le téléphone n'affiche jamais l'UI en horizontal
+  (verrou d'orientation en PWA installée, voile « Tourne ton appareil »
+  ailleurs) ; en portrait tout revient normalement.
+- **Rejoindre un groupe** : saisir le code en minuscules, sans tiret ou avec
+  des espaces fonctionne ; un mauvais code donne un message distinct d'une
+  invitation expirée ; « Rejoindre un autre groupe » (pied de l'onglet Amis)
+  bascule proprement de groupe (les amis de l'ancien disparaissent).
 - **Couleur de catégorie** : « Modifier » → slider Teinte ; la pastille/
   l'icône se recolorent en direct ; « Auto » revient au défaut ; la
   couleur persiste au reload et survit à un renommage. **Changer

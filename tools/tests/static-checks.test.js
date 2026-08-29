@@ -135,6 +135,76 @@ test('DA : composant React.memo qui peint catColor/catBg → useCatPalette() obl
     'composants memoïsés peignant une couleur de catégorie sans abonnement palette');
 });
 
+// Corps d'une fonction nommée (équilibrage d'accolades depuis la `{` qui
+// suit la liste de paramètres). Retourne '' si la fonction est absente.
+function functionBody(src, name) {
+  const m = new RegExp(`function\\s+${name}\\s*\\(`).exec(src);
+  if (!m) return '';
+  const open = src.indexOf('{', src.indexOf(')', m.index));
+  if (open === -1) return '';
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') { depth--; if (depth === 0) return src.slice(open, i + 1); }
+  }
+  return src.slice(open);
+}
+
+// Noms des composants memoïsés, DEUX formes : `React.memo(function X` (inline)
+// et `X = React.memo(X);` (memoïsation en fin de fichier, cf. stats-charts).
+function memoComponentNames(src) {
+  const names = new Set();
+  for (const m of src.matchAll(/React\.memo\(function\s+(\w+)/g)) names.add(m[1]);
+  for (const m of src.matchAll(/^\s*(\w+)\s*=\s*React\.memo\(\1\)\s*;/gm)) names.add(m[1]);
+  return [...names];
+}
+
+test('DA : composant React.memo qui lit un token T → useTheme() obligatoire', () => {
+  // Même piège que la palette de catégories : `T` est un objet MUTÉ en place
+  // par setTheme() — une bascule de thème est invisible pour React. Un
+  // composant React.memo dont les props n'ont pas bougé ne se re-rend pas et
+  // garde les couleurs de l'ANCIEN thème (bug historique « le mode sombre
+  // laisse des éléments clairs »). useTheme() abonne le composant au bus de
+  // thème, ce qui force son repaint quoi qu'en dise le memo.
+  const offenders = [];
+  for (const f of jsxFiles) {
+    const src = read(path.join('proto', f));
+    for (const name of memoComponentNames(src)) {
+      const body = functionBody(src, name);
+      if (/\bT\.\w+/.test(body) && !body.includes('useTheme()')) {
+        offenders.push(`proto/${f} › ${name}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [],
+    'composants memoïsés peignant des tokens de thème sans abonnement useTheme()');
+});
+
+test('portrait verrouillé : manifest + verrou écran + repli CSS paysage', () => {
+  const manifest = JSON.parse(read('manifest.json'));
+  assert.match(String(manifest.orientation || ''), /^portrait/,
+    'manifest.json : orientation portrait (PWA installée)');
+  const shared = read('proto/shared.jsx');
+  assert.ok(shared.includes('installOrientationLock'), 'installOrientationLock présent dans shared.jsx');
+  assert.match(shared, /orientation\.lock\('portrait'\)|so\.lock\('portrait'\)/,
+    "verrou screen.orientation.lock('portrait')");
+  const html = read('index.html');
+  assert.match(html, /id="alco-rotate"/, 'voile de repli #alco-rotate dans index.html');
+  assert.match(html, /@media \(orientation: landscape\)[^{]*\{/,
+    'media query paysage qui active le voile');
+});
+
+test('thème : color-scheme posé sur les DEUX thèmes (widgets natifs)', () => {
+  // Sans `color-scheme`, les contrôles natifs (input date/heure, scrollbars,
+  // autofill) restent peints par le thème du SYSTÈME : autant d'« éléments
+  // clairs » qui survivent au passage en mode sombre, et inversement.
+  const html = read('index.html');
+  assert.match(html, /html\[data-theme="dark"\][^{]*\{[^}]*color-scheme:\s*dark/,
+    'color-scheme: dark sur le thème sombre');
+  assert.match(html, /html\[data-theme="light"\][^{]*\{[^}]*color-scheme:\s*light/,
+    'color-scheme: light sur le thème clair');
+});
+
 test('conventions : chaque proto/*.jsx expose ses symboles via Object.assign(window', () => {
   for (const f of jsxFiles) {
     const src = read(path.join('proto', f));
@@ -146,6 +216,62 @@ test('build : chaque proto/X.jsx a son proto/dist/X.js', () => {
   for (const f of jsxFiles) {
     const dist = path.join(ROOT, 'proto', 'dist', f.replace(/\.jsx$/, '.js'));
     assert.ok(fs.existsSync(dist), `dist manquant pour proto/${f} — lancer npm run build`);
+  }
+});
+
+// ── Partage : invariants du backend (supabase/schema.sql) ──────────
+// Le schéma SQL est appliqué à la main dans le SQL Editor : rien ne le
+// compile ni ne l'exécute en CI. Ces checks gèlent les invariants dont
+// dépend « rejoindre un groupe », pour qu'une régression se voie ici.
+
+const schemaSql = read('supabase/schema.sql');
+
+test('partage : une invitation ne périme JAMAIS et ne s’épuise pas', () => {
+  // Régression majeure : les invitations expiraient à 30 jours et l'app
+  // n'offrait aucun moyen d'en régénérer une — passé ce délai, le groupe
+  // devenait DÉFINITIVEMENT impossible à rejoindre.
+  assert.doesNotMatch(schemaSql, /expires_at\s*\)?\s*\n?\s*values[^;]*interval/i,
+    'create_group ne doit plus poser d’expiration');
+  assert.doesNotMatch(schemaSql, /now\(\)\s*\+\s*interval\s+'30 days'/,
+    "plus d'invitation à 30 jours");
+  assert.match(schemaSql, /update public\.invites\s*\n\s*set expires_at = null/,
+    'migration : les invitations existantes sont dépérimées');
+  assert.match(schemaSql, /max_uses\s*=\s*greatest\(max_uses, 1000000000\)/,
+    'migration : le compteur d’usages ne peut plus être épuisé');
+});
+
+test('partage : join_group compare des codes NORMALISÉS', () => {
+  // Un code se transmet à l'oral / par SMS : tiret, espaces et casse ne
+  // doivent jamais valoir « code invalide ». La normalisation existe des DEUX
+  // côtés (client : normalizeInviteCode).
+  assert.match(schemaSql, /create or replace function public\.normalize_invite_code/,
+    'helper de normalisation côté serveur');
+  assert.match(schemaSql, /public\.normalize_invite_code\(token\)\s*=\s*v_norm/,
+    'join_group matche sur le code normalisé');
+  assert.doesNotMatch(schemaSql, /where token = upper\(invite_token\)/,
+    'plus de comparaison brute (un tiret oublié suffisait à échouer)');
+  const shareSrc = read('proto/share.jsx');
+  assert.ok(shareSrc.includes('function normalizeInviteCode('), 'normalizeInviteCode côté client');
+  assert.ok(shareSrc.includes('function formatInviteCode('), 'formatInviteCode côté client');
+});
+
+test('partage : RPC ensure_invite exposée (un groupe garde toujours un code)', () => {
+  assert.match(schemaSql, /create or replace function public\.ensure_invite\(p_group_id uuid\)/,
+    'RPC ensure_invite définie');
+  assert.match(schemaSql, /grant execute on function public\.ensure_invite\(uuid\)\s+to anon, authenticated;/,
+    'ensure_invite exécutable par les clients (sans GRANT : PostgREST 404)');
+  assert.ok(read('proto/share.jsx').includes("sb.rpc('ensure_invite'"), 'transport câblé sur ensure_invite');
+});
+
+test('partage : toute RPC appelée par le client est définie ET grantée', () => {
+  const shareSrc = read('proto/share.jsx');
+  const called = [...shareSrc.matchAll(/sb\.rpc\('(\w+)'/g)].map((m) => m[1]);
+  assert.ok(called.length >= 4, 'au moins les RPC de cycle de vie du groupe');
+  for (const fn of new Set(called)) {
+    assert.match(schemaSql, new RegExp(`create or replace function public\\.${fn}\\(`),
+      `RPC ${fn} appelée par le client mais absente de schema.sql`);
+    assert.match(schemaSql, new RegExp(`grant execute on function public\\.${fn}\\(`),
+      `RPC ${fn} sans GRANT (PostgREST répondrait 404 « function not found »)`);
   }
 });
 

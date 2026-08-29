@@ -8,7 +8,10 @@
   <meta name="keywords" content="alcool, consommation, suivi, PWA, scanner, statistiques, santé">
   <meta name="author" content="AlcoNote">
 
-  <meta name="theme-color" content="#b67a3a">
+  <!-- Valeur d'amorçage : fond du thème sombre (celui que `body` peint par
+       défaut ci-dessous). shared.jsx la réaligne sur le thème réel dès son
+       exécution, et à chaque bascule (syncThemeToDocument). -->
+  <meta name="theme-color" content="#100c0a">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -77,11 +80,19 @@
                     0 0 0 1px oklch(70% 0.02 70 / 0.3);
       }
     }
+    /* `color-scheme` pilote le rendu des widgets NATIFS que le CSS de l'app
+       ne peut pas peindre : sélecteurs date/heure, barres de défilement,
+       menus, autofill. Sans lui ils restent en clair sur fond sombre (des
+       « éléments clairs » qui survivent au passage en mode sombre) et
+       inversement. Posé sur les DEUX thèmes pour que la bascule soit
+       symétrique dans les deux sens. */
     html[data-theme="dark"], body.theme-dark {
+      color-scheme: dark;
       background: radial-gradient(ellipse at top, oklch(22% 0.01 55), oklch(14% 0.008 50) 75%);
       color: oklch(96% 0.008 85);
     }
     html[data-theme="light"], body.theme-light {
+      color-scheme: light;
       background: radial-gradient(ellipse at top, oklch(99% 0.006 85), oklch(93% 0.01 75) 75%);
       color: oklch(22% 0.012 55);
     }
@@ -112,6 +123,37 @@
     * { scrollbar-width: none; }
     /* iOS-friendly date/time inputs */
     input[type="date"], input[type="time"] { min-height: 1.4em; }
+    /* Portrait verrouillé — repli CSS quand l'OS refuse
+       screen.orientation.lock() (onglet navigateur, iOS). En paysage sur un
+       écran TACTILE court (téléphone couché), un voile opaque recouvre l'UI :
+       l'app n'est jamais utilisable en horizontal. `pointer: coarse` +
+       `max-height` excluent tablettes et desktop, dont le cadre « téléphone »
+       centré reste légitime en écran large. */
+    #alco-rotate { display: none; }
+    @media (orientation: landscape) and (max-height: 560px) and (pointer: coarse) {
+      #alco-rotate {
+        display: grid; place-items: center;
+        position: fixed; inset: 0; z-index: 2147483647;
+        padding: 24px; text-align: center;
+        background: radial-gradient(ellipse at top, oklch(22% 0.01 55), oklch(14% 0.008 50) 75%);
+        color: oklch(96% 0.008 85);
+      }
+      html[data-theme="light"] #alco-rotate {
+        background: radial-gradient(ellipse at top, oklch(99% 0.006 85), oklch(93% 0.01 75) 75%);
+        color: oklch(22% 0.012 55);
+      }
+    }
+    #alco-rotate .alco-rotate-glyph {
+      font-size: 34px; line-height: 1; margin-bottom: 14px;
+      display: block; transform: rotate(-90deg);
+    }
+    #alco-rotate .alco-rotate-title {
+      font-family: "Instrument Serif", serif; font-style: italic;
+      font-size: 24px; letter-spacing: -0.4px; margin-bottom: 8px;
+    }
+    #alco-rotate .alco-rotate-sub {
+      font-size: 13px; line-height: 1.5; opacity: 0.65; max-width: 300px;
+    }
     /* loading splash — only visible until the React tree mounts. The
        App component removes this element from the DOM as soon as it
        runs, so a transient empty-root state during a re-render can
@@ -151,6 +193,15 @@
 <body>
   <div id="root"></div>
   <div id="alco-splash">AlcoNote</div>
+  <!-- Voile « remets ton appareil droit » : rendu UNIQUEMENT par la media
+       query paysage/tactile ci-dessus (cf. installOrientationLock, shared.jsx). -->
+  <div id="alco-rotate" role="alert">
+    <div>
+      <span class="alco-rotate-glyph" aria-hidden="true">📱</span>
+      <div class="alco-rotate-title">Tourne ton appareil</div>
+      <div class="alco-rotate-sub">AlcoNote s'utilise en mode portrait.</div>
+    </div>
+  </div>
 
   <!-- Persistence + barcode scanner (logic only — UI in proto/).
        All scripts are deferred: they download in parallel during HTML

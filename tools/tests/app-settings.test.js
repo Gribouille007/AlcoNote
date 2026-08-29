@@ -64,3 +64,19 @@ test('export / import : actions présentes dans le tiroir', () => {
 test('section Partage entre amis présente (désactivée par défaut)', () => {
   assert.ok(ctx.text().includes('Partage entre amis'));
 });
+
+test('lignes cliquables : plus aucune flèche de déroulement à droite', () => {
+  // Ces lignes déclenchent une action immédiate (exporter, importer, effacer,
+  // copier le code…) : elles n'ouvrent aucun sous-menu, donc le chevron
+  // n'annonçait rien. On vérifie qu'aucune ligne de réglage n'en porte plus.
+  const rows = ctx.qa('button').filter((b) => /^(Exporter|Importer|Tout effacer|Créer un groupe)$/
+    .test((b.textContent || '').trim()));
+  assert.ok(rows.length >= 3, `lignes d'action trouvées (${rows.length})`);
+  for (const row of rows) {
+    assert.equal(row.querySelectorAll('svg').length <= 1, true,
+      `« ${row.textContent.trim()} » : au plus l'icône de gauche, pas de chevron`);
+    // Le chevron « déroulement » est le tracé de Ic.chev (« 6 9 12 15 18 9 ») :
+    // il ne doit apparaître dans AUCUNE ligne de réglage.
+    assert.doesNotMatch(row.innerHTML, /6 9 12 15 18 9/, 'aucun chevron de déroulement');
+  }
+});
