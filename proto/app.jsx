@@ -137,6 +137,9 @@ function AppShell() {
   const [catQuery, setCatQuery] = React.useState('');
   const [catOpen, setCatOpen] = React.useState(null);
   const [openFriend, setOpenFriend] = React.useState(null);
+  // Mode « Comparer » : { a, b } (ids de personne, COMPARE_ME = moi). Monté
+  // AU-DESSUS de la fiche ami (ouvert depuis elle, Retour y revient).
+  const [openCompare, setOpenCompare] = React.useState(null);
   const statsReorderRef = React.useRef();
   // Demande de focus d'une section Stats (tap sur la pastille BAC). Un objet
   // neuf à chaque demande → l'effet de StatsTab re-court même pour la même
@@ -324,7 +327,7 @@ function AppShell() {
         )}
         {activated.has('friends') && (
           <div ref={el => { tabRefs.current.friends = el; }} style={tabContainer('friends')}>
-            <FriendsTab onOpenFriend={setOpenFriend} />
+            <FriendsTab onOpenFriend={setOpenFriend} onOpenCompare={setOpenCompare} />
           </div>
         )}
       </main>
@@ -356,7 +359,13 @@ function AppShell() {
         <EditFamilySheet key={editFamily.id} family={editFamily} onClose={() => setEditFamily(null)} />
       )}
       {openFriend && (
-        <FriendStatsView key={openFriend.userId} friend={openFriend} onClose={() => setOpenFriend(null)} />
+        <FriendStatsView key={openFriend.userId} friend={openFriend} onClose={() => setOpenFriend(null)}
+          onCompare={setOpenCompare} />
+      )}
+      {openCompare && (
+        <CompareView key={`${openCompare.a}|${openCompare.b}`}
+          initialA={openCompare.a} initialB={openCompare.b}
+          onClose={() => setOpenCompare(null)} />
       )}
 
       <ConfirmHost />

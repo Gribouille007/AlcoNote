@@ -786,6 +786,44 @@ dupliquée** — un ami passe par les mêmes `aggregateGeneral`,
     une erreur réseau n'est pas une exclusion.
   - Toute modification des droits/RPC passe par `supabase/schema.sql`
     (idempotent, à ré-exécuter intégralement dans SQL Editor).
+- **Pull sérialisé** : un seul `pull()` en vol (`_pullPromise`) ; un appel
+  concurrent demande une passe de plus et attend la MÊME promesse (jamais de
+  retour à vide ni de pulls parallèles). `pullFullHistory` attend le pull en
+  vol AVANT de remettre le curseur à 0 (sinon il le réécrivait). Chaque pull
+  capture le `groupId` au départ et abandonne toute écriture si le groupe a
+  changé entre-temps (quitter pendant un pull ré-injectait les anciens amis).
+- **File d'envoi et changement de groupe** : `_resetGroupLocal()` purge aussi
+  `shareOutbox` (ses enregistrements visent l'ANCIEN groupe, refusés par RLS,
+  ils bloquaient la file) ; `flushOutbox` abandonne tout upsert d'un autre
+  groupe. Rien n'est perdu : la file est dérivée des boissons locales.
+- **Cache du pool** : ne JAMAIS relire `sharedPool` directement dans un hook.
+  `loadPoolByAuthor()` / `peekPoolByAuthor()` lisent une Map auteur → boissons
+  mise en cache par `_poolVersion` ; toute écriture du pool (pull, retrait,
+  reset) appelle `_touchPool()`. Les tableaux par auteur restent la MÊME
+  référence tant que leur contenu (uid + updatedAt) ne change pas → un bump
+  anodin du `shareBus` ne coûte rien. Hooks : `useSharedPool(id)` →
+  `{ drinks, loading }` (la fiche ami ne flashe plus « vide »),
+  `useSharedDrinks`, `useFriendsBac` (recalcul au tick 60 s, à la version du
+  pool ou au profil des membres ; init synchrone depuis le cache).
+- **Liste d'amis** : ordre stable `sortGroupMembers` (favori, puis
+  alphabétique fr). La fiche ami lit le profil VIVANT du membre (pseudo,
+  partage BAC republiés) et se referme si l'ami n'est plus dans le groupe.
+- **Mode « Comparer »** (`proto/compare.jsx`, `CompareView`) : deux
+  personnes côte à côte — par défaut MOI (gauche, ambre `T.accent`) face à un
+  ami (droite, vert `T.good`, = couleurs des pastilles BAC). Entrées : carte
+  « Comparer » en tête de l'onglet Amis (ami favori, sinon premier de la
+  liste) et bouton de la fiche ami. Les deux côtés sont modifiables
+  (`ComparePersonSheet`, choisir la personne d'en face = inverser) et
+  inversables. Même sélecteur de période que Stats (« Tout » démarre à la 1re
+  boisson DE CHACUN, avec avertissement si les historiques diffèrent).
+  **Écart = relatif au PLUS PETIT**, affiché côté du plus grand
+  (`compareDiff`) ; plus petit = 0 → écart ABSOLU (pas de division par zéro) ;
+  grandeurs déjà en % ou bornées (degré, part de catégorie, note /5) → écart
+  en POINTS. Lignes « duel » lisibles (grands chiffres serif + badge + barre
+  de parts pleine largeur), pas de petits graphes. Alcoolémie comparée
+  seulement si les DEUX partagent leur BAC. Tous les calculs passent par les
+  helpers de stats (`buildCompareProfile` n'en réimplémente aucun) ; helpers
+  purs testés dans `unit-compare.test.js`.
 - Transport derrière l'interface `ShareTransport` : `MockShareTransport`
   (amis fictifs Léa/Tom pour développer hors-ligne) ou
   `SupabaseShareTransport`. Choix dans **`js/share-config.js`** (édité à
@@ -965,6 +1003,12 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
 - **Amis — stats** : ouvrir un ami recalcule ses stats via le même
   `StatsTab` ; un ami qui ne partage pas son BAC masque Sessions / Temps
   bourré / % bourré (pas de poids → pas de chiffre inventé).
+- **Amis — comparer** : carte « Comparer » → Toi (gauche) vs ami favori ou
+  premier ami ; chaque ligne affiche les deux valeurs, le badge d'écart pointé
+  vers le plus grand et la barre de parts ; inverser / changer une personne ;
+  un ami sans BAC partagé masque l'Alcoolémie (message, aucun taux inventé) ;
+  depuis la fiche ami, le bouton de comparaison met cet ami à droite et
+  Retour revient à la fiche.
 - **Amis — retour** : la fiche ami pousse depuis la droite ; le geste
   retour système la referme (sortie vers la droite) ; un autre geste
   retour ramène à l'onglet Catégories ; répétable à volonté (jamais de

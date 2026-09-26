@@ -56,7 +56,7 @@ function FriendRow({ member, bac, onOpen, favorite, onToggleFav, index = 0 }) {
             textTransform: 'uppercase', marginTop: 2, fontWeight: 500,
           }}>{member.shareBac ? 'Alcoolémie en direct' : 'BAC non partagé'}</div>
         </div>
-        <BacPill bac={bac == null ? null : bac} ariaLabel={`Alcoolémie de ${name}`} />
+        <BacPill bac={bac} ariaLabel={`Alcoolémie de ${name}`} />
         <span style={{ display: 'flex', color: T.muted, marginLeft: 2 }}>
           <SvgIcon icon={Ic.chevR} size={18} />
         </span>
@@ -74,7 +74,8 @@ function FriendRow({ member, bac, onOpen, favorite, onToggleFav, index = 0 }) {
 function GroupAdminPanel({ members }) {
   const s = useShare();
   const isCreator = !!s.groupId && !!s.userId && s.creatorId === s.userId;
-  if (!isCreator || !members || members.length === 0) return null;
+  const sorted = React.useMemo(() => sortGroupMembers(members), [members]);
+  if (!isCreator || sorted.length === 0) return null;
   const remove = async (m) => {
     const name = m.displayName || 'Anonyme';
     const ok = await Confirm.ask({
@@ -97,10 +98,10 @@ function GroupAdminPanel({ members }) {
         marginTop: 10, background: T.surface2, border: `1px solid ${T.rule}`,
         borderRadius: 14, overflow: 'hidden',
       }}>
-        {members.map((m, i) => (
+        {sorted.map((m, i) => (
           <div key={m.userId} style={{
             display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
-            borderBottom: i === members.length - 1 ? 'none' : `1px solid ${T.rule}`,
+            borderBottom: i === sorted.length - 1 ? 'none' : `1px solid ${T.rule}`,
           }}>
             <div style={{
               flex: 1, minWidth: 0, fontSize: 14, color: T.ink,
@@ -328,9 +329,68 @@ function FriendsEmpty() {
   );
 }
 
-function FriendsTab({ onOpenFriend }) {
+// Libellé d'état de synchro. Isolé pour porter son PROPRE tick (30 s) : sans
+// lui « Mis à jour il y a 2 min » restait figé jusqu'au prochain bump du bus.
+function SyncStatusLabel({ syncing, lastPullAt }) {
+  const [, tick] = React.useReducer(x => x + 1, 0);
+  React.useEffect(() => {
+    if (!lastPullAt) return undefined;
+    const id = setInterval(tick, 30000);
+    return () => clearInterval(id);
+  }, [lastPullAt]);
+  return (
+    <div style={{ fontSize: 9.5, color: T.muted, letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: 500 }}>
+      {syncing ? 'Synchronisation…' : (lastPullAt ? `Mis à jour ${fmtRelTime(lastPullAt)}` : 'Prêt')}
+    </div>
+  );
+}
+
+// Entrée « Comparer » en tête de la liste d'amis : moi face à un ami.
+function CompareEntry({ onOpen }) {
+  const press = usePressScale();
+  return (
+    <button type="button" {...press.handlers} onClick={onOpen}
+      aria-label="Comparer mes statistiques avec un ami"
+      style={{
+        width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+        padding: '12px 14px', marginBottom: 12, borderRadius: 14, cursor: 'pointer',
+        background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
+        fontFamily: 'inherit', textAlign: 'left', color: T.ink,
+        ...press.style,
+      }}>
+      <span style={{
+        width: 36, height: 36, borderRadius: 12, flexShrink: 0,
+        display: 'grid', placeItems: 'center',
+        background: withAlpha(T.accent, 0.18), color: T.accent,
+      }}>
+        <SvgIcon icon={Ic.compare} size={20} />
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{
+          display: 'block', fontFamily: fontSerif, fontStyle: 'italic',
+          fontSize: 18, color: T.ink, letterSpacing: -0.3, lineHeight: 1.1,
+        }}>Comparer</span>
+        <span style={{
+          display: 'block', fontSize: 9.5, color: T.muted, letterSpacing: 0.3,
+          textTransform: 'uppercase', marginTop: 4, fontWeight: 500,
+        }}>Toi face à un ami, stat par stat</span>
+      </span>
+      <span style={{ display: 'flex', color: T.accent }}>
+        <SvgIcon icon={Ic.chevR} size={18} />
+      </span>
+    </button>
+  );
+}
+
+function FriendsTab({ onOpenFriend, onOpenCompare }) {
   const s = useShare();
-  const members = useGroupMembers();
+  const rawMembers = useGroupMembers();
+  // Ordre STABLE (favori puis alphabétique) : l'ordre serveur variait d'un
+  // pull à l'autre.
+  const members = React.useMemo(
+    () => sortGroupMembers(rawMembers, s.favoriteId),
+    [rawMembers, s.favoriteId]
+  );
   const bacMap = useFriendsBac(members);
 
   const hasGroup = s.enabled && !!s.groupId;
@@ -347,10 +407,7 @@ function FriendsTab({ onOpenFriend }) {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '10px 16px', gap: 10,
         }}>
-          <div style={{ fontSize: 9.5, color: T.muted, letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: 500 }}>
-            {s.syncing ? 'Synchronisation…' :
-              (s.lastPullAt ? `Mis à jour ${fmtRelTime(s.lastPullAt)}` : 'Prêt')}
-          </div>
+          <SyncStatusLabel syncing={s.syncing} lastPullAt={s.lastPullAt} />
           <button type="button" onClick={onRefresh} aria-label="Rafraîchir"
             disabled={s.syncing} style={{
               ...ghostButton, display: 'flex', alignItems: 'center', gap: 6,
@@ -390,6 +447,10 @@ function FriendsTab({ onOpenFriend }) {
           </div>
         )}
 
+        {hasGroup && members.length > 0 && onOpenCompare && (
+          <CompareEntry onOpen={() => onOpenCompare({ a: COMPARE_ME, b: defaultCompareTarget(members, s.favoriteId) })} />
+        )}
+
         {hasGroup && members.length > 0 && (
           <div style={{
             background: T.surface2, border: `1px solid ${T.rule}`, borderRadius: 14,
@@ -425,14 +486,27 @@ function fmtRelTime(ts) {
 // ressort vers la droite à la fermeture (pageOut) — cohérent avec le geste
 // système « revenir en arrière », qu'elle gère elle-même via useBackButton
 // (montée = piège posé, fermée = piège retiré, comme une sheet).
-function FriendStatsView({ friend, onClose }) {
+function FriendStatsView({ friend: initialFriend, onClose, onCompare }) {
   const s = useShare();
   const reduced = useReducedMotion();
   const [closing, close] = useSheetClose(onClose);
   useBackButton(true, close);
+  // Profil VIVANT : `initialFriend` n'est qu'un instantané pris à l'ouverture.
+  // Pseudo, partage du BAC et poids/sexe republiés au pull suivant doivent se
+  // refléter sans fermer la fiche.
+  const members = useGroupMembers();
+  const live = members.find(m => m.userId === initialFriend.userId) || null;
+  const friend = live || initialFriend;
+  // L'ami n'est plus dans le groupe (parti, retiré, ou c'est MOI qui ai été
+  // exclu / ai quitté) : la fiche n'a plus de sens → on la referme. Une liste
+  // vide transitoire n'arrive jamais ici (le moteur ne remplace `members`
+  // que par une liste SAINE).
+  const gone = !s.groupId || (s.members.length > 0 && !live);
+  React.useEffect(() => { if (gone) close(); }, [gone, close]);
   const isFav = s.favoriteId === friend.userId;
-  const friendDrinks = useSharedDrinks(friend.userId);
-  const friendRatings = useSharedRatings(friend.userId);
+  const pool = useSharedPool(friend.userId);
+  const friendDrinks = pool.drinks;
+  const friendRatings = React.useMemo(() => sharedRatingsMap(friendDrinks), [friendDrinks]);
   // « Retirer du groupe » : visible pour le CRÉATEUR du groupe, ou pour tout
   // membre quand le créateur est inconnu (created_by NULL) — le serveur
   // re-vérifie ces droits dans remove_member quoi qu'affiche l'UI.
@@ -455,7 +529,10 @@ function FriendStatsView({ friend, onClose }) {
     }
   };
 
-  const drinksValue = React.useMemo(() => ({ drinks: friendDrinks, loading: false }), [friendDrinks]);
+  const drinksValue = React.useMemo(
+    () => ({ drinks: friendDrinks, loading: pool.loading }),
+    [friendDrinks, pool.loading]
+  );
   const settingsValue = React.useMemo(() => ({
     userWeight: friend.bacWeight != null ? friend.bacWeight : undefined,
     userGender: friend.bacGender || undefined,
@@ -472,13 +549,13 @@ function FriendStatsView({ friend, onClose }) {
     }}>
       <div style={{
         padding: 'calc(env(safe-area-inset-top) + 14px) 16px 12px',
-        display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
+        display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
         borderBottom: `1px solid ${T.rule}`,
       }}>
         <button type="button" onClick={close} aria-label="Retour" style={{
           width: 38, height: 38, borderRadius: 12, background: T.surface2,
           display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
-          border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit',
+          border: `1px solid ${T.rule}`, padding: 0, fontFamily: 'inherit', flexShrink: 0,
         }}>
           <SvgIcon icon={Ic.back} size={18} />
         </button>
@@ -487,12 +564,26 @@ function FriendStatsView({ friend, onClose }) {
             fontFamily: fontSerif, fontStyle: 'italic', fontSize: 19, color: T.ink,
             letterSpacing: -0.3, lineHeight: 1.1,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>{friend.displayName || 'Anonyme'}</div>
+          }}>{name}</div>
           <div style={{
             fontSize: 9.5, color: T.muted, letterSpacing: 0.5, textTransform: 'uppercase',
             marginTop: 2, fontWeight: 500,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>Statistiques partagées</div>
         </div>
+        {onCompare && (
+          <button type="button"
+            aria-label={`Comparer mes statistiques avec ${name}`}
+            onClick={() => onCompare({ a: COMPARE_ME, b: friend.userId })}
+            style={{
+              width: 38, height: 38, borderRadius: 12, background: T.accentSoft,
+              display: 'grid', placeItems: 'center', cursor: 'pointer',
+              border: `1px solid ${T.accentSoftBorder}`, padding: 0, fontFamily: 'inherit',
+              color: T.accent, flexShrink: 0,
+            }}>
+            <SvgIcon icon={Ic.compare} size={18} />
+          </button>
+        )}
         <button type="button"
           aria-label="Télécharger tout l'historique"
           disabled={s.syncing}
@@ -597,5 +688,5 @@ function HeaderBacStack({ onOpenMine, onOpenFriend } = {}) {
 
 Object.assign(window, {
   FriendsTab, FriendStatsView, FriendRow, GroupFooter, GroupAdminPanel,
-  HeaderBacStack, JoinGroupForm,
+  HeaderBacStack, JoinGroupForm, SyncStatusLabel, CompareEntry, fmtRelTime,
 });

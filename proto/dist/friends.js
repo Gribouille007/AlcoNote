@@ -99,7 +99,7 @@ function FriendRow({
       fontWeight: 500
     }
   }, member.shareBac ? 'Alcoolémie en direct' : 'BAC non partagé')), /*#__PURE__*/React.createElement(BacPill, {
-    bac: bac == null ? null : bac,
+    bac: bac,
     ariaLabel: `Alcoolémie de ${name}`
   }), /*#__PURE__*/React.createElement("span", {
     style: {
@@ -124,7 +124,8 @@ function GroupAdminPanel({
 }) {
   const s = useShare();
   const isCreator = !!s.groupId && !!s.userId && s.creatorId === s.userId;
-  if (!isCreator || !members || members.length === 0) return null;
+  const sorted = React.useMemo(() => sortGroupMembers(members), [members]);
+  if (!isCreator || sorted.length === 0) return null;
   const remove = async m => {
     const name = m.displayName || 'Anonyme';
     const ok = await Confirm.ask({
@@ -153,14 +154,14 @@ function GroupAdminPanel({
       borderRadius: 14,
       overflow: 'hidden'
     }
-  }, members.map((m, i) => /*#__PURE__*/React.createElement("div", {
+  }, sorted.map((m, i) => /*#__PURE__*/React.createElement("div", {
     key: m.userId,
     style: {
       display: 'flex',
       alignItems: 'center',
       gap: 10,
       padding: '12px 14px',
-      borderBottom: i === members.length - 1 ? 'none' : `1px solid ${T.rule}`
+      borderBottom: i === sorted.length - 1 ? 'none' : `1px solid ${T.rule}`
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -560,11 +561,114 @@ function FriendsEmpty() {
     }
   })), /*#__PURE__*/React.createElement(JoinGroupForm, null));
 }
+
+// Libellé d'état de synchro. Isolé pour porter son PROPRE tick (30 s) : sans
+// lui « Mis à jour il y a 2 min » restait figé jusqu'au prochain bump du bus.
+function SyncStatusLabel({
+  syncing,
+  lastPullAt
+}) {
+  const [, tick] = React.useReducer(x => x + 1, 0);
+  React.useEffect(() => {
+    if (!lastPullAt) return undefined;
+    const id = setInterval(tick, 30000);
+    return () => clearInterval(id);
+  }, [lastPullAt]);
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9.5,
+      color: T.muted,
+      letterSpacing: 0.3,
+      textTransform: 'uppercase',
+      fontWeight: 500
+    }
+  }, syncing ? 'Synchronisation…' : lastPullAt ? `Mis à jour ${fmtRelTime(lastPullAt)}` : 'Prêt');
+}
+
+// Entrée « Comparer » en tête de la liste d'amis : moi face à un ami.
+function CompareEntry({
+  onOpen
+}) {
+  const press = usePressScale();
+  return /*#__PURE__*/React.createElement("button", _extends({
+    type: "button"
+  }, press.handlers, {
+    onClick: onOpen,
+    "aria-label": "Comparer mes statistiques avec un ami",
+    style: {
+      width: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      padding: '12px 14px',
+      marginBottom: 12,
+      borderRadius: 14,
+      cursor: 'pointer',
+      background: T.accentSoft,
+      border: `1px solid ${T.accentSoftBorder}`,
+      fontFamily: 'inherit',
+      textAlign: 'left',
+      color: T.ink,
+      ...press.style
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      flexShrink: 0,
+      display: 'grid',
+      placeItems: 'center',
+      background: withAlpha(T.accent, 0.18),
+      color: T.accent
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.compare,
+    size: 20
+  })), /*#__PURE__*/React.createElement("span", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'block',
+      fontFamily: fontSerif,
+      fontStyle: 'italic',
+      fontSize: 18,
+      color: T.ink,
+      letterSpacing: -0.3,
+      lineHeight: 1.1
+    }
+  }, "Comparer"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'block',
+      fontSize: 9.5,
+      color: T.muted,
+      letterSpacing: 0.3,
+      textTransform: 'uppercase',
+      marginTop: 4,
+      fontWeight: 500
+    }
+  }, "Toi face \xE0 un ami, stat par stat")), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'flex',
+      color: T.accent
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.chevR,
+    size: 18
+  })));
+}
 function FriendsTab({
-  onOpenFriend
+  onOpenFriend,
+  onOpenCompare
 }) {
   const s = useShare();
-  const members = useGroupMembers();
+  const rawMembers = useGroupMembers();
+  // Ordre STABLE (favori puis alphabétique) : l'ordre serveur variait d'un
+  // pull à l'autre.
+  const members = React.useMemo(() => sortGroupMembers(rawMembers, s.favoriteId), [rawMembers, s.favoriteId]);
   const bacMap = useFriendsBac(members);
   const hasGroup = s.enabled && !!s.groupId;
   const onRefresh = async () => {
@@ -585,15 +689,10 @@ function FriendsTab({
       padding: '10px 16px',
       gap: 10
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9.5,
-      color: T.muted,
-      letterSpacing: 0.3,
-      textTransform: 'uppercase',
-      fontWeight: 500
-    }
-  }, s.syncing ? 'Synchronisation…' : s.lastPullAt ? `Mis à jour ${fmtRelTime(s.lastPullAt)}` : 'Prêt'), /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement(SyncStatusLabel, {
+    syncing: s.syncing,
+    lastPullAt: s.lastPullAt
+  }), /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: onRefresh,
     "aria-label": "Rafra\xEEchir",
@@ -660,7 +759,12 @@ function FriendsTab({
       color: T.muted,
       lineHeight: 1.6
     }
-  }, "Partage ton code d'invitation ci-dessous pour que tes amis te rejoignent.")), hasGroup && members.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, "Partage ton code d'invitation ci-dessous pour que tes amis te rejoignent.")), hasGroup && members.length > 0 && onOpenCompare && /*#__PURE__*/React.createElement(CompareEntry, {
+    onOpen: () => onOpenCompare({
+      a: COMPARE_ME,
+      b: defaultCompareTarget(members, s.favoriteId)
+    })
+  }), hasGroup && members.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.surface2,
       border: `1px solid ${T.rule}`,
@@ -695,16 +799,32 @@ function fmtRelTime(ts) {
 // système « revenir en arrière », qu'elle gère elle-même via useBackButton
 // (montée = piège posé, fermée = piège retiré, comme une sheet).
 function FriendStatsView({
-  friend,
-  onClose
+  friend: initialFriend,
+  onClose,
+  onCompare
 }) {
   const s = useShare();
   const reduced = useReducedMotion();
   const [closing, close] = useSheetClose(onClose);
   useBackButton(true, close);
+  // Profil VIVANT : `initialFriend` n'est qu'un instantané pris à l'ouverture.
+  // Pseudo, partage du BAC et poids/sexe republiés au pull suivant doivent se
+  // refléter sans fermer la fiche.
+  const members = useGroupMembers();
+  const live = members.find(m => m.userId === initialFriend.userId) || null;
+  const friend = live || initialFriend;
+  // L'ami n'est plus dans le groupe (parti, retiré, ou c'est MOI qui ai été
+  // exclu / ai quitté) : la fiche n'a plus de sens → on la referme. Une liste
+  // vide transitoire n'arrive jamais ici (le moteur ne remplace `members`
+  // que par une liste SAINE).
+  const gone = !s.groupId || s.members.length > 0 && !live;
+  React.useEffect(() => {
+    if (gone) close();
+  }, [gone, close]);
   const isFav = s.favoriteId === friend.userId;
-  const friendDrinks = useSharedDrinks(friend.userId);
-  const friendRatings = useSharedRatings(friend.userId);
+  const pool = useSharedPool(friend.userId);
+  const friendDrinks = pool.drinks;
+  const friendRatings = React.useMemo(() => sharedRatingsMap(friendDrinks), [friendDrinks]);
   // « Retirer du groupe » : visible pour le CRÉATEUR du groupe, ou pour tout
   // membre quand le créateur est inconnu (created_by NULL) — le serveur
   // re-vérifie ces droits dans remove_member quoi qu'affiche l'UI.
@@ -728,8 +848,8 @@ function FriendStatsView({
   };
   const drinksValue = React.useMemo(() => ({
     drinks: friendDrinks,
-    loading: false
-  }), [friendDrinks]);
+    loading: pool.loading
+  }), [friendDrinks, pool.loading]);
   const settingsValue = React.useMemo(() => ({
     userWeight: friend.bacWeight != null ? friend.bacWeight : undefined,
     userGender: friend.bacGender || undefined
@@ -751,7 +871,7 @@ function FriendStatsView({
       padding: 'calc(env(safe-area-inset-top) + 14px) 16px 12px',
       display: 'flex',
       alignItems: 'center',
-      gap: 12,
+      gap: 8,
       flexShrink: 0,
       borderBottom: `1px solid ${T.rule}`
     }
@@ -770,7 +890,8 @@ function FriendStatsView({
       cursor: 'pointer',
       border: `1px solid ${T.rule}`,
       padding: 0,
-      fontFamily: 'inherit'
+      fontFamily: 'inherit',
+      flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.back,
@@ -792,16 +913,43 @@ function FriendStatsView({
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap'
     }
-  }, friend.displayName || 'Anonyme'), /*#__PURE__*/React.createElement("div", {
+  }, name), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9.5,
       color: T.muted,
       letterSpacing: 0.5,
       textTransform: 'uppercase',
       marginTop: 2,
-      fontWeight: 500
+      fontWeight: 500,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap'
     }
-  }, "Statistiques partag\xE9es")), /*#__PURE__*/React.createElement("button", {
+  }, "Statistiques partag\xE9es")), onCompare && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    "aria-label": `Comparer mes statistiques avec ${name}`,
+    onClick: () => onCompare({
+      a: COMPARE_ME,
+      b: friend.userId
+    }),
+    style: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      background: T.accentSoft,
+      display: 'grid',
+      placeItems: 'center',
+      cursor: 'pointer',
+      border: `1px solid ${T.accentSoftBorder}`,
+      padding: 0,
+      fontFamily: 'inherit',
+      color: T.accent,
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.compare,
+    size: 18
+  })), /*#__PURE__*/React.createElement("button", {
     type: "button",
     "aria-label": "T\xE9l\xE9charger tout l'historique",
     disabled: s.syncing,
@@ -957,5 +1105,8 @@ Object.assign(window, {
   GroupFooter,
   GroupAdminPanel,
   HeaderBacStack,
-  JoinGroupForm
+  JoinGroupForm,
+  SyncStatusLabel,
+  CompareEntry,
+  fmtRelTime
 });

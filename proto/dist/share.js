@@ -722,8 +722,99 @@ let _recTimer = null,
   _flushTimer = null,
   _pullRetry = null,
   _timer = null;
-let _flushing = false,
-  _pulling = false;
+let _flushing = false;
+// Pull SÉRIALISÉ : un seul pull en vol (`_pullPromise`). Un appel pendant ce
+// temps ne repart pas en parallèle ni ne rend la main à vide : il demande une
+// passe de plus (`_pullRerun`) et attend la même promesse. Avant, un
+// « Rafraîchir » ou « Télécharger tout l'historique » pendant un pull auto
+// rendait la main tout de suite (toast « à jour » mensonger) et le pull en vol
+// réécrivait ensuite le curseur remis à zéro (historique jamais retéléchargé).
+let _pullPromise = null,
+  _pullRerun = false;
+
+// ── Cache du pool partagé (sharedPool) ────────────────────────────────────
+// Chaque bump du shareBus (syncing on/off, online, favori…) relisait TOUTE la
+// table sharedPool, dans chaque hook abonné (fiche ami ×2, liste ×1, header ×1)
+// puis recalculait les stats/BAC de chacun. Le pool ne change pourtant qu'à
+// quelques écritures bien identifiées (pull, retrait, reset) : elles
+// incrémentent `_poolVersion`, et la lecture est mise en cache par version,
+// groupée par auteur. Les tableaux par auteur sont RÉUTILISÉS tant que leur
+// contenu (uid + updatedAt) n'a pas bougé → références stables → les useMemo
+// de StatsTab / comparaison ne recalculent rien pour un ami inchangé.
+let _poolVersion = 0;
+let _poolCache = null; // { version, byAuthor: Map<authorId, drink[]> }
+let _poolLoading = null; // { version, promise }
+const EMPTY_POOL = Object.freeze([]);
+function _touchPool() {
+  _poolVersion++;
+}
+function _samePoolList(a, b) {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].uid !== b[i].uid || a[i].updatedAt !== b[i].updatedAt) return false;
+  }
+  return true;
+}
+
+// Groupement pur (testable) : lignes du pool → Map auteur → boissons vivantes
+// au format StatsTab (`id` = uid). `prev` permet de réutiliser les tableaux
+// inchangés (stabilité référentielle).
+function groupSharedPool(rows, prev = null) {
+  const groups = new Map();
+  for (const r of rows || []) {
+    if (!r || r.deleted || !r.authorId) continue;
+    let list = groups.get(r.authorId);
+    if (!list) {
+      list = [];
+      groups.set(r.authorId, list);
+    }
+    list.push({
+      ...r,
+      id: r.uid
+    });
+  }
+  const out = new Map();
+  for (const [author, list] of groups) {
+    list.sort((x, y) => x.uid < y.uid ? -1 : x.uid > y.uid ? 1 : 0);
+    const old = prev && prev.get(author);
+    out.set(author, old && _samePoolList(old, list) ? old : list);
+  }
+  return out;
+}
+
+// Map auteur → boissons, SI le cache est à jour (sinon null) — lecture
+// synchrone pour initialiser un hook sans flash « vide ».
+function peekPoolByAuthor() {
+  return _poolCache && _poolCache.version === _poolVersion ? _poolCache.byAuthor : null;
+}
+async function loadPoolByAuthor() {
+  const hit = peekPoolByAuthor();
+  if (hit) return hit;
+  if (_poolLoading && _poolLoading.version === _poolVersion) return _poolLoading.promise;
+  const version = _poolVersion;
+  const promise = (async () => {
+    const db = await waitForDb();
+    const rows = db ? await db.getAllSharedDrinks() : [];
+    const byAuthor = groupSharedPool(rows, _poolCache ? _poolCache.byAuthor : null);
+    // Une écriture survenue pendant la lecture rend ce résultat caduc : on
+    // ne le met pas en cache (le bump suivant relira la bonne version).
+    if (version === _poolVersion) _poolCache = {
+      version,
+      byAuthor
+    };
+    return byAuthor;
+  })();
+  _poolLoading = {
+    version,
+    promise
+  };
+  try {
+    return await promise;
+  } finally {
+    if (_poolLoading && _poolLoading.promise === promise) _poolLoading = null;
+  }
+}
 function scheduleReconcile() {
   clearTimeout(_recTimer);
   _recTimer = setTimeout(reconcile, 600);
@@ -791,6 +882,14 @@ async function flushOutbox(attempt) {
     }
     const done = [];
     for (const it of items) {
+      // Enregistrements préparés pour un AUTRE groupe (file restée d'avant un
+      // changement de groupe) : le serveur les refuserait (RLS) à chaque essai
+      // et bloquerait toute la file. On les abandonne — reconcile() a déjà
+      // republié tout le catalogue pour le groupe courant.
+      if (it.op === 'upsert' && it.records && it.records.some(r => r.groupId !== shareState.groupId)) {
+        done.push(it.id);
+        continue;
+      }
       if (it.op === 'upsert' && it.records && it.records.length) await getTransport().pushUpserts(it.records);else if (it.op === 'tomb' && it.uids && it.uids.length) await getTransport().pushTombstones(it.uids);
       done.push(it.id);
     }
@@ -815,9 +914,32 @@ async function flushOutbox(attempt) {
   }
   _flushing = false;
 }
-async function pull(attempt) {
-  attempt = attempt || 0;
-  if (_pulling || !shareState.enabled || !shareState.groupId) return;
+function pull(attempt) {
+  if (_pullPromise) {
+    _pullRerun = true;
+    return _pullPromise;
+  }
+  _pullPromise = (async () => {
+    let a = attempt || 0;
+    try {
+      do {
+        _pullRerun = false;
+        await _pullOnce(a);
+        a = 0;
+      } while (_pullRerun && shareState.enabled && shareState.groupId);
+    } finally {
+      _pullPromise = null;
+    }
+  })();
+  return _pullPromise;
+}
+function _schedulePullRetry(attempt) {
+  const delay = Math.min(16000, 2000 * Math.pow(2, attempt));
+  clearTimeout(_pullRetry);
+  _pullRetry = setTimeout(() => pull(attempt + 1), delay);
+}
+async function _pullOnce(attempt) {
+  if (!shareState.enabled || !shareState.groupId) return;
   // Hors-ligne : inutile de tenter un fetch (timeouts longs). On signale
   // l'état ; l'event 'online' relancera le pull automatiquement.
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -827,7 +949,13 @@ async function pull(attempt) {
     }
     return;
   }
-  _pulling = true;
+  // Groupe AU DÉPART du pull. Chaque await peut voir l'utilisateur quitter ou
+  // changer de groupe (leaveGroup / joinGroup / exclusion) : sans ce garde, le
+  // pull en vol ré-écrivait dans le sharedPool fraîchement purgé les boissons
+  // des ANCIENS amis, et le curseur de l'ancien groupe.
+  const gid = shareState.groupId;
+  const stale = () => shareState.groupId !== gid;
+  let touched = false;
   shareState.syncing = true;
   _emit();
   try {
@@ -839,7 +967,7 @@ async function pull(attempt) {
     // Plafonnée (MAX_PAGES) pour écarter toute boucle pathologique.
     const PAGE = 1000,
       MAX_PAGES = 100;
-    let cursor = (await _sget(`share.cursor.${shareState.groupId}`)) || 0;
+    let cursor = (await _sget(`share.cursor.${gid}`)) || 0;
     let members = null,
       creatorId,
       authUserId = null,
@@ -851,11 +979,18 @@ async function pull(attempt) {
       const res = await getTransport().pullSince(cursor, {
         withMeta: pages === 0
       });
+      if (stale()) return;
       const incoming = (res.drinks || []).filter(r => r.authorId !== shareState.userId);
       const live = incoming.filter(r => !r.deleted);
       const dead = incoming.filter(r => r.deleted).map(r => r.uid);
-      if (live.length) await db.upsertSharedDrinks(live);
-      if (dead.length) await db.deleteSharedByUids(dead);
+      if (live.length) {
+        await db.upsertSharedDrinks(live);
+        touched = true;
+      }
+      if (dead.length) {
+        await db.deleteSharedByUids(dead);
+        touched = true;
+      }
       // TOUJOURS mémoriser la dernière liste de membres reçue (appliquée plus
       // bas même en cas d'erreur partielle — sinon une erreur sur
       // shared_drinks ferait « disparaître » les autres membres).
@@ -864,7 +999,8 @@ async function pull(attempt) {
       if (res.authUserId) authUserId = res.authUserId;
       const count = (res.drinks || []).length;
       const newCursor = res.cursor || cursor;
-      await _sset(`share.cursor.${shareState.groupId}`, newCursor);
+      if (stale()) return;
+      await _sset(`share.cursor.${gid}`, newCursor);
       pages++;
       const advanced = newCursor > cursor;
       cursor = newCursor;
@@ -874,6 +1010,7 @@ async function pull(attempt) {
       }
       if (count < PAGE || !advanced || pages >= MAX_PAGES) break;
     }
+    if (stale()) return;
     // Détection d'exclusion + purge des partants — UNIQUEMENT sur une liste
     // de membres SAINE (`members === null` ⇒ la requête membres a échoué :
     // erreur réseau/RLS, on ne touche à rien).
@@ -890,24 +1027,25 @@ async function pull(attempt) {
         try {
           if (typeof Toast !== 'undefined' && Toast.show) Toast.show('Tu ne fais plus partie du groupe');
         } catch (e) {}
-        _pulling = false;
-        shareState.syncing = false;
-        _emit();
         return;
       }
       // Boissons d'un membre PARTI (leave volontaire ou retrait) : le serveur
       // a supprimé ses lignes, mais le pull incrémental ne voit jamais un
       // DELETE — sans purge, elles resteraient en cache pour toujours.
       const pool = await db.getAllSharedDrinks();
-      const stale = pool.filter(r => !memberIds.has(r.authorId)).map(r => r.uid);
-      if (stale.length) await db.deleteSharedByUids(stale);
+      if (stale()) return;
+      const staleUids = pool.filter(r => !memberIds.has(r.authorId)).map(r => r.uid);
+      if (staleUids.length) {
+        await db.deleteSharedByUids(staleUids);
+        touched = true;
+      }
       // Créateur du groupe (droits « Retirer ») : persisté pour l'UI.
       if (creatorId !== undefined && creatorId !== shareState.creatorId) {
         shareState.creatorId = creatorId;
         await _sset('share.creatorId', creatorId);
       }
+      shareState.members = members;
     }
-    if (members) shareState.members = members;
     shareState.lastPullAt = Date.now();
     shareState.online = true;
     if (partialErr) {
@@ -917,36 +1055,26 @@ async function pull(attempt) {
       } catch (_) {}
       shareState.error = 'pull';
       shareState.errorDetail = shareErrorMessage(partialErr);
-      // On libère le verrou TOUT DE SUITE (un « Rafraîchir » manuel doit
-      // pouvoir relancer immédiatement) ; le retry auto suit en backoff.
-      _pulling = false;
-      shareState.syncing = false;
-      _emit();
-      const delay = Math.min(16000, 2000 * Math.pow(2, attempt));
-      clearTimeout(_pullRetry);
-      _pullRetry = setTimeout(() => pull(attempt + 1), delay);
+      _schedulePullRetry(attempt);
       return;
     }
     shareState.error = null;
     shareState.errorDetail = null;
     clearTimeout(_pullRetry);
   } catch (e) {
+    if (stale()) return;
     try {
       console.error('[AlcoNote partage] pull', e);
     } catch (_) {}
     shareState.error = 'pull';
     shareState.errorDetail = shareErrorMessage(e);
-    _pulling = false;
+    _schedulePullRetry(attempt);
+  } finally {
+    // Pool modifié ⇒ nouvelle version : les hooks relisent au bump ci-dessous.
+    if (touched) _touchPool();
     shareState.syncing = false;
     _emit();
-    const delay = Math.min(16000, 2000 * Math.pow(2, attempt));
-    clearTimeout(_pullRetry);
-    _pullRetry = setTimeout(() => pull(attempt + 1), delay);
-    return;
   }
-  _pulling = false;
-  shareState.syncing = false;
-  _emit();
 }
 function startTimer() {
   stopTimer();
@@ -993,10 +1121,23 @@ if (typeof window !== 'undefined') {
 // Ne touche JAMAIS aux tables perso (drinks/categories/ratings/settings
 // hors clés share.*) — règle d'or du moteur de partage.
 async function _resetGroupLocal() {
+  // Plus aucun retry/flush programmé pour l'ancien groupe.
+  clearTimeout(_pullRetry);
+  clearTimeout(_flushTimer);
   const db = await waitForDb();
   if (db) {
     await db.clearSharedPool(); // purge des données des amis
+    _touchPool();
     if (shareState.groupId) await _sset(`share.cursor.${shareState.groupId}`, null);
+    // File d'envoi : ses enregistrements visent l'ANCIEN groupe (groupId figé
+    // à la préparation). Rejoués après un changement de groupe, ils étaient
+    // refusés (RLS) et bloquaient la file pour toujours. Rien n'est perdu :
+    // la file est DÉRIVÉE des boissons locales, et l'index de publication
+    // remis à zéro ci-dessous fait tout republier au prochain groupe.
+    try {
+      const pending = await db.getOutbox();
+      if (pending && pending.length) await db.clearOutbox(pending.map(it => it.id));
+    } catch (e) {/* best-effort : flushOutbox filtre aussi par groupe */}
   }
   await _sset('share.groupId', null);
   await _sset('share.inviteCode', null);
@@ -1135,6 +1276,14 @@ const shareEngine = {
       return "Vous n'êtes pas connecté·e à Internet";
     }
     clearTimeout(_pullRetry);
+    // Un pull déjà en vol réécrirait le curseur APRÈS notre remise à zéro :
+    // on le laisse d'abord se terminer.
+    if (_pullPromise) {
+      try {
+        await _pullPromise;
+      } catch (e) {}
+    }
+    if (!shareState.groupId) return shareState.errorDetail;
     await _sset(`share.cursor.${shareState.groupId}`, 0);
     await reconcile(); // pousse aussi mon back-catalog au passage (auto-réparateur)
     await pull();
@@ -1287,7 +1436,10 @@ const shareEngine = {
     if (db) {
       const pool = await db.getAllSharedDrinks();
       const uids = pool.filter(r => r.authorId === userId).map(r => r.uid);
-      if (uids.length) await db.deleteSharedByUids(uids);
+      if (uids.length) {
+        await db.deleteSharedByUids(uids);
+        _touchPool();
+      }
     }
     shareState.members = shareState.members.filter(m => m.userId !== userId);
     if (shareState.favoriteId === userId) {
@@ -1426,20 +1578,33 @@ function useFavoriteFriend() {
   return React.useMemo(() => s.enabled && s.groupId && s.favoriteId ? members.find(m => m.userId === s.favoriteId && m.shareBac) || null : null, [s.enabled, s.groupId, s.favoriteId, members]);
 }
 
-// Boissons partagées d'un membre (depuis sharedPool), forme compatible StatsTab.
-function useSharedDrinks(authorId) {
-  const [list, setList] = React.useState([]);
+// Boissons partagées d'un membre (depuis le cache du sharedPool), forme
+// compatible StatsTab, + `loading` tant que la 1re lecture n'est pas faite
+// (la fiche ami ne flashe plus « aucune donnée » avant l'arrivée des boissons).
+// Un bump du shareBus sans écriture du pool ne coûte RIEN : cache à jour →
+// même tableau → setState identique → React n'effectue aucun rendu.
+function useSharedPool(authorId) {
+  const read = () => {
+    const m = peekPoolByAuthor();
+    return m ? {
+      drinks: authorId && m.get(authorId) || EMPTY_POOL,
+      loading: false
+    } : {
+      drinks: EMPTY_POOL,
+      loading: true
+    };
+  };
+  const [state, setState] = React.useState(read);
   React.useEffect(() => {
     let alive = true;
     const load = async () => {
-      const db = await waitForDb();
-      if (!db) return;
-      const all = await db.getAllSharedDrinks();
-      const mine = all.filter(r => r.authorId === authorId && !r.deleted).map(r => ({
-        ...r,
-        id: r.uid
-      }));
-      if (alive) setList(mine);
+      const m = await loadPoolByAuthor();
+      if (!alive) return;
+      const drinks = authorId && m.get(authorId) || EMPTY_POOL;
+      setState(prev => prev.drinks === drinks && !prev.loading ? prev : {
+        drinks,
+        loading: false
+      });
     };
     load();
     const off = shareBus.sub(load);
@@ -1448,54 +1613,98 @@ function useSharedDrinks(authorId) {
       off();
     };
   }, [authorId]);
-  return list;
+  return state;
+}
+function useSharedDrinks(authorId) {
+  return useSharedPool(authorId).drinks;
 }
 
-// Notes partagées d'un membre → carte canonique nom→note (pour RatingsContext).
+// Notes partagées → carte canonique nom→note (pour RatingsContext). Pur.
+// La note publiée voyage avec CHAQUE boisson : on garde celle de l'entrée la
+// plus récemment publiée (updatedAt), pas la dernière itérée au hasard.
+function sharedRatingsMap(drinks) {
+  const best = {};
+  for (const d of drinks || []) {
+    if (!d.rating) continue;
+    const k = ratingKey(d.name);
+    const t = +d.updatedAt || 0;
+    if (!best[k] || t >= best[k].t) best[k] = {
+      v: d.rating,
+      t
+    };
+  }
+  const out = {};
+  for (const k in best) out[k] = best[k].v;
+  return out;
+}
 function useSharedRatings(authorId) {
   const drinks = useSharedDrinks(authorId);
-  return React.useMemo(() => {
-    const out = {};
-    for (const d of drinks) if (d.rating) out[ratingKey(d.name)] = d.rating;
-    return out;
-  }, [drinks]);
+  return React.useMemo(() => sharedRatingsMap(drinks), [drinks]);
+}
+
+// Taux courant de chaque membre (pur) : null si le BAC n'est pas partagé.
+function friendsBacMap(members, byAuthor) {
+  const out = {};
+  for (const m of members || []) {
+    if (!m || !m.userId) continue;
+    if (!m.shareBac) {
+      out[m.userId] = null;
+      continue;
+    }
+    const ds = byAuthor && byAuthor.get(m.userId) || EMPTY_POOL;
+    if (ds.length === 0 || typeof computeBacOverTime !== 'function') {
+      out[m.userId] = 0;
+      continue;
+    }
+    const info = computeBacOverTime(ds, Number(m.bacWeight) || undefined, m.bacGender || 'male');
+    out[m.userId] = info.current || 0;
+  }
+  return out;
+}
+function _sameBacMap(a, b) {
+  const ka = Object.keys(a),
+    kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) if (a[k] !== b[k]) return false;
+  return true;
 }
 
 // BAC courant de chaque membre (recalcul local, tick 60 s). null si pas opt-in.
+// Recalcule au tick (le temps passe), quand la liste/profil des membres change
+// (clé), ou quand le POOL change (version) — plus à chaque bump anodin du bus.
+// Initialisé de façon synchrone depuis le cache : la pastille n'affiche plus
+// « — » une frame avant son taux.
 function useFriendsBac(members) {
-  const [map, setMap] = React.useState({});
   // La clé encode aussi poids/sexe : un ami qui change son profil (republié au
   // pull) doit recalculer son BAC, pas rester figé sur l'ancienne closure.
   const key = (members || []).map(m => `${m.userId}:${m.shareBac ? 1 : 0}:${m.bacWeight || ''}:${m.bacGender || ''}`).join(',');
+  const membersRef = React.useRef(members);
+  membersRef.current = members;
+  const [map, setMap] = React.useState(() => {
+    const cached = peekPoolByAuthor();
+    return cached && members && members.length ? friendsBacMap(members, cached) : {};
+  });
   React.useEffect(() => {
     // Aucun membre à évaluer (ex. header sans favori) : on évite le timer 60 s
     // et la lecture IndexedDB inutiles, et on repart d'une map vide.
-    if (!members || members.length === 0) {
-      setMap({});
+    if (!membersRef.current || membersRef.current.length === 0) {
+      setMap(prev => Object.keys(prev).length ? {} : prev);
       return;
     }
     let alive = true;
-    const compute = async () => {
-      const db = await waitForDb();
-      if (!db) return;
-      const all = await db.getAllSharedDrinks();
-      const out = {};
-      for (const m of members || []) {
-        if (!m.shareBac) {
-          out[m.userId] = null;
-          continue;
-        }
-        const ds = all.filter(r => r.authorId === m.userId && !r.deleted);
-        if (typeof computeBacOverTime === 'function') {
-          const info = computeBacOverTime(ds, Number(m.bacWeight) || undefined, m.bacGender || 'male');
-          out[m.userId] = info.current || 0;
-        } else out[m.userId] = 0;
-      }
-      if (alive) setMap(out);
+    let lastVersion = -1;
+    const compute = async force => {
+      if (!force && lastVersion === _poolVersion) return;
+      const version = _poolVersion;
+      const byAuthor = await loadPoolByAuthor();
+      if (!alive) return;
+      lastVersion = version;
+      const next = friendsBacMap(membersRef.current, byAuthor);
+      setMap(prev => _sameBacMap(prev, next) ? prev : next);
     };
-    compute();
-    const id = setInterval(compute, 60000);
-    const off = shareBus.sub(compute);
+    compute(true);
+    const id = setInterval(() => compute(true), 60000);
+    const off = shareBus.sub(() => compute(false));
     return () => {
       alive = false;
       clearInterval(id);
@@ -1503,6 +1712,23 @@ function useFriendsBac(members) {
     };
   }, [key]);
   return map;
+}
+
+// Ordre d'affichage STABLE des membres (pur) : favori d'abord, puis ordre
+// alphabétique (fr, sans casse/accents), userId en départage. L'ordre brut
+// du serveur changeait d'un pull à l'autre — la liste « sautait ».
+function sortGroupMembers(members, favoriteId = null) {
+  const name = m => m.displayName || 'Anonyme';
+  return [...(members || [])].sort((a, b) => {
+    const fa = a.userId === favoriteId ? 0 : 1;
+    const fb = b.userId === favoriteId ? 0 : 1;
+    if (fa !== fb) return fa - fb;
+    const c = name(a).localeCompare(name(b), 'fr', {
+      sensitivity: 'base'
+    });
+    if (c) return c;
+    return String(a.userId).localeCompare(String(b.userId));
+  });
 }
 Object.assign(window, {
   shareEngine,
@@ -1513,9 +1739,16 @@ Object.assign(window, {
   useShare,
   useGroupMembers,
   useFavoriteFriend,
+  useSharedPool,
   useSharedDrinks,
   useSharedRatings,
   useFriendsBac,
+  groupSharedPool,
+  sharedRatingsMap,
+  friendsBacMap,
+  sortGroupMembers,
+  peekPoolByAuthor,
+  loadPoolByAuthor,
   localDrinkToShared,
   tsFromDateTime,
   shareErrorMessage,

@@ -182,6 +182,9 @@ function AppShell() {
   const [catQuery, setCatQuery] = React.useState('');
   const [catOpen, setCatOpen] = React.useState(null);
   const [openFriend, setOpenFriend] = React.useState(null);
+  // Mode « Comparer » : { a, b } (ids de personne, COMPARE_ME = moi). Monté
+  // AU-DESSUS de la fiche ami (ouvert depuis elle, Retour y revient).
+  const [openCompare, setOpenCompare] = React.useState(null);
   const statsReorderRef = React.useRef();
   // Demande de focus d'une section Stats (tap sur la pastille BAC). Un objet
   // neuf à chaque demande → l'effet de StatsTab re-court même pour la même
@@ -412,7 +415,8 @@ function AppShell() {
     },
     style: tabContainer('friends')
   }, /*#__PURE__*/React.createElement(FriendsTab, {
-    onOpenFriend: setOpenFriend
+    onOpenFriend: setOpenFriend,
+    onOpenCompare: setOpenCompare
   }))), /*#__PURE__*/React.createElement(Fab, {
     onClick: () => openAdd(tab === 'categories' ? catOpen : null)
   }), /*#__PURE__*/React.createElement(BottomNav, {
@@ -452,7 +456,13 @@ function AppShell() {
   }), openFriend && /*#__PURE__*/React.createElement(FriendStatsView, {
     key: openFriend.userId,
     friend: openFriend,
-    onClose: () => setOpenFriend(null)
+    onClose: () => setOpenFriend(null),
+    onCompare: setOpenCompare
+  }), openCompare && /*#__PURE__*/React.createElement(CompareView, {
+    key: `${openCompare.a}|${openCompare.b}`,
+    initialA: openCompare.a,
+    initialB: openCompare.b,
+    onClose: () => setOpenCompare(null)
   }), /*#__PURE__*/React.createElement(ConfirmHost, null), toast && /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'fixed',
