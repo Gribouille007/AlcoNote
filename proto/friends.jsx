@@ -251,6 +251,19 @@ function FriendsEmpty() {
       </div>
     );
   }
+  const enable = async () => {
+    const ok = await Confirm.ask({
+      title: 'Activer le partage entre amis ?',
+      message: "Tes boissons (sans localisation) et tes notes seront partagées avec les membres de ton groupe, qui pourront voir tes statistiques. Désactivable à tout moment dans les Paramètres.",
+      confirmText: 'Activer',
+    });
+    if (!ok) return;
+    setBusy(true);
+    try { await shareEngine.setEnabled(true); }
+    catch (e) { Toast.show(shareErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+
   if (!s.enabled) {
     return (
       <div style={{ padding: '36px 22px', textAlign: 'center' }}>
@@ -261,9 +274,18 @@ function FriendsEmpty() {
           Partage entre amis
         </div>
         <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.6, maxWidth: 300, margin: '0 auto' }}>
-          Active le partage dans les <strong style={{ color: T.ink }}>Paramètres</strong> (menu en haut à gauche)
-          pour voir l'alcoolémie et les statistiques de tes amis ici.
+          Vois l'alcoolémie et les statistiques de tes amis ici. Tes boissons
+          (sans lieu) et tes notes seront partagées avec ton groupe.
         </div>
+        {/* Action DIRECTE ici plutôt qu'un renvoi vers les Paramètres : c'est
+            dans cet onglet qu'on a envie d'activer le partage. Même
+            confirmation que le switch des Paramètres. */}
+        <button type="button" onClick={enable} disabled={busy} style={{
+          marginTop: 18, padding: '12px 22px', borderRadius: 12,
+          background: T.accent, color: T.accentInk, border: 'none',
+          fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+          cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.5 : 1,
+        }}>Activer le partage</button>
       </div>
     );
   }
@@ -356,7 +378,7 @@ function FriendsTab({ onOpenFriend }) {
         }}>{s.errorDetail}</div>
       )}
 
-      <div style={{ flex: 1, overflow: 'auto', padding: hasGroup ? '0 16px 120px' : '0 0 120px' }}>
+      <div data-tab-scroll style={{ flex: 1, overflow: 'auto', padding: hasGroup ? '0 16px 120px' : '0 0 120px' }}>
         {!hasGroup && <FriendsEmpty />}
 
         {hasGroup && members.length === 0 && (
@@ -540,22 +562,34 @@ function FriendStatsView({ friend, onClose }) {
 // donne la même largeur (bords alignés). Les abonnements (tick BAC 60 s,
 // shareBus via useFavoriteFriend / useFriendsBac) sont confinés ICI : un pull
 // ou un tick ne re-rend que la pile, pas tout le header.
-function HeaderBacStack() {
+// Les pastilles sont TAPABLES : la mienne ouvre Stats › Alcoolémie
+// (`onOpenMine`), celle du favori ouvre sa fiche (`onOpenFriend`). Chaque
+// pastille est enveloppée dans un bouton « ghost » (reset complet) : le
+// rendu et la hauteur du slot ne changent pas.
+function HeaderBacStack({ onOpenMine, onOpenFriend } = {}) {
   const bacInfo = useBacInfo();
   const fav = useFavoriteFriend();
   const bacMap = useFriendsBac(fav ? [fav] : []);
   const two = !!fav;
+  const favName = fav ? (fav.displayName || 'mon favori') : '';
+  const pillBtn = { ...ghostButton, display: 'flex', flexDirection: 'column', alignItems: 'stretch' };
   return (
     <div style={{
       height: 38, flexShrink: 0,
       display: 'flex', flexDirection: 'column', justifyContent: 'center',
       alignItems: two ? 'stretch' : 'flex-end', gap: two ? 4 : 0,
     }}>
-      <BacPill bac={bacInfo.current || 0} compact={two} />
+      <button type="button" onClick={() => onOpenMine && onOpenMine()}
+        aria-label="Voir le détail de mon taux" style={pillBtn}>
+        <BacPill bac={bacInfo.current || 0} compact={two} />
+      </button>
       {two && (
-        <BacPill bac={bacMap[fav.userId] == null ? null : bacMap[fav.userId]}
-          tone="good" compact
-          ariaLabel={`Alcoolémie de ${fav.displayName || 'mon favori'}`} />
+        <button type="button" onClick={() => onOpenFriend && onOpenFriend(fav)}
+          aria-label={`Voir les statistiques de ${favName}`} style={pillBtn}>
+          <BacPill bac={bacMap[fav.userId] == null ? null : bacMap[fav.userId]}
+            tone="good" compact
+            ariaLabel={`Alcoolémie de ${favName}`} />
+        </button>
       )}
     </div>
   );

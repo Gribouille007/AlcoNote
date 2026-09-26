@@ -1,12 +1,18 @@
 // categories.jsx — Tab 1: Catégories (grid + drill-down to family detail)
 
-function CategoriesTab({ onOpenFamily, onDirectAdd, onEditFamily, query, setQuery, openCat, setOpenCat }) {
+function CategoriesTab({ onOpenFamily, onDirectAdd, onEditFamily, onAddInCategory, query, setQuery, openCat, setOpenCat }) {
   const [editCat, setEditCat] = React.useState(null);
   const [creatingCat, setCreatingCat] = React.useState(false);
   const { categories } = useCategories();
   // Families are built once at App root and broadcast via FamiliesContext
   // — no per-tab rebuild on every dataBus bump.
   const families = useFamilies();
+  // Favoris (variantes épinglées depuis leur fiche) — setting `fav.families`.
+  const settings = useSettings();
+  const favorites = React.useMemo(
+    () => resolveFavorites(families, parseFavorites(settings)),
+    [families, settings]
+  );
   // Icon overrides re-render <CategoryGlyph> via CategoryIconsContext
   // (provided at App root) — no need for this tab to subscribe.
 
@@ -70,12 +76,16 @@ function CategoriesTab({ onOpenFamily, onDirectAdd, onEditFamily, query, setQuer
 
       {!openCat ? (
         <CategoryGrid cats={cats} families={families} query={query} onOpen={setOpenCat}
+          favorites={favorites}
           onOpenFamily={onOpenFamily} onEditCat={setEditCat} onDirectAdd={onDirectAdd}
           onAddCategory={() => setCreatingCat(true)} />
       ) : (
-        <FamilyList category={openCat} families={filtered}
-          onBack={() => setOpenCat(null)} onOpen={onOpenFamily}
+        // Retour à la grille : la recherche « dans Bière » n'a plus de sens
+        // au niveau racine (elle y deviendrait une recherche globale fantôme).
+        <FamilyList category={openCat} families={filtered} query={query}
+          onBack={() => { setOpenCat(null); setQuery(''); }} onOpen={onOpenFamily}
           onDirectAdd={onDirectAdd} onEditCat={() => setEditCat(openCat)}
+          onAddInCategory={onAddInCategory}
           onEditFamily={onEditFamily} />
       )}
 
@@ -90,7 +100,7 @@ function CategoriesTab({ onOpenFamily, onDirectAdd, onEditFamily, query, setQuer
   );
 }
 
-function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, onDirectAdd, onAddCategory }) {
+function CategoryGrid({ cats, families, favorites = [], query, onOpen, onOpenFamily, onEditCat, onDirectAdd, onAddCategory }) {
   const q = (query || '').toLowerCase();
   const matchedFams = React.useMemo(() => {
     if (!q) return [];
@@ -101,7 +111,10 @@ function CategoryGrid({ cats, families, query, onOpen, onOpenFamily, onEditCat, 
   }, [families, q]);
 
   return (
-    <div style={{ flex: 1, overflow: 'auto', padding: '0 18px 120px' }}>
+    <div data-tab-scroll style={{ flex: 1, overflow: 'auto', padding: '0 18px 120px' }}>
+      {!q && families.length > 0 && (
+        <FavoritesStrip favorites={favorites} onAdd={onDirectAdd} />
+      )}
       {!q && (
         <>
           <SectionHead>Vos catégories</SectionHead>
@@ -205,7 +218,82 @@ const CategoryCard = React.memo(function CategoryCard({ cat, onOpen, onEdit, ind
     </div>
   );
 });
-function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat, onEditFamily }) {
+// Bandeau « Favoris » en tête de la grille : les variantes épinglées (étoile
+// de la fiche) s'ajoutent en UN tap — le geste le plus fréquent de l'app
+// (« encore une ») sans ouvrir de catégorie. Tap = ajout immédiat avec
+// « Annuler » dans le toast (cf. AppShell › directAdd). Sans favori, une
+// ligne d'aide explique comment en épingler.
+function FavoritesStrip({ favorites, onAdd }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <SectionHead>Favoris</SectionHead>
+      {favorites.length === 0 ? (
+        <div style={{
+          marginTop: 10, padding: '12px 14px', borderRadius: 14,
+          border: `1px dashed ${T.rule}`, color: T.muted, fontSize: 12, lineHeight: 1.5,
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <SvgIcon icon={Ic.starOutline} size={16} />
+          <span>Épingle tes boissons habituelles avec l'étoile de leur fiche pour les ajouter ici en un tap.</span>
+        </div>
+      ) : (
+        <div role="list" aria-label="Favoris" style={{
+          display: 'flex', gap: 10, marginTop: 10, overflowX: 'auto',
+          scrollbarWidth: 'none', paddingBottom: 2,
+        }}>
+          {favorites.map((f, i) => <FavoriteChip key={f.id} family={f} index={i} onAdd={onAdd} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FavoriteChip({ family: f, onAdd, index = 0 }) {
+  // Peint la teinte de catégorie → abonnement palette (cf. DA).
+  useCatPalette();
+  const reduced = useReducedMotion();
+  const press = usePressScale();
+  const color = catColor(f.category, 70);
+  return (
+    <div role="listitem" style={{ flexShrink: 0 }}>
+      <button type="button" {...press.handlers}
+        onClick={() => onAdd && onAdd(f)}
+        aria-label={`Ajouter ${f.name} (${f.quantity} ${f.unit}, ${f.alcohol}°)`}
+        style={{
+          ...ghostButton, width: 132, padding: 12, borderRadius: 14,
+          background: T.surface, border: `1px solid ${T.rule}`,
+          display: 'flex', flexDirection: 'column', gap: 10, textAlign: 'left',
+          ...press.style,
+          ...staggerStyle(index, { reduced }),
+        }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: 10, background: catBg(f.category),
+            display: 'grid', placeItems: 'center', color,
+          }}>
+            <CategoryGlyph name={f.category} size={18} />
+          </div>
+          <span style={{
+            width: 26, height: 26, borderRadius: 8, display: 'grid', placeItems: 'center',
+            background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`, color: T.accent,
+          }}><SvgIcon icon={Ic.plus} size={12} /></span>
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{
+            fontSize: 13.5, color: T.ink, fontWeight: 500, letterSpacing: -0.2,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>{f.name}</div>
+          <div style={{
+            color: T.muted, fontSize: 11, marginTop: 2, fontFamily: fontNum, letterSpacing: 0.1,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>{f.quantity} {f.unit} · {f.alcohol}°</div>
+        </div>
+      </button>
+    </div>
+  );
+}
+
+function FamilyList({ category, families, query = '', onBack, onOpen, onDirectAdd, onEditCat, onAddInCategory, onEditFamily }) {
   // Sort families: identical-name groups stay contiguous, ordered by
   // total entries inside the group, then by quantity asc inside each
   // group. We keep one line per (name, qty, unit, abv) variant so the
@@ -246,7 +334,7 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
   }, [families]);
 
   return (
-    <div style={{ flex: 1, overflow: 'auto', padding: '0 18px 120px' }}>
+    <div data-tab-scroll style={{ flex: 1, overflow: 'auto', padding: '0 18px 120px' }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
         justifyContent: 'space-between',
@@ -284,11 +372,35 @@ function FamilyList({ category, families, onBack, onOpen, onDirectAdd, onEditCat
           onOpen={onOpen} onDirectAdd={onDirectAdd} />
       ))}
 
-      {rows.length === 0 && (
+      {rows.length === 0 && (query ? (
         <div style={{ color: T.muted, fontSize: 13, padding: '40px 0', textAlign: 'center' }}>
-          Aucun résultat
+          Aucun résultat pour « {query} »
         </div>
-      )}
+      ) : (
+        // Catégorie vide : on dit pourquoi et on propose l'action logique
+        // (ajouter directement DANS cette catégorie) au lieu d'un « Aucun
+        // résultat » sans issue.
+        <div style={{ padding: '36px 0', textAlign: 'center' }}>
+          <div style={{
+            fontFamily: fontSerif, fontStyle: 'italic', fontSize: 18, color: T.ink,
+            letterSpacing: -0.3, marginBottom: 6,
+          }}>Aucune boisson ici</div>
+          <div style={{ color: T.muted, fontSize: 12, lineHeight: 1.6, marginBottom: 16 }}>
+            Les boissons ajoutées depuis cette page iront dans « {category} ».
+          </div>
+          {onAddInCategory && (
+            <button type="button" onClick={() => onAddInCategory(category)}
+              aria-label={`Ajouter une boisson dans ${category}`} style={{
+                padding: '12px 18px', borderRadius: 12, border: 'none',
+                background: T.accent, color: T.accentInk, fontFamily: 'inherit',
+                fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}>
+              <SvgIcon icon={Ic.plus} size={14} /> Ajouter une boisson
+            </button>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -852,5 +964,6 @@ function EditCategorySheet({ category, onClose, mode = 'edit', onRenamed }) {
 }
 Object.assign(window, {
   CategoriesTab, CategoryGrid, CategoryCard,
+  FavoritesStrip, FavoriteChip,
   FamilyList, FamilyRow, EditCategorySheet,
 });

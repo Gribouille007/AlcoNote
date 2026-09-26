@@ -22,6 +22,11 @@ serveur tiers.
 - Modification d'une entrée seule, ou de toute la "famille"
   (nom + quantité + unité + degré).
 - Glisser vers la gauche pour supprimer (historique, records BAC).
+- **Favoris** : épingle une boisson (étoile de sa fiche) pour l'ajouter en
+  un tap depuis l'onglet Catégories ; tout ajout en un tap est annulable.
+- **Ajout intelligent** : autocomplétion des boissons connues, catégorie
+  imposée quand on ajoute depuis une catégorie, sinon la dernière utilisée.
+- Re-taper l'onglet actif revient à sa racine (et en haut de la liste).
 
 ### Statistiques
 Huit sections, toutes pliables, avec navigation par période

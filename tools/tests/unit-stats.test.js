@@ -700,3 +700,22 @@ test('STATS_PERIOD_MATRIX — couverture, validité et décisions clés', () => 
     assert.deepEqual(STATS_PERIOD_MATRIX[id].keepWhenEmpty, [], `${id} : période-scopée`);
   }
 });
+
+test('canShiftForward / isCurrentPeriod — jamais de navigation vers le futur', () => {
+  const { canShiftForward, isCurrentPeriod } = global;
+  const now = new Date(2026, 8, 26, 16, 0); // samedi 26 septembre 2026
+  // Période courante : pas de « suivante ».
+  for (const p of ['today', 'week', 'month', 'year', 'school']) {
+    assert.equal(canShiftForward(p, now, now), false, `${p} courant → flèche suivante désactivée`);
+    assert.equal(isCurrentPeriod(p, now, now), true, `${p} courant`);
+  }
+  // Une période passée peut avancer, et n'est pas « courante ».
+  const lastWeek = shiftAnchor('week', now, -1);
+  assert.equal(canShiftForward('week', lastWeek, now), true);
+  assert.equal(isCurrentPeriod('week', lastWeek, now), false);
+  const yesterday = shiftAnchor('today', now, -1);
+  assert.equal(canShiftForward('today', yesterday, now), true, 'hier → aujourd’hui autorisé');
+  // « Tout » : ni suivante ni « revenir ».
+  assert.equal(canShiftForward('all', now, now), false);
+  assert.equal(isCurrentPeriod('all', now, now), true);
+});

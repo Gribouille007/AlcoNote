@@ -782,10 +782,27 @@ function useBackButton(active, onClose) {
 // (fournie par useSheetClose) : scrim en fadeOut + sheet en sheetOut*,
 // `forwards` pour tenir l'état final jusqu'au démontage. Reduced-motion :
 // aucune animation, ni entrée ni sortie.
+// Pile des overlays montés : Échap ne ferme que celui du DESSUS (une fiche
+// d'édition empilée sur la fiche détail ne doit pas emporter les deux).
+const _overlayStack = [];
 function SheetOverlay({ children, onClose, side = 'bottom', label, closing = false }) {
   const reduced = useReducedMotion();
+  const tokenRef = React.useRef(null);
+  if (tokenRef.current == null) tokenRef.current = {};
   React.useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose && onClose(); };
+    const me = tokenRef.current;
+    _overlayStack.push(me);
+    return () => {
+      const i = _overlayStack.lastIndexOf(me);
+      if (i >= 0) _overlayStack.splice(i, 1);
+    };
+  }, []);
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (_overlayStack[_overlayStack.length - 1] !== tokenRef.current) return;
+      onClose && onClose();
+    };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);

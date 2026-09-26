@@ -108,12 +108,14 @@ test('heure — champ vidé : on retombe sur l’heure courante, jamais \'\'', a
   assert.match(d.date, /^\d{4}-\d{2}-\d{2}$/, 'date valide malgré un champ vidé');
 });
 
-test('« Ajouter à nouveau » depuis la fiche détail — prefill complet', async () => {
+test('« Personnaliser l\'ajout » depuis la fiche détail — prefill complet', async () => {
   // Catégories → Bière → détail de la famille Test Pils.
   await ctx.clickAria(/^Catégories$/, 250);
   await ctx.clickAria(/Ouvrir la catégorie Bière/, 300);
   await ctx.clickAria(/Voir les détails de Test Pils/, 300);
-  await ctx.clickText(/Ajouter à nouveau/, 350);
+  // Le bouton principal « Ajouter » enregistre directement ; le formulaire
+  // prérempli vit sous « Personnaliser l'ajout ».
+  await ctx.clickText(/Personnaliser l'ajout/, 350);
 
   await ctx.waitFor(() => ctx.findInputByAria(/^Boisson$/), { label: 'sheet préremplie' });
   assert.equal(ctx.findInputByAria(/^Boisson$/).value, 'Test Pils', 'nom prérempli');
@@ -126,6 +128,9 @@ test('« Ajouter à nouveau » depuis la fiche détail — prefill complet', asy
   // L'identité de famille est intacte (mêmes tuples).
   assert.equal(fam[0].quantityInCL, fam[1].quantityInCL);
   assert.equal(fam[0].alcoholContent, fam[1].alcoholContent);
+  // Re-tap sur l'onglet actif → retour à la grille (les tests suivants
+  // ouvrent le « + » depuis la racine, catégorie libre).
+  await ctx.clickAria(/^Catégories$/, 250);
 });
 
 test('prix intelligent — autre quantité préremplie au prorata du €/L, saisie manuelle respectée', async () => {
