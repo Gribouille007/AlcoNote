@@ -76,8 +76,8 @@ valeur en dur.
   sheet/vue passe par `useSheetClose` (cf. § Sheets) — jamais de
   démontage sec d'un overlay.
 - **Charts** : tous via les primitives de `stats-charts.jsx`
-  (`SvgBarChart`, `SvgRadar`, `SvgDonut`, `SvgLineChart`,
-  `SvgPolarClock`, `SvgBACProjection`, `SvgHistogram`). Géométrie/typo/
+  (`SvgBarChart`, `SvgDonut`, `SvgLineChart`, `SvgBACProjection`,
+  `SvgBACForecast`, `SvgHistogram`, `SvgCalendarHeatmap`). Géométrie/typo/
   dash exclusivement via le spec **`CHART`** ; labels d'axe via
   `thinnedAxisLabels`, annotations via `resolveLaneLabels` (deux textes
   ne se chevauchent JAMAIS) ; toujours `useChartScrubber` +
@@ -279,15 +279,27 @@ Material). Ces règles sont couvertes par `app-ux-flows.test.js` :
 ### Charts — construire une figure parfaite
 
 `proto/stats-charts.jsx` expose des SVG primitives :
-`SvgBarChart`, `SvgRadar`, `SvgDonut`, `SvgLineChart`,
-`SvgPolarClock`, `SvgBACProjection`, `SvgBACForecast`, `SvgHistogram`,
-`SvgCalendarHeatmap` (heatmap calendrier — bandes d'intensité via
-`heatmapBand` + `withAlpha(T.accent, …)`).
+`SvgBarChart`, `SvgDonut`, `SvgLineChart`, `SvgBACProjection`,
+`SvgBACForecast`, `SvgHistogram`, `SvgCalendarHeatmap` (calendrier —
+bandes d'intensité via `heatmapBand` + `withAlpha(T.accent, …)`, légende
+`HeatmapLegend`). Le radar et l'horloge polaire ont été RETIRÉS (lecture
+difficile / doublon du bar chart horaire) : une distribution par
+catégorie ordonnée (jours, heures) = `SvgBarChart`.
+
+**Calendrier** : `buildCalendarModel(drinks, period, range, anchor)`
+(stats.jsx, pur) choisit une disposition PLEINE LARGEUR par période —
+`month` (Jour/Mois : vrai calendrier 7 colonnes, n° du jour, jour affiché
+`selected` sur « Jour » + ScopeChip du mois), `week` (une ligne de 7),
+`year` (Année/A. scol. : 12 mois × 31 jours), `years` (Tout : années × 12
+mois, une case = un mois). `calendarGeometry(model, width)` garantit que
+la dernière colonne touche le bord droit (testé). Interaction : 1er tap =
+case active (infobulle collante + lien « Voir … ») ; 2e tap sur la même
+case (ou le lien) = `onPickPeriod` → ouvre ce jour (ou ce mois). Jamais
+de pick sur une case future ; un geste annulé (défilement) ne choisit rien.
 
 **Le spec `CHART`** (stats-charts.jsx, `Object.freeze`) est la SOURCE
 UNIQUE de toute géométrie/typo/trait de la famille : tailles de police
-(`font.tick/ref/spoke/tooltip/center*`), paddings (`pad.cartesian/bar/
-radar/clock*`), grille (`grid`), pointillés sémantiques (`dash.future/
+(`font.tick/ref/tooltip/center*`), paddings (`pad.cartesian/bar`), grille (`grid`), pointillés sémantiques (`dash.future/
 threshold/reference/marker/now/truncation/hair/secondary`), traits
 (`stroke`), géométrie de barres (`bar`), boule de scrub (`focus`),
 métriques de tooltip (`tooltip`), heatmap (`heatmap`), tailles donut/
@@ -299,7 +311,7 @@ Les COULEURS ne vivent pas dans `CHART` : toujours `T.*` lues au render
 plafond commun jauge+charts `BAC_CHART_CAP`.
 
 **Anti-collision — deux textes ne se chevauchent JAMAIS.** Aucun
-`<text>` de chart ne se positionne « à la main » ; quatre helpers purs
+`<text>` de chart ne se positionne « à la main » ; trois helpers purs
 (testés, invariants property-testés dans unit-charts) couvrent tous les
 cas :
 - `thinnedAxisLabels(labels, xs, { lo, hi })` : SEULE voie pour des
@@ -310,9 +322,6 @@ cas :
   dimension (seuils BAC, ETA, « … » de troncature) — allocation par
   priorité, décalage minimal, ABANDON si pas de place (un label absent
   vaut mieux que deux illisibles).
-- `radarLabelLayout(angle)` : ancre/dy par quadrant pour les labels
-  radiaux d'un radar. (L'horloge polaire garde l'ancrage centré : ses
-  4 labels courts sont calibrés pour, cf. commentaire sur place.)
 - `fitLabel(text, maxPx)` : troncature « … » de tout texte libre dans
   un espace borné (centre du donut…).
 
@@ -421,15 +430,31 @@ intestable).
 Chaque section reçoit le bag `sp` depuis `StatsTab` :
 ```js
 { collapsed, toggleSection, period, drinks, allDrinks,
-  prevDrinks, prevRange, settings, range, anchor, hasPeriodData }
+  prevDrinks, prevRange, prevFullDrinks, prevFullRange,
+  settings, range, anchor, onPickPeriod, hasPeriodData,
+  agg, prevAgg, sessions, prevSessions, allSessions, … }
 ```
 - `drinks` est filtré sur la période courante (`range`).
-- `prevDrinks` pour le calcul des badges Δ% (passe à `null` quand
-  `period === 'all'`).
+- `prevDrinks`/`prevRange` = plage de comparaison **« à date »** des
+  badges Δ% (`comparisonRange`) : période en cours → période précédente
+  TRONQUÉE au même nombre de jours écoulés (10 premiers jours d'août vs
+  10 premiers de septembre) ; période passée → précédente complète.
+  `null` sur `'all'`. `prevFullDrinks`/`prevFullRange` = précédente
+  COMPLÈTE (courbe « Cumul vs période précédente » uniquement).
+- Moyennes « /jour », « /sem. » : diviser par `elapsedDays(range)` (jours
+  écoulés, jamais la durée totale d'une période entamée).
+- **Sessions** : `allSessions` est calculé UNE fois sur tout l'historique,
+  puis `sessions = sessionsForRange(allSessions, range)` (sessions
+  complètes ayant ≥ 1 boisson dans la période). Ne jamais recalculer
+  `computeBACSessions` sur les seules boissons d'une période : une soirée
+  à cheval sur minuit était coupée (pic/durée faux). Temps bourré =
+  `computeBourreTime(allSessions, range)` (clampé aux bornes). Les
+  records d'alcoolémie sont ceux de la PÉRIODE (« Tout » = absolus).
 - `allDrinks` pour les sections qui veulent toute la chronologie
-  (Tendances, Moyennes mobiles, BAC, Calendrier en mode « Jour »).
-- `hasPeriodData` pour masquer les cards période-scopées d'une section
-  qui survit à une période vide (cf. Pertinence par période).
+  (Tendances, BAC, Calendrier en mode « Jour »).
+- `onPickPeriod(period, date)` : ouvre une période (tap du Calendrier).
+- Badges Δ% (`DeltaBadge`) : TOUJOURS dans le flux (sous le libellé),
+  jamais en position absolue — ils recouvraient la valeur.
 
 Pour ajouter une section :
 1. Écrire un composant `MaSection({ drinks, ..., collapsed,
@@ -446,19 +471,20 @@ Pour ajouter une section :
 **Pertinence par période** : l'onglet est période-scopé, chaque section
 déclare dans le registry où elle a du sens.
 - `periods: [...]` (absent = toutes) : périodes où la section se rend.
-  Les charts globaux (`trends`, `advanced`) excluent `'today'` — un
+  Les charts globaux (`trends`) excluent `'today'` — un
   chart « 6 derniers mois » sous le libellé « Vendredi 3 juillet » est
   contre-intuitif.
 - `keepWhenEmpty: [...]` : périodes où la section reste rendue MÊME
-  quand la période est vide — pour les contenus en direct/globaux (BAC
-  live, Carte avec bascule « Tout », chart mensuel, moyenne mobile).
+  quand la période est vide — **seul le BAC en direct** le déclare (ni
+  la carte ni les charts globaux : une période vide n'affiche QUE
+  l'Alcoolémie).
 - Gating par card à l'INTÉRIEUR d'une section : `inPeriods(period,
   [...])` (ex. cumul masqué sur `'today'`, moyenne mobile réservée à
-  `GLOBAL_CHART_PERIODS`, radar hebdo/« Jour de pointe »/« Entre
+  `GLOBAL_CHART_PERIODS`, barres hebdo/« Jour de pointe »/« Entre
   sessions » masqués sur un seul jour).
 - Toute card dont le contenu IGNORE la période sélectionnée porte un
-  `<ScopeChip label="…"/>` qui le dit (« En direct », « Records
-  absolus », « 6 derniers mois », « 30 derniers jours ») — jamais de
+  `<ScopeChip label="…"/>` qui le dit (« En direct », « 6 derniers
+  mois », « 30 derniers jours », mois du calendrier sur « Jour ») — jamais de
   contenu hors-période non étiqueté.
 - La matrice est exportée (`STATS_PERIOD_MATRIX`) et testée
   (unit-stats) : toute nouvelle section doit y déclarer ses périodes
@@ -477,9 +503,9 @@ La vue ami suit l'ordre perso sans pouvoir l'éditer.
 
 **États vides** : aucune boisson au global → `StatsEmptyState` seul
 (pas de sélecteur de période) ; période vide → sélecteur + navigation
-conservés, le message remplace les sections PÉRIODE-scopées et les
-sections `keepWhenEmpty` restent rendues dessous (BAC en direct,
-Carte, charts globaux). Une nouvelle section n'a plus besoin de gérer
+conservés, seules les sections `keepWhenEmpty` (le BAC en direct) sont
+rendues, puis le message « Pas de données disponibles » EN BAS de page.
+Une nouvelle section n'a plus besoin de gérer
 le cas « période vide » globale (mais garde ses états partiels
 internes, ex. « Aucun prix saisi »).
 
@@ -488,6 +514,14 @@ internes, ex. « Aucun prix saisi »).
 double-tap / Ctrl+molette dans `installZoomGuards()`, shared.jsx). Ne
 jamais réintroduire un mécanisme qui en dépend ; le zoom interne de la
 carte Leaflet reste fonctionnel.
+
+**Carte — gestes coopératifs** : sur écran tactile (`pointer: coarse`),
+la carte Leaflet a `dragging: false` — UN doigt fait défiler la page,
+DEUX doigts déplacent/zooment la carte (un indice « Utilisez deux doigts »
+s'affiche au glisser à un doigt) ; `scrollWheelZoom: false` partout. Une
+carte qui capte le glisser à un doigt piégeait le défilement dès qu'elle
+remplissait l'écran (bug « bloqué en bas de la période Jour »). La carte
+est la DERNIÈRE section par défaut.
 
 **Portrait** : l'app n'est JAMAIS utilisable en paysage. Trois ceintures,
 aucune ne couvrant seule tous les contextes :
@@ -857,8 +891,15 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
 - **BAC — prévision de session** : juste après un verre, la courbe
   pointillée MONTE d'abord (absorption en vol) puis redescend ; toute la
   courbe (jusqu'à 0) rentre dans le graphe, sans fin coupée au bord droit.
-- **Calendrier / Sessions** : la heatmap colore les jours selon les
-  grammes ; la liste Sessions montre date, durée, pic ; tap → tooltip.
+- **Calendrier / Sessions** : le calendrier occupe toute la largeur sur
+  chaque période (Semaine = 7 jours, Mois/Jour = mois en 7 colonnes,
+  Année = 12 × 31, Tout = années × mois) ; 1er tap → infobulle + « Voir … »,
+  2e tap → ouvre ce jour/mois ; la liste Sessions montre date, durée, pic ;
+  une soirée qui passe minuit a le même pic sur les deux jours.
+- **Badges Δ%** : jamais par-dessus la valeur ; sur une période en cours,
+  la comparaison est « à date » (pas de fausse baisse en début de mois).
+- **Période vide** : seule l'Alcoolémie s'affiche, puis « Pas de données
+  disponibles » en bas ; les records d'alcoolémie suivent la période.
 - **Heure (natif)** : le champ Heure ouvre le sélecteur DU SYSTÈME ; choisir
   une heure la pose ; vider le champ n'enregistre jamais d'heure vide.
 - **Thème** : basculer Clair ↔ Sombre repeint TOUT du premier coup — cartes
@@ -912,7 +953,8 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
   Catégories ; tap = ajout ; renommer la boisson garde l'épingle.
 - **Pastille BAC** : tap → Stats › Alcoolémie (période Jour).
 - Carte : un drink avec coordonnées doit apparaître ; sans coords,
-  message vide.
+  message vide. Sur téléphone, un doigt sur la carte fait défiler la page
+  (jamais bloqué en bas de l'onglet) ; deux doigts la déplacent.
 - Tiroir paramètres : ouvre depuis la gauche, slide animé.
 - FAB : à environ ~14 px du bord droit, ne déborde pas.
 - **Amis — favori** : l'étoile n'apparaît que sur un ami qui partage son

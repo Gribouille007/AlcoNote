@@ -110,24 +110,15 @@ test('DA : composant React.memo qui peint catColor/catBg → useCatPalette() obl
   // se passe »). Le hook useCatPalette() (contexte → traverse React.memo)
   // garantit le repaint : tout composant memoïsé qui appelle catColor()/
   // catBg() doit l'appeler aussi.
+  // Les DEUX formes de memo (inline et `X = React.memo(X);` en fin de
+  // fichier) : le donut, memoïsé à l'export, gardait l'ancienne teinte.
   const offenders = [];
   for (const f of jsxFiles) {
     const src = read(path.join('proto', f));
-    const re = /React\.memo\(function\s+(\w+)/g;
-    let m;
-    while ((m = re.exec(src)) !== null) {
-      // Corps de la fonction par équilibrage d'accolades depuis la première
-      // `{` qui suit la liste de paramètres.
-      const open = src.indexOf('{', src.indexOf(')', m.index));
-      if (open === -1) continue;
-      let depth = 0, end = open;
-      for (let i = open; i < src.length; i++) {
-        if (src[i] === '{') depth++;
-        else if (src[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
-      }
-      const body = src.slice(open, end + 1);
+    for (const name of memoComponentNames(src)) {
+      const body = functionBody(src, name);
       if (/\bcatColor\(|\bcatBg\(/.test(body) && !body.includes('useCatPalette()')) {
-        offenders.push(`proto/${f} › ${m[1]}`);
+        offenders.push(`proto/${f} › ${name}`);
       }
     }
   }
@@ -379,4 +370,13 @@ test('figures : aucune taille/dash en dur dans stats-charts.jsx (tokens CHART)',
     if (/strokeDasharray="[0-9]/.test(line)) offenders.push(`dash littéral — proto/stats-charts.jsx:${i + 1}`);
   });
   assert.deepEqual(offenders, [], `Littéraux hors CHART :\n${offenders.join('\n')}`);
+});
+
+test('DA : DeltaBadge reste dans le flux (jamais en surimpression de la valeur)', () => {
+  // Bug historique : le badge Δ% en `position: absolute` (coin haut-droit)
+  // recouvrait les valeurs larges des cellules (« 12.4L », « 1j 4h »).
+  const src = read('proto/stats.jsx');
+  const body = functionBody(src, 'DeltaBadge');
+  assert.ok(body, 'DeltaBadge présent');
+  assert.ok(!/position:\s*'absolute'/.test(body), 'DeltaBadge sans position absolue');
 });

@@ -155,7 +155,7 @@ test('heatmapBand — 0 vide, bandes 1..4 par quartile du ratio', () => {
 // ── Système CHART + anti-collision (refonte des figures) ─────────────
 const {
   CHART, BAC_CHART_CAP, BAC_ZONE_LIGHT, BAC_ZONE_LEGAL,
-  thinnedAxisLabels, resolveLaneLabels, radarLabelLayout, fitLabel,
+  thinnedAxisLabels, resolveLaneLabels, fitLabel,
   donutSegments,
 } = global;
 
@@ -253,14 +253,6 @@ test('resolveLaneLabels — priorité, décalage minimal, rejet, invariant de ga
   }
 });
 
-test('radarLabelLayout — ancre selon le quadrant', () => {
-  assert.equal(radarLabelLayout(0).anchor, 'start');            // droite
-  assert.equal(radarLabelLayout(Math.PI).anchor, 'end');        // gauche
-  assert.equal(radarLabelLayout(-Math.PI / 2).anchor, 'middle'); // haut
-  assert.ok(radarLabelLayout(-Math.PI / 2).dy < 0, 'haut → texte au-dessus');
-  assert.equal(radarLabelLayout(Math.PI / 2).anchor, 'middle');  // bas
-  assert.ok(radarLabelLayout(Math.PI / 2).dy > 0, 'bas → texte en dessous');
-});
 
 test('fitLabel — troncature ellipsis dans un espace borné', () => {
   assert.equal(fitLabel('Bière', 1000), 'Bière');
@@ -282,4 +274,31 @@ test('donutSegments — vide → total 0 (plus de faux « 1 »), plein → angle
   assert.equal(two.segments.length, 2);
   // Les angles se suivent sans trou : fin du 1er = début du 2e.
   assert.ok(Math.abs(two.segments[0].a1 - two.segments[1].a0) < 1e-9);
+});
+
+// ── calendarGeometry (Calendrier pleine largeur) ────────────────────
+test('calendarGeometry — chaque disposition occupe TOUTE la largeur', () => {
+  const { calendarGeometry } = global;
+  const cases = [
+    { layout: 'month', rows: 5, cols: 7, rowLabels: [] },
+    { layout: 'week', rows: 1, cols: 7, rowLabels: [] },
+    { layout: 'year', rows: 12, cols: 31, rowLabels: ['jan', 'fév', 'mars', 'sep'] },
+    { layout: 'years', rows: 3, cols: 12, rowLabels: ['2024', '2025', '2026'] },
+  ];
+  for (const width of [280, 330, 420]) {
+    for (const m of cases) {
+      const g = calendarGeometry(m, width);
+      const right = g.padL + (m.cols - 1) * g.stepX + g.cellW;
+      assert.ok(Math.abs(right - width) < 0.01,
+        `${m.layout} @${width} : dernière colonne au bord droit (obtenu ${right.toFixed(2)})`);
+      assert.ok(g.cellW > 0 && g.cellH > 0 && g.height > 0, `${m.layout} : géométrie positive`);
+      assert.ok(g.cellH <= g.stepY + 1e-9, `${m.layout} : les lignes ne se chevauchent pas`);
+    }
+  }
+  // Année : pas vertical ≥ minRowStep → libellés de mois jamais collés.
+  const y = calendarGeometry(cases[2], 280);
+  assert.ok(y.stepY >= global.CHART.heatmap.minRowStep);
+  // Mois / semaine : hauteur de case plafonnée (pas de cases géantes).
+  const mo = calendarGeometry(cases[0], 420);
+  assert.ok(mo.cellH <= global.CHART.heatmap.cellMaxH.month);
 });

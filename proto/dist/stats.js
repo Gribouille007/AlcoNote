@@ -48,14 +48,14 @@ const PERIODS = [{
   id: 'month',
   label: 'Mois'
 }, {
+  id: 'school',
+  label: 'A. scol.'
+}, {
   id: 'year',
   label: 'Année'
 }, {
   id: 'all',
   label: 'Tout'
-}, {
-  id: 'school',
-  label: 'A. scol.'
 }];
 
 // BAC level classification — mirrors the legacy app --> never change the messages under no circumstances
@@ -543,6 +543,47 @@ function meanSessionBac(sessions) {
   return xs.length ? xs.reduce((s, x) => s + x.avgBac, 0) / xs.length : null;
 }
 
+// Sessions d'une période (helper pur, testable) : les sessions COMPLÈTES
+// (calculées sur tout l'historique) ayant au moins une boisson datée dans
+// [range.start, range.end]. Recalculer les sessions sur les seules boissons
+// de la période coupait une soirée à cheval sur minuit (ou sur dimanche →
+// lundi) en deux : pic, durée et nombre de sessions faux.
+function sessionsForRange(allSessions, range) {
+  if (!range) return [];
+  const sIso = _fmtIso(range.start),
+    eIso = _fmtIso(range.end);
+  return (allSessions || []).filter(s => (s.drinks || []).some(d => d.date >= sIso && d.date <= eIso));
+}
+
+// Nombre de jours ÉCOULÉS d'une période : de range.start à min(range.end,
+// aujourd'hui) inclus (≥ 1). Une période passée → sa durée complète. Les
+// moyennes « /jour » et « /sem. » d'une période en cours se divisent par ce
+// nombre (et non par la durée totale du mois, qui les sous-estimait).
+function elapsedDays(range, now = new Date()) {
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const last = range.end < today ? range.end : today;
+  return Math.max(1, Math.round((last - range.start) / 86400000) + 1);
+}
+
+// Plage de comparaison « à date » (helper pur) : quand la période affichée
+// contient aujourd'hui, la période précédente est TRONQUÉE au même nombre de
+// jours écoulés (10 premiers jours d'août vs 10 premiers jours de septembre)
+// — comparer une période entamée à une période complète affichait une baisse
+// systématique. Période passée → période précédente complète.
+function comparisonRange(range, prevRange, now = new Date()) {
+  if (!prevRange) return null;
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  if (!(today >= range.start && today <= range.end)) return prevRange;
+  const n = elapsedDays(range, now);
+  const end = _addDays(prevRange.start, n - 1);
+  return {
+    start: prevRange.start,
+    end: end < prevRange.end ? end : prevRange.end
+  };
+}
+
 // Render a duration in ms as "Xj Yh", "Xh Ymm", "Xm" — picks the
 // largest unit that gives a non-trivial number. Returns "—" for ≤ 0.
 function fmtBourreTime(ms) {
@@ -678,15 +719,18 @@ function StatsTab({
     };
   }, [period, range, drinks]);
 
-  // Previous-period range, used to compute Δ% indicators on the
-  // headline cards. For 'all' there's no meaningful previous range.
-  const prevRange = React.useMemo(() => {
+  // Période précédente COMPLÈTE (courbe « Cumul vs période précédente ») et
+  // plage de comparaison « à date » (badges Δ%) — cf. comparisonRange. Pour
+  // 'all' il n'y a pas de période précédente.
+  const prevFullRange = React.useMemo(() => {
     if (period === 'all') return null;
     const prevAnchor = shiftAnchor(period, anchor, -1);
     return getPeriodRange(period, prevAnchor);
   }, [period, anchor]);
+  const prevRange = React.useMemo(() => comparisonRange(range, prevFullRange), [range, prevFullRange]);
   const inRange = React.useMemo(() => filterDrinksInRange(drinks, allRange.start, allRange.end), [drinks, allRange]);
   const inPrevRange = React.useMemo(() => prevRange ? filterDrinksInRange(drinks, prevRange.start, prevRange.end) : null, [drinks, prevRange]);
+  const inPrevFullRange = React.useMemo(() => prevFullRange ? filterDrinksInRange(drinks, prevFullRange.start, prevFullRange.end) : null, [drinks, prevFullRange]);
 
   // Hoisted aggregations: every section reads from the same memo so we
   // never recompute the same sum/session in three places. The Widmark
@@ -696,16 +740,36 @@ function StatsTab({
   const gender = settings.userGender || 'male';
   const agg = React.useMemo(() => aggregateGeneral(inRange), [inRange]);
   const prevAgg = React.useMemo(() => inPrevRange ? aggregateGeneral(inPrevRange) : null, [inPrevRange]);
-  const sessions = React.useMemo(() => computeBACSessions(inRange, weight, gender), [inRange, weight, gender]);
-  const prevSessions = React.useMemo(() => inPrevRange ? computeBACSessions(inPrevRange, weight, gender) : null, [inPrevRange, weight, gender]);
-  // All-time sessions feed BAC records (one per session, ranked by
-  // peak) and the streak — those are not constrained to the visible
-  // period.
+  // Sessions calculées UNE fois sur tout l'historique (le modèle Widmark a
+  // besoin de la continuité : une soirée à cheval sur minuit reste UNE
+  // session), puis sélectionnées par période via sessionsForRange.
   const allSessions = React.useMemo(() => computeBACSessions(drinks, weight, gender), [drinks, weight, gender]);
+  const sessions = React.useMemo(() => sessionsForRange(allSessions, allRange), [allSessions, allRange]);
+  const prevSessions = React.useMemo(() => prevRange ? sessionsForRange(allSessions, prevRange) : null, [allSessions, prevRange]);
   const streak = React.useMemo(() => computeStreak(drinks), [drinks]);
   const streakRecord = React.useMemo(() => computeStreakRecord(drinks), [drinks]);
-  const bourreMs = React.useMemo(() => computeBourreTime(sessions, allRange), [sessions, allRange]);
-  const prevBourreMs = React.useMemo(() => prevSessions && prevRange ? computeBourreTime(prevSessions, prevRange) : null, [prevSessions, prevRange]);
+  // Temps BAC>0 clampé aux bornes de la période (computeBourreTime clampe).
+  const bourreMs = React.useMemo(() => computeBourreTime(allSessions, allRange), [allSessions, allRange]);
+  const prevBourreMs = React.useMemo(() => prevRange ? computeBourreTime(allSessions, prevRange) : null, [allSessions, prevRange]);
+
+  // Tap sur une case du Calendrier : ouvre ce jour (ou ce mois) et remonte
+  // en haut de l'onglet pour montrer les stats correspondantes.
+  const pickPeriod = React.useCallback((p, date) => {
+    setReorderMode(false);
+    setPeriod(p);
+    setAnchor(new Date(date));
+    const root = scrollRef.current;
+    if (root) {
+      try {
+        root.scrollTo({
+          top: 0,
+          behavior: 'smooth'
+        });
+      } catch {
+        root.scrollTop = 0;
+      }
+    }
+  }, []);
   const sp = {
     collapsed,
     toggleSection,
@@ -714,9 +778,12 @@ function StatsTab({
     allDrinks: drinks,
     prevDrinks: inPrevRange,
     prevRange,
+    prevFullDrinks: inPrevFullRange,
+    prevFullRange,
     settings,
     range: allRange,
     anchor,
+    onPickPeriod: pickPeriod,
     agg,
     prevAgg,
     sessions,
@@ -831,10 +898,9 @@ function StatsTab({
   }
 
   // Période sélectionnée vide : le sélecteur et la navigation restent
-  // (pour aller voir ailleurs), le message remplace les sections
-  // PÉRIODE-scopées — les sections `keepWhenEmpty` (BAC en direct, carte,
-  // charts globaux) restent rendues sous le message, elles ne dépendent
-  // pas des boissons de la période.
+  // (pour aller voir ailleurs), seules les sections `keepWhenEmpty` (le BAC
+  // en direct) restent rendues, et le message « Pas de données » vient EN
+  // BAS de page, sous elles.
   const hasPeriodData = inRange.length > 0;
   const shownSections = visibleSections.filter(s => (s.periods || ALL_PERIODS).includes(period)).filter(s => hasPeriodData || (s.keepWhenEmpty || []).includes(period));
   sp.hasPeriodData = hasPeriodData;
@@ -864,14 +930,14 @@ function StatsTab({
     anchor: anchor,
     onShift: d => setAnchor(shiftAnchor(period, anchor, d)),
     onReset: () => setAnchor(new Date())
-  }), !hasPeriodData && /*#__PURE__*/React.createElement(StatsEmptyState, {
-    scope: "period"
   }), shownSections.map(({
     id,
     Comp
   }) => /*#__PURE__*/React.createElement(Comp, _extends({
     key: id
-  }, sp)))));
+  }, sp))), !hasPeriodData && /*#__PURE__*/React.createElement(StatsEmptyState, {
+    scope: "period"
+  })));
 }
 
 // État vide de l'onglet Stats — remplace les sections quand il n'y a
@@ -1131,9 +1197,9 @@ function StatSection({
 // Pertinence par période (cf. CLAUDE.md § « Pertinence par période ») :
 // - `periods`  : périodes où la section se rend (absent = toutes).
 // - `keepWhenEmpty` : périodes où la section reste rendue MÊME quand la
-//   période sélectionnée est vide — pour les contenus globaux/en direct
-//   (BAC live, carte « Tout », chart mensuel, moyenne mobile 30 j) qui ne
-//   dépendent pas des boissons de la période.
+//   période sélectionnée est vide. Seul le BAC en direct le fait : sur une
+//   période vide l'onglet n'affiche que l'Alcoolémie, puis le message
+//   « Pas de données » en bas de page.
 const ALL_PERIODS = ['today', 'week', 'month', 'year', 'school', 'all'];
 const GLOBAL_CHART_PERIODS = ['month', 'year', 'school', 'all'];
 const STATS_SECTIONS = [{
@@ -1167,33 +1233,26 @@ const STATS_SECTIONS = [{
   title: 'Sessions',
   Comp: SessionsSection,
   hide: f => f.hideBac
-}, {
-  id: 'map',
-  title: 'Carte des consommations',
-  Comp: MapSection,
-  hide: f => f.hideMap,
-  keepWhenEmpty: ALL_PERIODS
 },
-// Chart mensuel et moyenne mobile 30 j lisent TOUT l'historique : sans
-// objet sur « Jour » (déjà couvert par les sections du dessus), gardés
-// sur période vide dès qu'ils portent une vue globale.
+// Chart mensuel, moyenne mobile et cumul : sans objet sur « Jour » (un
+// seul jour de données, déjà couvert par les sections du dessus).
 {
   id: 'trends',
   title: 'Tendances',
   Comp: TrendsSection,
-  periods: ['week', 'month', 'year', 'school', 'all'],
-  keepWhenEmpty: GLOBAL_CHART_PERIODS
-}, {
-  id: 'advanced',
-  title: 'Analyses avancées',
-  Comp: AdvancedSection,
-  periods: ['week', 'month', 'year', 'school', 'all'],
-  keepWhenEmpty: GLOBAL_CHART_PERIODS
+  periods: ['week', 'month', 'year', 'school', 'all']
 }, {
   id: 'spending',
   title: 'Dépenses',
   Comp: SpendingSection,
   hide: f => f.hidePrice
+},
+// La carte ferme la page : c'est la seule figure qui capte des gestes.
+{
+  id: 'map',
+  title: 'Carte des consommations',
+  Comp: MapSection,
+  hide: f => f.hideMap
 }];
 // Matrice exportée pour les tests : id → { periods, keepWhenEmpty }.
 const STATS_PERIOD_MATRIX = Object.fromEntries(STATS_SECTIONS.map(s => [s.id, {
@@ -1449,81 +1508,234 @@ function bucketDailyAlcohol(drinks) {
   return map;
 }
 
-// Construit les cellules d'une heatmap calendrier (style GitHub) pour la
-// période visible. `mode` ∈ { 'monthGrid' (semaine/mois), 'yearWall'
-// (année/scolaire/tout), 'today' (5 dernières semaines) } gouverne le
-// nombre de jours couverts. Chaque cellule : { date, grams, count, weekday
-// (0=lundi), col (index de semaine) }. `scaleMax` = p90 des jours non nuls
-// (un gros soir n'écrase pas l'échelle ; toujours ≥ au plus grand jour pour
-// que l'intensité max corresponde au pire jour). DOM-free.
-function buildHeatmapCells(drinks, period, range, anchor) {
-  const byDay = bucketDailyAlcohol(drinks);
-  const mode = period === 'year' || period === 'school' || period === 'all' ? 'yearWall' : period === 'today' ? 'today' : 'monthGrid';
+// Échelle d'intensité d'un calendrier : p90 des valeurs non nulles (un gros
+// soir n'écrase pas l'échelle) dès 5 valeurs, sinon le max ; jamais < 1.
+function heatmapScaleMax(values) {
+  const nonZero = values.filter(v => v > 0);
+  if (!nonZero.length) return 1;
+  let scale = Math.max(...nonZero);
+  if (nonZero.length >= 5) {
+    const sorted = nonZero.slice().sort((a, b) => a - b);
+    scale = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
+  }
+  return Math.max(1, scale);
+}
 
-  // Fenêtre de jours [first, last] selon le mode.
-  let first, last;
+// Modèle du Calendrier (helper pur, DOM-free) — une disposition PLEINE
+// LARGEUR par période :
+//  - 'month' (Jour, Mois) : le mois de l'ancre en vrai calendrier, 7 colonnes
+//    (lun→dim), une ligne par semaine ; jours hors du mois = `blank`. Sur
+//    « Jour », le jour affiché est `selected` et la portée est le mois.
+//  - 'week'  (Semaine) : la semaine seule, une ligne de 7 jours.
+//  - 'year'  (Année, A. scol.) : 12 lignes (mois de la plage) × 31 colonnes
+//    (jour du mois) ; les jours inexistants (30 févr.) = `blank`.
+//  - 'years' (Tout) : une ligne par année × 12 mois, une case = un mois
+//    (lisible quelle que soit la profondeur d'historique — l'ancien mur
+//    GitHub débordait au-delà d'un an).
+// Cellule : { key, row, col, label, date (ISO jour ou 'YYYY-MM'), grams,
+// count, blank, future, selected, pick }. `pick` = { period, anchor } pour
+// ouvrir la cellule (null si future/vide de sens). `rowLabels`/`colLabels`
+// = libellés d'axes (le rendu les passe par l'anti-collision).
+function buildCalendarModel(drinks, period, range, anchor, now = new Date()) {
   const midnight = d => {
     const x = new Date(d);
     x.setHours(0, 0, 0, 0);
     return x;
   };
-  if (mode === 'today') {
-    last = midnight(anchor || new Date());
-    const today = midnight(new Date());
-    if (last > today) last = today; // pas de jours futurs (nav en avant)
-    first = _addDays(last, -34); // 5 semaines
-  } else if (mode === 'yearWall') {
-    first = midnight(range.start);
-    last = midnight(range.end);
-    const today = midnight(new Date());
-    if (last > today) last = today; // pas de jours futurs
-  } else {
-    first = midnight(range.start);
-    last = midnight(range.end);
-    const today = midnight(new Date());
-    if (last > today) last = today;
-  }
-  // Aligner `first` au lundi de sa semaine pour des colonnes propres.
+  const today = midnight(now);
+  const todayIso = _fmtIso(today);
   const mondayIdx = d => (d.getDay() + 6) % 7; // 0 = lundi
-  const gridStart = _addDays(first, -mondayIdx(first));
+  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
   const cells = [];
-  let maxGrams = 0;
-  const nonZero = [];
-  for (let d = new Date(gridStart); d <= last; d = _addDays(d, 1)) {
+  if (period === 'all') {
+    const byMonth = new Map();
+    let firstKey = null;
+    for (const d of drinks || []) {
+      if (!d.date) continue;
+      const k = d.date.slice(0, 7);
+      const cur = byMonth.get(k) || {
+        grams: 0,
+        count: 0
+      };
+      cur.grams += drinkAlcoholGrams(d);
+      cur.count += 1;
+      byMonth.set(k, cur);
+      if (!firstKey || k < firstKey) firstKey = k;
+    }
+    const curKey = todayIso.slice(0, 7);
+    const y0 = firstKey ? Number(firstKey.slice(0, 4)) : today.getFullYear();
+    const y1 = today.getFullYear();
+    const rowLabels = [];
+    for (let y = y0; y <= y1; y++) {
+      const row = y - y0;
+      rowLabels.push(String(y));
+      for (let m = 0; m < 12; m++) {
+        const key = `${y}-${String(m + 1).padStart(2, '0')}`;
+        const rec = byMonth.get(key) || {
+          grams: 0,
+          count: 0
+        };
+        const blank = firstKey != null && key < firstKey;
+        const future = key > curKey;
+        cells.push({
+          key,
+          row,
+          col: m,
+          label: '',
+          date: key,
+          grams: rec.grams,
+          count: rec.count,
+          blank,
+          future,
+          selected: false,
+          pick: blank || future ? null : {
+            period: 'month',
+            anchor: new Date(y, m, 1)
+          }
+        });
+      }
+    }
+    return {
+      layout: 'years',
+      rows: y1 - y0 + 1,
+      cols: 12,
+      cells,
+      rowLabels,
+      colLabels: ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'],
+      scaleMax: heatmapScaleMax(cells.filter(c => !c.blank).map(c => c.grams)),
+      scopeLabel: null
+    };
+  }
+  const byDay = bucketDailyAlcohol(drinks);
+  const dayCell = (d, row, col, label, extra = {}) => {
     const iso = _fmtIso(d);
-    const inWindow = d >= first;
-    const rec = inWindow ? byDay.get(iso) || {
+    const rec = byDay.get(iso) || {
       grams: 0,
       count: 0
-    } : null;
-    const grams = rec ? rec.grams : 0;
-    const col = Math.floor((d - gridStart) / (7 * 86400_000));
-    cells.push({
-      date: iso,
-      grams,
-      count: rec ? rec.count : 0,
-      weekday: mondayIdx(d),
+    };
+    const future = d > today;
+    return {
+      key: iso,
+      row,
       col,
-      blank: !inWindow
-    });
-    if (grams > 0) {
-      nonZero.push(grams);
-      maxGrams = Math.max(maxGrams, grams);
+      label,
+      date: iso,
+      grams: rec.grams,
+      count: rec.count,
+      blank: false,
+      future,
+      selected: false,
+      pick: future ? null : {
+        period: 'today',
+        anchor: new Date(d)
+      },
+      ...extra
+    };
+  };
+  if (period === 'year' || period === 'school') {
+    const start = midnight(range.start);
+    const rowLabels = [];
+    for (let row = 0; row < 12; row++) {
+      const y = start.getFullYear(),
+        m = start.getMonth() + row;
+      const first = new Date(y, m, 1);
+      const nDays = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+      rowLabels.push(FR_MONTHS_SHORT[first.getMonth()]);
+      for (let day = 1; day <= 31; day++) {
+        if (day > nDays) {
+          cells.push({
+            key: `${row}-${day}`,
+            row,
+            col: day - 1,
+            label: '',
+            date: null,
+            grams: 0,
+            count: 0,
+            blank: true,
+            future: false,
+            selected: false,
+            pick: null
+          });
+          continue;
+        }
+        cells.push(dayCell(new Date(first.getFullYear(), first.getMonth(), day), row, day - 1, ''));
+      }
     }
+    const colLabels = Array.from({
+      length: 31
+    }, (_, i) => i === 0 || (i + 1) % 5 === 0 ? String(i + 1) : '');
+    return {
+      layout: 'year',
+      rows: 12,
+      cols: 31,
+      cells,
+      rowLabels,
+      colLabels,
+      scaleMax: heatmapScaleMax(cells.filter(c => !c.blank).map(c => c.grams)),
+      scopeLabel: null
+    };
   }
-  // p90 des jours bus (au moins le max si peu de données).
-  let scaleMax = maxGrams;
-  if (nonZero.length >= 5) {
-    const sorted = nonZero.slice().sort((a, b) => a - b);
-    const p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
-    scaleMax = Math.max(p90, 1);
+  const weekLetters = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+  if (period === 'week') {
+    const start = midnight(range.start);
+    for (let col = 0; col < 7; col++) {
+      const d = _addDays(start, col);
+      cells.push(dayCell(d, 0, col, String(d.getDate())));
+    }
+    return {
+      layout: 'week',
+      rows: 1,
+      cols: 7,
+      cells,
+      rowLabels: [],
+      colLabels: weekLetters,
+      scaleMax: heatmapScaleMax(cells.map(c => c.grams)),
+      scopeLabel: null
+    };
   }
-  if (scaleMax <= 0) scaleMax = 1;
+
+  // 'month' et 'today' : le mois de l'ancre.
+  const a = midnight(anchor || now);
+  const first = new Date(a.getFullYear(), a.getMonth(), 1);
+  const nDays = new Date(a.getFullYear(), a.getMonth() + 1, 0).getDate();
+  const lead = mondayIdx(first);
+  const rows = Math.ceil((lead + nDays) / 7);
+  const selIso = period === 'today' ? _fmtIso(a) : null;
+  for (let i = 0; i < rows * 7; i++) {
+    const row = Math.floor(i / 7),
+      col = i % 7;
+    const day = i - lead + 1;
+    if (day < 1 || day > nDays) {
+      cells.push({
+        key: `b-${i}`,
+        row,
+        col,
+        label: '',
+        date: null,
+        grams: 0,
+        count: 0,
+        blank: true,
+        future: false,
+        selected: false,
+        pick: null
+      });
+      continue;
+    }
+    const d = new Date(a.getFullYear(), a.getMonth(), day);
+    cells.push(dayCell(d, row, col, String(day), {
+      selected: _fmtIso(d) === selIso
+    }));
+  }
   return {
+    layout: 'month',
+    rows,
+    cols: 7,
     cells,
-    scaleMax,
-    mode,
-    cols: cells.length ? cells[cells.length - 1].col + 1 : 0
+    rowLabels: [],
+    colLabels: weekLetters,
+    scaleMax: heatmapScaleMax(cells.filter(c => !c.blank).map(c => c.grams)),
+    // Sur « Jour », le calendrier montre le MOIS entier : il le dit.
+    scopeLabel: period === 'today' ? `${cap(FR_MONTHS_LONG[a.getMonth()])} ${a.getFullYear()}` : null
   };
 }
 
@@ -1569,7 +1781,22 @@ function buildSessionPeakHistogram(sessions) {
   return buckets;
 }
 
+// Libellé d'une cellule du calendrier pour le lien « Voir … » : un jour
+// (« 12 sept. 2026 ») ou un mois (« Mars 2025 »).
+function calendarCellTitle(cell) {
+  if (!cell || !cell.date) return '';
+  const [y, m, d] = cell.date.split('-').map(Number);
+  if (d == null) {
+    const mo = FR_MONTHS_LONG[m - 1];
+    return `${mo.charAt(0).toUpperCase() + mo.slice(1)} ${y}`;
+  }
+  return `${d} ${FR_MONTHS_DOTTED[m - 1]} ${y}`;
+}
+
 // ── Calendrier (heatmap des grammes d'alcool par jour) ────────────
+// Premier tap sur une case : infobulle (date, boissons, grammes) + lien
+// « Voir … » sous la grille ; second tap sur la même case (ou le lien) :
+// ouvre ce jour (ou ce mois, en « Tout ») dans l'onglet.
 function HeatmapSection({
   drinks,
   allDrinks,
@@ -1577,29 +1804,83 @@ function HeatmapSection({
   range,
   anchor,
   collapsed,
-  toggleSection
+  toggleSection,
+  onPickPeriod
 }) {
-  // Le mode « Aujourd'hui » affiche les 5 dernières semaines : il lui faut
-  // tout l'historique — les drinks de la période ne couvrent qu'UN jour,
-  // les 34 autres cellules resteraient vides à tort.
+  // « Jour » affiche le mois entier de l'ancre : il lui faut tout
+  // l'historique — les drinks de la période ne couvrent qu'UN jour.
   const source = period === 'today' ? allDrinks || drinks : drinks;
-  const hm = React.useMemo(() => buildHeatmapCells(source, period, range, anchor), [source, period, range, anchor]);
-  const hasData = hm.cells.some(c => c.grams > 0);
+  const model = React.useMemo(() => buildCalendarModel(source, period, range, anchor), [source, period, range, anchor]);
+  const [active, setActive] = React.useState(null);
+  // Nouvelle période / ancre → la sélection ne pointe plus rien de visible.
+  React.useEffect(() => {
+    setActive(null);
+  }, [model]);
+  const pick = React.useCallback(cell => {
+    if (cell && cell.pick && onPickPeriod) onPickPeriod(cell.pick.period, cell.pick.anchor);
+  }, [onPickPeriod]);
+  const hasData = model.cells.some(c => c.grams > 0);
+  // Hauteur réservée avant la 1re mesure = hauteur réelle à la largeur
+  // de repli (la grille dérive sa hauteur de la largeur) : pas de vide sous
+  // une grille courte (« Tout » avec peu d'années).
+  const reserveH = Math.floor(calendarGeometry(model, 280).height);
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "heatmap",
     title: "Calendrier",
     collapsed: collapsed,
     toggleSection: toggleSection,
     sub: "Grammes d'alcool pur par jour"
-  }, /*#__PURE__*/React.createElement(Card, null, hasData ? /*#__PURE__*/React.createElement(ChartAutoWidth, {
-    minHeight: 140
+  }, /*#__PURE__*/React.createElement(Card, null, model.scopeLabel && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'flex-end',
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement(ScopeChip, {
+    label: model.scopeLabel
+  })), hasData ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: reserveH
   }, w => /*#__PURE__*/React.createElement(SvgCalendarHeatmap, {
-    cells: hm.cells,
-    cols: hm.cols,
-    scaleMax: hm.scaleMax,
-    mode: hm.mode,
-    width: w
-  })) : /*#__PURE__*/React.createElement("div", {
+    model: model,
+    width: w,
+    activeKey: active ? active.key : null,
+    onActiveChange: setActive,
+    onPick: pick
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+      marginTop: 10,
+      minHeight: 22
+    }
+  }, active && active.pick && onPickPeriod ? /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => pick(active),
+    style: {
+      ...ghostButton,
+      color: T.accent,
+      fontSize: 10,
+      letterSpacing: 0.3,
+      textTransform: 'uppercase',
+      fontWeight: 600,
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 4,
+      minWidth: 0
+    }
+  }, "Voir ", calendarCellTitle(active), " ", /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.chevR,
+    size: 10
+  })) : /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: T.muted,
+      fontSize: 10,
+      fontStyle: 'italic',
+      fontFamily: fontSerif
+    }
+  }, model.layout === 'years' ? 'Touchez un mois pour le détail' : 'Touchez un jour pour le détail'), /*#__PURE__*/React.createElement(HeatmapLegend, null))) : /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
       fontSize: 12,
@@ -1619,13 +1900,14 @@ function SessionsSection({
 }) {
   const list = React.useMemo(() => buildSessionList(sessions, 8), [sessions]);
   const hist = React.useMemo(() => buildSessionPeakHistogram(sessions), [sessions]);
+  const durations = React.useMemo(() => computeSessionDurationBuckets(sessions), [sessions]);
   const total = (sessions || []).length;
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "sessions",
     title: "Sessions",
     collapsed: collapsed,
     toggleSection: toggleSection,
-    sub: "Vos derni\xE8res sessions \xB7 pic d'alcool\xE9mie"
+    sub: "Vos derni\xE8res sessions \xB7 pics \xB7 dur\xE9es"
   }, total === 0 ? /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
@@ -1638,7 +1920,7 @@ function SessionsSection({
   }, "Aucune session sur cette p\xE9riode")) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: '4px 4px',
-      marginBottom: 10
+      marginBottom: total >= 2 ? 10 : 0
     }
   }, list.map((s, i) => {
     const d = new Date(s.startTs);
@@ -1699,7 +1981,11 @@ function SessionsSection({
         marginLeft: 2
       }
     }, "mg/L")));
-  })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+  })), total >= 2 && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
       fontSize: 12.5,
@@ -1721,7 +2007,32 @@ function SessionsSection({
     buckets: hist,
     width: w,
     height: 150,
-    color: T.accent
+    color: T.accent,
+    ariaLabel: "Distribution des pics d'alcool\xE9mie par session"
+  }))), total >= 2 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.ink,
+      fontSize: 12.5,
+      fontWeight: 500,
+      marginBottom: 3,
+      letterSpacing: -0.1
+    }
+  }, "Distribution des dur\xE9es"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 10,
+      marginBottom: 12,
+      fontStyle: 'italic',
+      fontFamily: fontSerif
+    }
+  }, "Dur\xE9e par session (de la 1\u02B3\u1D49 boisson au retour \xE0 0)"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 150
+  }, w => /*#__PURE__*/React.createElement(SvgHistogram, {
+    buckets: durations,
+    width: w,
+    height: 150,
+    color: T.accent,
+    ariaLabel: "Distribution des dur\xE9es de session"
   })))));
 }
 // ── 1. Général ────────────────────────────────────────────────────
@@ -1744,8 +2055,11 @@ function GeneralSection({
   bacAvailable = true
 }) {
   const hasPrev = prevDrinks != null && prevRange != null;
-  const days = Math.max(1, Math.round((range.end - range.start) / 86400000) + 1);
-  const prevDays = hasPrev ? Math.max(1, Math.round((prevRange.end - prevRange.start) / 86400000) + 1) : 0;
+  // Jours ÉCOULÉS (période en cours → jusqu'à aujourd'hui) : « Boissons/jour »
+  // d'un mois entamé ne se divise plus par 30. `prevRange` est déjà la plage
+  // de comparaison « à date » (même nombre de jours), cf. comparisonRange.
+  const days = elapsedDays(range);
+  const prevDays = hasPrev ? elapsedDays(prevRange) : 0;
   // Sober-day count: only consider days from `range.start` up to `min(today, range.end)`,
   // so future days within the period don't inflate the count.
   const today = React.useMemo(() => {
@@ -1842,14 +2156,6 @@ function GeneralSection({
     }
     return out;
   }, [agg, prevAgg, sessions, prevSessions, sober, prevSober, bourreMs, prevBourreMs, days, prevDays, period, drinks, bacAvailable]);
-
-  // Donut: sort categories by descending count so both the arc order
-  // and the legend list match the user's mental "biggest first" model.
-  const catDist = React.useMemo(() => Object.entries(agg.byCategory).map(([name, v]) => ({
-    name,
-    v
-  })).sort((a, b) => b.v - a.v), [agg.byCategory]);
-  const catTotal = React.useMemo(() => catDist.reduce((s, x) => s + x.v, 0), [catDist]);
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "general",
     title: "Statistiques g\xE9n\xE9rales",
@@ -1870,8 +2176,7 @@ function GeneralSection({
     style: {
       display: 'grid',
       gridTemplateColumns: 'repeat(3, 1fr)',
-      gap: 8,
-      marginBottom: 12
+      gap: 8
     }
   }, cards.map((c, i) => /*#__PURE__*/React.createElement(StatCell, {
     key: c.l,
@@ -1881,65 +2186,7 @@ function GeneralSection({
     delta: c.delta,
     period: period,
     index: i
-  }))), catDist.length > 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: T.ink,
-      fontSize: 13,
-      fontWeight: 500,
-      marginBottom: 12,
-      letterSpacing: -0.1
-    }
-  }, "R\xE9partition par cat\xE9gorie"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 18
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement(SvgDonut, {
-    data: catDist,
-    size: 130,
-    thickness: 20
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 7
-    }
-  }, catDist.map(d => {
-    const pct = catTotal > 0 ? Math.round(d.v / catTotal * 100) : 0;
-    return /*#__PURE__*/React.createElement("div", {
-      key: d.name,
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        fontSize: 11
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        width: 8,
-        height: 8,
-        borderRadius: 99,
-        background: catColor(d.name, 65)
-      }
-    }), /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: T.ink,
-        flex: 1,
-        letterSpacing: -0.1
-      }
-    }, d.name), /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: T.muted,
-        fontFamily: fontNum
-      }
-    }, pct, "%"));
-  })))), drinks.length === 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+  }))), drinks.length === 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
       fontSize: 12,
@@ -1972,11 +2219,11 @@ const StatCell = React.memo(function StatCell({
       borderRadius: 12,
       padding: '12px 10px',
       border: `1px solid ${T.rule}`,
-      position: 'relative',
       display: 'flex',
       flexDirection: 'column',
-      justifyContent: 'space-between',
+      justifyContent: 'flex-start',
       minHeight: 64,
+      minWidth: 0,
       ...staggerStyle(index, {
         reduced
       })
@@ -2017,9 +2264,14 @@ const StatCell = React.memo(function StatCell({
       textTransform: 'uppercase',
       lineHeight: 1.2
     }
-  }, label), delta != null && period !== 'all' && /*#__PURE__*/React.createElement(DeltaBadge, {
+  }, label), delta != null && isFinite(delta) && period !== 'all' && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      marginTop: 6
+    }
+  }, /*#__PURE__*/React.createElement(DeltaBadge, {
     delta: delta
-  }));
+  })));
 });
 
 // Full-width "hero" stat card: large accent-tinted icon badge on the
@@ -2096,6 +2348,7 @@ const HeroStatCard = React.memo(function HeroStatCard({
 // rest — declared at module level so the reference stays stable
 // across renders (React.memo on SvgBarChart relies on it).
 const hourlyFormatX = (d, i) => i % 4 === 0 ? d.label : '';
+const weekdayTooltip = d => [d.fullLabel, `${d.v} boisson${d.v > 1 ? 's' : ''}`];
 
 // ── 2. Analyse temporelle ─────────────────────────────────────────
 function TemporalSection({
@@ -2134,15 +2387,17 @@ function TemporalSection({
     const mm = totalMin % 60;
     return mm === 0 ? `${hh}h` : `${hh}h ${String(mm).padStart(2, '0')}`;
   };
+
+  // Barres lun→dim (l'ancien radar 7 branches se lisait mal : aires
+  // trompeuses, comparaisons de longueurs radiales difficiles).
   const dailyData = React.useMemo(() => {
-    const todayDow = new Date().getDay();
-    return ['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((label, i) => {
+    const full = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+    return ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map((label, i) => {
       const dow = (i + 1) % 7;
       return {
         label,
-        day: dow,
-        v: agg.byDow[dow],
-        today: dow === todayDow
+        fullLabel: full[i],
+        v: agg.byDow[dow]
       };
     });
   }, [agg.byDow]);
@@ -2216,28 +2471,32 @@ function TemporalSection({
     height: 150,
     color: T.accent,
     formatX: hourlyFormatX,
-    valueLabel: "boisson(s)"
+    valueLabel: "boisson(s)",
+    ariaLabel: "Boissons par heure de la journ\xE9e"
   }))), multiDay && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
       fontSize: 12.5,
       fontWeight: 500,
-      marginBottom: 4,
+      marginBottom: 10,
       letterSpacing: -0.1
     }
   }, "Par jour de la semaine"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
-    minHeight: 250,
-    maxWidth: 300
-  }, w => /*#__PURE__*/React.createElement(SvgRadar, {
+    minHeight: 150
+  }, w => /*#__PURE__*/React.createElement(SvgBarChart, {
     data: dailyData,
-    size: w,
-    color: T.good,
-    valueLabel: "boisson(s)"
+    width: w,
+    height: 150,
+    color: T.accent,
+    formatTooltip: weekdayTooltip,
+    ariaLabel: "Boissons par jour de la semaine"
   }))));
 }
 
 // Pure direction badge: green when the metric rises vs the previous
 // period, red when it falls, neutral when essentially flat (< 0.5 %).
+// Pastille EN LIGNE (jamais en position absolue) : c'est au parent de lui
+// réserver sa place, pour qu'elle ne recouvre jamais la valeur qu'elle qualifie.
 function DeltaBadge({
   delta
 }) {
@@ -2252,12 +2511,11 @@ function DeltaBadge({
   const ariaDir = flat ? 'stable' : rising ? 'hausse' : 'baisse';
   return /*#__PURE__*/React.createElement("div", {
     style: {
-      position: 'absolute',
-      top: 8,
-      right: 8,
       display: 'inline-flex',
       alignItems: 'center',
       gap: 3,
+      flexShrink: 0,
+      whiteSpace: 'nowrap',
       color: fg,
       fontSize: 9.5,
       fontFamily: fontNum,
@@ -2351,6 +2609,13 @@ function CategorySection({
     }
     return out.sort((a, b) => b.count - a.count);
   }, [drinks]);
+  // Donut : catégories par nombre décroissant (arcs et légende dans le même
+  // ordre « la plus bue d'abord »).
+  const catDist = React.useMemo(() => byCat.map(c => ({
+    name: c.name,
+    v: c.count
+  })), [byCat]);
+  const catTotal = React.useMemo(() => catDist.reduce((s, x) => s + x.v, 0), [catDist]);
   if (byCat.length === 0) {
     return /*#__PURE__*/React.createElement(StatSection, {
       id: "category",
@@ -2375,7 +2640,75 @@ function CategorySection({
     collapsed: collapsed,
     toggleSection: toggleSection,
     sub: "Statistiques par type de boisson"
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 8
+    }
   }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.ink,
+      fontSize: 12.5,
+      fontWeight: 500,
+      marginBottom: 12,
+      letterSpacing: -0.1
+    }
+  }, "R\xE9partition"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 18
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement(SvgDonut, {
+    data: catDist,
+    size: CHART.donut.size,
+    thickness: CHART.donut.thickness
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 7
+    }
+  }, catDist.map(d => {
+    const pct = catTotal > 0 ? Math.round(d.v / catTotal * 100) : 0;
+    return /*#__PURE__*/React.createElement("div", {
+      key: d.name,
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        fontSize: 11
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 8,
+        height: 8,
+        borderRadius: 99,
+        background: catColor(d.name, 65),
+        flexShrink: 0
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: T.ink,
+        flex: 1,
+        minWidth: 0,
+        letterSpacing: -0.1,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap'
+      }
+    }, d.name), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: T.muted,
+        fontFamily: fontNum
+      }
+    }, pct, "%"));
+  })))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
       gap: 8
@@ -3304,17 +3637,19 @@ function BACSection({
   // peak BAC of that session, timestamped at the moment of the peak.
   // Records are derived from drinks (no DB writes) and stay read-only —
   // they update automatically when the underlying drinks change.
-  // Cap to the top 3 so the list reads as milestones, not a log.
+  // Records DE LA PÉRIODE sélectionnée (`sessions` = sessions complètes
+  // touchant la période) — « Tout » = records absolus. Top 3 : des jalons,
+  // pas un journal.
   const sortedRecords = React.useMemo(() => {
-    return (allSessions || []).filter(s => s.peakBac >= BAC_RECORD_MIN).map(s => ({
+    return (sessions || []).filter(s => s.peakBac >= BAC_RECORD_MIN).map(s => ({
       id: s.id,
       bacValue: Math.round(s.peakBac),
       timestamp: new Date(s.peakTs),
       date: _fmtIso(new Date(s.peakTs)),
       drinkCount: s.drinks.length
     })).sort((a, b) => b.bacValue - a.bacValue).slice(0, 3);
-  }, [allSessions]);
-  const totalRecords = React.useMemo(() => (allSessions || []).filter(s => s.peakBac >= BAC_RECORD_MIN).length, [allSessions]);
+  }, [sessions]);
+  const totalRecords = React.useMemo(() => (sessions || []).filter(s => s.peakBac >= BAC_RECORD_MIN).length, [sessions]);
   const highest = sortedRecords[0];
   const others = sortedRecords.slice(1);
   return /*#__PURE__*/React.createElement(StatSection, {
@@ -3453,8 +3788,7 @@ function BACSection({
   }, fmtEtaClock(hoursToLegal) ? `→ ${fmtEtaClock(hoursToLegal)}` : '—')))), periodAvgSession != null && /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 14,
-      marginBottom: 10,
-      position: 'relative'
+      marginBottom: 10
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -3481,7 +3815,14 @@ function BACSection({
       fontSize: 11,
       lineHeight: 1.4
     }
-  }, "Moyenne intra-session, puis moyenne sur la p\xE9riode")), /*#__PURE__*/React.createElement("div", {
+  }, "Moyenne intra-session, puis moyenne sur la p\xE9riode"), periodAvgDelta != null && period !== 'all' && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      marginTop: 6
+    }
+  }, /*#__PURE__*/React.createElement(DeltaBadge, {
+    delta: periodAvgDelta
+  }))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
       fontSize: 24,
@@ -3498,9 +3839,7 @@ function BACSection({
       color: T.ink2,
       marginLeft: 5
     }
-  }, "mg/L"))), periodAvgDelta != null && period !== 'all' && /*#__PURE__*/React.createElement(DeltaBadge, {
-    delta: periodAvgDelta
-  })), bacInfo.points.length > 0 && /*#__PURE__*/React.createElement(Card, {
+  }, "mg/L")))), bacInfo.points.length > 0 && /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 10
     }
@@ -3621,15 +3960,13 @@ function BACSection({
       fontWeight: 500,
       letterSpacing: -0.1
     }
-  }, "Records d'alcool\xE9mie"), /*#__PURE__*/React.createElement("div", {
+  }, period === 'all' ? "Records d'alcoolémie" : "Records de la période"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       alignItems: 'center',
       gap: 6
     }
-  }, /*#__PURE__*/React.createElement(ScopeChip, {
-    label: "Records absolus"
-  }), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
       fontSize: 10.5,
@@ -4074,6 +4411,9 @@ function MapSection({
   const [mode, setMode] = React.useState('points'); // 'points' | 'heat'
   // Boissons du rond tapé (cluster ou point isolé) → liste déroulante.
   const [listDrinks, setListDrinks] = React.useState(null);
+  // Indice « deux doigts » affiché brièvement quand un doigt seul glisse sur
+  // la carte (écran tactile) — la page défile, la carte ne bouge pas.
+  const [gestureHint, setGestureHint] = React.useState(false);
   const source = scope === 'all' ? allDrinks || drinks : drinks;
   const heatReady = ready && typeof window !== 'undefined' && !!window.L && typeof window.L.heatLayer === 'function';
 
@@ -4160,9 +4500,18 @@ function MapSection({
     const L = window.L;
     if (!L || typeof L.map !== 'function' || typeof L.markerClusterGroup !== 'function') return;
     applyMapThemeVars(containerRef.current);
+    // Gestes « coopératifs » (comme Google Maps sur mobile) : sur écran
+    // tactile, UN doigt fait défiler la PAGE et DEUX doigts déplacent/zooment
+    // la carte (le pinch de Leaflet panne aussi). Avant, un doigt pannait la
+    // carte : dès qu'elle remplissait l'écran (bas de la période « Jour »),
+    // l'onglet devenait impossible à remonter. La molette ne zoome plus non
+    // plus (elle piégeait le défilement desktop) — boutons +/− à la place.
+    const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
     const m = L.map(containerRef.current, {
       attributionControl: true,
-      zoomControl: true
+      zoomControl: true,
+      dragging: !coarse,
+      scrollWheelZoom: false
     });
     m.setView([46.6, 2.4], 5); // vue par défaut (France) avant le 1er cadrage
     tileRef.current = L.tileLayer(tileUrlForTheme(), {
@@ -4276,8 +4625,38 @@ function MapSection({
       });
       ro.observe(containerRef.current);
     }
+
+    // Un doigt qui glisse sur la carte → indice « deux doigts » 1,5 s.
+    const el = containerRef.current;
+    let hintTimer = null,
+      t0 = null;
+    const onTouchStart = e => {
+      t0 = e.touches && e.touches.length === 1 ? {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY
+      } : null;
+    };
+    const onTouchMove = e => {
+      if (!coarse || !t0 || !e.touches || e.touches.length !== 1) return;
+      const dx = e.touches[0].clientX - t0.x,
+        dy = e.touches[0].clientY - t0.y;
+      if (Math.hypot(dx, dy) < 12) return;
+      t0 = null;
+      setGestureHint(true);
+      clearTimeout(hintTimer);
+      hintTimer = setTimeout(() => setGestureHint(false), 1500);
+    };
+    el.addEventListener('touchstart', onTouchStart, {
+      passive: true
+    });
+    el.addEventListener('touchmove', onTouchMove, {
+      passive: true
+    });
     return () => {
       clearTimeout(kick);
+      clearTimeout(hintTimer);
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
       if (ro) {
         try {
           ro.disconnect();
@@ -4423,7 +4802,33 @@ function MapSection({
       // au-dessus de la carte au lieu d'être masquée par ses contrôles.
       isolation: 'isolate'
     }
-  }, !ready && !error && overlay('Chargement de la carte…', true), error && overlay(error, false), ready && geoPoints.length === 0 && overlay(scope === 'all' ? 'Aucune consommation géolocalisée' : 'Aucune consommation géolocalisée sur cette période — essayez « Tout »', true))), listDrinks && /*#__PURE__*/React.createElement(MapDrinksSheet, {
+  }, !ready && !error && overlay('Chargement de la carte…', true), error && overlay(error, false), ready && geoPoints.length === 0 && overlay(scope === 'all' ? 'Aucune consommation géolocalisée' : 'Aucune consommation géolocalisée sur cette période — essayez « Tout »', true), /*#__PURE__*/React.createElement("div", {
+    "aria-hidden": "true",
+    style: {
+      position: 'absolute',
+      inset: 0,
+      zIndex: 1100,
+      pointerEvents: 'none',
+      display: 'grid',
+      placeItems: 'center',
+      background: T.scrim,
+      padding: 24,
+      opacity: gestureHint ? 1 : 0,
+      transition: 'opacity 0.2s ease'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: T.surface,
+      color: T.ink,
+      border: `1px solid ${T.rule}`,
+      borderRadius: 12,
+      padding: '10px 14px',
+      fontSize: 12.5,
+      fontWeight: 500,
+      textAlign: 'center',
+      letterSpacing: -0.1
+    }
+  }, "Utilisez deux doigts pour d\xE9placer la carte")))), listDrinks && /*#__PURE__*/React.createElement(MapDrinksSheet, {
     drinks: listDrinks,
     onClose: () => setListDrinks(null)
   }));
@@ -4527,19 +4932,26 @@ function buildCumulativeComparison(curDrinks, prevDrinks, range, prevRange, metr
 function TrendsSection({
   allDrinks,
   drinks,
-  prevDrinks,
+  prevFullDrinks,
   range,
-  prevRange,
+  prevFullRange,
   period,
   collapsed,
   toggleSection
 }) {
   const trends = React.useMemo(() => computeMonthlyTrends(allDrinks), [allDrinks]);
+  // Moyenne mobile 7 j / 30 j (ex-« Analyses avancées ») : lit les 30
+  // derniers jours de TOUT l'historique → réservée aux périodes ≥ 1 mois.
+  const showRolling = inPeriods(period, GLOBAL_CHART_PERIODS);
+  const rolling = React.useMemo(() => showRolling ? computeRollingDaily(allDrinks) : [], [showRolling, allDrinks]);
+  const rollingHasData = rolling.some(r => r.daily > 0);
   // Le cumul jour par jour n'a de sens que sur une période multi-jours avec
   // une période précédente comparable : sur « Aujourd'hui » la courbe se
   // réduit à 1-2 points ('all' est déjà exclu via prevRange null).
   const cumRelevant = inPeriods(period, ['week', 'month', 'year', 'school']);
-  const cum = React.useMemo(() => cumRelevant && prevDrinks && prevRange ? buildCumulativeComparison(drinks, prevDrinks, range, prevRange, 'grams') : null, [cumRelevant, drinks, prevDrinks, range, prevRange]);
+  // Période précédente COMPLÈTE : la courbe montre où elle a fini (les
+  // badges Δ%, eux, comparent « à date »).
+  const cum = React.useMemo(() => cumRelevant && prevFullDrinks && prevFullRange ? buildCumulativeComparison(drinks, prevFullDrinks, range, prevFullRange, 'grams') : null, [cumRelevant, drinks, prevFullDrinks, range, prevFullRange]);
   // Ne pas montrer la comparaison cumulée si les deux périodes sont vides.
   const cumHasData = cum && (cum.cur.some(v => v > 0) || cum.prev.some(v => v > 0));
 
@@ -4548,7 +4960,7 @@ function TrendsSection({
   const monthlyRelevant = inPeriods(period, GLOBAL_CHART_PERIODS);
   const enoughTrend = trends.labels.length >= 2;
   const showMonthly = monthlyRelevant && enoughTrend;
-  if (!showMonthly && !cumHasData) {
+  if (!showMonthly && !cumHasData && !rollingHasData) {
     // Rien de pertinent pour cette période : pas de section plutôt qu'un
     // message hors sujet (le cas « pas assez d'historique » ne concerne
     // que les périodes où le chart mensuel est proposé).
@@ -4558,7 +4970,7 @@ function TrendsSection({
       title: "Tendances",
       collapsed: collapsed,
       toggleSection: toggleSection,
-      sub: "Consommation dans le temps"
+      sub: "Par mois \xB7 moyenne mobile \xB7 cumul"
     }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
       style: {
         color: T.muted,
@@ -4575,9 +4987,9 @@ function TrendsSection({
     title: "Tendances",
     collapsed: collapsed,
     toggleSection: toggleSection,
-    sub: "Consommation dans le temps"
+    sub: "Par mois \xB7 moyenne mobile \xB7 cumul"
   }, showMonthly && /*#__PURE__*/React.createElement(Card, {
-    style: cumHasData ? {
+    style: cumHasData || rollingHasData ? {
       marginBottom: 10
     } : undefined
   }, /*#__PURE__*/React.createElement("div", {
@@ -4609,7 +5021,53 @@ function TrendsSection({
     ariaLabel: "Alcool pur par mois, six derniers mois",
     width: w,
     height: 170
-  }))), cumHasData && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+  }))), rollingHasData && /*#__PURE__*/React.createElement(Card, {
+    style: cumHasData ? {
+      marginBottom: 10
+    } : undefined
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+      marginBottom: 3
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.ink,
+      fontSize: 12.5,
+      fontWeight: 500,
+      letterSpacing: -0.1
+    }
+  }, "Moyenne mobile"), /*#__PURE__*/React.createElement(ScopeChip, {
+    label: "30 derniers jours"
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 10,
+      marginBottom: 10,
+      fontStyle: 'italic',
+      fontFamily: fontSerif
+    }
+  }, "Alcool quotidien liss\xE9 sur 7 et 30 jours"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+    minHeight: 160
+  }, w => /*#__PURE__*/React.createElement(RollingChart, {
+    data: rolling,
+    width: w
+  })), /*#__PURE__*/React.createElement(ChartLegend, {
+    items: [{
+      label: 'Brut',
+      color: withAlpha(T.accent, 0.25)
+    }, {
+      label: '7j',
+      color: T.accent
+    }, {
+      label: '30j',
+      color: T.ink2,
+      dashed: true
+    }]
+  })), cumHasData && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
       fontSize: 12.5,
@@ -4650,7 +5108,7 @@ function TrendsSection({
   })));
 }
 
-// ── 7. Analyses avancées ─────────────────────────────────────────
+// ── Moyennes mobiles (carte de Tendances) ─────────────────────────
 // Moyennes mobiles 7 j / 30 j de l'alcool quotidien (helper pur, testable).
 // Accumulateur glissant : chaque somme courante gagne le jour courant et perd
 // le jour qui sort de sa fenêtre → O(jours) au lieu de O(jours × 30). Renvoie
@@ -4663,8 +5121,9 @@ function computeRollingDaily(allDrinks) {
   }
   const days = Object.keys(byDay).sort();
   if (days.length === 0) return [];
-  const start = new Date(days[0]);
-  start.setHours(0, 0, 0, 0);
+  // 'T00:00' : `new Date('YYYY-MM-DD')` parse en UTC minuit — dans un
+  // fuseau négatif la série démarrait la veille.
+  const start = new Date(days[0] + 'T00:00:00');
   const end = new Date();
   end.setHours(0, 0, 0, 0);
   const out = [];
@@ -4719,146 +5178,6 @@ function computeSessionDurationBuckets(sessions) {
     buckets[idx].v++;
   }
   return buckets;
-}
-function AdvancedSection({
-  drinks,
-  allDrinks,
-  period,
-  hasPeriodData = true,
-  collapsed,
-  toggleSection,
-  agg,
-  sessions,
-  bacAvailable = true
-}) {
-  const rolling = React.useMemo(() => computeRollingDaily(allDrinks), [allDrinks]);
-  const sessionDuration = React.useMemo(() => computeSessionDurationBuckets(sessions), [sessions]);
-  // La moyenne mobile lit TOUT l'historique (30 derniers jours) : proposée
-  // seulement quand la période couvre au moins un mois, sinon elle contredit
-  // le libellé de période. Horloge et distribution sont période-scopées —
-  // masquées quand la période est vide (la section peut survivre via
-  // keepWhenEmpty pour la moyenne mobile seule).
-  const showRolling = inPeriods(period, GLOBAL_CHART_PERIODS);
-  const showPeriodCards = hasPeriodData;
-  if (!showRolling && !showPeriodCards) return null;
-  return /*#__PURE__*/React.createElement(StatSection, {
-    id: "advanced",
-    title: "Analyses avanc\xE9es",
-    collapsed: collapsed,
-    toggleSection: toggleSection,
-    sub: bacAvailable ? 'Moyennes mobiles · Horloge · Distribution des sessions' : 'Moyennes mobiles · Horloge'
-  }, showRolling && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: 8,
-      marginBottom: 3
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: T.ink,
-      fontSize: 12.5,
-      fontWeight: 500,
-      letterSpacing: -0.1
-    }
-  }, "Moyenne mobile"), /*#__PURE__*/React.createElement(ScopeChip, {
-    label: "30 derniers jours"
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: T.muted,
-      fontSize: 10,
-      marginBottom: 10,
-      fontStyle: 'italic',
-      fontFamily: fontSerif
-    }
-  }, "Alcool quotidien liss\xE9 sur 7 et 30 jours"), rolling.length > 0 ? /*#__PURE__*/React.createElement(ChartAutoWidth, {
-    minHeight: 160
-  }, w => /*#__PURE__*/React.createElement(RollingChart, {
-    data: rolling,
-    width: w
-  })) : /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: T.muted,
-      fontSize: 11,
-      padding: '12px 0',
-      textAlign: 'center'
-    }
-  }, "Aucune donn\xE9e"), /*#__PURE__*/React.createElement(ChartLegend, {
-    items: [{
-      label: 'Brut',
-      color: withAlpha(T.accent, 0.25)
-    }, {
-      label: '7j',
-      color: T.accent
-    }, {
-      label: '30j',
-      color: T.ink2,
-      dashed: true
-    }]
-  })), showPeriodCards && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: T.ink,
-      fontSize: 12.5,
-      fontWeight: 500,
-      marginBottom: 3,
-      letterSpacing: -0.1
-    }
-  }, "Horloge des consommations"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: T.muted,
-      fontSize: 10,
-      marginBottom: 10,
-      fontStyle: 'italic',
-      fontFamily: fontSerif
-    }
-  }, "R\xE9partition sur 24 heures"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
-    minHeight: 260,
-    maxWidth: 300
-  }, w => /*#__PURE__*/React.createElement(SvgPolarClock, {
-    hours: agg.byHour,
-    size: w
-  }))), showPeriodCards && bacAvailable && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: T.ink,
-      fontSize: 12.5,
-      fontWeight: 500,
-      marginBottom: 3,
-      letterSpacing: -0.1
-    }
-  }, "Distribution des sessions"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: T.muted,
-      fontSize: 10,
-      marginBottom: 12,
-      fontStyle: 'italic',
-      fontFamily: fontSerif
-    }
-  }, "Dur\xE9e par session"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: T.ink2,
-      fontSize: 10.5,
-      marginBottom: 4,
-      textAlign: 'center',
-      letterSpacing: 0.3,
-      textTransform: 'uppercase'
-    }
-  }, "Dur\xE9e"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
-    minHeight: 150
-  }, w => /*#__PURE__*/React.createElement(SvgHistogram, {
-    buckets: sessionDuration,
-    width: w,
-    height: 150,
-    color: T.accent
-  })))));
 }
 function RollingChart({
   data,
@@ -5312,7 +5631,6 @@ Object.assign(window, {
   BACSection,
   MapSection,
   TrendsSection,
-  AdvancedSection,
   HeatmapSection,
   SessionsSection,
   SpendingSection,
@@ -5356,10 +5674,15 @@ Object.assign(window, {
   computeRollingDaily,
   computeSessionDurationBuckets,
   bucketDailyAlcohol,
-  buildHeatmapCells,
+  buildCalendarModel,
+  heatmapScaleMax,
+  calendarCellTitle,
   buildSessionList,
   buildSessionPeakHistogram,
   buildCumulativeComparison,
+  sessionsForRange,
+  elapsedDays,
+  comparisonRange,
   BAC_ELIM_RATE,
   BAC_RECORD_MIN,
   BAC_ABSORPTION_H,
