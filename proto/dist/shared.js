@@ -871,6 +871,55 @@ const Ic = {
     y1: "11",
     x2: "23",
     y2: "11"
+  })),
+  // Comparaison (deux colonnes face à face de part et d'autre d'un axe).
+  compare: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "3",
+    x2: "12",
+    y2: "21"
+  }), /*#__PURE__*/React.createElement("rect", {
+    x: "4",
+    y: "11",
+    width: "5",
+    height: "9",
+    rx: "1"
+  }), /*#__PURE__*/React.createElement("rect", {
+    x: "15",
+    y: "6",
+    width: "5",
+    height: "14",
+    rx: "1"
+  })),
+  // Échange gauche ↔ droite (inverser les deux personnes comparées).
+  swap: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("polyline", {
+    points: "17 3 21 7 17 11"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "21",
+    y1: "7",
+    x2: "7",
+    y2: "7"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "7 13 3 17 7 21"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "3",
+    y1: "17",
+    x2: "17",
+    y2: "17"
   }))
 };
 function SvgIcon({
