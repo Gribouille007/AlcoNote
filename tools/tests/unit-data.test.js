@@ -214,3 +214,68 @@ test('suggestPriceForVolume — cas limites : EcoCup, prix négatif/invalide ign
   // Volume énorme : prorata linéaire, fini.
   assert.equal(suggestPriceForVolume(fams, 'Kro', 1000, 5).price, 120);
 });
+
+// ── Favoris / catégorie par défaut / autocomplétion (UX) ─────────────
+test('parseFavorites — tolérant (absent, JSON invalide, doublons, non-chaînes)', () => {
+  const { parseFavorites, FAVORITES_KEY } = global;
+  assert.deepEqual(parseFavorites({}), []);
+  assert.deepEqual(parseFavorites(null), []);
+  assert.deepEqual(parseFavorites({ [FAVORITES_KEY]: '{oops' }), []);
+  assert.deepEqual(parseFavorites({ [FAVORITES_KEY]: '{"a":1}' }), []);
+  assert.deepEqual(parseFavorites({ [FAVORITES_KEY]: JSON.stringify(['a', 'a', 3, '', 'b']) }), ['a', 'b']);
+  assert.deepEqual(parseFavorites({ [FAVORITES_KEY]: ['x'] }), ['x'], 'tableau brut accepté');
+});
+
+test('resolveFavorites / isFavoriteFamily — par VARIANTE, ordre d’épinglage, épingles orphelines ignorées', () => {
+  const { resolveFavorites, isFavoriteFamily } = global;
+  const fams = buildFamilies([
+    { id: 1, name: 'Jupiler', category: 'Bière', quantity: 25, unit: 'cL', alcoholContent: 5.2, date: '2026-09-01', time: '20:00' },
+    { id: 2, name: 'Jupiler', category: 'Bière', quantity: 50, unit: 'cL', alcoholContent: 5.2, date: '2026-09-01', time: '21:00' },
+    { id: 3, name: 'Mojito', category: 'Cocktail', quantity: 25, unit: 'cL', alcoholContent: 12, date: '2026-09-01', time: '22:00' },
+  ]);
+  const k50 = familyKey('Jupiler', 50, 'cL', 5.2);
+  const kMo = familyKey('Mojito', 25, 'cL', 12);
+  const res = resolveFavorites(fams, [kMo, 'disparue::1::cl::0', k50]);
+  assert.deepEqual(res.map((f) => `${f.name} ${f.quantity}`), ['Mojito 25', 'Jupiler 50']);
+  const j25 = fams.find((f) => f.name === 'Jupiler' && f.quantity === 25);
+  const j50 = fams.find((f) => f.name === 'Jupiler' && f.quantity === 50);
+  assert.equal(isFavoriteFamily([k50], j50), true);
+  assert.equal(isFavoriteFamily([k50], j25), false, 'la variante 25 cL n’est PAS épinglée');
+  assert.equal(isFavoriteFamily([k50], null), false);
+});
+
+test('lastUsedCategory — catégorie de la dernière boisson enregistrée, sinon la première', () => {
+  const { lastUsedCategory } = global;
+  const cats = [{ id: 1, name: 'Bière' }, { id: 2, name: 'Vin' }, { id: 3, name: 'Cocktail' }];
+  assert.equal(lastUsedCategory([], cats), 'Bière', 'aucune boisson → première');
+  assert.equal(lastUsedCategory([
+    { id: 4, category: 'Vin' }, { id: 9, category: 'Cocktail ' }, { id: 7, category: 'Bière' },
+  ], cats), 'Cocktail', 'plus grand id, nom canonique renvoyé');
+  assert.equal(lastUsedCategory([{ id: 5, category: 'Supprimée' }], cats), 'Bière',
+    'catégorie disparue → repli sur la première');
+  assert.equal(lastUsedCategory([], []), '', 'aucune catégorie');
+});
+
+test('suggestFamiliesForName — accents/casse ignorés, préfixe d’abord, filtre catégorie, limite', () => {
+  const { suggestFamiliesForName } = global;
+  const mk = (id, name, category, q, n) => Array.from({ length: n }, (_, i) => ({
+    id: id * 100 + i, name, category, quantity: q, unit: 'cL', alcoholContent: 5, date: '2026-09-01', time: '20:00',
+  }));
+  const fams = buildFamilies([
+    ...mk(1, 'Côtes du Rhône', 'Vin', 12, 1),
+    ...mk(2, 'Jupiler', 'Bière', 25, 3),
+    ...mk(3, 'Jupiler', 'Bière', 50, 1),
+    ...mk(4, 'Blanche de Namur', 'Bière', 33, 9),
+    ...mk(5, 'Chouffe', 'Bière', 33, 2),
+  ]);
+  assert.deepEqual(suggestFamiliesForName(fams, ''), []);
+  assert.deepEqual(suggestFamiliesForName(fams, 'cotes').map((f) => f.name), ['Côtes du Rhône'], 'accents ignorés');
+  assert.deepEqual(suggestFamiliesForName(fams, 'JUP').map((f) => f.quantity), [25, 50],
+    'casse ignorée, la variante la plus bue d’abord');
+  // « ch » : PRÉFIXE de « Chouffe » (2 entrées), simplement CONTENU dans
+  // « Blanche de Namur » (9 entrées) → le préfixe gagne malgré la popularité.
+  assert.deepEqual(suggestFamiliesForName(fams, 'ch').map((f) => f.name), ['Chouffe', 'Blanche de Namur']);
+  assert.deepEqual(suggestFamiliesForName(fams, 'e', { category: 'Vin' }).map((f) => f.name), ['Côtes du Rhône'],
+    'restreint à la catégorie imposée');
+  assert.equal(suggestFamiliesForName(fams, 'e', { limit: 2 }).length, 2, 'limite respectée');
+});

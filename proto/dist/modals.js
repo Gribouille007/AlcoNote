@@ -41,15 +41,29 @@ function ImpactStat({
     }
   }, unit));
 }
+
+// `lockedCategory` : catégorie IMPOSÉE (« + » pressé depuis l'intérieur d'une
+// catégorie) — le sélecteur est remplacé par une étiquette, la boisson y va
+// d'office et l'autocomplétion ne propose que les boissons de cette catégorie.
+// Sinon la catégorie par défaut est la DERNIÈRE UTILISÉE (lastUsedCategory).
 function AddDrinkSheet({
   open,
   prefill,
+  lockedCategory = null,
   onClose
 }) {
   const {
     categories
   } = useCategories();
+  const {
+    drinks
+  } = useDrinks();
   const families = useFamilies();
+  // Catégorie verrouillée affichée → teinte de catégorie (repaint palette).
+  useCatPalette();
+  // Autocomplétion du nom : visible pendant la frappe, masquée dès qu'une
+  // suggestion est appliquée (ré-affichée à la frappe suivante).
+  const [suggestOpen, setSuggestOpen] = React.useState(false);
   const [scan, setScan] = React.useState(false);
   const [name, setName] = React.useState('');
   const [cat, setCat] = React.useState('');
@@ -97,6 +111,7 @@ function AddDrinkSheet({
     setLoc(null);
     setLocTouched(false);
     setPriceAuto(true);
+    setSuggestOpen(false);
     if (prefill) {
       // NumberField state stays a string — coerce prefilled numbers so the
       // controlled input never flips number↔string mid-edit.
@@ -114,11 +129,11 @@ function AddDrinkSheet({
       setUnit('cL');
       setAlc('');
       setRating(0);
-      setCat('');
+      setCat(lockedCategory || '');
       setPrice('');
       setPriceIsReference(true);
     }
-  }, [open, prefill]);
+  }, [open, prefill, lockedCategory]);
 
   // Backfill the category from the loaded categories list as soon as it
   // becomes available (handles the case where the sheet opens before the
@@ -126,8 +141,41 @@ function AddDrinkSheet({
   // chosen one yet.
   React.useEffect(() => {
     if (!open || prefill) return;
-    if (!cat && categories.length > 0) setCat(categories[0].name);
-  }, [open, prefill, categories, cat]);
+    if (lockedCategory) {
+      if (cat !== lockedCategory) setCat(lockedCategory);
+      return;
+    }
+    if (!cat && categories.length > 0) setCat(lastUsedCategory(drinks, categories));
+  }, [open, prefill, lockedCategory, categories, drinks, cat]);
+
+  // Variantes connues correspondant au nom tapé (cf. suggestFamiliesForName).
+  // Masquées quand la saisie désigne déjà exactement le formulaire courant.
+  const nameSuggestions = React.useMemo(() => {
+    if (!open || !suggestOpen) return [];
+    const list = suggestFamiliesForName(families, name, {
+      category: lockedCategory
+    });
+    const q = parseDecimal(qty),
+      a = parseDecimal(alc);
+    const same = f => (f.name || '').trim().toLowerCase() === name.trim().toLowerCase() && f.quantity === q && f.unit === unit && (f.alcohol || 0) === (a || 0);
+    return list.length === 1 && same(list[0]) ? [] : list;
+  }, [open, suggestOpen, families, name, lockedCategory, qty, unit, alc]);
+
+  // Applique une variante connue : remplit tout (catégorie sauf si imposée,
+  // contenance, degré, note) ; le prix repasse en auto → prix habituel exact.
+  const applySuggestion = f => {
+    setName(f.name || '');
+    if (!lockedCategory && f.category) {
+      const hit = categories.find(c => canonicalCat(c.name) === canonicalCat(f.category));
+      setCat(hit ? hit.name : f.category);
+    }
+    setQty(f.quantity != null ? String(f.quantity) : '');
+    setUnit(f.unit || 'cL');
+    setAlc(f.alcohol != null ? String(f.alcohol) : '');
+    if (f.rating) setRating(f.rating);
+    setPriceAuto(true);
+    setSuggestOpen(false);
+  };
 
   // Suggestion de prix au prorata du volume (cf. suggestPriceForVolume).
   // Recalculée à chaque frappe sur nom / quantité / unité / degré ; appliquée
@@ -347,20 +395,123 @@ function AddDrinkSheet({
       letterSpacing: 0.1
     }
   }, "Remplissage auto depuis OpenFoodFacts")), /*#__PURE__*/React.createElement(SvgIcon, {
-    icon: Ic.chev,
+    icon: Ic.chevR,
     size: 14,
     color: T.muted
   })), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Boisson"
   }, /*#__PURE__*/React.createElement("input", {
     value: name,
-    onChange: e => setName(e.target.value),
+    onChange: e => {
+      setName(e.target.value);
+      setSuggestOpen(true);
+    },
     placeholder: "Ex. Pilsner Urquell",
     "aria-label": "Boisson",
+    autoComplete: "off",
     style: inputS()
-  })), /*#__PURE__*/React.createElement(FieldGroup, {
+  }), nameSuggestions.length > 0 && /*#__PURE__*/React.createElement("div", {
+    role: "listbox",
+    "aria-label": "Boissons connues",
+    style: {
+      marginTop: 6,
+      background: T.surface2,
+      border: `1px solid ${T.rule}`,
+      borderRadius: 12,
+      overflow: 'hidden'
+    }
+  }, nameSuggestions.map((f, i) => /*#__PURE__*/React.createElement("button", {
+    key: f.id,
+    type: "button",
+    role: "option",
+    "aria-selected": false,
+    onClick: () => applySuggestion(f),
+    "aria-label": `Utiliser ${f.name}, ${f.quantity} ${f.unit}, ${f.alcohol}°`,
+    style: {
+      ...ghostButton,
+      width: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: '10px 12px',
+      textAlign: 'left',
+      borderBottom: i === nameSuggestions.length - 1 ? 'none' : `1px solid ${T.rule}`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 28,
+      height: 28,
+      borderRadius: 8,
+      background: catBg(f.category),
+      display: 'grid',
+      placeItems: 'center',
+      color: catColor(f.category, 70),
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement(CategoryGlyph, {
+    name: f.category,
+    size: 16
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5,
+      color: T.ink,
+      fontWeight: 500,
+      letterSpacing: -0.1,
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis'
+    }
+  }, f.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: T.muted,
+      marginTop: 2,
+      fontFamily: fontNum
+    }
+  }, f.quantity, " ", f.unit, " \xB7 ", f.alcohol, "\xB0", f.referencePrice != null ? ` · ${fmtPrice(f.referencePrice)}` : '')), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      color: T.muted,
+      fontFamily: fontNum,
+      flexShrink: 0
+    }
+  }, "\xD7", f.entries ? f.entries.length : 0))))), /*#__PURE__*/React.createElement(FieldGroup, {
     label: "Cat\xE9gorie"
-  }, /*#__PURE__*/React.createElement(CategoryChips, {
+  }, lockedCategory ?
+  /*#__PURE__*/
+  // Catégorie imposée (ajout depuis une catégorie) : étiquette fixe.
+  React.createElement("div", {
+    "aria-label": `Catégorie : ${lockedCategory}`,
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 8,
+      padding: '6px 12px 6px 6px',
+      borderRadius: 10,
+      background: T.surface2,
+      border: `1px solid ${T.rule}`,
+      color: T.ink,
+      fontSize: 13
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 24,
+      height: 24,
+      borderRadius: 7,
+      background: catBg(lockedCategory),
+      display: 'grid',
+      placeItems: 'center',
+      color: catColor(lockedCategory, 70)
+    }
+  }, /*#__PURE__*/React.createElement(CategoryGlyph, {
+    name: lockedCategory,
+    size: 14
+  })), lockedCategory) : /*#__PURE__*/React.createElement(CategoryChips, {
     categories: categories,
     value: cat,
     onChange: setCat
@@ -462,7 +613,7 @@ function AddDrinkSheet({
     }
   }, /*#__PURE__*/React.createElement(ToggleRow, {
     label: "Prix habituel pour cette boisson",
-    sub: "Le \xAB + \xBB et \xAB Ajouter \xE0 nouveau \xBB reprendront ce prix",
+    sub: "Le \xAB + \xBB, les favoris et \xAB Ajouter \xBB reprendront ce prix",
     on: priceIsReference,
     onToggle: () => setPriceIsReference(v => !v),
     last: true
@@ -583,7 +734,8 @@ function AddDrinkSheet({
       setScan(false);
       if (p) {
         if (p.name) setName(p.name);
-        if (p.category) setCat(p.category);
+        // Catégorie imposée (ajout depuis une catégorie) : le scan ne la change pas.
+        if (p.category && !lockedCategory) setCat(p.category);
         if (p.alcoholContent !== undefined) setAlc(String(p.alcoholContent));
         if (p.quantity) setQty(String(p.quantity));
         if (p.unit) setUnit(p.unit);
@@ -875,14 +1027,21 @@ function FactCell({
 // de teinte catégorie. Nommées pour documenter l'intention.
 const DETAIL_HEADER_TILE_BG = 'rgba(0,0,0,0.18)';
 const DETAIL_HEADER_CLOSE_BG = 'rgba(0,0,0,0.25)';
+
+// `onAddNow(f)` : ajout DIRECT (même chemin que le « + » des listes, toast avec
+// « Annuler ») ; `onAddAgain(f)` : formulaire prérempli (« Personnaliser »).
 function DrinkDetailSheet({
   family,
   entry,
   onClose,
   onAddAgain,
+  onAddNow,
   onEdit
 }) {
   const ratings = useRatings();
+  const settings = useSettings();
+  // Entrée précise ouverte en édition (tap sur une ligne de l'historique).
+  const [editEntry, setEditEntry] = React.useState(null);
   const {
     categories
   } = useCategories();
@@ -945,6 +1104,15 @@ function DrinkDetailSheet({
   const f = liveFamily || family || entry && entry.family;
   if (!f) return null;
   const color = catColor(f.category, 70);
+  const isFav = isFavoriteFamily(parseFavorites(settings), f);
+  const toggleFav = async () => {
+    try {
+      const on = await toggleFavoriteFamily(f);
+      Toast.show(on ? 'Ajoutée aux favoris' : 'Retirée des favoris');
+    } catch {
+      Toast.show('Erreur');
+    }
+  };
   const myRating = ratings[ratingKey(f.name)] ?? f.rating ?? 0;
   const rate = async n => {
     try {
@@ -1031,7 +1199,35 @@ function DrinkDetailSheet({
       lineHeight: 1.1,
       wordBreak: 'break-word'
     }
-  }, f.name)), /*#__PURE__*/React.createElement("button", {
+  }, f.name)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      alignSelf: 'flex-start',
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: toggleFav,
+    "aria-pressed": isFav,
+    "aria-label": isFav ? `Retirer ${f.name} des favoris` : `Épingler ${f.name} en favori`,
+    style: {
+      width: 32,
+      height: 32,
+      borderRadius: 99,
+      background: DETAIL_HEADER_CLOSE_BG,
+      display: 'grid',
+      placeItems: 'center',
+      color: isFav ? T.accent : T.ink,
+      cursor: 'pointer',
+      border: 'none',
+      padding: 0,
+      fontFamily: 'inherit'
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: isFav ? Ic.star : Ic.starOutline,
+    size: 15
+  })), /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: close,
     "aria-label": "Fermer",
@@ -1044,7 +1240,6 @@ function DrinkDetailSheet({
       placeItems: 'center',
       color: T.ink,
       cursor: 'pointer',
-      alignSelf: 'flex-start',
       border: 'none',
       padding: 0,
       fontFamily: 'inherit'
@@ -1052,7 +1247,7 @@ function DrinkDetailSheet({
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.close,
     size: 14
-  }))), /*#__PURE__*/React.createElement("div", {
+  })))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 0,
@@ -1064,7 +1259,7 @@ function DrinkDetailSheet({
   }), /*#__PURE__*/React.createElement(FactCell, {
     label: "Alcool",
     value: `${f.alcohol}°`
-  }), /*#__PURE__*/React.createElement(FactCell, {
+  }), String(f.unit || '').toLowerCase() !== 'cl' && /*#__PURE__*/React.createElement(FactCell, {
     label: "cL",
     value: toCl(f.quantity, f.unit).toFixed(0)
   }), f.referencePrice != null && /*#__PURE__*/React.createElement(FactCell, {
@@ -1127,6 +1322,19 @@ function DrinkDetailSheet({
         padding: '12px 14px',
         borderBottom: i === f.entries.length - 1 ? 'none' : `1px solid ${T.rule}`
       }
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setEditEntry(e),
+      "aria-label": `Modifier l'entrée du ${d.getDate()} ${FR_MONTHS_SHORT[d.getMonth()]} à ${e.ts.slice(11, 16)}`,
+      style: {
+        ...ghostButton,
+        flex: 1,
+        minWidth: 0,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        textAlign: 'left'
+      }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: fontSerif,
@@ -1181,7 +1389,7 @@ function DrinkDetailSheet({
         letterSpacing: 0.3,
         textTransform: 'uppercase'
       }
-    }, "perso"), fmtPrice(e.raw.price)), /*#__PURE__*/React.createElement("button", {
+    }, "perso"), fmtPrice(e.raw.price))), /*#__PURE__*/React.createElement("button", {
       type: "button",
       "aria-label": "Supprimer cette entr\xE9e",
       onClick: async () => {
@@ -1301,7 +1509,8 @@ function DrinkDetailSheet({
     size: 14
   }), " Modifier"), /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: () => onAddAgain && onAddAgain(f),
+    onClick: () => onAddNow ? onAddNow(f) : onAddAgain && onAddAgain(f),
+    "aria-label": `Ajouter ${f.name} maintenant`,
     style: {
       flex: 2,
       padding: '12px',
@@ -1323,7 +1532,33 @@ function DrinkDetailSheet({
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.plus,
     size: 14
-  }), " Ajouter \xE0 nouveau"))));
+  }), " Ajouter")), onAddNow && onAddAgain && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'center',
+      padding: '0 22px calc(14px + env(safe-area-inset-bottom))',
+      marginTop: -10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => onAddAgain(f),
+    style: {
+      ...ghostButton,
+      color: T.muted,
+      fontSize: 11.5,
+      padding: '4px 8px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 5
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.edit,
+    size: 11
+  }), " Personnaliser l'ajout (heure, prix\u2026)"))), editEntry && ReactDOM.createPortal(/*#__PURE__*/React.createElement(EditEntrySheet, {
+    key: editEntry.id,
+    entry: editEntry,
+    onClose: () => setEditEntry(null)
+  }), document.body));
 }
 
 // Edit a single drink entry — touches `db.drinks[id]` only and does
@@ -1790,6 +2025,8 @@ function EditFamilySheet({
       };
       await setReferencePrice(newLike, hasRef ? refNum : null);
       if (familyPriceKey(newLike) !== oldKey) await saveSetting(oldKey, null);
+      // Une variante épinglée en favori le reste sous sa nouvelle identité.
+      await renameFavoriteFamily(family, newLike);
       // Migrate the rating to the new key when the family is renamed.
       // We previously zeroed `ratings[family.name]` unconditionally to
       // avoid resurrecting the old rating on a future re-add — but that

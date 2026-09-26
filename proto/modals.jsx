@@ -24,9 +24,19 @@ function ImpactStat({ big, unit, accent }) {
   );
 }
 
-function AddDrinkSheet({ open, prefill, onClose }) {
+// `lockedCategory` : catégorie IMPOSÉE (« + » pressé depuis l'intérieur d'une
+// catégorie) — le sélecteur est remplacé par une étiquette, la boisson y va
+// d'office et l'autocomplétion ne propose que les boissons de cette catégorie.
+// Sinon la catégorie par défaut est la DERNIÈRE UTILISÉE (lastUsedCategory).
+function AddDrinkSheet({ open, prefill, lockedCategory = null, onClose }) {
   const { categories } = useCategories();
+  const { drinks } = useDrinks();
   const families = useFamilies();
+  // Catégorie verrouillée affichée → teinte de catégorie (repaint palette).
+  useCatPalette();
+  // Autocomplétion du nom : visible pendant la frappe, masquée dès qu'une
+  // suggestion est appliquée (ré-affichée à la frappe suivante).
+  const [suggestOpen, setSuggestOpen] = React.useState(false);
   const [scan, setScan] = React.useState(false);
   const [name, setName] = React.useState('');
   const [cat, setCat] = React.useState('');
@@ -70,6 +80,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
     submittingRef.current = false;
     setLoc(null); setLocTouched(false);
     setPriceAuto(true);
+    setSuggestOpen(false);
     if (prefill) {
       // NumberField state stays a string — coerce prefilled numbers so the
       // controlled input never flips number↔string mid-edit.
@@ -83,10 +94,11 @@ function AddDrinkSheet({ open, prefill, onClose }) {
       setPrice(prefill.referencePrice != null ? String(prefill.referencePrice) : '');
       setPriceIsReference(true);
     } else {
-      setName(''); setQty(''); setUnit('cL'); setAlc(''); setRating(0); setCat('');
+      setName(''); setQty(''); setUnit('cL'); setAlc(''); setRating(0);
+      setCat(lockedCategory || '');
       setPrice(''); setPriceIsReference(true);
     }
-  }, [open, prefill]);
+  }, [open, prefill, lockedCategory]);
 
   // Backfill the category from the loaded categories list as soon as it
   // becomes available (handles the case where the sheet opens before the
@@ -94,8 +106,36 @@ function AddDrinkSheet({ open, prefill, onClose }) {
   // chosen one yet.
   React.useEffect(() => {
     if (!open || prefill) return;
-    if (!cat && categories.length > 0) setCat(categories[0].name);
-  }, [open, prefill, categories, cat]);
+    if (lockedCategory) { if (cat !== lockedCategory) setCat(lockedCategory); return; }
+    if (!cat && categories.length > 0) setCat(lastUsedCategory(drinks, categories));
+  }, [open, prefill, lockedCategory, categories, drinks, cat]);
+
+  // Variantes connues correspondant au nom tapé (cf. suggestFamiliesForName).
+  // Masquées quand la saisie désigne déjà exactement le formulaire courant.
+  const nameSuggestions = React.useMemo(() => {
+    if (!open || !suggestOpen) return [];
+    const list = suggestFamiliesForName(families, name, { category: lockedCategory });
+    const q = parseDecimal(qty), a = parseDecimal(alc);
+    const same = (f) => (f.name || '').trim().toLowerCase() === name.trim().toLowerCase()
+      && f.quantity === q && f.unit === unit && (f.alcohol || 0) === (a || 0);
+    return list.length === 1 && same(list[0]) ? [] : list;
+  }, [open, suggestOpen, families, name, lockedCategory, qty, unit, alc]);
+
+  // Applique une variante connue : remplit tout (catégorie sauf si imposée,
+  // contenance, degré, note) ; le prix repasse en auto → prix habituel exact.
+  const applySuggestion = (f) => {
+    setName(f.name || '');
+    if (!lockedCategory && f.category) {
+      const hit = categories.find(c => canonicalCat(c.name) === canonicalCat(f.category));
+      setCat(hit ? hit.name : f.category);
+    }
+    setQty(f.quantity != null ? String(f.quantity) : '');
+    setUnit(f.unit || 'cL');
+    setAlc(f.alcohol != null ? String(f.alcohol) : '');
+    if (f.rating) setRating(f.rating);
+    setPriceAuto(true);
+    setSuggestOpen(false);
+  };
 
   // Suggestion de prix au prorata du volume (cf. suggestPriceForVolume).
   // Recalculée à chaque frappe sur nom / quantité / unité / degré ; appliquée
@@ -221,15 +261,67 @@ function AddDrinkSheet({ open, prefill, onClose }) {
                 Remplissage auto depuis OpenFoodFacts
               </div>
             </div>
-            <SvgIcon icon={Ic.chev} size={14} color={T.muted} />
+            <SvgIcon icon={Ic.chevR} size={14} color={T.muted} />
           </button>
 
           <FieldGroup label="Boisson">
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="Ex. Pilsner Urquell" aria-label="Boisson" style={inputS()} />
+            <input value={name} onChange={e => { setName(e.target.value); setSuggestOpen(true); }}
+              placeholder="Ex. Pilsner Urquell" aria-label="Boisson"
+              autoComplete="off" style={inputS()} />
+            {nameSuggestions.length > 0 && (
+              <div role="listbox" aria-label="Boissons connues" style={{
+                marginTop: 6, background: T.surface2, border: `1px solid ${T.rule}`,
+                borderRadius: 12, overflow: 'hidden',
+              }}>
+                {nameSuggestions.map((f, i) => (
+                  <button key={f.id} type="button" role="option" aria-selected={false}
+                    onClick={() => applySuggestion(f)}
+                    aria-label={`Utiliser ${f.name}, ${f.quantity} ${f.unit}, ${f.alcohol}°`}
+                    style={{
+                      ...ghostButton, width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '10px 12px', textAlign: 'left',
+                      borderBottom: i === nameSuggestions.length - 1 ? 'none' : `1px solid ${T.rule}`,
+                    }}>
+                    <div style={{
+                      width: 28, height: 28, borderRadius: 8, background: catBg(f.category),
+                      display: 'grid', placeItems: 'center', color: catColor(f.category, 70), flexShrink: 0,
+                    }}><CategoryGlyph name={f.category} size={16} /></div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 13.5, color: T.ink, fontWeight: 500, letterSpacing: -0.1,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>{f.name}</div>
+                      <div style={{ fontSize: 11, color: T.muted, marginTop: 2, fontFamily: fontNum }}>
+                        {f.quantity} {f.unit} · {f.alcohol}°{f.referencePrice != null ? ` · ${fmtPrice(f.referencePrice)}` : ''}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 10, color: T.muted, fontFamily: fontNum, flexShrink: 0 }}>
+                      ×{f.entries ? f.entries.length : 0}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </FieldGroup>
 
           <FieldGroup label="Catégorie">
-            <CategoryChips categories={categories} value={cat} onChange={setCat} />
+            {lockedCategory ? (
+              // Catégorie imposée (ajout depuis une catégorie) : étiquette fixe.
+              <div aria-label={`Catégorie : ${lockedCategory}`} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: '6px 12px 6px 6px', borderRadius: 10,
+                background: T.surface2, border: `1px solid ${T.rule}`,
+                color: T.ink, fontSize: 13,
+              }}>
+                <span style={{
+                  width: 24, height: 24, borderRadius: 7, background: catBg(lockedCategory),
+                  display: 'grid', placeItems: 'center', color: catColor(lockedCategory, 70),
+                }}><CategoryGlyph name={lockedCategory} size={14} /></span>
+                {lockedCategory}
+              </div>
+            ) : (
+              <CategoryChips categories={categories} value={cat} onChange={setCat} />
+            )}
           </FieldGroup>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
@@ -288,7 +380,7 @@ function AddDrinkSheet({ open, prefill, onClose }) {
               borderRadius: 12, overflow: 'hidden',
             }}>
               <ToggleRow label="Prix habituel pour cette boisson"
-                sub="Le « + » et « Ajouter à nouveau » reprendront ce prix"
+                sub="Le « + », les favoris et « Ajouter » reprendront ce prix"
                 on={priceIsReference} onToggle={() => setPriceIsReference(v => !v)} last />
             </div>
           </FieldGroup>
@@ -358,7 +450,8 @@ function AddDrinkSheet({ open, prefill, onClose }) {
         setScan(false);
         if (p) {
           if (p.name) setName(p.name);
-          if (p.category) setCat(p.category);
+          // Catégorie imposée (ajout depuis une catégorie) : le scan ne la change pas.
+          if (p.category && !lockedCategory) setCat(p.category);
           if (p.alcoholContent !== undefined) setAlc(String(p.alcoholContent));
           if (p.quantity) setQty(String(p.quantity));
           if (p.unit) setUnit(p.unit);
@@ -572,8 +665,13 @@ function FactCell({ label, value, last }) {
 const DETAIL_HEADER_TILE_BG = 'rgba(0,0,0,0.18)';
 const DETAIL_HEADER_CLOSE_BG = 'rgba(0,0,0,0.25)';
 
-function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
+// `onAddNow(f)` : ajout DIRECT (même chemin que le « + » des listes, toast avec
+// « Annuler ») ; `onAddAgain(f)` : formulaire prérempli (« Personnaliser »).
+function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onAddNow, onEdit }) {
   const ratings = useRatings();
+  const settings = useSettings();
+  // Entrée précise ouverte en édition (tap sur une ligne de l'historique).
+  const [editEntry, setEditEntry] = React.useState(null);
   const { categories } = useCategories();
   const { loading } = useDrinks();
   // En-tête teinté par catégorie → abonnement palette (repaint si la teinte
@@ -634,6 +732,13 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
   const f = liveFamily || family || (entry && entry.family);
   if (!f) return null;
   const color = catColor(f.category, 70);
+  const isFav = isFavoriteFamily(parseFavorites(settings), f);
+  const toggleFav = async () => {
+    try {
+      const on = await toggleFavoriteFamily(f);
+      Toast.show(on ? 'Ajoutée aux favoris' : 'Retirée des favoris');
+    } catch { Toast.show('Erreur'); }
+  };
   const myRating = ratings[ratingKey(f.name)] ?? f.rating ?? 0;
 
   const rate = async (n) => {
@@ -678,18 +783,31 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
                 wordBreak: 'break-word',
               }}>{f.name}</div>
             </div>
-            <button type="button" onClick={close} aria-label="Fermer" style={{
-              width: 32, height: 32, borderRadius: 99, background: DETAIL_HEADER_CLOSE_BG,
-              display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
-              alignSelf: 'flex-start',
-              border: 'none', padding: 0, fontFamily: 'inherit',
-            }}><SvgIcon icon={Ic.close} size={14} /></button>
+            <div style={{ display: 'flex', gap: 8, alignSelf: 'flex-start', flexShrink: 0 }}>
+              {/* Épingler cette VARIANTE en favori (bandeau de l'onglet Catégories). */}
+              <button type="button" onClick={toggleFav} aria-pressed={isFav}
+                aria-label={isFav ? `Retirer ${f.name} des favoris` : `Épingler ${f.name} en favori`}
+                style={{
+                  width: 32, height: 32, borderRadius: 99, background: DETAIL_HEADER_CLOSE_BG,
+                  display: 'grid', placeItems: 'center', color: isFav ? T.accent : T.ink,
+                  cursor: 'pointer', border: 'none', padding: 0, fontFamily: 'inherit',
+                }}><SvgIcon icon={isFav ? Ic.star : Ic.starOutline} size={15} /></button>
+              <button type="button" onClick={close} aria-label="Fermer" style={{
+                width: 32, height: 32, borderRadius: 99, background: DETAIL_HEADER_CLOSE_BG,
+                display: 'grid', placeItems: 'center', color: T.ink, cursor: 'pointer',
+                border: 'none', padding: 0, fontFamily: 'inherit',
+              }}><SvgIcon icon={Ic.close} size={14} /></button>
+            </div>
           </div>
 
           <div style={{ display: 'flex', gap: 0, marginTop: 18 }}>
             <FactCell label="Quantité" value={`${f.quantity} ${f.unit}`} />
             <FactCell label="Alcool" value={`${f.alcohol}°`} />
-            <FactCell label="cL" value={toCl(f.quantity, f.unit).toFixed(0)} />
+            {/* Conversion en cL seulement quand l'unité n'est pas déjà le cL
+                (sinon « 25 cL » puis « 25 » : doublon sans information). */}
+            {String(f.unit || '').toLowerCase() !== 'cl' && (
+              <FactCell label="cL" value={toCl(f.quantity, f.unit).toFixed(0)} />
+            )}
             {f.referencePrice != null && <FactCell label="Prix" value={fmtPrice(f.referencePrice)} />}
             <FactCell label="Note" value={<Stars n={myRating} size={11} interactive onChange={rate}/>} last />
           </div>
@@ -718,6 +836,12 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
                   display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
                   borderBottom: i === f.entries.length - 1 ? 'none' : `1px solid ${T.rule}`,
                 }}>
+                  <button type="button" onClick={() => setEditEntry(e)}
+                    aria-label={`Modifier l'entrée du ${d.getDate()} ${FR_MONTHS_SHORT[d.getMonth()]} à ${e.ts.slice(11, 16)}`}
+                    style={{
+                      ...ghostButton, flex: 1, minWidth: 0, display: 'flex',
+                      alignItems: 'center', gap: 12, textAlign: 'left',
+                    }}>
                   <div style={{
                     fontFamily: fontSerif, fontSize: 14, color: T.ink2,
                     fontStyle: 'italic', width: 60, flexShrink: 0,
@@ -750,6 +874,7 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
                       {fmtPrice(e.raw.price)}
                     </div>
                   )}
+                  </button>
                   <button type="button" aria-label="Supprimer cette entrée"
                     onClick={async () => {
                       if (deletingRef.current) return;
@@ -829,7 +954,13 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
           }}>
             <SvgIcon icon={Ic.edit} size={14} /> Modifier
           </button>
-          <button type="button" onClick={() => onAddAgain && onAddAgain(f)} style={{
+          {/* Même geste que le « + » des listes : ajout IMMÉDIAT (toast avec
+              « Annuler »), la fiche reste ouverte et l'historique se met à
+              jour. Le formulaire prérempli vit sous « Personnaliser ». */}
+          <button type="button"
+            onClick={() => (onAddNow ? onAddNow(f) : onAddAgain && onAddAgain(f))}
+            aria-label={`Ajouter ${f.name} maintenant`}
+            style={{
             flex: 2, padding: '12px', textAlign: 'center', borderRadius: 12,
             background: T.accent, color: T.accentInk, fontSize: 13, fontWeight: 600,
             cursor: 'pointer', display: 'flex', alignItems: 'center',
@@ -837,10 +968,30 @@ function DrinkDetailSheet({ family, entry, onClose, onAddAgain, onEdit }) {
             border: 'none', fontFamily: 'inherit',
             boxShadow: `0 4px 18px ${withAlpha(T.accent, 0.4)}`,
           }}>
-            <SvgIcon icon={Ic.plus} size={14} /> Ajouter à nouveau
+            <SvgIcon icon={Ic.plus} size={14} /> Ajouter
           </button>
         </div>
+        {onAddNow && onAddAgain && (
+          <div style={{
+            display: 'flex', justifyContent: 'center',
+            padding: '0 22px calc(14px + env(safe-area-inset-bottom))', marginTop: -10,
+          }}>
+            <button type="button" onClick={() => onAddAgain(f)} style={{
+              ...ghostButton, color: T.muted, fontSize: 11.5, padding: '4px 8px',
+              display: 'flex', alignItems: 'center', gap: 5,
+            }}>
+              <SvgIcon icon={Ic.edit} size={11} /> Personnaliser l'ajout (heure, prix…)
+            </button>
+          </div>
+        )}
       </div>
+      {/* Portail vers <body> : la sheet d'édition s'empile PAR-DESSUS la
+          fiche sans hériter du transform d'animation de son dialog (qui
+          ferait d'un position:fixed un positionnement relatif). */}
+      {editEntry && ReactDOM.createPortal(
+        <EditEntrySheet key={editEntry.id} entry={editEntry} onClose={() => setEditEntry(null)} />,
+        document.body
+      )}
     </SheetOverlay>
   );
 }
@@ -1146,6 +1297,8 @@ function EditFamilySheet({ family, onClose }) {
       const newLike = { name: finalName, quantity: qtyNum, unit, alcohol: abvNum };
       await setReferencePrice(newLike, hasRef ? refNum : null);
       if (familyPriceKey(newLike) !== oldKey) await saveSetting(oldKey, null);
+      // Une variante épinglée en favori le reste sous sa nouvelle identité.
+      await renameFavoriteFamily(family, newLike);
       // Migrate the rating to the new key when the family is renamed.
       // We previously zeroed `ratings[family.name]` unconditionally to
       // avoid resurrecting the old rating on a future re-add — but that

@@ -409,6 +409,22 @@ function FriendsEmpty() {
       }
     }, "Le partage n'est pas configur\xE9 sur cette installation.");
   }
+  const enable = async () => {
+    const ok = await Confirm.ask({
+      title: 'Activer le partage entre amis ?',
+      message: "Tes boissons (sans localisation) et tes notes seront partagées avec les membres de ton groupe, qui pourront voir tes statistiques. Désactivable à tout moment dans les Paramètres.",
+      confirmText: 'Activer'
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await shareEngine.setEnabled(true);
+    } catch (e) {
+      Toast.show(shareErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
   if (!s.enabled) {
     return /*#__PURE__*/React.createElement("div", {
       style: {
@@ -441,11 +457,24 @@ function FriendsEmpty() {
         maxWidth: 300,
         margin: '0 auto'
       }
-    }, "Active le partage dans les ", /*#__PURE__*/React.createElement("strong", {
+    }, "Vois l'alcool\xE9mie et les statistiques de tes amis ici. Tes boissons (sans lieu) et tes notes seront partag\xE9es avec ton groupe."), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: enable,
+      disabled: busy,
       style: {
-        color: T.ink
+        marginTop: 18,
+        padding: '12px 22px',
+        borderRadius: 12,
+        background: T.accent,
+        color: T.accentInk,
+        border: 'none',
+        fontFamily: 'inherit',
+        fontSize: 13,
+        fontWeight: 600,
+        cursor: busy ? 'wait' : 'pointer',
+        opacity: busy ? 0.5 : 1
       }
-    }, "Param\xE8tres"), " (menu en haut \xE0 gauche) pour voir l'alcool\xE9mie et les statistiques de tes amis ici."));
+    }, "Activer le partage"));
   }
   const create = async () => {
     setBusy(true);
@@ -608,6 +637,7 @@ function FriendsTab({
       lineHeight: 1.4
     }
   }, s.errorDetail), /*#__PURE__*/React.createElement("div", {
+    "data-tab-scroll": true,
     style: {
       flex: 1,
       overflow: 'auto',
@@ -871,11 +901,25 @@ function FriendStatsView({
 // donne la même largeur (bords alignés). Les abonnements (tick BAC 60 s,
 // shareBus via useFavoriteFriend / useFriendsBac) sont confinés ICI : un pull
 // ou un tick ne re-rend que la pile, pas tout le header.
-function HeaderBacStack() {
+// Les pastilles sont TAPABLES : la mienne ouvre Stats › Alcoolémie
+// (`onOpenMine`), celle du favori ouvre sa fiche (`onOpenFriend`). Chaque
+// pastille est enveloppée dans un bouton « ghost » (reset complet) : le
+// rendu et la hauteur du slot ne changent pas.
+function HeaderBacStack({
+  onOpenMine,
+  onOpenFriend
+} = {}) {
   const bacInfo = useBacInfo();
   const fav = useFavoriteFriend();
   const bacMap = useFriendsBac(fav ? [fav] : []);
   const two = !!fav;
+  const favName = fav ? fav.displayName || 'mon favori' : '';
+  const pillBtn = {
+    ...ghostButton,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'stretch'
+  };
   return /*#__PURE__*/React.createElement("div", {
     style: {
       height: 38,
@@ -886,15 +930,25 @@ function HeaderBacStack() {
       alignItems: two ? 'stretch' : 'flex-end',
       gap: two ? 4 : 0
     }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => onOpenMine && onOpenMine(),
+    "aria-label": "Voir le d\xE9tail de mon taux",
+    style: pillBtn
   }, /*#__PURE__*/React.createElement(BacPill, {
     bac: bacInfo.current || 0,
     compact: two
-  }), two && /*#__PURE__*/React.createElement(BacPill, {
+  })), two && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => onOpenFriend && onOpenFriend(fav),
+    "aria-label": `Voir les statistiques de ${favName}`,
+    style: pillBtn
+  }, /*#__PURE__*/React.createElement(BacPill, {
     bac: bacMap[fav.userId] == null ? null : bacMap[fav.userId],
     tone: "good",
     compact: true,
-    ariaLabel: `Alcoolémie de ${fav.displayName || 'mon favori'}`
-  }));
+    ariaLabel: `Alcoolémie de ${favName}`
+  })));
 }
 Object.assign(window, {
   FriendsTab,

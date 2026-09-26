@@ -158,6 +158,7 @@ function HistoryTab({
     onClick: () => setFilter(c.name),
     color: catColor(c.name, 70)
   }, c.name))), /*#__PURE__*/React.createElement("div", {
+    "data-tab-scroll": true,
     style: {
       flex: 1,
       overflow: 'auto',

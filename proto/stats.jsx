@@ -102,6 +102,21 @@ function getPeriodRange(period, anchor) {
   return { start, end };
 }
 
+// Navigation de période : on ne va JAMAIS dans le futur (une semaine
+// prochaine est forcément vide). `canShiftForward` = la période suivante
+// commence au plus tard aujourd'hui ; `isCurrentPeriod` = la période affichée
+// contient aujourd'hui (sinon on propose « Revenir à aujourd'hui »).
+function canShiftForward(period, anchor, now = new Date()) {
+  if (period === 'all') return false;
+  const next = getPeriodRange(period, shiftAnchor(period, anchor, 1));
+  return next.start.getTime() <= now.getTime();
+}
+function isCurrentPeriod(period, anchor, now = new Date()) {
+  if (period === 'all') return true;
+  const a = getPeriodRange(period, anchor), b = getPeriodRange(period, now);
+  return a.start.getTime() === b.start.getTime();
+}
+
 function shiftAnchor(period, anchor, dir) {
   const a = new Date(anchor);
   // Décalage mois/année sans débordement de jour : depuis le 31 janvier,
@@ -496,7 +511,7 @@ function fmtDurationHM(h) {
 // pour un ami qui ne partage pas son poids/sexe — on masque alors les cellules
 // dérivées du modèle Widmark (Sessions / Temps bourré / % bourré) qui seraient
 // sinon calculées avec un poids par défaut (70 kg) donc fausses.
-function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePrice = false, bacAvailable = true, reorderRef } = {}) {
+function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePrice = false, bacAvailable = true, reorderRef, focusRequest } = {}) {
   const { drinks, loading } = useDrinks();
   const settings = useSettings();
   // Plusieurs sections peignent des couleurs de catégorie (donut, sessions,
@@ -513,6 +528,40 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
   React.useEffect(() => {
     try { localStorage.setItem(_statsKey('alconote.stats.period', storageScope), period); } catch {}
   }, [period, storageScope]);
+
+  // Demande de focus externe (tap sur la pastille BAC de l'en-tête) :
+  // période éventuelle, sortie du mode réorganisation, section dépliée puis
+  // amenée à l'écran. La section peut ne pas exister encore (onglet tout
+  // juste monté, données en chargement) → quelques essais espacés.
+  const scrollRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!focusRequest || !focusRequest.id) return;
+    const { id } = focusRequest;
+    if (focusRequest.period) { setPeriod(focusRequest.period); setAnchor(new Date()); }
+    setReorderMode(false);
+    setCollapsed(prev => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev); next.delete(id);
+      saveCollapsedSections(next, storageScope);
+      return next;
+    });
+    let tries = 0, timer = null;
+    const attempt = () => {
+      const root = scrollRef.current;
+      const el = root && root.querySelector(`[data-stats-section="${id}"]`);
+      if (el) {
+        const top = el.offsetTop - 8;
+        if (typeof root.scrollTo === 'function') {
+          try { root.scrollTo({ top, behavior: 'smooth' }); return; } catch {}
+        }
+        root.scrollTop = top;
+        return;
+      }
+      if (++tries < 20) timer = setTimeout(attempt, 60);
+    };
+    timer = setTimeout(attempt, 60);
+    return () => clearTimeout(timer);
+  }, [focusRequest, storageScope]);
 
   const toggleSection = (id) => {
     setCollapsed(prev => {
@@ -611,7 +660,7 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
   if (drinks.length === 0) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 120px' }}>
+        <div data-tab-scroll style={{ flex: 1, overflow: 'auto', padding: '0 16px 120px' }}>
           <StatsEmptyState scope="global" />
         </div>
       </div>
@@ -664,8 +713,10 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PeriodSwitcher period={period} onChange={(p) => { setPeriod(p); setAnchor(new Date()); }} />
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 120px' }}>
-        <PeriodNav period={period} anchor={anchor} onShift={(d) => setAnchor(shiftAnchor(period, anchor, d))} />
+      <div ref={scrollRef} data-tab-scroll style={{ flex: 1, overflow: 'auto', padding: '0 16px 120px', position: 'relative' }}>
+        <PeriodNav period={period} anchor={anchor}
+          onShift={(d) => setAnchor(shiftAnchor(period, anchor, d))}
+          onReset={() => setAnchor(new Date())} />
         {!hasPeriodData && <StatsEmptyState scope="period" />}
         {shownSections.map(({ id, Comp }) => <Comp key={id} {...sp} />)}
       </div>
@@ -722,16 +773,20 @@ function PeriodSwitcher({ period, onChange }) {
   );
 }
 
-function PeriodNav({ period, anchor, onShift }) {
+function PeriodNav({ period, anchor, onShift, onReset }) {
   const label = periodLabel(period, anchor);
-  const arrowBtn = (icon, dir, label) => (
-    <button type="button" onClick={() => onShift(dir)}
-      disabled={period === 'all'} aria-label={label}
+  const now = new Date();
+  const canBack = period !== 'all';
+  const canFwd = canShiftForward(period, anchor, now);
+  const current = isCurrentPeriod(period, anchor, now);
+  const arrowBtn = (icon, dir, label, enabled) => (
+    <button type="button" onClick={() => enabled && onShift(dir)}
+      disabled={!enabled} aria-label={label}
       style={{
         width: 32, height: 32, borderRadius: 10, background: T.surface2,
         display: 'grid', placeItems: 'center', color: T.ink2,
-        border: `1px solid ${T.rule}`, cursor: period === 'all' ? 'not-allowed' : 'pointer',
-        opacity: period === 'all' ? 0.4 : 1, padding: 0, fontFamily: 'inherit',
+        border: `1px solid ${T.rule}`, cursor: enabled ? 'pointer' : 'not-allowed',
+        opacity: enabled ? 1 : 0.4, padding: 0, fontFamily: 'inherit', flexShrink: 0,
       }}>
       <SvgIcon icon={icon} size={14} />
     </button>
@@ -741,13 +796,26 @@ function PeriodNav({ period, anchor, onShift }) {
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '0 4px 18px', gap: 8,
     }}>
-      {arrowBtn(Ic.chevL, -1, 'Période précédente')}
-      <div style={{
-        fontFamily: fontSerif, fontSize: 18, color: T.ink,
-        fontStyle: 'italic', letterSpacing: -0.3, textAlign: 'center', flex: 1,
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-      }}>{label}</div>
-      {arrowBtn(Ic.chevR, 1, 'Période suivante')}
+      {arrowBtn(Ic.chevL, -1, 'Période précédente', canBack)}
+      <div style={{ flex: 1, minWidth: 0, textAlign: 'center' }}>
+        <div style={{
+          fontFamily: fontSerif, fontSize: 18, color: T.ink,
+          fontStyle: 'italic', letterSpacing: -0.3,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>{label}</div>
+        {/* Après être remonté dans le passé : retour à la période en cours
+            en un tap au lieu de N flèches. */}
+        {!current && onReset && (
+          <button type="button" onClick={onReset} style={{
+            ...ghostButton, marginTop: 4, color: T.accent, fontSize: 10,
+            letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: 500,
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+          }}>
+            <SvgIcon icon={Ic.refresh} size={10} /> Revenir à aujourd'hui
+          </button>
+        )}
+      </div>
+      {arrowBtn(Ic.chevR, 1, 'Période suivante', canFwd)}
     </div>
   );
 }
@@ -755,7 +823,7 @@ function PeriodNav({ period, anchor, onShift }) {
 function StatSection({ id, title, action, children, sub, collapsed, toggleSection }) {
   const isOpen = !collapsed.has(id);
   return (
-    <section style={{
+    <section data-stats-section={id} style={{
       marginBottom: 14,
       background: T.surface,
       borderRadius: 16,
@@ -3644,7 +3712,7 @@ Object.assign(window, {
   BACGauge, BACRecordRow, bacLevel, BAC_LEVELS,
   RollingChart, MiniStat, StatRow, Card, StatSection,
   DeltaBadge, StatCell, HeroStatCard,
-  getPeriodRange, shiftAnchor, periodLabel, computeBacOverTime,
+  getPeriodRange, shiftAnchor, canShiftForward, isCurrentPeriod, periodLabel, computeBacOverTime,
   computeBACSessions, computeBourreTime, computeStreak, fmtBourreTime, fmtDurationHM,
   aggregateGeneral, computeStreakRecord, filterDrinksInRange,
   drinkNameKey, peakIndex, inPeriods, sessionGapStats, soberDaysInRange,

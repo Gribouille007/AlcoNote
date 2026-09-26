@@ -144,6 +144,22 @@ function getPeriodRange(period, anchor) {
     end
   };
 }
+
+// Navigation de période : on ne va JAMAIS dans le futur (une semaine
+// prochaine est forcément vide). `canShiftForward` = la période suivante
+// commence au plus tard aujourd'hui ; `isCurrentPeriod` = la période affichée
+// contient aujourd'hui (sinon on propose « Revenir à aujourd'hui »).
+function canShiftForward(period, anchor, now = new Date()) {
+  if (period === 'all') return false;
+  const next = getPeriodRange(period, shiftAnchor(period, anchor, 1));
+  return next.start.getTime() <= now.getTime();
+}
+function isCurrentPeriod(period, anchor, now = new Date()) {
+  if (period === 'all') return true;
+  const a = getPeriodRange(period, anchor),
+    b = getPeriodRange(period, now);
+  return a.start.getTime() === b.start.getTime();
+}
 function shiftAnchor(period, anchor, dir) {
   const a = new Date(anchor);
   // Décalage mois/année sans débordement de jour : depuis le 31 janvier,
@@ -572,7 +588,8 @@ function StatsTab({
   hideBac = false,
   hidePrice = false,
   bacAvailable = true,
-  reorderRef
+  reorderRef,
+  focusRequest
 } = {}) {
   const {
     drinks,
@@ -594,6 +611,53 @@ function StatsTab({
       localStorage.setItem(_statsKey('alconote.stats.period', storageScope), period);
     } catch {}
   }, [period, storageScope]);
+
+  // Demande de focus externe (tap sur la pastille BAC de l'en-tête) :
+  // période éventuelle, sortie du mode réorganisation, section dépliée puis
+  // amenée à l'écran. La section peut ne pas exister encore (onglet tout
+  // juste monté, données en chargement) → quelques essais espacés.
+  const scrollRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!focusRequest || !focusRequest.id) return;
+    const {
+      id
+    } = focusRequest;
+    if (focusRequest.period) {
+      setPeriod(focusRequest.period);
+      setAnchor(new Date());
+    }
+    setReorderMode(false);
+    setCollapsed(prev => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      saveCollapsedSections(next, storageScope);
+      return next;
+    });
+    let tries = 0,
+      timer = null;
+    const attempt = () => {
+      const root = scrollRef.current;
+      const el = root && root.querySelector(`[data-stats-section="${id}"]`);
+      if (el) {
+        const top = el.offsetTop - 8;
+        if (typeof root.scrollTo === 'function') {
+          try {
+            root.scrollTo({
+              top,
+              behavior: 'smooth'
+            });
+            return;
+          } catch {}
+        }
+        root.scrollTop = top;
+        return;
+      }
+      if (++tries < 20) timer = setTimeout(attempt, 60);
+    };
+    timer = setTimeout(attempt, 60);
+    return () => clearTimeout(timer);
+  }, [focusRequest, storageScope]);
   const toggleSection = id => {
     setCollapsed(prev => {
       const next = new Set(prev);
@@ -696,6 +760,7 @@ function StatsTab({
         height: '100%'
       }
     }, /*#__PURE__*/React.createElement("div", {
+      "data-tab-scroll": true,
       style: {
         flex: 1,
         overflow: 'auto',
@@ -786,15 +851,19 @@ function StatsTab({
       setAnchor(new Date());
     }
   }), /*#__PURE__*/React.createElement("div", {
+    ref: scrollRef,
+    "data-tab-scroll": true,
     style: {
       flex: 1,
       overflow: 'auto',
-      padding: '0 16px 120px'
+      padding: '0 16px 120px',
+      position: 'relative'
     }
   }, /*#__PURE__*/React.createElement(PeriodNav, {
     period: period,
     anchor: anchor,
-    onShift: d => setAnchor(shiftAnchor(period, anchor, d))
+    onShift: d => setAnchor(shiftAnchor(period, anchor, d)),
+    onReset: () => setAnchor(new Date())
   }), !hasPeriodData && /*#__PURE__*/React.createElement(StatsEmptyState, {
     scope: "period"
   }), shownSections.map(({
@@ -891,13 +960,18 @@ function PeriodSwitcher({
 function PeriodNav({
   period,
   anchor,
-  onShift
+  onShift,
+  onReset
 }) {
   const label = periodLabel(period, anchor);
-  const arrowBtn = (icon, dir, label) => /*#__PURE__*/React.createElement("button", {
+  const now = new Date();
+  const canBack = period !== 'all';
+  const canFwd = canShiftForward(period, anchor, now);
+  const current = isCurrentPeriod(period, anchor, now);
+  const arrowBtn = (icon, dir, label, enabled) => /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: () => onShift(dir),
-    disabled: period === 'all',
+    onClick: () => enabled && onShift(dir),
+    disabled: !enabled,
     "aria-label": label,
     style: {
       width: 32,
@@ -908,10 +982,11 @@ function PeriodNav({
       placeItems: 'center',
       color: T.ink2,
       border: `1px solid ${T.rule}`,
-      cursor: period === 'all' ? 'not-allowed' : 'pointer',
-      opacity: period === 'all' ? 0.4 : 1,
+      cursor: enabled ? 'pointer' : 'not-allowed',
+      opacity: enabled ? 1 : 0.4,
       padding: 0,
-      fontFamily: 'inherit'
+      fontFamily: 'inherit',
+      flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: icon,
@@ -925,20 +1000,42 @@ function PeriodNav({
       padding: '0 4px 18px',
       gap: 8
     }
-  }, arrowBtn(Ic.chevL, -1, 'Période précédente'), /*#__PURE__*/React.createElement("div", {
+  }, arrowBtn(Ic.chevL, -1, 'Période précédente', canBack), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0,
+      textAlign: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: fontSerif,
       fontSize: 18,
       color: T.ink,
       fontStyle: 'italic',
       letterSpacing: -0.3,
-      textAlign: 'center',
-      flex: 1,
       whiteSpace: 'nowrap',
       overflow: 'hidden',
       textOverflow: 'ellipsis'
     }
-  }, label), arrowBtn(Ic.chevR, 1, 'Période suivante'));
+  }, label), !current && onReset && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: onReset,
+    style: {
+      ...ghostButton,
+      marginTop: 4,
+      color: T.accent,
+      fontSize: 10,
+      letterSpacing: 0.3,
+      textTransform: 'uppercase',
+      fontWeight: 500,
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 4
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.refresh,
+    size: 10
+  }), " Revenir \xE0 aujourd'hui")), arrowBtn(Ic.chevR, 1, 'Période suivante', canFwd));
 }
 function StatSection({
   id,
@@ -951,6 +1048,7 @@ function StatSection({
 }) {
   const isOpen = !collapsed.has(id);
   return /*#__PURE__*/React.createElement("section", {
+    "data-stats-section": id,
     style: {
       marginBottom: 14,
       background: T.surface,
@@ -5233,6 +5331,8 @@ Object.assign(window, {
   HeroStatCard,
   getPeriodRange,
   shiftAnchor,
+  canShiftForward,
+  isCurrentPeriod,
   periodLabel,
   computeBacOverTime,
   computeBACSessions,

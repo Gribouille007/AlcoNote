@@ -131,7 +131,7 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
         ))}
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 18px 120px' }}>
+      <div data-tab-scroll style={{ flex: 1, overflow: 'auto', padding: '0 18px 120px' }}>
         {days.length === 0 && (
           <div style={{ color: T.muted, fontSize: 13, padding: '60px 0', textAlign: 'center' }}>
             Aucune entrée trouvée

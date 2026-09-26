@@ -126,6 +126,9 @@ function AppShell() {
 
   const [adding, setAdding] = React.useState(false);
   const [prefill, setPrefill] = React.useState(null);
+  // Catégorie IMPOSÉE au formulaire d'ajout quand le « + » est pressé depuis
+  // l'intérieur d'une catégorie (drill-down) : la boisson y va d'office.
+  const [addCategory, setAddCategory] = React.useState(null);
   const [settings, setSettings] = React.useState(false);
   const [openFamily, setOpenFamily] = React.useState(null);
   const [openEntry, setOpenEntry] = React.useState(null);
@@ -135,6 +138,13 @@ function AppShell() {
   const [catOpen, setCatOpen] = React.useState(null);
   const [openFriend, setOpenFriend] = React.useState(null);
   const statsReorderRef = React.useRef();
+  // Demande de focus d'une section Stats (tap sur la pastille BAC). Un objet
+  // neuf à chaque demande → l'effet de StatsTab re-court même pour la même
+  // section ; passé en prop (et non via ref) car l'onglet Stats peut ne pas
+  // être encore monté au moment du tap.
+  const [statsFocus, setStatsFocus] = React.useState(null);
+  // Conteneurs des onglets — cibles du « remonter en haut » au re-tap.
+  const tabRefs = React.useRef({});
 
   const { drinks } = useDrinks();
   const ratings = useRatings();
@@ -210,7 +220,14 @@ function AppShell() {
         date: localDate(n),
         time: localTime(n),
       });
-      Toast.show(`« ${family.name} » ajoutée`);
+      // Ajout en UN tap (« + », favori, « Ajouter » de la fiche) : un tap
+      // accidentel doit rester réversible → toast avec « Annuler ».
+      Toast.show(`« ${family.name} » ajoutée`, created && created.id != null ? {
+        undo: async () => {
+          try { await deleteDrink(created.id); Toast.show('Ajout annulé'); }
+          catch (err) { Toast.show('Erreur lors de l\'annulation'); }
+        },
+      } : undefined);
       // Capture de lieu fiable et non bloquante (centralisée dans data.jsx :
       // survit à la fermeture, reverse-geocode borné + retry).
       if (created && created.id != null) attachLocationToDrink(created.id);
@@ -221,9 +238,35 @@ function AppShell() {
 
   const onAddAgain = React.useCallback((f) => {
     setPrefill(f);
+    setAddCategory(null);
     setAdding(true);
     setOpenFamily(null);
     setOpenEntry(null);
+  }, []);
+
+  // « + » flottant : depuis l'intérieur d'une catégorie, la boisson y va
+  // d'office (catégorie imposée) ; ailleurs, formulaire libre (catégorie par
+  // défaut = dernière utilisée, cf. AddDrinkSheet).
+  const openAdd = React.useCallback((category) => {
+    setPrefill(null);
+    setAddCategory(category || null);
+    setAdding(true);
+  }, []);
+
+  // Re-tap sur l'onglet ACTIF (pattern iOS/Material) : revient à la racine de
+  // l'onglet — Catégories referme le drill-down et vide la recherche — puis
+  // remonte en haut de la liste. Tap sur un autre onglet : bascule simple,
+  // l'état de navigation de chaque onglet est conservé.
+  const onTabPress = React.useCallback((id) => {
+    if (id !== tab) { setTab(id); return; }
+    if (id === 'categories') { setCatOpen(null); setCatQuery(''); }
+    scrollTabToTop(tabRefs.current[id], reducedMotion);
+  }, [tab, reducedMotion]);
+
+  // Tap sur ma pastille BAC : onglet Stats, section Alcoolémie.
+  const openBacStats = React.useCallback(() => {
+    setTab('stats');
+    setStatsFocus({ id: 'bac', period: 'today' });
   }, []);
 
   const onEdit = React.useCallback((f) => {
@@ -254,47 +297,50 @@ function AppShell() {
       background: T.bg, color: T.ink, position: 'relative',
       overflow: 'hidden',
     }}>
-      <AppHeader tab={tab} onMenu={() => setSettings(true)} />
+      <AppHeader tab={tab} onMenu={() => setSettings(true)}
+        onOpenBac={openBacStats} onOpenFriend={setOpenFriend} />
       <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {activated.has('categories') && (
-          <div style={tabContainer('categories')}>
+          <div ref={el => { tabRefs.current.categories = el; }} style={tabContainer('categories')}>
             <CategoriesTab
               onOpenFamily={setOpenFamily}
               onDirectAdd={directAdd}
               onEditFamily={onEdit}
+              onAddInCategory={openAdd}
               query={catQuery} setQuery={setCatQuery}
               openCat={catOpen} setOpenCat={setCatOpen}
             />
           </div>
         )}
         {activated.has('history') && (
-          <div style={tabContainer('history')}>
+          <div ref={el => { tabRefs.current.history = el; }} style={tabContainer('history')}>
             <HistoryTab onOpenEntry={setOpenEntry} onDirectAdd={directAdd} />
           </div>
         )}
         {activated.has('stats') && (
-          <div style={tabContainer('stats')}>
-            <StatsTab reorderRef={statsReorderRef} />
+          <div ref={el => { tabRefs.current.stats = el; }} style={tabContainer('stats')}>
+            <StatsTab reorderRef={statsReorderRef} focusRequest={statsFocus} />
           </div>
         )}
         {activated.has('friends') && (
-          <div style={tabContainer('friends')}>
+          <div ref={el => { tabRefs.current.friends = el; }} style={tabContainer('friends')}>
             <FriendsTab onOpenFriend={setOpenFriend} />
           </div>
         )}
       </main>
 
-      <Fab onClick={() => { setPrefill(null); setAdding(true); }} />
-      <BottomNav tab={tab} onChange={setTab}
+      <Fab onClick={() => openAdd(tab === 'categories' ? catOpen : null)} />
+      <BottomNav tab={tab} onChange={onTabPress}
         onReorder={() => statsReorderRef.current && statsReorderRef.current()} />
 
-      <AddDrinkSheet open={adding} prefill={prefill}
-        onClose={() => { setAdding(false); setPrefill(null); }} />
+      <AddDrinkSheet open={adding} prefill={prefill} lockedCategory={addCategory}
+        onClose={() => { setAdding(false); setPrefill(null); setAddCategory(null); }} />
       <SettingsDrawer open={settings} onClose={() => setSettings(false)} />
       {openFamily && (
         <DrinkDetailSheet key={openFamily.id} family={openFamily}
           onClose={() => setOpenFamily(null)}
           onAddAgain={onAddAgain}
+          onAddNow={directAdd}
           onEdit={onEdit}
         />
       )}
@@ -302,6 +348,7 @@ function AppShell() {
         <DrinkDetailSheet key={openEntry.id || (openEntry.family && openEntry.family.id)} entry={openEntry}
           onClose={() => setOpenEntry(null)}
           onAddAgain={onAddAgain}
+          onAddNow={directAdd}
           onEdit={onEdit}
         />
       )}
@@ -382,7 +429,19 @@ function App() {
   );
 }
 
-function AppHeader({ tab, onMenu }) {
+// Remonte en haut chaque zone défilante d'un onglet (marquée
+// `data-tab-scroll`) — utilisé par le re-tap sur l'onglet actif.
+function scrollTabToTop(container, reduced) {
+  if (!container || !container.querySelectorAll) return;
+  container.querySelectorAll('[data-tab-scroll]').forEach((el) => {
+    if (typeof el.scrollTo === 'function') {
+      try { el.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' }); return; } catch {}
+    }
+    el.scrollTop = 0;
+  });
+}
+
+function AppHeader({ tab, onMenu, onOpenBac, onOpenFriend }) {
   const titles = {
     categories: 'Catégories',
     history: 'Historique',
@@ -422,7 +481,7 @@ function AppHeader({ tab, onMenu }) {
           hauteur FIXE de 38px, calé sur le bouton menu : le header garde
           exactement la même hauteur avec ou sans favori (cf. HeaderBacStack
           dans friends.jsx, qui confine aussi les abonnements BAC/share). */}
-      <HeaderBacStack />
+      <HeaderBacStack onOpenMine={onOpenBac} onOpenFriend={onOpenFriend} />
     </header>
   );
 }
@@ -575,4 +634,4 @@ if (document.readyState === 'loading') {
   mountAlcoNote();
 }
 
-Object.assign(window, { App, AppShell, AppErrorBoundary, AppHeader, BottomNav, Fab, mountAlcoNote });
+Object.assign(window, { App, AppShell, AppErrorBoundary, AppHeader, BottomNav, Fab, mountAlcoNote, scrollTabToTop });

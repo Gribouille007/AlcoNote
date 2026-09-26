@@ -171,6 +171,9 @@ function AppShell() {
   }, []);
   const [adding, setAdding] = React.useState(false);
   const [prefill, setPrefill] = React.useState(null);
+  // Catégorie IMPOSÉE au formulaire d'ajout quand le « + » est pressé depuis
+  // l'intérieur d'une catégorie (drill-down) : la boisson y va d'office.
+  const [addCategory, setAddCategory] = React.useState(null);
   const [settings, setSettings] = React.useState(false);
   const [openFamily, setOpenFamily] = React.useState(null);
   const [openEntry, setOpenEntry] = React.useState(null);
@@ -180,6 +183,13 @@ function AppShell() {
   const [catOpen, setCatOpen] = React.useState(null);
   const [openFriend, setOpenFriend] = React.useState(null);
   const statsReorderRef = React.useRef();
+  // Demande de focus d'une section Stats (tap sur la pastille BAC). Un objet
+  // neuf à chaque demande → l'effet de StatsTab re-court même pour la même
+  // section ; passé en prop (et non via ref) car l'onglet Stats peut ne pas
+  // être encore monté au moment du tap.
+  const [statsFocus, setStatsFocus] = React.useState(null);
+  // Conteneurs des onglets — cibles du « remonter en haut » au re-tap.
+  const tabRefs = React.useRef({});
   const {
     drinks
   } = useDrinks();
@@ -259,7 +269,18 @@ function AppShell() {
         date: localDate(n),
         time: localTime(n)
       });
-      Toast.show(`« ${family.name} » ajoutée`);
+      // Ajout en UN tap (« + », favori, « Ajouter » de la fiche) : un tap
+      // accidentel doit rester réversible → toast avec « Annuler ».
+      Toast.show(`« ${family.name} » ajoutée`, created && created.id != null ? {
+        undo: async () => {
+          try {
+            await deleteDrink(created.id);
+            Toast.show('Ajout annulé');
+          } catch (err) {
+            Toast.show('Erreur lors de l\'annulation');
+          }
+        }
+      } : undefined);
       // Capture de lieu fiable et non bloquante (centralisée dans data.jsx :
       // survit à la fermeture, reverse-geocode borné + retry).
       if (created && created.id != null) attachLocationToDrink(created.id);
@@ -269,9 +290,44 @@ function AppShell() {
   }, []);
   const onAddAgain = React.useCallback(f => {
     setPrefill(f);
+    setAddCategory(null);
     setAdding(true);
     setOpenFamily(null);
     setOpenEntry(null);
+  }, []);
+
+  // « + » flottant : depuis l'intérieur d'une catégorie, la boisson y va
+  // d'office (catégorie imposée) ; ailleurs, formulaire libre (catégorie par
+  // défaut = dernière utilisée, cf. AddDrinkSheet).
+  const openAdd = React.useCallback(category => {
+    setPrefill(null);
+    setAddCategory(category || null);
+    setAdding(true);
+  }, []);
+
+  // Re-tap sur l'onglet ACTIF (pattern iOS/Material) : revient à la racine de
+  // l'onglet — Catégories referme le drill-down et vide la recherche — puis
+  // remonte en haut de la liste. Tap sur un autre onglet : bascule simple,
+  // l'état de navigation de chaque onglet est conservé.
+  const onTabPress = React.useCallback(id => {
+    if (id !== tab) {
+      setTab(id);
+      return;
+    }
+    if (id === 'categories') {
+      setCatOpen(null);
+      setCatQuery('');
+    }
+    scrollTabToTop(tabRefs.current[id], reducedMotion);
+  }, [tab, reducedMotion]);
+
+  // Tap sur ma pastille BAC : onglet Stats, section Alcoolémie.
+  const openBacStats = React.useCallback(() => {
+    setTab('stats');
+    setStatsFocus({
+      id: 'bac',
+      period: 'today'
+    });
   }, []);
   const onEdit = React.useCallback(f => {
     setEditFamily(f);
@@ -310,7 +366,9 @@ function AppShell() {
     }
   }, /*#__PURE__*/React.createElement(AppHeader, {
     tab: tab,
-    onMenu: () => setSettings(true)
+    onMenu: () => setSettings(true),
+    onOpenBac: openBacStats,
+    onOpenFriend: setOpenFriend
   }), /*#__PURE__*/React.createElement("main", {
     style: {
       flex: 1,
@@ -319,43 +377,56 @@ function AppShell() {
       flexDirection: 'column'
     }
   }, activated.has('categories') && /*#__PURE__*/React.createElement("div", {
+    ref: el => {
+      tabRefs.current.categories = el;
+    },
     style: tabContainer('categories')
   }, /*#__PURE__*/React.createElement(CategoriesTab, {
     onOpenFamily: setOpenFamily,
     onDirectAdd: directAdd,
     onEditFamily: onEdit,
+    onAddInCategory: openAdd,
     query: catQuery,
     setQuery: setCatQuery,
     openCat: catOpen,
     setOpenCat: setCatOpen
   })), activated.has('history') && /*#__PURE__*/React.createElement("div", {
+    ref: el => {
+      tabRefs.current.history = el;
+    },
     style: tabContainer('history')
   }, /*#__PURE__*/React.createElement(HistoryTab, {
     onOpenEntry: setOpenEntry,
     onDirectAdd: directAdd
   })), activated.has('stats') && /*#__PURE__*/React.createElement("div", {
+    ref: el => {
+      tabRefs.current.stats = el;
+    },
     style: tabContainer('stats')
   }, /*#__PURE__*/React.createElement(StatsTab, {
-    reorderRef: statsReorderRef
+    reorderRef: statsReorderRef,
+    focusRequest: statsFocus
   })), activated.has('friends') && /*#__PURE__*/React.createElement("div", {
+    ref: el => {
+      tabRefs.current.friends = el;
+    },
     style: tabContainer('friends')
   }, /*#__PURE__*/React.createElement(FriendsTab, {
     onOpenFriend: setOpenFriend
   }))), /*#__PURE__*/React.createElement(Fab, {
-    onClick: () => {
-      setPrefill(null);
-      setAdding(true);
-    }
+    onClick: () => openAdd(tab === 'categories' ? catOpen : null)
   }), /*#__PURE__*/React.createElement(BottomNav, {
     tab: tab,
-    onChange: setTab,
+    onChange: onTabPress,
     onReorder: () => statsReorderRef.current && statsReorderRef.current()
   }), /*#__PURE__*/React.createElement(AddDrinkSheet, {
     open: adding,
     prefill: prefill,
+    lockedCategory: addCategory,
     onClose: () => {
       setAdding(false);
       setPrefill(null);
+      setAddCategory(null);
     }
   }), /*#__PURE__*/React.createElement(SettingsDrawer, {
     open: settings,
@@ -365,12 +436,14 @@ function AppShell() {
     family: openFamily,
     onClose: () => setOpenFamily(null),
     onAddAgain: onAddAgain,
+    onAddNow: directAdd,
     onEdit: onEdit
   }), openEntry && /*#__PURE__*/React.createElement(DrinkDetailSheet, {
     key: openEntry.id || openEntry.family && openEntry.family.id,
     entry: openEntry,
     onClose: () => setOpenEntry(null),
     onAddAgain: onAddAgain,
+    onAddNow: directAdd,
     onEdit: onEdit
   }), editFamily && /*#__PURE__*/React.createElement(EditFamilySheet, {
     key: editFamily.id,
@@ -456,9 +529,29 @@ function AppShell() {
 function App() {
   return /*#__PURE__*/React.createElement(SettingsProvider, null, /*#__PURE__*/React.createElement(CategoriesProvider, null, /*#__PURE__*/React.createElement(RatingsProvider, null, /*#__PURE__*/React.createElement(DrinksProvider, null, /*#__PURE__*/React.createElement(CategoryIconsProvider, null, /*#__PURE__*/React.createElement(BacProvider, null, /*#__PURE__*/React.createElement(AppShell, null)))))));
 }
+
+// Remonte en haut chaque zone défilante d'un onglet (marquée
+// `data-tab-scroll`) — utilisé par le re-tap sur l'onglet actif.
+function scrollTabToTop(container, reduced) {
+  if (!container || !container.querySelectorAll) return;
+  container.querySelectorAll('[data-tab-scroll]').forEach(el => {
+    if (typeof el.scrollTo === 'function') {
+      try {
+        el.scrollTo({
+          top: 0,
+          behavior: reduced ? 'auto' : 'smooth'
+        });
+        return;
+      } catch {}
+    }
+    el.scrollTop = 0;
+  });
+}
 function AppHeader({
   tab,
-  onMenu
+  onMenu,
+  onOpenBac,
+  onOpenFriend
 }) {
   const titles = {
     categories: 'Catégories',
@@ -526,7 +619,10 @@ function AppHeader({
       overflow: 'hidden',
       textOverflow: 'ellipsis'
     }
-  }, dateStr)), /*#__PURE__*/React.createElement(HeaderBacStack, null));
+  }, dateStr)), /*#__PURE__*/React.createElement(HeaderBacStack, {
+    onOpenMine: onOpenBac,
+    onOpenFriend: onOpenFriend
+  }));
 }
 
 // Un seul bouton de nav (hook usePressScale → impossible dans un .map).
@@ -766,5 +862,6 @@ Object.assign(window, {
   AppHeader,
   BottomNav,
   Fab,
-  mountAlcoNote
+  mountAlcoNote,
+  scrollTabToTop
 });

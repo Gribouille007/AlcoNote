@@ -489,6 +489,124 @@ function useSettings() {
   return React.useContext(SettingsContext);
 }
 
+// ── Favoris (variantes épinglées) ─────────────────────────────────
+// L'utilisateur épingle une VARIANTE précise (« Jupiler 25 cL 5,2° ») depuis
+// sa fiche ; elle apparaît en tête de l'onglet Catégories et s'ajoute en un
+// tap. Stocké en setting Dexie `fav.families` (JSON array de `familyKey`,
+// dans l'ordre d'épinglage) → suit l'export/import. Clé = identité de famille
+// (catégorie EXCLUE) : déplacer une famille garde son épingle ; la renommer
+// passe par `renameFavoriteFamily` (EditFamilySheet).
+const FAVORITES_KEY = 'fav.families';
+function _famKeyOf(f) {
+  const abv = f.alcohol != null ? f.alcohol : f.alcoholContent;
+  return familyKey(f.name, f.quantity, f.unit, abv);
+}
+// settings map → string[] (tolérant : JSON invalide / non-tableau → []).
+function parseFavorites(settings) {
+  const raw = settings ? settings[FAVORITES_KEY] : null;
+  if (!raw) return [];
+  let arr = raw;
+  if (typeof raw === 'string') {
+    try {
+      arr = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(arr)) return [];
+  return [...new Set(arr.filter(k => typeof k === 'string' && k))];
+}
+function isFavoriteFamily(favKeys, family) {
+  return !!family && (favKeys || []).includes(_famKeyOf(family));
+}
+// Familles épinglées dans l'ordre d'épinglage ; une épingle dont la famille
+// n'existe plus (toutes ses entrées supprimées) est ignorée sans être effacée
+// (elle revient si la boisson est ré-ajoutée).
+function resolveFavorites(families, favKeys) {
+  const byKey = new Map((families || []).map(f => [_famKeyOf(f), f]));
+  return (favKeys || []).map(k => byKey.get(k)).filter(Boolean);
+}
+async function _writeFavorites(keys) {
+  await saveSetting(FAVORITES_KEY, keys.length ? JSON.stringify(keys) : null);
+}
+async function _readFavorites() {
+  const db = await waitForDb();
+  if (!db) return [];
+  return parseFavorites({
+    [FAVORITES_KEY]: await db.getSetting(FAVORITES_KEY)
+  });
+}
+// Bascule l'épingle d'une variante ; renvoie le nouvel état (true = épinglée).
+async function toggleFavoriteFamily(family) {
+  const key = _famKeyOf(family);
+  const keys = await _readFavorites();
+  const on = !keys.includes(key);
+  await _writeFavorites(on ? [...keys, key] : keys.filter(k => k !== key));
+  return on;
+}
+// Renommage / changement de contenance d'une famille : l'épingle suit la
+// nouvelle identité (même position), sans doublon.
+async function renameFavoriteFamily(oldFamily, newLike) {
+  const oldKey = _famKeyOf(oldFamily);
+  const newKey = _famKeyOf(newLike);
+  if (oldKey === newKey) return;
+  const keys = await _readFavorites();
+  if (!keys.includes(oldKey)) return;
+  const next = [];
+  for (const k of keys) {
+    const v = k === oldKey ? newKey : k;
+    if (!next.includes(v)) next.push(v);
+  }
+  await _writeFavorites(next);
+}
+
+// ── Catégorie par défaut du formulaire d'ajout ────────────────────
+// « Dernière utilisée » : catégorie de la dernière boisson ENREGISTRÉE (plus
+// grand id auto-incrémenté), si elle existe encore ; sinon la première de la
+// liste. En soirée, c'est presque toujours la bonne.
+function lastUsedCategory(drinks, categories) {
+  const cats = categories || [];
+  let last = null;
+  for (const d of drinks || []) {
+    if (d && d.id != null && (last == null || d.id > last.id)) last = d;
+  }
+  if (last) {
+    const hit = cats.find(c => canonicalCat(c.name) === canonicalCat(last.category));
+    if (hit) return hit.name;
+  }
+  return cats.length ? cats[0].name : '';
+}
+
+// ── Autocomplétion du nom (formulaire d'ajout) ────────────────────
+// Variantes connues dont le nom correspond à la saisie : insensible à la
+// casse ET aux accents ; les noms qui COMMENCENT par la saisie d'abord, puis
+// ceux qui la contiennent ; à rang égal, la plus bue. `category` (optionnel)
+// restreint aux familles de cette catégorie (ajout depuis une catégorie).
+function _foldText(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+}
+function suggestFamiliesForName(families, query, {
+  category = null,
+  limit = 5
+} = {}) {
+  const q = _foldText(query);
+  if (!q) return [];
+  const catKey = category ? canonicalCat(category) : null;
+  const out = [];
+  for (const f of families || []) {
+    if (catKey && canonicalCat(f.category) !== catKey) continue;
+    const n = _foldText(f.name);
+    const pos = n.indexOf(q);
+    if (pos < 0) continue;
+    out.push({
+      f,
+      rank: pos === 0 ? 0 : 1
+    });
+  }
+  out.sort((a, b) => a.rank - b.rank || (b.f.entries ? b.f.entries.length : 0) - (a.f.entries ? a.f.entries.length : 0) || _foldText(a.f.name).localeCompare(_foldText(b.f.name)) || (a.f.quantity || 0) - (b.f.quantity || 0));
+  return out.slice(0, limit).map(x => x.f);
+}
+
 // ── Mutations ─────────────────────────────────────────────────────
 // Each mutation bumps only the channels its write actually touches —
 // providers subscribed to other channels won't refetch. updateDrink
@@ -1387,6 +1505,14 @@ Object.assign(window, {
   setReferencePrice,
   applyReferenceToFamily,
   suggestPriceForVolume,
+  FAVORITES_KEY,
+  parseFavorites,
+  isFavoriteFamily,
+  resolveFavorites,
+  toggleFavoriteFamily,
+  renameFavoriteFamily,
+  lastUsedCategory,
+  suggestFamiliesForName,
   ratingKey,
   saveSetting,
   addDrink,

@@ -223,6 +223,59 @@ quand la cible change (évite des champs figés sur l'ancienne cible).
   d'un tap — jamais d'écrasement sans ce geste explicite. Toute
   évolution du prix passe par cet helper, pas par un calcul local.
 
+### Navigation & ajout — comportements attendus
+
+Revue UX (comparée à DrinkControl, Less, Untappd et aux guidelines iOS/
+Material). Ces règles sont couvertes par `app-ux-flows.test.js` :
+
+- **Re-tap sur l'onglet actif** = retour à la racine de l'onglet
+  (`onTabPress`, app.jsx) : Catégories referme le drill-down ET vide la
+  recherche, puis chaque zone `data-tab-scroll` de l'onglet remonte en haut
+  (`scrollTabToTop`). Tap sur un AUTRE onglet : bascule simple, l'état de
+  chaque onglet est conservé. Toute nouvelle zone défilante d'un onglet
+  porte `data-tab-scroll`.
+- **Retour depuis une catégorie** vide aussi la recherche (sinon « Rechercher
+  dans Bière » devient une recherche globale fantôme à la racine).
+- **« + » contextuel** : pressé DANS une catégorie, `AddDrinkSheet` reçoit
+  `lockedCategory` — le sélecteur est remplacé par une étiquette, la boisson
+  y va d'office (le scan ne la change pas) et l'autocomplétion est
+  restreinte à cette catégorie. Ailleurs, catégorie par défaut =
+  **dernière utilisée** (`lastUsedCategory` : catégorie du drink au plus
+  grand id, repli sur la première). Une catégorie vide propose ce même
+  ajout imposé (« Ajouter une boisson »).
+- **Autocomplétion du nom** : `suggestFamiliesForName(families, q,
+  { category })` (accents/casse ignorés, préfixe avant « contient », puis la
+  plus bue). Un tap remplit nom/catégorie/contenance/degré/note et remet le
+  prix en auto (prix habituel exact). Masquée après le choix, ré-affichée à
+  la frappe suivante.
+- **Tout ajout en UN tap est réversible** : `directAdd` (AppShell) — « + »
+  des listes, favoris, bouton « Ajouter » de la fiche — affiche un toast avec
+  « Annuler » (supprime le drink créé). Ne jamais ajouter un chemin
+  d'ajout instantané qui n'y passe pas.
+- **Fiche détail** : « Ajouter » = ajout direct (la fiche reste ouverte, la
+  timeline se met à jour) ; « Personnaliser l'ajout » = formulaire
+  prérempli (`onAddAgain`). Taper une ligne de l'historique de la fiche ouvre
+  `EditEntrySheet` pour CETTE entrée (portail vers `<body>`, empilé). La
+  cellule « cL » n'apparaît que si l'unité n'est pas déjà le cL.
+- **Favoris** : une VARIANTE (nom+qté+unité+degré) s'épingle via l'étoile de
+  la fiche ; setting Dexie `fav.families` (JSON array de `familyKey`, suit
+  l'export/import) ; helpers `parseFavorites` / `resolveFavorites` /
+  `toggleFavoriteFamily` / `renameFavoriteFamily` (data.jsx). Bandeau
+  `FavoritesStrip` en tête de la grille (tap = ajout). Déplacer une famille
+  garde l'épingle (catégorie hors clé) ; `EditFamilySheet` la migre au
+  renommage. Une épingle orpheline est ignorée, pas effacée.
+- **Pastilles BAC de l'en-tête tapables** : la mienne → onglet Stats,
+  période Jour, section Alcoolémie dépliée et amenée à l'écran (prop
+  `focusRequest` de `StatsTab`, sections repérées par `data-stats-section`) ;
+  celle du favori → sa fiche ami.
+- **Périodes Stats** : jamais de navigation vers le futur
+  (`canShiftForward`) ; hors période courante (`isCurrentPeriod`), lien
+  « Revenir à aujourd'hui ».
+- **Échap** ne ferme que l'overlay du DESSUS (pile `_overlayStack` de
+  `SheetOverlay`).
+- Onglet Amis hors partage : bouton « Activer le partage » direct (même
+  confirmation que le switch des Paramètres).
+
 ### Charts — construire une figure parfaite
 
 `proto/stats-charts.jsx` expose des SVG primitives :
@@ -847,6 +900,17 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
 - **Sheets** : chaque fermeture (X, Annuler, succès, backdrop, Escape,
   Retour système) glisse vers sa sortie au lieu de disparaître sec ;
   aucune interaction possible pendant la sortie.
+- **Re-tap onglet** : dans Bière avec une recherche, re-taper « Catégories »
+  ramène à la grille, recherche vidée ; re-taper Historique/Stats remonte en
+  haut.
+- **« + » dans une catégorie** : pas de sélecteur, étiquette de la catégorie ;
+  la boisson y est enregistrée. Depuis la racine : dernière catégorie utilisée
+  pré-cochée. Taper « jup » propose les variantes connues ; un tap remplit.
+- **Ajout en un tap** (« + », favori, « Ajouter » de la fiche) : toast
+  « Annuler » qui retire bien la boisson.
+- **Favoris** : étoile dans la fiche → carte dans « Favoris » en tête de
+  Catégories ; tap = ajout ; renommer la boisson garde l'épingle.
+- **Pastille BAC** : tap → Stats › Alcoolémie (période Jour).
 - Carte : un drink avec coordonnées doit apparaître ; sans coords,
   message vide.
 - Tiroir paramètres : ouvre depuis la gauche, slide animé.
