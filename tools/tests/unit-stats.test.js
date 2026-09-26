@@ -13,8 +13,9 @@ const {
   aggregateGeneral, computeBACSessions, computeBacOverTime, computeBacForecast,
   computeBourreTime, computeStreak, computeStreakRecord, fmtBourreTime, fmtDurationHM,
   computeMonthlyTrends, computeRollingDaily, computeSessionDurationBuckets,
-  bucketDailyAlcohol, buildHeatmapCells, buildSessionList, buildSessionPeakHistogram,
-  buildCumulativeComparison, bucketSpend,
+  bucketDailyAlcohol, buildCalendarModel, heatmapScaleMax, calendarCellTitle,
+  buildSessionList, buildSessionPeakHistogram,
+  buildCumulativeComparison, bucketSpend, sessionsForRange, elapsedDays, comparisonRange,
   BAC_ELIM_RATE, BAC_ABSORPTION_H, BAC_LEGAL_LIMIT, DEFAULT_WEIGHT_KG, widmarkR,
   localDate, localTime, drinkAlcoholGrams,
 } = global;
@@ -542,42 +543,146 @@ test('bucketDailyAlcohol — somme grammes + nombre par jour', () => {
   assert.ok(map.get('2026-06-09').grams > map.get('2026-06-10').grams, 'deux verres > un verre');
 });
 
-test('buildHeatmapCells — mode selon période, cellules + scaleMax', () => {
-  const range = getPeriodRange('month', new Date(2026, 5, 15));
+// Calendrier : une disposition pleine largeur par période (cf. stats.jsx).
+const NOW_CAL = new Date(2026, 8, 26, 16, 0); // samedi 26 septembre 2026
+
+test('buildCalendarModel — Mois : vrai calendrier 7 colonnes, blancs hors mois', () => {
+  const anchor = new Date(2026, 5, 15);
+  const range = getPeriodRange('month', anchor);
   const drinks = [beer('2026-06-09', '18:00'), beer('2026-06-09', '20:00'), beer('2026-06-12', '21:00')];
-  const hm = buildHeatmapCells(drinks, 'month', range, new Date(2026, 5, 15));
-  assert.equal(hm.mode, 'monthGrid');
-  const c9 = hm.cells.find(c => c.date === '2026-06-09');
-  assert.ok(c9 && c9.count === 2, 'jour avec 2 boissons');
-  assert.ok(hm.scaleMax > 0);
-  assert.ok(hm.cells.every(c => c.weekday >= 0 && c.weekday <= 6), 'weekday 0..6 (lundi=0)');
-  // Année → mur de mois.
-  const yr = getPeriodRange('year', new Date(2026, 5, 15));
-  assert.equal(buildHeatmapCells(drinks, 'year', yr, new Date(2026, 5, 15)).mode, 'yearWall');
-  // Aujourd'hui → 5 dernières semaines.
-  const td = getPeriodRange('today', new Date(2026, 5, 15));
-  assert.equal(buildHeatmapCells(drinks, 'today', td, new Date(2026, 5, 15)).mode, 'today');
+  const m = buildCalendarModel(drinks, 'month', range, anchor, NOW_CAL);
+  assert.equal(m.layout, 'month');
+  assert.equal(m.cols, 7);
+  // Juin 2026 : le 1er est un lundi, 30 jours → 5 semaines.
+  assert.equal(m.rows, 5);
+  const days = m.cells.filter(c => !c.blank);
+  assert.equal(days.length, 30, 'un jour par case');
+  assert.equal(days[0].date, '2026-06-01');
+  assert.equal(days[0].col, 0, '1er juin 2026 = lundi → colonne 0');
+  assert.equal(days[0].label, '1', 'n° du jour affiché');
+  const c9 = days.find(c => c.date === '2026-06-09');
+  assert.equal(c9.count, 2);
+  assert.equal(c9.col, 1, 'mardi');
+  assert.deepEqual(c9.pick.period, 'today', 'une case ouvre ce jour');
+  assert.equal(localDate(c9.pick.anchor), '2026-06-09');
+  assert.equal(m.cells.filter(c => c.blank).length, 5, '35 cases − 30 jours');
+  assert.equal(m.scopeLabel, null, 'Mois : pas de chip (le calendrier EST la période)');
 });
 
-test('buildHeatmapCells — mode today : 35 jours finissant à min(ancre, aujourd\'hui)', () => {
-  // Ancre passée : la fenêtre couvre [ancre−34 j, ancre] — les boissons de
-  // TOUT l'historique comptent (la section passe allDrinks, pas la période).
+test('buildCalendarModel — Jour : mois de l’ancre, jour sélectionné, futurs non cliquables', () => {
+  const anchor = new Date(2026, 8, 20);
+  const range = getPeriodRange('today', anchor);
+  const m = buildCalendarModel([beer('2026-09-03', '20:00')], 'today', range, anchor, NOW_CAL);
+  assert.equal(m.layout, 'month');
+  assert.equal(m.scopeLabel, 'Septembre 2026', 'la chip dit que tout le mois est montré');
+  const sel = m.cells.filter(c => c.selected);
+  assert.equal(sel.length, 1);
+  assert.equal(sel[0].date, '2026-09-20');
+  const d3 = m.cells.find(c => c.date === '2026-09-03');
+  assert.equal(d3.count, 1, 'une boisson hors du jour affiché est comptée');
+  const d27 = m.cells.find(c => c.date === '2026-09-27');
+  assert.ok(d27.future, 'demain et après = futurs');
+  assert.equal(d27.pick, null, 'jamais de navigation vers le futur');
+  assert.ok(!m.cells.find(c => c.date === '2026-09-26').future, 'aujourd’hui n’est pas futur');
+});
+
+test('buildCalendarModel — Semaine : une ligne de 7 jours, lundi → dimanche', () => {
+  const anchor = new Date(2026, 8, 23);
+  const range = getPeriodRange('week', anchor);
+  const m = buildCalendarModel([beer('2026-09-26', '20:00')], 'week', range, anchor, NOW_CAL);
+  assert.equal(m.layout, 'week');
+  assert.equal(m.rows, 1);
+  assert.equal(m.cells.length, 7);
+  assert.equal(m.cells[0].date, '2026-09-21');
+  assert.equal(m.cells[6].date, '2026-09-27');
+  assert.equal(m.cells[5].count, 1);
+  assert.ok(m.cells[6].future);
+});
+
+test('buildCalendarModel — Année / A. scol. : 12 mois × 31 jours, jours inexistants blancs', () => {
   const anchor = new Date(2026, 5, 15);
-  const td = getPeriodRange('today', anchor);
-  const drinks = [beer('2026-06-09', '18:00'), beer('2026-05-20', '20:00')];
-  const hm = buildHeatmapCells(drinks, 'today', td, anchor);
-  const inWin = hm.cells.filter(c => !c.blank);
-  assert.equal(inWin.length, 35, '5 semaines pleines');
-  assert.equal(inWin[0].date, '2026-05-12');
-  assert.equal(inWin[inWin.length - 1].date, '2026-06-15');
-  const c20 = inWin.find(c => c.date === '2026-05-20');
-  assert.ok(c20 && c20.count === 1, 'une boisson hors du jour ancre est comptée');
-  // Ancre future : clamp à aujourd'hui — aucune cellule au-delà du présent.
-  const future = new Date(Date.now() + 40 * 86400_000);
-  const hf = buildHeatmapCells([], 'today', td, future);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const winF = hf.cells.filter(c => !c.blank);
-  assert.equal(winF[winF.length - 1].date, localDate(today), 'pas de jours futurs');
+  const yr = buildCalendarModel([beer('2026-02-10', '20:00')], 'year', getPeriodRange('year', anchor), anchor, NOW_CAL);
+  assert.equal(yr.layout, 'year');
+  assert.equal(yr.rows, 12);
+  assert.equal(yr.cols, 31);
+  assert.equal(yr.cells.length, 12 * 31);
+  assert.equal(yr.rowLabels[0], 'jan');
+  assert.equal(yr.cells.filter(c => !c.blank).length, 365, '2026 : 365 jours');
+  const feb30 = yr.cells.find(c => c.row === 1 && c.col === 29);
+  assert.ok(feb30.blank, '30 février inexistant');
+  assert.equal(yr.cells.find(c => c.date === '2026-02-10').count, 1);
+  const sc = buildCalendarModel([], 'school', getPeriodRange('school', anchor), anchor, NOW_CAL);
+  assert.equal(sc.rowLabels[0], 'sep', 'année scolaire : commence en septembre');
+  assert.equal(sc.rowLabels[11], 'aoû');
+});
+
+test('buildCalendarModel — Tout : années × 12 mois, avant la 1re boisson = blanc', () => {
+  const range = getPeriodRange('all', NOW_CAL);
+  const drinks = [beer('2024-03-10', '20:00'), beer('2024-03-12', '20:00'), beer('2026-01-05', '20:00')];
+  const m = buildCalendarModel(drinks, 'all', range, NOW_CAL, NOW_CAL);
+  assert.equal(m.layout, 'years');
+  assert.deepEqual(m.rowLabels, ['2024', '2025', '2026']);
+  assert.equal(m.cells.length, 36);
+  const mar24 = m.cells.find(c => c.date === '2024-03');
+  assert.equal(mar24.count, 2, 'une case = un mois');
+  assert.equal(mar24.pick.period, 'month', 'une case ouvre ce mois');
+  assert.ok(m.cells.find(c => c.date === '2024-02').blank, 'avant la 1re boisson');
+  assert.ok(m.cells.find(c => c.date === '2026-10').future, 'mois futur');
+  assert.ok(!m.cells.find(c => c.date === '2026-09').future, 'mois courant');
+  assert.equal(calendarCellTitle(mar24), 'Mars 2024');
+  assert.equal(calendarCellTitle({ date: '2026-09-03' }), '3 sept. 2026');
+});
+
+test('heatmapScaleMax — p90 dès 5 valeurs, max sinon, jamais < 1', () => {
+  assert.equal(heatmapScaleMax([]), 1);
+  assert.equal(heatmapScaleMax([0, 0]), 1);
+  assert.equal(heatmapScaleMax([10, 40]), 40, 'peu de valeurs → max');
+  const vals = [1, 2, 3, 4, 5, 6, 7, 8, 9, 100];
+  assert.equal(heatmapScaleMax(vals), 100, 'p90 de 10 valeurs = la 10e');
+  assert.ok(heatmapScaleMax(vals.concat(Array(20).fill(5))) < 100, 'un gros soir n’écrase pas l’échelle');
+});
+
+// ── Sessions d'une période / jours écoulés / comparaison « à date » ──
+
+test('sessionsForRange — une soirée à cheval sur minuit reste UNE session complète', () => {
+  const drinks = [beer('2026-06-08', '22:00'), beer('2026-06-08', '23:30'), beer('2026-06-09', '00:45')];
+  const all = computeBACSessions(drinks, 70, 'male');
+  assert.equal(all.length, 1, 'une seule soirée');
+  const d8 = sessionsForRange(all, getPeriodRange('today', new Date(2026, 5, 8)));
+  const d9 = sessionsForRange(all, getPeriodRange('today', new Date(2026, 5, 9)));
+  assert.equal(d8.length, 1);
+  assert.equal(d9.length, 1, 'le lendemain voit la même soirée (verre après minuit)');
+  assert.equal(d9[0].peakBac, all[0].peakBac, 'pic de la soirée ENTIÈRE, pas recalculé depuis 0 à minuit');
+  // L'ancien calcul (sessions sur les seules boissons du jour) sous-estimait le pic.
+  const cut = computeBACSessions(filterDrinksInRange(drinks, new Date(2026, 5, 9), new Date(2026, 5, 9)), 70, 'male');
+  assert.ok(cut[0].peakBac < all[0].peakBac);
+  assert.equal(sessionsForRange(all, getPeriodRange('today', new Date(2026, 5, 10))).length, 0);
+  assert.deepEqual(sessionsForRange(all, null), []);
+});
+
+test('elapsedDays — période en cours clampée à aujourd’hui, période passée complète', () => {
+  const now = new Date(2026, 8, 10, 15, 0);
+  assert.equal(elapsedDays(getPeriodRange('month', now), now), 10, '10 septembre → 10 jours');
+  assert.equal(elapsedDays(getPeriodRange('month', new Date(2026, 7, 5)), now), 31, 'août passé → 31');
+  assert.equal(elapsedDays(getPeriodRange('today', now), now), 1);
+});
+
+test('comparisonRange — « à date » pour la période en cours, complète sinon', () => {
+  const now = new Date(2026, 8, 10, 15, 0);
+  const cur = getPeriodRange('month', now);
+  const prev = getPeriodRange('month', new Date(2026, 7, 10));
+  const cmp = comparisonRange(cur, prev, now);
+  assert.equal(localDate(cmp.start), '2026-08-01');
+  assert.equal(localDate(cmp.end), '2026-08-10', 'mêmes 10 premiers jours');
+  // Période passée : comparaison complète.
+  const aug = getPeriodRange('month', new Date(2026, 7, 10));
+  const jul = getPeriodRange('month', new Date(2026, 6, 10));
+  assert.equal(localDate(comparisonRange(aug, jul, now).end), '2026-07-31');
+  // Mois précédent plus court : jamais au-delà de sa fin.
+  const now31 = new Date(2026, 2, 31, 12, 0);
+  const cmpFeb = comparisonRange(getPeriodRange('month', now31), getPeriodRange('month', new Date(2026, 1, 10)), now31);
+  assert.equal(localDate(cmpFeb.end), '2026-02-28');
+  assert.equal(comparisonRange(cur, null, now), null);
 });
 
 // ── buildSessionList / buildSessionPeakHistogram ────────────────────
@@ -680,7 +785,7 @@ test('computeBacForecast — pas de session en cours → vide', () => {
 test('STATS_PERIOD_MATRIX — couverture, validité et décisions clés', () => {
   const { STATS_PERIOD_MATRIX, ALL_PERIODS } = global;
   const ids = Object.keys(STATS_PERIOD_MATRIX);
-  assert.equal(ids.length, 11, 'les 11 sections déclarées');
+  assert.equal(ids.length, 10, 'les 10 sections déclarées');
   const valid = new Set(['today', 'week', 'month', 'year', 'school', 'all']);
   for (const [id, m] of Object.entries(STATS_PERIOD_MATRIX)) {
     assert.ok(m.periods.length > 0, `${id} : au moins une période`);
@@ -691,12 +796,12 @@ test('STATS_PERIOD_MATRIX — couverture, validité et décisions clés', () => 
   }
   // Les charts globaux (historique complet) ne s'affichent pas sur « Jour ».
   assert.ok(!STATS_PERIOD_MATRIX.trends.periods.includes('today'));
-  assert.ok(!STATS_PERIOD_MATRIX.advanced.periods.includes('today'));
-  // Les contenus en direct / globaux survivent à une période vide.
+  // « Analyses avancées » a été dissoute (horloge = doublon, durées →
+  // Sessions, moyenne mobile → Tendances).
+  assert.ok(!('advanced' in STATS_PERIOD_MATRIX));
+  // Période vide : SEUL le BAC en direct survit (ni carte ni charts globaux).
   assert.deepEqual(STATS_PERIOD_MATRIX.bac.keepWhenEmpty, ALL_PERIODS);
-  assert.deepEqual(STATS_PERIOD_MATRIX.map.keepWhenEmpty, ALL_PERIODS);
-  // Les sections purement période-scopées disparaissent sur période vide.
-  for (const id of ['general', 'temporal', 'category', 'top', 'sessions', 'spending', 'heatmap']) {
+  for (const id of ids.filter(x => x !== 'bac')) {
     assert.deepEqual(STATS_PERIOD_MATRIX[id].keepWhenEmpty, [], `${id} : période-scopée`);
   }
 });

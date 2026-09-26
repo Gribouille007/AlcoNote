@@ -32,7 +32,7 @@ function useMeasuredWidth(ref, fallback = 320) {
 // the browser. Generalises the pattern of BACProjectionResponsive.
 // `minHeight` reserves the chart's height before the first measurement so
 // the surrounding card never reflows; `maxWidth` caps square charts
-// (radar / polar clock) that would otherwise swallow the whole card.
+// that would otherwise swallow the whole card.
 function ChartAutoWidth({
   minHeight = 0,
   maxWidth = null,
@@ -98,8 +98,6 @@ const CHART = Object.freeze({
     // labels d'axe (fontNum)
     ref: 8.5,
     // annotations/références (seuils, ETA, peak moyen, mois)
-    spoke: 11,
-    // labels radiaux (radar, horloge)
     tooltip: 10,
     // lignes de ChartTooltip
     center: 11,
@@ -123,12 +121,7 @@ const CHART = Object.freeze({
       r: 6,
       b: 22,
       l: 28
-    }),
-    // barres/histogrammes
-    radar: 32,
-    spokeLabel: 12,
-    clockOuter: 22,
-    clockInnerRatio: 0.38
+    }) // barres/histogrammes
   }),
   grid: Object.freeze({
     width: 0.6,
@@ -149,17 +142,13 @@ const CHART = Object.freeze({
     // bord de troncature
     hair: '2 3',
     // hairline de scrub
-    secondary: '3 2',
-    // série secondaire d'un line chart
-    ringMinor: '1 2' // anneaux intermédiaires (horloge polaire)
+    secondary: '3 2' // série secondaire d'un line chart
   }),
   stroke: Object.freeze({
     line: 1.8,
     lineSecondary: 1.5,
     bacPast: 2.4,
     bacFuture: 1.8,
-    spoke: 0.5,
-    radar: 1.5,
     hair: 0.8,
     threshold: 0.8,
     reference: 1
@@ -191,12 +180,27 @@ const CHART = Object.freeze({
   }),
   heatmap: Object.freeze({
     bandAlpha: Object.freeze([0, 0.28, 0.5, 0.72, 1]),
-    gapRatio: 0.16,
-    cellMin: 4,
-    cellMax: 22,
-    padL: 18,
-    padT: 16,
-    padB: 6
+    gapRatio: 0.14,
+    // espace inter-cases (fraction du pas) — grilles denses
+    gap: 4,
+    // espace inter-cases (px) — calendriers 7 colonnes
+    headH: 16,
+    // bande des libellés de colonnes (L M M J…, 1 5 10…)
+    padB: 2,
+    rowLabelGap: 6,
+    // libellé de ligne ↔ 1ʳᵉ case
+    minRowStep: 11,
+    // pas vertical mini (lignes « mois » lisibles)
+    cellMaxH: Object.freeze({
+      month: 38,
+      week: 46,
+      years: 28
+    }),
+    dayInsetX: 4,
+    dayInsetY: 3,
+    // n° du jour dans la case (haut-gauche)
+    futureOpacity: 0.45,
+    legendSwatch: 10
   }),
   donut: Object.freeze({
     size: 130,
@@ -206,7 +210,6 @@ const CHART = Object.freeze({
     size: 140,
     thickness: 10
   }),
-  rings: Object.freeze([0.33, 0.66, 1]),
   anim: Object.freeze({
     className: 'alco-chart-in'
   }),
@@ -355,21 +358,6 @@ function resolveLaneLabels(items, {
     _idx,
     ...it
   }) => it);
-}
-
-// Ancre + décalage vertical d'un label radial selon son angle (rad, 0 = à
-// droite de l'horloge trigonométrique) : le texte s'ÉLOIGNE du polygone au
-// lieu de dériver dessus (l'ancien anchor="middle" pour tous faisait mordre
-// les labels gauche/droite sur la figure).
-function radarLabelLayout(a) {
-  const c = Math.cos(a),
-    s = Math.sin(a);
-  const anchor = c > 0.35 ? 'start' : c < -0.35 ? 'end' : 'middle';
-  const dy = s > 0.8 ? 9 : s < -0.8 ? -3 : 4;
-  return {
-    anchor,
-    dy
-  };
 }
 
 // Tronque un texte libre avec « … » pour tenir dans `maxPx` (approximation
@@ -837,142 +825,6 @@ function SvgBarChart({
   })());
 }
 
-// ── Radar (weekday distribution) ──────────────────────────────────
-function SvgRadar({
-  data,
-  size = 220,
-  color,
-  valueLabel,
-  ariaLabel = 'Radar par jour'
-}) {
-  useTheme(); // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
-  const cx = size / 2,
-    cy = size / 2;
-  const r = size / 2 - CHART.pad.radar;
-  const n = data.length;
-  const max = Math.max(1, ...data.map(d => d.v));
-  // n = 0 ferait diviser `angle` par zéro (NaN partout) — géré après les
-  // hooks, plus bas.
-  const angle = i => i / Math.max(1, n) * Math.PI * 2 - Math.PI / 2;
-  const pt = (i, v) => {
-    const a = angle(i);
-    const rad = v / max * r;
-    return [cx + Math.cos(a) * rad, cy + Math.sin(a) * rad];
-  };
-  const rings = CHART.rings;
-  const gridPath = frac => data.map((_, i) => {
-    const a = angle(i);
-    return `${i === 0 ? 'M' : 'L'}${cx + Math.cos(a) * r * frac},${cy + Math.sin(a) * r * frac}`;
-  }).join(' ') + 'Z';
-  const dataPath = data.map((d, i) => {
-    const [x, y] = pt(i, d.v);
-    return `${i === 0 ? 'M' : 'L'}${x},${y}`;
-  }).join(' ') + 'Z';
-  const svgRef = React.useRef(null);
-  const [hover, setHover] = React.useState(null);
-  const scr = useChartScrubber(svgRef, null, p => {
-    if (!p || !n) {
-      setHover(null);
-      return;
-    }
-    const dx = p.x - cx,
-      dy = p.y - cy;
-    let a = Math.atan2(dy, dx) + Math.PI / 2;
-    if (a < 0) a += 2 * Math.PI;
-    const idx = Math.round(a / (2 * Math.PI) * n) % n;
-    setHover(idx);
-  });
-
-  // Après les hooks : sans donnée le radar est NaN de bout en bout.
-  if (!n) return null;
-  return /*#__PURE__*/React.createElement("svg", _extends({
-    ref: svgRef,
-    viewBox: `0 0 ${size} ${size}`,
-    width: "100%",
-    height: size,
-    role: "img",
-    "aria-label": ariaLabel,
-    className: CHART.anim.className,
-    style: {
-      display: 'block',
-      touchAction: CHART.touchAction
-    }
-  }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
-    x: "0",
-    y: "0",
-    width: size,
-    height: size,
-    fill: "transparent"
-  }), rings.map((f, i) => /*#__PURE__*/React.createElement("path", {
-    key: i,
-    d: gridPath(f),
-    fill: "none",
-    stroke: T.rule,
-    strokeWidth: CHART.grid.width,
-    strokeDasharray: i === rings.length - 1 ? 'none' : CHART.grid.dash
-  })), data.map((_, i) => {
-    const a = angle(i);
-    return /*#__PURE__*/React.createElement("line", {
-      key: i,
-      x1: cx,
-      y1: cy,
-      x2: cx + Math.cos(a) * r,
-      y2: cy + Math.sin(a) * r,
-      stroke: T.rule,
-      strokeWidth: CHART.stroke.spoke
-    });
-  }), /*#__PURE__*/React.createElement("path", {
-    d: dataPath,
-    fill: color || T.accent,
-    fillOpacity: 0.2,
-    stroke: color || T.accent,
-    strokeWidth: CHART.stroke.radar,
-    strokeLinejoin: "round"
-  }), data.map((d, i) => {
-    const [x, y] = pt(i, d.v);
-    const isHover = hover === i;
-    return /*#__PURE__*/React.createElement("circle", {
-      key: i,
-      cx: x,
-      cy: y,
-      r: isHover ? 4.5 : 2.5,
-      fill: color || T.accent,
-      stroke: isHover ? T.surface : 'none',
-      strokeWidth: 1.5
-    });
-  }), data.map((d, i) => {
-    const a = angle(i);
-    // Ancre/dy selon le quadrant : le label s'éloigne du polygone au
-    // lieu de dériver dessus (anti-collision radiale).
-    const {
-      anchor,
-      dy
-    } = radarLabelLayout(a);
-    const lx = cx + Math.cos(a) * (r + CHART.pad.spokeLabel);
-    const ly = cy + Math.sin(a) * (r + CHART.pad.spokeLabel) + dy;
-    const today = d.today;
-    return /*#__PURE__*/React.createElement("text", {
-      key: i,
-      x: lx,
-      y: ly,
-      fontSize: CHART.font.spoke,
-      fill: today ? T.accent : T.ink2,
-      fontWeight: today ? 600 : 400,
-      fontFamily: fontSans,
-      textAnchor: anchor
-    }, d.label);
-  }), hover != null && (() => {
-    const d = data[hover];
-    const [x, y] = pt(hover, d.v);
-    return /*#__PURE__*/React.createElement(ChartTooltip, {
-      x: x,
-      y: y,
-      width: size,
-      height: size,
-      lines: [`${d.label}`, `${d.v}${valueLabel ? ' ' + valueLabel : ''}`]
-    });
-  })());
-}
 // ── Donut chart (category distribution) ───────────────────────────
 // Géométrie des segments extraite (pure, testable) : angles + chemins SVG.
 // `total` = 0 → aucun segment (l'ancien `|| 1` affichait un faux « 1 » au
@@ -1013,6 +865,7 @@ function SvgDonut({
   ariaLabel = 'Répartition par catégorie'
 }) {
   useTheme(); // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
+  useCatPalette(); // idem sur changement de teinte de catégorie (registre CAT)
   const cx = size / 2,
     cy = size / 2;
   const r = size / 2 - thickness / 2 - 2;
@@ -1311,168 +1164,6 @@ function SvgLineChart({
     }));
   })());
 }
-// ── Polar clock (24h consumption distribution) ───────────────────
-function SvgPolarClock({
-  hours,
-  size = 260,
-  ariaLabel = 'Horloge des consommations sur 24 heures'
-}) {
-  useTheme(); // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
-  const cx = size / 2,
-    cy = size / 2;
-  const rOuter = size / 2 - CHART.pad.clockOuter;
-  const rInner = size / 2 * CHART.pad.clockInnerRatio;
-  const max = Math.max(1, ...hours);
-  const wedge = i => {
-    const a0 = i / 24 * Math.PI * 2 - Math.PI / 2;
-    const a1 = (i + 1) / 24 * Math.PI * 2 - Math.PI / 2;
-    const v = hours[i];
-    const r = rInner + v / max * (rOuter - rInner);
-    return {
-      a0,
-      a1,
-      r,
-      v
-    };
-  };
-  const arcs = [];
-  for (let i = 0; i < 24; i++) {
-    const {
-      a0,
-      a1,
-      r,
-      v
-    } = wedge(i);
-    if (r - rInner < 0.5) continue;
-    const x0 = cx + Math.cos(a0) * rInner,
-      y0 = cy + Math.sin(a0) * rInner;
-    const x1 = cx + Math.cos(a1) * rInner,
-      y1 = cy + Math.sin(a1) * rInner;
-    const x2 = cx + Math.cos(a1) * r,
-      y2 = cy + Math.sin(a1) * r;
-    const x3 = cx + Math.cos(a0) * r,
-      y3 = cy + Math.sin(a0) * r;
-    arcs.push(/*#__PURE__*/React.createElement("path", {
-      key: i,
-      d: `M${x0},${y0} L${x3},${y3} A${r},${r} 0 0 1 ${x2},${y2} L${x1},${y1} A${rInner},${rInner} 0 0 0 ${x0},${y0} Z`,
-      fill: T.accent,
-      fillOpacity: 0.3 + v / max * 0.55
-    }));
-  }
-  const labels = [{
-    h: 0,
-    txt: '0h'
-  }, {
-    h: 6,
-    txt: '6h'
-  }, {
-    h: 12,
-    txt: '12h'
-  }, {
-    h: 18,
-    txt: '18h'
-  }];
-  const svgRef = React.useRef(null);
-  const [hover, setHover] = React.useState(null);
-  const scr = useChartScrubber(svgRef, null, p => {
-    if (!p) {
-      setHover(null);
-      return;
-    }
-    const dx = p.x - cx,
-      dy = p.y - cy;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > rOuter + 8 || dist < rInner - 4) {
-      setHover(null);
-      return;
-    }
-    let a = Math.atan2(dy, dx) + Math.PI / 2;
-    if (a < 0) a += 2 * Math.PI;
-    const idx = Math.floor(a / (Math.PI * 2) * 24) % 24;
-    setHover(idx);
-  });
-  return /*#__PURE__*/React.createElement("svg", _extends({
-    ref: svgRef,
-    viewBox: `0 0 ${size} ${size}`,
-    width: "100%",
-    height: size,
-    role: "img",
-    "aria-label": ariaLabel,
-    className: CHART.anim.className,
-    style: {
-      display: 'block',
-      touchAction: CHART.touchAction
-    }
-  }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
-    x: "0",
-    y: "0",
-    width: size,
-    height: size,
-    fill: "transparent"
-  }), /*#__PURE__*/React.createElement("circle", {
-    cx: cx,
-    cy: cy,
-    r: rOuter,
-    fill: "none",
-    stroke: T.rule,
-    strokeWidth: CHART.stroke.spoke,
-    strokeDasharray: CHART.grid.dash
-  }), /*#__PURE__*/React.createElement("circle", {
-    cx: cx,
-    cy: cy,
-    r: rInner,
-    fill: "none",
-    stroke: T.rule,
-    strokeWidth: CHART.stroke.spoke
-  }), [0.33, 0.66].map((f, i) => /*#__PURE__*/React.createElement("circle", {
-    key: i,
-    cx: cx,
-    cy: cy,
-    r: rInner + (rOuter - rInner) * f,
-    fill: "none",
-    stroke: T.rule,
-    strokeWidth: 0.4,
-    strokeDasharray: CHART.dash.ringMinor
-  })), arcs, labels.map(({
-    h,
-    txt
-  }) => {
-    // Quatre labels fixes courts (0h/6h/12h/18h) : l'ancrage CENTRÉ est
-    // le bon ici — le padding externe (clockOuter) est calibré pour une
-    // demi-largeur de label ; un ancrage par quadrant les ferait sortir
-    // du viewBox (bug visuel constaté : « 18h »/« 6h » clippés).
-    const a = h / 24 * Math.PI * 2 - Math.PI / 2;
-    const lx = cx + Math.cos(a) * (rOuter + CHART.pad.spokeLabel);
-    const ly = cy + Math.sin(a) * (rOuter + CHART.pad.spokeLabel) + 3;
-    return /*#__PURE__*/React.createElement("text", {
-      key: h,
-      x: lx,
-      y: ly,
-      fontSize: CHART.font.spoke,
-      fill: T.ink2,
-      textAnchor: "middle",
-      fontFamily: fontNum
-    }, txt);
-  }), hover != null && (() => {
-    const {
-      a0,
-      a1,
-      r,
-      v
-    } = wedge(hover);
-    const aMid = (a0 + a1) / 2;
-    const tx = cx + Math.cos(aMid) * Math.max(rInner + 4, r);
-    const ty = cy + Math.sin(aMid) * Math.max(rInner + 4, r);
-    return /*#__PURE__*/React.createElement(ChartTooltip, {
-      x: tx,
-      y: ty,
-      width: size,
-      height: size,
-      lines: [`${hover}h – ${(hover + 1) % 24}h`, `${v} boisson${v > 1 ? 's' : ''}`]
-    });
-  })());
-}
-
 // ── BAC projection curve ──────────────────────────────────────────
 // Scrubbable: dragging the finger across the curve reveals the BAC at
 // any moment. The ball position and tooltip BAC are linearly
@@ -2386,89 +2077,175 @@ function heatmapBand(grams, scaleMax) {
 // Alias vers le token CHART (source unique) — conservé pour compat tests.
 const HEATMAP_BAND_ALPHA = CHART.heatmap.bandAlpha;
 
-// ── Calendrier (heatmap des grammes d'alcool par jour) ────────────
-// Grille type GitHub : 7 lignes (lun→dim), `cols` colonnes de semaines.
-// Intensité = bande de `withAlpha(T.accent, …)`, cases vides en T.surface3,
-// jours hors période (`blank`) transparents. Scrub/tap → ChartTooltip
-// (date, n boissons, g). Hauteur dérivée de la largeur (cellule carrée).
+// ── Calendrier (heatmap des grammes d'alcool) ────────────────────
+// Rend un modèle `buildCalendarModel` (stats.jsx) EN PLEINE LARGEUR :
+//  - 'month' / 'week' : 7 colonnes (lun→dim) qui remplissent la card, n° du
+//    jour dans chaque case, hauteur plafonnée (CHART.heatmap.cellMaxH) ;
+//  - 'year'  : 12 lignes (mois) × 31 colonnes (jour du mois) ;
+//  - 'years' : une ligne par année × 12 mois.
+// Intensité = bande de `withAlpha(T.accent, …)`, case vide en T.surface3,
+// jours futurs en contour estompé, `blank` non rendus. Libellés de colonnes
+// via thinnedAxisLabels, libellés de lignes via resolveLaneLabels.
+// Interaction : le scrub (useChartScrubber) suit le doigt ; au relâchement
+// la case reste ACTIVE (infobulle collante, `onActiveChange`) ; un second
+// tap sur la case active appelle `onPick(cell)` (ouvrir ce jour / ce mois).
+// Un geste annulé (le navigateur a pris la main pour défiler) ne choisit rien.
+function calendarGeometry(model, width) {
+  const H = CHART.heatmap;
+  const {
+    layout,
+    rows,
+    cols,
+    rowLabels
+  } = model;
+  const dense = layout === 'year' || layout === 'years';
+  const labelW = dense ? Math.max(0, ...rowLabels.map(l => String(l).length)) * CHART.font.charW + H.rowLabelGap : 0;
+  const padL = labelW;
+  const avail = Math.max(1, width - padL);
+  let stepX, cellW;
+  if (dense) {
+    stepX = avail / (cols - H.gapRatio);
+    cellW = stepX * (1 - H.gapRatio);
+  } else {
+    cellW = (avail - (cols - 1) * H.gap) / cols;
+    stepX = cellW + H.gap;
+  }
+  let cellH, stepY;
+  if (layout === 'year') {
+    stepY = Math.max(stepX, H.minRowStep);
+    cellH = stepY - stepX * H.gapRatio;
+  } else {
+    cellH = Math.min(cellW, H.cellMaxH[layout] || cellW);
+    stepY = cellH + (dense ? stepX * H.gapRatio : H.gap);
+  }
+  const padT = H.headH;
+  const height = padT + rows * stepY - (stepY - cellH) + H.padB;
+  return {
+    padL,
+    padT,
+    cellW,
+    cellH,
+    stepX,
+    stepY,
+    height,
+    dense
+  };
+}
 function SvgCalendarHeatmap({
-  cells,
-  cols = 1,
-  scaleMax = 1,
-  mode = 'monthGrid',
+  model,
   width = 320,
+  activeKey = null,
+  onActiveChange,
+  onPick,
   ariaLabel = 'Calendrier de consommation'
 }) {
   useTheme(); // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   const svgRef = React.useRef(null);
-  const [hover, setHover] = React.useState(null);
+  const [scrubKey, setScrubKey] = React.useState(null);
+  const g = calendarGeometry(model, width);
   const {
     padL,
     padT,
-    padB,
-    gapRatio,
-    cellMin,
-    cellMax
-  } = CHART.heatmap;
-  // La cellule s'adapte à la largeur pour que TOUTES les colonnes rentrent
-  // (une année ≈ 52 colonnes ne doit pas déborder du viewBox) ; plafonnée
-  // (mois/semaine restent lisibles), plancher = visibilité minimale.
-  const cell = Math.max(cellMin, Math.min(cellMax, (width - padL) / Math.max(1, cols) / (1 + gapRatio)));
-  const stepC = cell * (1 + gapRatio);
-  const height = padT + 7 * stepC + padB;
-
-  // Index (col,row) → cellule, pour le scrubber.
+    cellW,
+    cellH,
+    stepX,
+    stepY,
+    height
+  } = g;
   const byPos = React.useMemo(() => {
     const m = new Map();
-    for (const c of cells) m.set(`${c.col},${c.weekday}`, c);
+    for (const c of model.cells) m.set(`${c.row},${c.col}`, c);
     return m;
-  }, [cells]);
-  const colX = col => padL + col * stepC;
-  const rowY = wd => padT + wd * stepC;
+  }, [model]);
+  const byKey = React.useMemo(() => {
+    const m = new Map();
+    for (const c of model.cells) m.set(c.key, c);
+    return m;
+  }, [model]);
+  const cellAt = p => {
+    const col = Math.floor((p.x - padL) / stepX);
+    const row = Math.floor((p.y - padT) / stepY);
+    const c = byPos.get(`${row},${col}`);
+    return c && !c.blank && !c.future ? c : null;
+  };
+
+  // État du geste en cours : case active au pointerdown (second tap = choix),
+  // dernière case survolée, point de départ (un glissé n'est pas un tap).
+  const gesture = React.useRef({
+    downKey: null,
+    last: null,
+    x: 0,
+    y: 0,
+    cancelled: false
+  });
   const scr = useChartScrubber(svgRef, null, p => {
-    if (!p) {
-      setHover(null);
+    if (p) {
+      const c = cellAt(p);
+      gesture.current.last = c;
+      setScrubKey(c ? c.key : null);
       return;
     }
-    const col = Math.floor((p.x - padL) / stepC);
-    const row = Math.floor((p.y - padT) / stepC);
-    const c = byPos.get(`${col},${row}`);
-    setHover(c && !c.blank ? c : null);
+    setScrubKey(null);
   });
-  if (!cells.length) return null;
-  const dayLetters = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-  // Étiquettes de mois : 1ʳᵉ colonne où apparaît le 1ᵉʳ d'un mois, PUIS
-  // passe anti-collision — deux mois dont les colonnes de départ sont trop
-  // proches (cellules étroites, mois courts) se chevauchaient.
-  const monthTicks = [];
-  const seen = new Set();
-  for (const c of cells) {
-    if (c.blank) continue;
-    const [, m, d] = c.date.split('-');
-    if (d === '01' && !seen.has(`${c.col}-${m}`)) {
-      seen.add(`${c.col}-${m}`);
-      monthTicks.push({
-        col: c.col,
-        label: FR_MONTHS_SHORT[Number(m) - 1].slice(0, 4)
-      });
+  const handlers = {
+    ...scr.handlers,
+    onPointerDown: e => {
+      gesture.current = {
+        downKey: activeKey,
+        last: null,
+        x: e.clientX,
+        y: e.clientY,
+        cancelled: false
+      };
+      scr.handlers.onPointerDown(e);
+    },
+    onPointerUp: e => {
+      const gs = gesture.current;
+      const moved = Math.hypot((e.clientX || 0) - gs.x, (e.clientY || 0) - gs.y) > 10;
+      scr.handlers.onPointerUp(e);
+      if (gs.cancelled) return;
+      const c = gs.last;
+      if (c && !moved && c.key === gs.downKey && onPick) {
+        onPick(c);
+        return;
+      }
+      if (onActiveChange) onActiveChange(c || null);
+    },
+    onPointerCancel: e => {
+      gesture.current.cancelled = true;
+      scr.handlers.onPointerCancel(e);
+    },
+    // Souris : le survol montre l'infobulle, quitter la grille rend la main
+    // à la case active (collante).
+    onPointerLeave: e => {
+      scr.handlers.onPointerLeave(e);
     }
-  }
-  const shownMonthTicks = [];
-  for (const t of monthTicks) {
-    const x = padL + t.col * cell * (1 + gapRatio);
-    const prev = shownMonthTicks[shownMonthTicks.length - 1];
-    const wLbl = t.label.length * CHART.font.charW;
-    if (prev && x < prev.x + prev.w + CHART.label.minGapX) continue; // saute le mois qui mordrait
-    if (x + wLbl > width - 2) continue; // ne clippe jamais le bord droit
-    shownMonthTicks.push({
-      ...t,
-      x,
-      w: wLbl
-    });
-  }
-  const fmtFrDate = iso => {
+  };
+  if (!model.cells.length) return null;
+  const colCenters = model.colLabels.map((_, i) => padL + i * stepX + cellW / 2);
+  const shownCols = thinnedAxisLabels(model.colLabels, colCenters, {
+    lo: padL,
+    hi: width
+  });
+  const rowItems = resolveLaneLabels(model.rowLabels.map((l, i) => ({
+    pos: padT + i * stepY + cellH / 2,
+    size: CHART.font.ref,
+    priority: -i,
+    i,
+    label: l
+  })), {
+    minGap: 1,
+    lo: padT,
+    hi: height
+  });
+  const shownKey = scrubKey || activeKey;
+  const shown = shownKey ? byKey.get(shownKey) : null;
+  const withDay = model.layout === 'month' || model.layout === 'week';
+  const fmtTipDate = iso => {
     const [y, m, d] = iso.split('-').map(Number);
-    return `${d} ${FR_MONTHS_SHORT[m - 1]} ${y}`;
+    if (d == null) return `${FR_MONTHS_LONG[m - 1]} ${y}`;
+    const wd = FR_DAYS_SHORT[new Date(y, m - 1, d).getDay()];
+    return `${wd}. ${d} ${FR_MONTHS_SHORT[m - 1]} ${y}`;
   };
   return /*#__PURE__*/React.createElement("svg", _extends({
     ref: svgRef,
@@ -2482,55 +2259,128 @@ function SvgCalendarHeatmap({
       display: 'block',
       touchAction: CHART.touchAction
     }
-  }, scr.handlers), /*#__PURE__*/React.createElement("rect", {
+  }, handlers), /*#__PURE__*/React.createElement("rect", {
     x: "0",
     y: "0",
     width: width,
     height: height,
     fill: "transparent"
-  }), dayLetters.map((l, i) => i % 2 === 0 && mode !== 'yearWall' ? /*#__PURE__*/React.createElement("text", {
-    key: `d-${i}`,
-    x: padL - 5,
-    y: rowY(i) + cell * 0.72,
+  }), shownCols.map(({
+    i,
+    x,
+    anchor
+  }) => /*#__PURE__*/React.createElement("text", {
+    key: `c-${i}`,
+    x: x,
+    y: padT - 5,
+    fontSize: CHART.font.ref,
+    fill: T.muted,
+    textAnchor: anchor,
+    fontFamily: fontNum
+  }, model.colLabels[i])), rowItems.map(it => /*#__PURE__*/React.createElement("text", {
+    key: `r-${it.i}`,
+    x: padL - CHART.heatmap.rowLabelGap,
+    y: it.pos + CHART.font.ref * 0.35,
     fontSize: CHART.font.ref,
     fill: T.muted,
     textAnchor: "end",
     fontFamily: fontNum
-  }, l) : null), shownMonthTicks.map((t, i) => /*#__PURE__*/React.createElement("text", {
-    key: `m-${i}`,
-    x: colX(t.col),
-    y: padT - 5,
-    fontSize: CHART.font.ref,
-    fill: T.muted,
-    textAnchor: "start",
-    fontFamily: fontNum
-  }, t.label)), cells.map((c, i) => {
+  }, it.label)), model.cells.map(c => {
     if (c.blank) return null;
-    const band = heatmapBand(c.grams, scaleMax);
+    const x = padL + c.col * stepX,
+      y = padT + c.row * stepY;
+    const band = heatmapBand(c.grams, model.scaleMax);
+    const isActive = shownKey === c.key;
+    const r = Math.max(1.5, Math.min(cellW, cellH) * 0.18);
+    if (c.future) {
+      return /*#__PURE__*/React.createElement("g", {
+        key: c.key,
+        opacity: CHART.heatmap.futureOpacity
+      }, /*#__PURE__*/React.createElement("rect", {
+        x: x,
+        y: y,
+        width: cellW,
+        height: cellH,
+        rx: r,
+        fill: "transparent",
+        stroke: T.rule,
+        strokeWidth: CHART.grid.width
+      }), withDay && /*#__PURE__*/React.createElement("text", {
+        x: x + CHART.heatmap.dayInsetX,
+        y: y + CHART.heatmap.dayInsetY + CHART.font.tick,
+        fontSize: CHART.font.tick,
+        fill: T.muted,
+        fontFamily: fontNum
+      }, c.label));
+    }
     const fill = band === 0 ? T.surface3 : withAlpha(T.accent, HEATMAP_BAND_ALPHA[band]);
-    const isHover = hover && hover.date === c.date;
-    return /*#__PURE__*/React.createElement("rect", {
-      key: i,
-      x: colX(c.col),
-      y: rowY(c.weekday),
-      width: cell,
-      height: cell,
-      rx: Math.max(1.5, cell * 0.18),
+    return /*#__PURE__*/React.createElement("g", {
+      key: c.key
+    }, /*#__PURE__*/React.createElement("rect", {
+      x: x,
+      y: y,
+      width: cellW,
+      height: cellH,
+      rx: r,
       fill: fill,
-      stroke: isHover ? T.accent : T.rule,
-      strokeWidth: isHover ? 1.3 : 0.5
-    });
-  }), hover && (() => {
-    const tx = colX(hover.col) + cell / 2;
-    const ty = rowY(hover.weekday);
+      stroke: isActive ? T.accent : c.selected ? T.ink2 : T.rule,
+      strokeWidth: isActive ? CHART.stroke.line : c.selected ? CHART.stroke.reference : CHART.grid.width
+    }), withDay && /*#__PURE__*/React.createElement("text", {
+      x: x + CHART.heatmap.dayInsetX,
+      y: y + CHART.heatmap.dayInsetY + CHART.font.tick,
+      fontSize: CHART.font.tick,
+      fontFamily: fontNum,
+      fill: band >= 3 ? T.accentInk : c.selected ? T.ink : T.ink2,
+      fontWeight: c.selected ? 600 : 400
+    }, c.label));
+  }), shown && !shown.blank && (() => {
+    const tx = padL + shown.col * stepX + cellW / 2;
+    const ty = padT + shown.row * stepY;
     return /*#__PURE__*/React.createElement(ChartTooltip, {
       x: tx,
       y: ty,
       width: width,
       height: height,
-      lines: [fmtFrDate(hover.date), `${hover.count} boisson${hover.count > 1 ? 's' : ''}`, `${Math.round(hover.grams)} g d'alcool`]
+      lines: [fmtTipDate(shown.date), `${shown.count} boisson${shown.count > 1 ? 's' : ''}`, `${Math.round(shown.grams)} g d'alcool`]
     });
   })());
+}
+
+// Échelle du calendrier (« Moins ▢▢▢▢▢ Plus ») : mêmes bandes que les
+// cases, tokens uniquement.
+function HeatmapLegend() {
+  useTheme();
+  const s = CHART.heatmap.legendSwatch;
+  return /*#__PURE__*/React.createElement("div", {
+    "aria-hidden": "true",
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 3,
+      flexShrink: 0,
+      color: T.muted,
+      fontSize: 9.5,
+      letterSpacing: 0.3,
+      textTransform: 'uppercase'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginRight: 3
+    }
+  }, "Moins"), HEATMAP_BAND_ALPHA.map((a, i) => /*#__PURE__*/React.createElement("span", {
+    key: i,
+    style: {
+      width: s,
+      height: s,
+      borderRadius: 3,
+      border: `1px solid ${T.rule}`,
+      background: i === 0 ? T.surface3 : withAlpha(T.accent, a)
+    }
+  })), /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: 3
+    }
+  }, "Plus"));
 }
 
 // Memoize every chart at the export boundary: their data props come
@@ -2539,10 +2389,8 @@ function SvgCalendarHeatmap({
 // doesn't force the chart's heavy SVG paths to recompute. Their own
 // internal state (scrub hover) still triggers re-renders normally.
 SvgBarChart = React.memo(SvgBarChart);
-SvgRadar = React.memo(SvgRadar);
 SvgDonut = React.memo(SvgDonut);
 SvgLineChart = React.memo(SvgLineChart);
-SvgPolarClock = React.memo(SvgPolarClock);
 SvgBACProjection = React.memo(SvgBACProjection);
 SvgBACForecast = React.memo(SvgBACForecast);
 SvgHistogram = React.memo(SvgHistogram);
@@ -2560,19 +2408,18 @@ Object.assign(window, {
   bacZoneColor,
   thinnedAxisLabels,
   resolveLaneLabels,
-  radarLabelLayout,
   fitLabel,
   donutSegments,
   ChartLegend,
   SvgBarChart,
-  SvgRadar,
   SvgDonut,
   SvgLineChart,
-  SvgPolarClock,
   SvgBACProjection,
   SvgBACForecast,
   SvgHistogram,
   SvgCalendarHeatmap,
+  calendarGeometry,
+  HeatmapLegend,
   heatmapBand,
   HEATMAP_BAND_ALPHA,
   useChartScrubber,

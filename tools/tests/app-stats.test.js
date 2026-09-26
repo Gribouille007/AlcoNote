@@ -45,17 +45,25 @@ test('avec une boisson aujourd’hui : sections et sélecteur de période visibl
   assert.ok(periodTablist, 'sélecteur de période de retour');
 });
 
-test('période vide : message + sections période-scopées masquées, contenus globaux conservés', async () => {
+test('période vide : seule l’Alcoolémie reste, le message « Pas de données » en bas', async () => {
   // Semaine précédente : aucune boisson — mais on doit pouvoir revenir.
   await ctx.clickAria(/Période précédente/, 300);
   const t = ctx.text();
   assert.ok(t.includes('Pas de données disponibles'), 'message sur période vide');
   assert.ok(t.includes('Aucune boisson enregistrée sur cette période'), 'sous-texte période');
   assert.ok(!t.includes('Statistiques générales'), 'sections période-scopées masquées');
-  // Les contenus qui ne dépendent PAS de la période (BAC en direct, carte
-  // avec bascule « Tout ») restent rendus sous le message.
+  // Seul le BAC en direct survit : ni carte ni charts globaux.
   assert.ok(t.includes('Alcoolémie'), 'section BAC (en direct) conservée');
-  assert.ok(t.includes('Carte des consommations'), 'section Carte conservée');
+  assert.ok(!t.includes('Carte des consommations'), 'pas de carte sur période vide');
+  assert.ok(!t.includes('Tendances'), 'pas de charts globaux sur période vide');
+  assert.deepEqual(ctx.qa('[data-stats-section]').map((el) => el.getAttribute('data-stats-section')),
+    ['bac'], 'une seule section rendue');
+  // Le message vient EN BAS de page, après la section Alcoolémie.
+  const bac = ctx.q('[data-stats-section="bac"]');
+  const msg = ctx.qa('div').find((el) => el.textContent === 'Pas de données disponibles');
+  assert.ok(bac && msg, 'section BAC et message présents');
+  assert.ok(bac.compareDocumentPosition(msg) & ctx.window.Node.DOCUMENT_POSITION_FOLLOWING,
+    'message placé après la section Alcoolémie');
   const periodTablist = ctx.qa('[role="tablist"]')
     .find((el) => (el.getAttribute('aria-label') || '') === 'Période');
   assert.ok(periodTablist, 'sélecteur de période TOUJOURS là (navigation possible)');
@@ -121,7 +129,7 @@ test('mode Réorganiser : flèche clavier déplace une section, ordre persisté 
   await ctx.clickAria(/Réorganiser les sections/, 300);
   assert.ok(ctx.text().includes('Terminé'), 'mode édition actif');
   const handles = ctx.qa('button').filter((b) => /^Déplacer «/.test(b.getAttribute('aria-label') || ''));
-  assert.equal(handles.length, 11, '11 lignes compactes (toutes les sections visibles)');
+  assert.equal(handles.length, 10, '10 lignes compactes (toutes les sections visibles)');
 
   // ↓ sur la première poignée : « Statistiques générales » passe en 2e.
   await ctx.act(async () => {
@@ -154,4 +162,47 @@ test('mode Réorganiser : drag à la poignée (pointer events)', async () => {
   assert.deepEqual(sectionDomOrder().slice(0, 2), ['general', 'temporal'], 'drag commité au relâchement');
   const saved = JSON.parse(await ctx.window.dbManager.getSetting('stats.sectionOrder'));
   assert.deepEqual(saved.slice(0, 2), ['general', 'temporal'], 'persistance après drag');
+});
+
+// ── Badges Δ% : jamais en surimpression de la valeur ────────────────
+test('badges Δ% dans le flux (jamais position absolue sur la valeur)', async () => {
+  // La semaine courante et la précédente ont chacune une boisson (tests
+  // précédents) → les cellules portent un badge de comparaison.
+  await ctx.waitFor(() => ctx.qa('[aria-label$="vs période précédente"]').length > 0,
+    { label: 'badges Δ% rendus' });
+  for (const b of ctx.qa('[aria-label$="vs période précédente"]')) {
+    assert.notEqual(b.style.position, 'absolute', 'badge dans le flux');
+  }
+});
+
+// ── Calendrier : tap → infobulle + « Voir … », second tap → ouvre le jour ─
+test('calendrier : premier tap sélectionne un jour, second tap ouvre la période « Jour »', async () => {
+  const svg = ctx.q('svg[aria-label="Calendrier de consommation"]');
+  assert.ok(svg, 'calendrier rendu (semaine courante)');
+  const [, , vbW, vbH] = svg.getAttribute('viewBox').split(/\s+/).map(Number);
+  // jsdom ne mesure rien : on aligne la boîte rendue sur le viewBox.
+  svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: vbW, height: vbH, right: vbW, bottom: vbH });
+  const g = ctx.window.calendarGeometry({ layout: 'week', rows: 1, cols: 7, rowLabels: [] }, vbW);
+  const col = (new Date().getDay() + 6) % 7; // aujourd'hui (lundi = 0)
+  const x = g.padL + col * g.stepX + g.cellW / 2;
+  const y = g.padT + g.cellH / 2;
+  const tap = async () => ctx.act(async () => {
+    svg.dispatchEvent(new ctx.window.MouseEvent('pointerdown', { bubbles: true, clientX: x, clientY: y }));
+    svg.dispatchEvent(new ctx.window.MouseEvent('pointerup', { bubbles: true, clientX: x, clientY: y }));
+    await ctx.sleep(120);
+  });
+
+  await tap();
+  const d = new Date();
+  const months = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+  const title = `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  assert.ok(ctx.text().includes(`Voir ${title}`), `lien « Voir ${title} » après le 1er tap`);
+  assert.ok(ctx.text().includes("g d'alcool"), 'infobulle collante (grammes du jour)');
+
+  await tap();
+  const jour = ctx.qa('[role="tab"]').find((b) => b.textContent === 'Jour');
+  assert.equal(jour.getAttribute('aria-selected'), 'true', 'période « Jour » ouverte');
+  const days = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+  assert.ok(ctx.text().includes(`${days[d.getDay()]} ${d.getDate()}`), 'libellé de période = le jour tapé');
+  await ctx.clickText(/^Semaine$/, 350);
 });
