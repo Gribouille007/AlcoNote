@@ -345,15 +345,16 @@ function SyncStatusLabel({ syncing, lastPullAt }) {
   );
 }
 
-// Entrée « Comparer » en tête de la liste d'amis : moi face à un ami.
-function CompareEntry({ onOpen }) {
+// Carte d'entrée d'une page du groupe (Comparer, Classement), en tête de la
+// liste d'amis — même gabarit pour les deux : icône, titre serif, sous-titre.
+function FriendsEntryCard({ icon, title, sub, ariaLabel, onOpen, last = false }) {
   const press = usePressScale();
   return (
     <button type="button" {...press.handlers} onClick={onOpen}
-      aria-label="Comparer mes statistiques avec un ami"
+      aria-label={ariaLabel}
       style={{
         width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-        padding: '12px 14px', marginBottom: 12, borderRadius: 14, cursor: 'pointer',
+        padding: '12px 14px', marginBottom: last ? 12 : 8, borderRadius: 14, cursor: 'pointer',
         background: T.accentSoft, border: `1px solid ${T.accentSoftBorder}`,
         fontFamily: 'inherit', textAlign: 'left', color: T.ink,
         ...press.style,
@@ -363,17 +364,17 @@ function CompareEntry({ onOpen }) {
         display: 'grid', placeItems: 'center',
         background: withAlpha(T.accent, 0.18), color: T.accent,
       }}>
-        <SvgIcon icon={Ic.compare} size={20} />
+        <SvgIcon icon={icon} size={20} />
       </span>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{
           display: 'block', fontFamily: fontSerif, fontStyle: 'italic',
           fontSize: 18, color: T.ink, letterSpacing: -0.3, lineHeight: 1.1,
-        }}>Comparer</span>
+        }}>{title}</span>
         <span style={{
           display: 'block', fontSize: 9.5, color: T.muted, letterSpacing: 0.3,
           textTransform: 'uppercase', marginTop: 4, fontWeight: 500,
-        }}>Toi face à un ami, stat par stat</span>
+        }}>{sub}</span>
       </span>
       <span style={{ display: 'flex', color: T.accent }}>
         <SvgIcon icon={Ic.chevR} size={18} />
@@ -382,7 +383,23 @@ function CompareEntry({ onOpen }) {
   );
 }
 
-function FriendsTab({ onOpenFriend, onOpenCompare }) {
+// Entrée « Comparer » : moi face à un ami.
+function CompareEntry({ onOpen, last }) {
+  return (
+    <FriendsEntryCard icon={Ic.compare} title="Comparer" sub="Toi face à un ami, stat par stat"
+      ariaLabel="Comparer mes statistiques avec un ami" onOpen={onOpen} last={last} />
+  );
+}
+
+// Entrée « Classement » : tout le groupe classé sur une stat.
+function LeaderboardEntry({ onOpen, last }) {
+  return (
+    <FriendsEntryCard icon={Ic.trophy} title="Classement" sub="Le groupe, stat par stat"
+      ariaLabel="Voir le classement du groupe" onOpen={onOpen} last={last} />
+  );
+}
+
+function FriendsTab({ onOpenFriend, onOpenCompare, onOpenLeaderboard }) {
   const s = useShare();
   const rawMembers = useGroupMembers();
   // Ordre STABLE (favori puis alphabétique) : l'ordre serveur variait d'un
@@ -392,6 +409,9 @@ function FriendsTab({ onOpenFriend, onOpenCompare }) {
     [rawMembers, s.favoriteId]
   );
   const bacMap = useFriendsBac(members);
+  // Préchauffe en idle les profils de Comparer et du Classement : à
+  // l'ouverture, tout est déjà calculé → affichage immédiat.
+  useFriendsPrewarm(members, s.favoriteId);
 
   const hasGroup = s.enabled && !!s.groupId;
 
@@ -448,7 +468,11 @@ function FriendsTab({ onOpenFriend, onOpenCompare }) {
         )}
 
         {hasGroup && members.length > 0 && onOpenCompare && (
-          <CompareEntry onOpen={() => onOpenCompare({ a: COMPARE_ME, b: defaultCompareTarget(members, s.favoriteId) })} />
+          <CompareEntry last={!onOpenLeaderboard}
+            onOpen={() => onOpenCompare({ a: COMPARE_ME, b: defaultCompareTarget(members, s.favoriteId) })} />
+        )}
+        {hasGroup && members.length > 0 && onOpenLeaderboard && (
+          <LeaderboardEntry last onOpen={() => onOpenLeaderboard(true)} />
         )}
 
         {hasGroup && members.length > 0 && (
@@ -688,5 +712,6 @@ function HeaderBacStack({ onOpenMine, onOpenFriend } = {}) {
 
 Object.assign(window, {
   FriendsTab, FriendStatsView, FriendRow, GroupFooter, GroupAdminPanel,
-  HeaderBacStack, JoinGroupForm, SyncStatusLabel, CompareEntry, fmtRelTime,
+  HeaderBacStack, JoinGroupForm, SyncStatusLabel, CompareEntry, LeaderboardEntry,
+  FriendsEntryCard, fmtRelTime,
 });

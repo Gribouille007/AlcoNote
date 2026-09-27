@@ -17,6 +17,8 @@ const {
   buildCompareSections, buildCategoryDuel, compareVerdict, compareAllPeriodNote,
   defaultCompareTarget, resolveComparePerson, compareRangeFor,
   groupSharedPool, sharedRatingsMap, friendsBacMap, sortGroupMembers, ethanolGrams,
+  categoryMatchKey, categoriesMatch, editDistance, cachedCompareProfile, peekCompareProfile,
+  cachedBACSessions, cachedLiveBac, computeBacOverTime, ratingKey,
 } = global;
 
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
@@ -163,14 +165,88 @@ test('buildCompareSections — lignes selon la période, BAC seulement si les DE
   assert.ok(s.habits.numeric.every((r) => r.mode === 'abs'));
 });
 
-test('buildCategoryDuel — union des catégories, parts, tri par part max', () => {
+test('buildCategoryDuel — seules les catégories COMMUNES, parts du total', () => {
   const a = buildCompareProfile(ME, {}, 'month', ANCHOR, NOW);
   const b = buildCompareProfile(LEA, {}, 'month', ANCHOR, NOW);
   const rows = buildCategoryDuel(a, b);
-  assert.deepEqual(rows.map((r) => r.name), ['Bière', 'Vin']);
+  // « Vin » n'existe que chez moi → pas comparé. Les parts restent celles du
+  // TOTAL de chacun (75 % de mes boissons sont des bières).
+  assert.deepEqual(rows.map((r) => r.name), ['Bière']);
   near(rows[0].a, 0.75); near(rows[0].b, 1);
-  near(rows[1].a, 0.25); near(rows[1].b, 0);
   assert.equal(buildCategoryDuel({ cats: [] }, { cats: [] }).length, 0);
+});
+
+test('categoryMatchKey — casse, accents, pluriel, ponctuation', () => {
+  assert.equal(categoryMatchKey('Bières'), 'biere');
+  assert.equal(categoryMatchKey('  BIÈRE '), 'biere');
+  assert.equal(categoryMatchKey('Vins'), 'vin');
+  assert.equal(categoryMatchKey('Vins rouges'), 'vin rouge');
+  assert.equal(categoryMatchKey('Jus'), 'jus', 'mot court : pas de dé-pluralisation');
+  assert.equal(categoryMatchKey('Spiritueux'), categoryMatchKey('spiritueu'));
+  assert.equal(categoryMatchKey('🍺'), '🍺', 'nom sans lettre : forme canonique conservée');
+});
+
+test('categoriesMatch — noms proches oui, catégories différentes non', () => {
+  const yes = [['Vin', 'Vins'], ['Bière', 'Bières'], ['Bière', 'Bier'], ['bière', 'BIERE'],
+    ['Bieres', 'Bier'], ['Cocktail', 'Coktail'], ['Beir', 'Bier'], ['Vin rouge', 'Vins rouges']];
+  for (const [x, y] of yes) assert.ok(categoriesMatch(x, y), `${x} ≈ ${y}`);
+  const no = [['Vin', 'Gin'], ['Rhum', 'Rosé'], ['Bière', 'Cidre'], ['Vin rouge', 'Vin blanc'],
+    ['Vin', 'Vin rouge'], ['Shot', 'Spiritueux'], ['', 'Vin']];
+  for (const [x, y] of no) assert.ok(!categoriesMatch(x, y), `${x} ≠ ${y}`);
+});
+
+test('editDistance — insertion, substitution, transposition', () => {
+  assert.equal(editDistance('biere', 'bier'), 1);
+  assert.equal(editDistance('bier', 'beir'), 1);
+  assert.equal(editDistance('vin', 'gin'), 1);
+  assert.equal(editDistance('', 'abc'), 3);
+  assert.equal(editDistance('same', 'same'), 0);
+});
+
+test('buildCategoryDuel — rapproche « Bière » / « Bières » / « Bier » et agrège', () => {
+  const pa = { cats: [
+    { name: 'Bière', count: 6, share: 0.6 }, { name: 'Bières', count: 1, share: 0.1 },
+    { name: 'Vin', count: 3, share: 0.3 },
+  ] };
+  const pb = { cats: [
+    { name: 'Bier', count: 2, share: 0.5 }, { name: 'Vins', count: 1, share: 0.25 },
+    { name: 'Gin', count: 1, share: 0.25 },
+  ] };
+  const rows = buildCategoryDuel(pa, pb);
+  assert.deepEqual(rows.map((r) => [r.nameA, r.nameB]), [['Bière', 'Bier'], ['Vin', 'Vins']]);
+  near(rows[0].a, 0.7); near(rows[0].b, 0.5);
+  assert.equal(rows[0].countA, 7);
+  near(rows[1].a, 0.3); near(rows[1].b, 0.25);
+  // « Gin » (seulement à droite) n'est jamais rapproché de « Vin ».
+  assert.ok(!rows.some((r) => r.nameB === 'Gin'));
+});
+
+test('cachedCompareProfile — même résultat que buildCompareProfile, et mémoïsé', () => {
+  const opts = { weight: 70, gender: 'male', bacAvailable: true, ratings: null };
+  const direct = buildCompareProfile(ME, opts, 'month', ANCHOR, NOW);
+  assert.equal(peekCompareProfile(ME, opts, 'month', ANCHOR, NOW), null, 'rien en cache au départ');
+  const c1 = cachedCompareProfile(ME, opts, 'month', ANCHOR, NOW);
+  assert.deepEqual(c1, direct);
+  // Autre ancre dans le MÊME mois → même entrée de cache (même objet).
+  const c2 = cachedCompareProfile(ME, opts, 'month', new Date('2026-09-02T08:00:00'), NOW);
+  assert.equal(c2, c1);
+  assert.equal(peekCompareProfile(ME, opts, 'month', ANCHOR, NOW), c1);
+  // Un NOUVEAU tableau (écriture) invalide naturellement le cache.
+  assert.equal(peekCompareProfile([...ME], opts, 'month', ANCHOR, NOW), null);
+  // Sessions mémoïsées par (poids, sexe).
+  assert.equal(cachedBACSessions(ME, 70, 'male'), cachedBACSessions(ME, 70, 'male'));
+  assert.notEqual(cachedBACSessions(ME, 70, 'male'), cachedBACSessions(ME, 80, 'male'));
+  // Les notes font partie de l'entrée : d'autres notes → recalcul.
+  const r = { [ratingKey('Jupiler')]: 4 };
+  const withR = cachedCompareProfile(ME, { ...opts, ratings: r }, 'month', ANCHOR, NOW);
+  near(withR.avgRating, 4);
+});
+
+test('cachedLiveBac — valeur de computeBacOverTime, mémoïsée à la minute', () => {
+  const t = Date.now();
+  const v = cachedLiveBac(LEA, 70, 'female', t);
+  assert.equal(v, computeBacOverTime(LEA, 70, 'female').current || 0);
+  assert.equal(cachedLiveBac(LEA, 70, 'female', t + 1000), v);
 });
 
 // ── Verdict ───────────────────────────────────────────────────────

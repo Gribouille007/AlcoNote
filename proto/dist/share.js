@@ -1615,6 +1615,38 @@ function useSharedPool(authorId) {
   }, [authorId]);
   return state;
 }
+
+// Map auteur → boissons du pool ENTIER (Classement : tout le groupe d'un
+// coup), + `loading` avant la 1re lecture. Même contrat que useSharedPool :
+// init synchrone depuis le cache, et un bump sans écriture du pool renvoie la
+// MÊME Map → aucun rendu.
+function usePoolByAuthor() {
+  const [state, setState] = React.useState(() => {
+    const m = peekPoolByAuthor();
+    return {
+      byAuthor: m || new Map(),
+      loading: !m
+    };
+  });
+  React.useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const m = await loadPoolByAuthor();
+      if (!alive) return;
+      setState(prev => prev.byAuthor === m && !prev.loading ? prev : {
+        byAuthor: m,
+        loading: false
+      });
+    };
+    load();
+    const off = shareBus.sub(load);
+    return () => {
+      alive = false;
+      off();
+    };
+  }, []);
+  return state;
+}
 function useSharedDrinks(authorId) {
   return useSharedPool(authorId).drinks;
 }
@@ -1740,6 +1772,7 @@ Object.assign(window, {
   useGroupMembers,
   useFavoriteFriend,
   useSharedPool,
+  usePoolByAuthor,
   useSharedDrinks,
   useSharedRatings,
   useFriendsBac,

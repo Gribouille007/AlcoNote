@@ -48,6 +48,7 @@ const SCRIPTS = [
   'proto/dist/share.js',
   'proto/dist/friends.js',
   'proto/dist/compare.js',
+  'proto/dist/leaderboard.js',
   'proto/dist/modals.js',
   'proto/dist/app.js',
 ];

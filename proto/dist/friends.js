@@ -585,23 +585,29 @@ function SyncStatusLabel({
   }, syncing ? 'Synchronisation…' : lastPullAt ? `Mis à jour ${fmtRelTime(lastPullAt)}` : 'Prêt');
 }
 
-// Entrée « Comparer » en tête de la liste d'amis : moi face à un ami.
-function CompareEntry({
-  onOpen
+// Carte d'entrée d'une page du groupe (Comparer, Classement), en tête de la
+// liste d'amis — même gabarit pour les deux : icône, titre serif, sous-titre.
+function FriendsEntryCard({
+  icon,
+  title,
+  sub,
+  ariaLabel,
+  onOpen,
+  last = false
 }) {
   const press = usePressScale();
   return /*#__PURE__*/React.createElement("button", _extends({
     type: "button"
   }, press.handlers, {
     onClick: onOpen,
-    "aria-label": "Comparer mes statistiques avec un ami",
+    "aria-label": ariaLabel,
     style: {
       width: '100%',
       display: 'flex',
       alignItems: 'center',
       gap: 12,
       padding: '12px 14px',
-      marginBottom: 12,
+      marginBottom: last ? 12 : 8,
       borderRadius: 14,
       cursor: 'pointer',
       background: T.accentSoft,
@@ -623,7 +629,7 @@ function CompareEntry({
       color: T.accent
     }
   }, /*#__PURE__*/React.createElement(SvgIcon, {
-    icon: Ic.compare,
+    icon: icon,
     size: 20
   })), /*#__PURE__*/React.createElement("span", {
     style: {
@@ -640,7 +646,7 @@ function CompareEntry({
       letterSpacing: -0.3,
       lineHeight: 1.1
     }
-  }, "Comparer"), /*#__PURE__*/React.createElement("span", {
+  }, title), /*#__PURE__*/React.createElement("span", {
     style: {
       display: 'block',
       fontSize: 9.5,
@@ -650,7 +656,7 @@ function CompareEntry({
       marginTop: 4,
       fontWeight: 500
     }
-  }, "Toi face \xE0 un ami, stat par stat")), /*#__PURE__*/React.createElement("span", {
+  }, sub)), /*#__PURE__*/React.createElement("span", {
     style: {
       display: 'flex',
       color: T.accent
@@ -660,9 +666,40 @@ function CompareEntry({
     size: 18
   })));
 }
+
+// Entrée « Comparer » : moi face à un ami.
+function CompareEntry({
+  onOpen,
+  last
+}) {
+  return /*#__PURE__*/React.createElement(FriendsEntryCard, {
+    icon: Ic.compare,
+    title: "Comparer",
+    sub: "Toi face \xE0 un ami, stat par stat",
+    ariaLabel: "Comparer mes statistiques avec un ami",
+    onOpen: onOpen,
+    last: last
+  });
+}
+
+// Entrée « Classement » : tout le groupe classé sur une stat.
+function LeaderboardEntry({
+  onOpen,
+  last
+}) {
+  return /*#__PURE__*/React.createElement(FriendsEntryCard, {
+    icon: Ic.trophy,
+    title: "Classement",
+    sub: "Le groupe, stat par stat",
+    ariaLabel: "Voir le classement du groupe",
+    onOpen: onOpen,
+    last: last
+  });
+}
 function FriendsTab({
   onOpenFriend,
-  onOpenCompare
+  onOpenCompare,
+  onOpenLeaderboard
 }) {
   const s = useShare();
   const rawMembers = useGroupMembers();
@@ -670,6 +707,9 @@ function FriendsTab({
   // pull à l'autre.
   const members = React.useMemo(() => sortGroupMembers(rawMembers, s.favoriteId), [rawMembers, s.favoriteId]);
   const bacMap = useFriendsBac(members);
+  // Préchauffe en idle les profils de Comparer et du Classement : à
+  // l'ouverture, tout est déjà calculé → affichage immédiat.
+  useFriendsPrewarm(members, s.favoriteId);
   const hasGroup = s.enabled && !!s.groupId;
   const onRefresh = async () => {
     const err = await shareEngine.refreshNow();
@@ -760,10 +800,14 @@ function FriendsTab({
       lineHeight: 1.6
     }
   }, "Partage ton code d'invitation ci-dessous pour que tes amis te rejoignent.")), hasGroup && members.length > 0 && onOpenCompare && /*#__PURE__*/React.createElement(CompareEntry, {
+    last: !onOpenLeaderboard,
     onOpen: () => onOpenCompare({
       a: COMPARE_ME,
       b: defaultCompareTarget(members, s.favoriteId)
     })
+  }), hasGroup && members.length > 0 && onOpenLeaderboard && /*#__PURE__*/React.createElement(LeaderboardEntry, {
+    last: true,
+    onOpen: () => onOpenLeaderboard(true)
   }), hasGroup && members.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.surface2,
@@ -1108,5 +1152,7 @@ Object.assign(window, {
   JoinGroupForm,
   SyncStatusLabel,
   CompareEntry,
+  LeaderboardEntry,
+  FriendsEntryCard,
   fmtRelTime
 });

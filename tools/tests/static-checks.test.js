@@ -380,3 +380,22 @@ test('DA : DeltaBadge reste dans le flux (jamais en surimpression de la valeur)'
   assert.ok(body, 'DeltaBadge présent');
   assert.ok(!/position:\s*'absolute'/.test(body), 'DeltaBadge sans position absolue');
 });
+
+test('perf : onglets mémoïsés dans AppShell (un overlay ne re-rend pas StatsTab)', () => {
+  // Latence historique du mode Comparer : chaque ouverture d'overlay (et
+  // chaque toast) re-rendait TOUS les onglets montés, StatsTab compris.
+  const src = read('proto/app.jsx');
+  for (const el of ['categoriesEl', 'historyEl', 'statsEl', 'friendsEl']) {
+    assert.ok(new RegExp(`const ${el} = React\\.useMemo\\(`).test(src), `${el} mémoïsé`);
+    assert.ok(src.includes(`{${el}}`), `${el} rendu tel quel`);
+  }
+  assert.ok(!/<StatsTab reorderRef=\{statsReorderRef\} focusRequest=\{statsFocus\} \/>\s*\n\s*<\/div>/.test(src),
+    'StatsTab jamais instancié directement dans le JSX du shell');
+});
+
+test('iOS : barre d’état non translucide (pas de flou Liquid Glass sur l’en-tête)', () => {
+  const html = read('index.html');
+  assert.ok(/name="apple-mobile-web-app-status-bar-style" content="default"/.test(html),
+    'status-bar-style = default');
+  assert.ok(!/content="black-translucent"/.test(html), 'jamais black-translucent');
+});

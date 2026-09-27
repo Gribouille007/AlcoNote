@@ -14,7 +14,16 @@
   <meta name="theme-color" content="#100c0a">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <!-- `default` et NON `black-translucent` : en translucide la page passe
+       SOUS la barre d'état, et depuis iOS 26 le système y superpose un flou
+       « Liquid Glass » qui déborde d'environ 35–40 pt sous la barre — il
+       floutait le titre, la pastille BAC et le bouton menu (aucun CSS ne le
+       désactive). En `default`, la vue web démarre SOUS une barre d'état
+       opaque teintée par `theme-color` (synchronisé sur le thème actif par
+       syncThemeToDocument) et `env(safe-area-inset-top)` vaut 0. iOS lit ce
+       meta à l'installation : une PWA déjà installée doit être ré-ajoutée à
+       l'écran d'accueil pour en profiter. -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="AlcoNote">
 
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; img-src 'self' data: https: blob:; connect-src 'self' https://world.openfoodfacts.org https://nominatim.openstreetmap.org https://api.upcitemdb.com https://api.barcodelookup.com https://api.timezonedb.com https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://cdn.jsdelivr.net https://*.supabase.co; font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; media-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:;">
@@ -227,6 +236,7 @@
   <script defer src="proto/dist/share.js"></script>
   <script defer src="proto/dist/friends.js"></script>
   <script defer src="proto/dist/compare.js"></script>
+  <script defer src="proto/dist/leaderboard.js"></script>
   <script defer src="proto/dist/modals.js"></script>
   <script defer src="proto/dist/app.js"></script>
 
