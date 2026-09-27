@@ -185,6 +185,9 @@ function AppShell() {
   // Mode « Comparer » : { a, b } (ids de personne, COMPARE_ME = moi). Monté
   // AU-DESSUS de la fiche ami (ouvert depuis elle, Retour y revient).
   const [openCompare, setOpenCompare] = React.useState(null);
+  // Classement du groupe (page plein écran). Monté SOUS la fiche ami : taper
+  // un ami du classement ouvre sa fiche par-dessus, Retour y revient.
+  const [openLeaderboard, setOpenLeaderboard] = React.useState(false);
   const statsReorderRef = React.useRef();
   // Demande de focus d'une section Stats (tap sur la pastille BAC). Un objet
   // neuf à chaque demande → l'effet de StatsTab re-court même pour la même
@@ -346,6 +349,36 @@ function AppShell() {
   // when a tab becomes visible (display:none → flex) the spec restarts
   // its animation, so `alcoRise` rejoue à chaque activation sans démonter
   // le sous-arbre (on garde la persistance/perf du StatsTab).
+  // Éléments d'onglet MÉMOÏSÉS : ouvrir/fermer un overlay (Comparer,
+  // Classement, fiche, sheet…) ou afficher un toast change l'état de ce shell
+  // — sans mémo, chaque onglet monté (dont StatsTab et ses graphiques) était
+  // re-rendu dans le MÊME commit que l'ouverture, d'où la latence au tap.
+  // Même référence d'élément ⇒ React saute le sous-arbre. Les données
+  // traversent le mémo par les contexts ; le thème (T muté en place) est
+  // dans les deps pour garder le repaint complet à la bascule.
+  const categoriesEl = React.useMemo(() => /*#__PURE__*/React.createElement(CategoriesTab, {
+    onOpenFamily: setOpenFamily,
+    onDirectAdd: directAdd,
+    onEditFamily: onEdit,
+    onAddInCategory: openAdd,
+    query: catQuery,
+    setQuery: setCatQuery,
+    openCat: catOpen,
+    setOpenCat: setCatOpen
+  }), [directAdd, onEdit, openAdd, catQuery, catOpen, themeName]);
+  const historyEl = React.useMemo(() => /*#__PURE__*/React.createElement(HistoryTab, {
+    onOpenEntry: setOpenEntry,
+    onDirectAdd: directAdd
+  }), [directAdd, themeName]);
+  const statsEl = React.useMemo(() => /*#__PURE__*/React.createElement(StatsTab, {
+    reorderRef: statsReorderRef,
+    focusRequest: statsFocus
+  }), [statsFocus, themeName]);
+  const friendsEl = React.useMemo(() => /*#__PURE__*/React.createElement(FriendsTab, {
+    onOpenFriend: setOpenFriend,
+    onOpenCompare: setOpenCompare,
+    onOpenLeaderboard: setOpenLeaderboard
+  }), [themeName]);
   const tabContainer = id => ({
     flex: 1,
     minHeight: 0,
@@ -384,40 +417,22 @@ function AppShell() {
       tabRefs.current.categories = el;
     },
     style: tabContainer('categories')
-  }, /*#__PURE__*/React.createElement(CategoriesTab, {
-    onOpenFamily: setOpenFamily,
-    onDirectAdd: directAdd,
-    onEditFamily: onEdit,
-    onAddInCategory: openAdd,
-    query: catQuery,
-    setQuery: setCatQuery,
-    openCat: catOpen,
-    setOpenCat: setCatOpen
-  })), activated.has('history') && /*#__PURE__*/React.createElement("div", {
+  }, categoriesEl), activated.has('history') && /*#__PURE__*/React.createElement("div", {
     ref: el => {
       tabRefs.current.history = el;
     },
     style: tabContainer('history')
-  }, /*#__PURE__*/React.createElement(HistoryTab, {
-    onOpenEntry: setOpenEntry,
-    onDirectAdd: directAdd
-  })), activated.has('stats') && /*#__PURE__*/React.createElement("div", {
+  }, historyEl), activated.has('stats') && /*#__PURE__*/React.createElement("div", {
     ref: el => {
       tabRefs.current.stats = el;
     },
     style: tabContainer('stats')
-  }, /*#__PURE__*/React.createElement(StatsTab, {
-    reorderRef: statsReorderRef,
-    focusRequest: statsFocus
-  })), activated.has('friends') && /*#__PURE__*/React.createElement("div", {
+  }, statsEl), activated.has('friends') && /*#__PURE__*/React.createElement("div", {
     ref: el => {
       tabRefs.current.friends = el;
     },
     style: tabContainer('friends')
-  }, /*#__PURE__*/React.createElement(FriendsTab, {
-    onOpenFriend: setOpenFriend,
-    onOpenCompare: setOpenCompare
-  }))), /*#__PURE__*/React.createElement(Fab, {
+  }, friendsEl)), /*#__PURE__*/React.createElement(Fab, {
     onClick: () => openAdd(tab === 'categories' ? catOpen : null)
   }), /*#__PURE__*/React.createElement(BottomNav, {
     tab: tab,
@@ -453,6 +468,9 @@ function AppShell() {
     key: editFamily.id,
     family: editFamily,
     onClose: () => setEditFamily(null)
+  }), openLeaderboard && /*#__PURE__*/React.createElement(LeaderboardView, {
+    onClose: () => setOpenLeaderboard(false),
+    onOpenFriend: setOpenFriend
   }), openFriend && /*#__PURE__*/React.createElement(FriendStatsView, {
     key: openFriend.userId,
     friend: openFriend,

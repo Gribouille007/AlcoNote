@@ -22,6 +22,9 @@
 
 const COMPARE_ME = '__me__';
 const COMPARE_PERIOD_KEY = 'alconote.compare.period';
+// Période du Classement (leaderboard.jsx) — déclarée ici car le préchauffage
+// de l'onglet Amis (useFriendsPrewarm) la lit aussi.
+const LEADERBOARD_PERIOD_KEY = 'alconote.leaderboard.period';
 const COMPARE_COLLAPSED_KEY = 'alconote.compare.collapsed';
 const COMPARE_WEEKLY_PERIODS = ['month', 'year', 'school', 'all'];
 const COMPARE_DAY_NAMES = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
@@ -215,6 +218,14 @@ const _fmt1 = v => (Math.round(v * 10) / 10).toFixed(1);
 const _fmtGrams = v => `${Math.round(v)}g`;
 const _fmtLitres = v => `${(v / 100).toFixed(1)}L`; // v en cL
 const _fmtMgL = v => `${Math.round(v)} mg/L`;
+// Exposés au Classement (leaderboard.jsx) : mêmes chiffres, même format.
+const COMPARE_FMT = Object.freeze({
+  int: _fmtInt,
+  one: _fmt1,
+  grams: _fmtGrams,
+  litres: _fmtLitres,
+  mgL: _fmtMgL
+});
 
 // Sections de comparaison (pur). `live` = { a, b } taux courants (mg/L) ou
 // null. Chaque ligne numérique : { id, label, a, b, fmt, mode?, fmtAbs?, chip? }.
@@ -394,30 +405,119 @@ function buildCompareSections(pa, pb, period, live = null) {
   };
 }
 
-// Parts par catégorie (union des deux), triées par part max décroissante.
-// Écart en POINTS de pourcentage (une part n'a pas de « % de % » lisible).
+// ── Rapprochement des noms de catégorie ───────────────────────────
+// Deux personnes ne nomment pas leurs catégories pareil (« Vin » / « Vins »,
+// « Bière » / « Bières » / « Bier »). Clé de rapprochement : forme canonique
+// (canonicalCat) en minuscules, SANS accents ni ponctuation, et chaque mot
+// débarrassé de son pluriel (s/x final, mots de 4 lettres et plus : « vins »
+// → « vin », mais « jus » reste « jus »).
+function categoryMatchKey(name) {
+  const base = canonicalCat(name).toLowerCase();
+  const words = base.normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^\p{L}\p{N}]+/u).filter(Boolean).map(w => w.length >= 4 && /[sx]$/.test(w) ? w.slice(0, -1) : w);
+  // Nom sans lettre ni chiffre (emoji…) : on garde la forme canonique brute.
+  return words.length ? words.join(' ') : base;
+}
+
+// Distance d'édition « optimal string alignment » (insertion, suppression,
+// substitution, transposition de deux lettres voisines). Pur.
+function editDistance(a, b) {
+  const m = a.length,
+    n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev2 = null,
+    prev = Array.from({
+      length: n + 1
+    }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (prev2 && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        v = Math.min(v, prev2[j - 2] + 1);
+      }
+      cur.push(v);
+    }
+    prev2 = prev;
+    prev = cur;
+  }
+  return prev[n];
+}
+
+// Deux noms désignent-ils la même catégorie ? Clés égales, ou UNE faute de
+// frappe tolérée quand les deux clés font au moins 4 lettres (« bier » ≈
+// « biere »). En dessous, jamais : « Vin » et « Gin » restent distincts.
+function categoriesMatch(a, b) {
+  const ka = categoryMatchKey(a),
+    kb = categoryMatchKey(b);
+  if (!ka || !kb) return false;
+  if (ka === kb) return true;
+  if (Math.min(ka.length, kb.length) < 4 || Math.abs(ka.length - kb.length) > 1) return false;
+  return editDistance(ka, kb) <= 1;
+}
+
+// Parts par catégorie des catégories COMMUNES aux deux personnes, noms
+// rapprochés (categoriesMatch), triées par part max décroissante. Une
+// catégorie que seule une personne a n'est pas comparée. Les parts restent
+// celles du TOTAL de chacun (mêmes chiffres que l'onglet Stats). Écart en
+// POINTS de pourcentage (une part n'a pas de « % de % » lisible).
+// → [{ name, nameA, nameB, a, b, countA, countB }]
 function buildCategoryDuel(pa, pb) {
-  const map = new Map();
-  for (const c of pa.cats || []) map.set(c.name, {
-    name: c.name,
-    a: c.share,
-    b: 0,
-    countA: c.count,
-    countB: 0
-  });
-  for (const c of pb.cats || []) {
-    const e = map.get(c.name) || {
-      name: c.name,
+  const items = [...(pa.cats || []).map(c => ({
+    side: 'a',
+    ...c
+  })), ...(pb.cats || []).map(c => ({
+    side: 'b',
+    ...c
+  }))];
+  // Regroupement transitif (union-find) : « Bière », « Bières » et « Bier »
+  // finissent dans le même groupe même si une seule paire se ressemble.
+  const parent = items.map((_, i) => i);
+  const find = i => parent[i] === i ? i : parent[i] = find(parent[i]);
+  for (let i = 0; i < items.length; i++) {
+    for (let j = i + 1; j < items.length; j++) {
+      if (find(i) !== find(j) && categoriesMatch(items[i].name, items[j].name)) parent[find(j)] = find(i);
+    }
+  }
+  const groups = new Map();
+  items.forEach((it, i) => {
+    const r = find(i);
+    const g = groups.get(r) || {
       a: 0,
       b: 0,
       countA: 0,
-      countB: 0
+      countB: 0,
+      topA: null,
+      topB: null
     };
-    e.b = c.share;
-    e.countB = c.count;
-    map.set(c.name, e);
+    if (it.side === 'a') {
+      g.a += it.share;
+      g.countA += it.count;
+      if (!g.topA || it.count > g.topA.count) g.topA = it;
+    } else {
+      g.b += it.share;
+      g.countB += it.count;
+      if (!g.topB || it.count > g.topB.count) g.topB = it;
+    }
+    groups.set(r, g);
+  });
+  const out = [];
+  for (const g of groups.values()) {
+    if (!(g.countA > 0 && g.countB > 0)) continue;
+    const nameA = g.topA.name,
+      nameB = g.topB.name;
+    out.push({
+      name: nameA,
+      nameA,
+      nameB,
+      a: g.a,
+      b: g.b,
+      countA: g.countA,
+      countB: g.countB
+    });
   }
-  return [...map.values()].sort((x, y) => Math.max(y.a, y.b) - Math.max(x.a, x.b) || x.name.localeCompare(y.name, 'fr'));
+  return out.sort((x, y) => Math.max(y.a, y.b) - Math.max(x.a, x.b) || x.name.localeCompare(y.name, 'fr'));
 }
 
 // Phrase-verdict du héros, sur l'alcool pur (repli : nombre de boissons si
@@ -628,7 +728,7 @@ function CompareTextRow({
   first
 }) {
   useCatPalette(); // pastille de catégorie : repaint si une teinte change
-  const same = row.a && row.b && drinkNameKey(row.a.text) === drinkNameKey(row.b.text);
+  const same = !!(row.a && row.b) && (row.a.cat && row.b.cat ? categoriesMatch(row.a.cat, row.b.cat) : drinkNameKey(row.a.text) === drinkNameKey(row.b.text));
   const cell = (v, side) => /*#__PURE__*/React.createElement("div", {
     style: {
       minWidth: 0,
@@ -716,6 +816,7 @@ function CompareCategoryRow({
     pb = Math.round(cat.b * 100);
   const leader = pa === pb ? null : pa > pb ? 'a' : 'b';
   const gap = Math.abs(pa - pb);
+  const alias = cat.nameB && canonicalCat(cat.nameB) !== canonicalCat(cat.name) ? cat.nameB : null;
   const half = (share, side) => /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -735,7 +836,7 @@ function CompareCategoryRow({
   }));
   return /*#__PURE__*/React.createElement("div", {
     role: "group",
-    "aria-label": `${cat.name} : ${names.a} ${pa}%, ${names.b} ${pb}%${leader ? `, ${names[leader]} +${gap} points` : ''}`,
+    "aria-label": `${cat.name}${alias ? ` (${alias})` : ''} : ${names.a} ${pa}%, ${names.b} ${pb}%${leader ? `, ${names[leader]} +${gap} points` : ''}`,
     style: {
       padding: '12px 2px',
       borderTop: first ? 'none' : `1px solid ${T.rule}`
@@ -785,7 +886,17 @@ function CompareCategoryRow({
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap'
     }
-  }, cat.name)), /*#__PURE__*/React.createElement("div", {
+  }, cat.name)), alias && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 2,
+      color: T.muted,
+      fontSize: 10.5,
+      maxWidth: 140,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap'
+    }
+  }, "\u2248 ", alias), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       justifyContent: 'center',
@@ -1116,45 +1227,248 @@ function _loadCompareCollapsed() {
   }
 }
 
+// ── Caches de calcul (partagés Comparer ↔ Classement ↔ préchauffage) ─
+// Clé = le TABLEAU de boissons lui-même (WeakMap) : mes boissons viennent de
+// DrinksContext, celles d'un ami du cache du sharedPool — deux références
+// STABLES tant que rien ne change, remplacées à la moindre écriture. Le cache
+// meurt donc avec son tableau (aucune invalidation manuelle, aucune fuite),
+// et rouvrir Comparer / changer de période déjà vue ne recalcule RIEN.
+const CMP_NO_DRINKS = Object.freeze([]);
+const _CMP_MAX_PROFILES = 32;
+const _cmpCache = new WeakMap();
+function _cmpBucket(drinks) {
+  const key = drinks || CMP_NO_DRINKS;
+  let b = _cmpCache.get(key);
+  if (!b) {
+    b = {
+      sessions: new Map(),
+      profiles: new Map(),
+      live: new Map(),
+      ratings: null
+    };
+    _cmpCache.set(key, b);
+  }
+  return b;
+}
+const _cmpDayKey = d => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
+// Sessions Widmark d'une personne (tout l'historique), mémoïsées.
+function cachedBACSessions(drinks, weight, gender) {
+  const b = _cmpBucket(drinks);
+  const k = `${weight}|${gender}`;
+  let v = b.sessions.get(k);
+  if (!v) {
+    v = computeBACSessions(drinks || CMP_NO_DRINKS, weight, gender);
+    b.sessions.set(k, v);
+  }
+  return v;
+}
+
+// Notes d'un ami (carte nom → note), mémoïsées par tableau.
+function cachedSharedRatings(drinks) {
+  const b = _cmpBucket(drinks);
+  if (!b.ratings) b.ratings = sharedRatingsMap(drinks || CMP_NO_DRINKS);
+  return b.ratings;
+}
+function _cmpProfileKey(opts, period, anchor, now) {
+  const r = getPeriodRange(period, anchor);
+  return [period, +r.start, +r.end, _cmpDayKey(now), opts.weight, opts.gender, opts.bacAvailable ? 1 : 0, opts.ratings ? 1 : 0].join('|');
+}
+
+// Profil déjà calculé ? (lecture seule — sert à décider si la vue peut
+// s'afficher d'emblée ou doit différer le calcul d'une image).
+function peekCompareProfile(drinks, opts, period, anchor, now = new Date()) {
+  const e = _cmpBucket(drinks).profiles.get(_cmpProfileKey(opts, period, anchor, now));
+  return e && e.ratings === (opts.ratings || null) ? e.profile : null;
+}
+
+// buildCompareProfile mémoïsé. Même résultat, au calcul près : les sessions
+// viennent de cachedBACSessions. Taille bornée (FIFO) par tableau.
+function cachedCompareProfile(drinks, opts, period, anchor, now = new Date()) {
+  const b = _cmpBucket(drinks);
+  const key = _cmpProfileKey(opts, period, anchor, now);
+  const ratings = opts.ratings || null;
+  const hit = b.profiles.get(key);
+  if (hit && hit.ratings === ratings) return hit.profile;
+  const profile = buildCompareProfile(drinks || CMP_NO_DRINKS, {
+    ...opts,
+    allSessions: opts.bacAvailable ? cachedBACSessions(drinks, opts.weight, opts.gender) : null
+  }, period, anchor, now);
+  if (b.profiles.size >= _CMP_MAX_PROFILES) b.profiles.delete(b.profiles.keys().next().value);
+  b.profiles.set(key, {
+    ratings,
+    profile
+  });
+  return profile;
+}
+
+// Taux courant (mg/L) mémoïsé à la MINUTE (le taux décroît avec le temps).
+function cachedLiveBac(drinks, weight, gender, nowMs = Date.now()) {
+  const b = _cmpBucket(drinks);
+  const k = `${weight}|${gender}|${Math.floor(nowMs / 60000)}`;
+  if (b.live.has(k)) return b.live.get(k);
+  const v = computeBacOverTime(drinks || CMP_NO_DRINKS, weight, gender).current || 0;
+  b.live.clear();
+  b.live.set(k, v);
+  return v;
+}
+
+// Options de profil d'une personne résolue (resolveComparePerson).
+function compareProfileOpts(person, ratings = null) {
+  return {
+    weight: person ? person.weight : DEFAULT_WEIGHT_KG,
+    gender: person ? person.gender : 'male',
+    bacAvailable: !!(person && person.bacAvailable),
+    ratings: ratings || null
+  };
+}
+
 // Données d'une personne : mes boissons (contexte perso) ou celles d'un ami
 // (cache du sharedPool). Les hooks sont appelés inconditionnellement.
 function useComparePersonData(id, myDrinks, myRatings) {
   const isMe = id === COMPARE_ME;
   const pool = useSharedPool(isMe ? null : id);
-  const friendRatings = React.useMemo(() => isMe ? null : sharedRatingsMap(pool.drinks), [isMe, pool.drinks]);
   return isMe ? {
-    drinks: myDrinks.drinks || [],
+    drinks: myDrinks.drinks || CMP_NO_DRINKS,
     loading: !!myDrinks.loading,
     ratings: myRatings
   } : {
     drinks: pool.drinks,
     loading: pool.loading,
-    ratings: friendRatings
+    ratings: pool.loading ? null : cachedSharedRatings(pool.drinks)
   };
 }
 
-// Profil mémoïsé : sessions Widmark calculées une fois par (boissons, profil),
-// puis re-sélectionnées par période.
-function useCompareProfile(person, data, period, anchor) {
-  const weight = person ? person.weight : DEFAULT_WEIGHT_KG;
-  const gender = person ? person.gender : 'male';
-  const bacAvailable = !!(person && person.bacAvailable);
-  const allSessions = React.useMemo(() => bacAvailable ? computeBACSessions(data.drinks, weight, gender) : null, [data.drinks, weight, gender, bacAvailable]);
-  return React.useMemo(() => buildCompareProfile(data.drinks, {
-    weight,
-    gender,
-    bacAvailable,
-    ratings: data.ratings,
-    allSessions
-  }, period, anchor), [data.drinks, data.ratings, allSessions, weight, gender, bacAvailable, period, anchor]);
+// Profil mémoïsé (cache module) ; null tant que `enabled` est faux.
+function useCompareProfile(person, data, period, anchor, enabled = true) {
+  const opts = compareProfileOpts(person, data.ratings);
+  return React.useMemo(() => enabled ? cachedCompareProfile(data.drinks, opts, period, anchor) : null, [enabled, data.drinks, data.ratings, opts.weight, opts.gender, opts.bacAvailable, period, anchor]);
 }
 
 // Taux courant (mg/L), recalculé chaque minute (le taux décroît avec le temps).
-function useCompareLiveBac(person, drinks, minute) {
-  const on = !!(person && person.bacAvailable);
+function useCompareLiveBac(person, drinks, minute, enabled = true) {
+  const on = enabled && !!(person && person.bacAvailable);
   const weight = person ? person.weight : DEFAULT_WEIGHT_KG;
   const gender = person ? person.gender : 'male';
-  return React.useMemo(() => on ? computeBacOverTime(drinks, weight, gender).current || 0 : null, [on, drinks, weight, gender, minute]);
+  return React.useMemo(() => on ? cachedLiveBac(drinks, weight, gender) : null, [on, drinks, weight, gender, minute]);
+}
+
+// Planifie `fn` APRÈS la prochaine image peinte (rAF puis tâche) : la page
+// s'affiche et démarre son animation d'entrée AVANT le calcul lourd — le tap
+// répond immédiatement. Renvoie une fonction d'annulation.
+function afterNextPaint(fn) {
+  const w = typeof window !== 'undefined' ? window : {};
+  let t = null,
+    cancelled = false;
+  const run = () => {
+    if (!cancelled) t = setTimeout(() => {
+      if (!cancelled) fn();
+    }, 0);
+  };
+  const r = typeof w.requestAnimationFrame === 'function' ? w.requestAnimationFrame(run) : setTimeout(run, 16);
+  return () => {
+    cancelled = true;
+    clearTimeout(t);
+    if (typeof w.cancelAnimationFrame === 'function') w.cancelAnimationFrame(r);else clearTimeout(r);
+  };
+}
+
+// Rendu PROGRESSIF : renvoie l'étape courante (0 → max), avancée d'un cran
+// après chaque image peinte. Étape 0 = la page seule (en-tête, personnes,
+// période) — le tap répond à l'image suivante et l'animation d'entrée
+// (transform, jouée par le compositeur) démarre aussitôt ; les étapes
+// suivantes construisent le contenu par morceaux, jamais en un seul long
+// bloc. Mesuré : c'est la CONSTRUCTION du DOM (~600 nœuds stylés), pas le
+// calcul, qui coûtait le plus au tap.
+function useProgressiveStages(max = 1) {
+  const [stage, setStage] = React.useState(0);
+  React.useEffect(() => stage >= max ? undefined : afterNextPaint(() => setStage(x => Math.min(max, x + 1))), [stage, max]);
+  return stage;
+}
+
+// Idle « poli » : requestIdleCallback si dispo, sinon petit délai.
+function onIdle(fn, timeout = 1500) {
+  const w = typeof window !== 'undefined' ? window : {};
+  if (typeof w.requestIdleCallback === 'function') {
+    const h = w.requestIdleCallback(fn, {
+      timeout
+    });
+    return () => {
+      if (typeof w.cancelIdleCallback === 'function') w.cancelIdleCallback(h);
+    };
+  }
+  const h = setTimeout(fn, 300);
+  return () => clearTimeout(h);
+}
+
+// Préchauffage : pendant que l'onglet Amis est affiché, calcule EN IDLE (une
+// personne par tranche, pour ne jamais bloquer un tap) les profils dont
+// Comparer et le Classement auront besoin à l'ouverture. `jobs` = liste de
+// fonctions sans argument ; chacune remplit le cache module.
+function runIdleJobs(jobs) {
+  let i = 0,
+    cancel = null,
+    stopped = false;
+  const step = () => {
+    if (stopped || i >= jobs.length) return;
+    try {
+      jobs[i++]();
+    } catch (e) {/* un calcul raté ne bloque pas les autres */}
+    cancel = onIdle(step);
+  };
+  cancel = onIdle(step);
+  return () => {
+    stopped = true;
+    if (cancel) cancel();
+  };
+}
+function storedPeriod(key, fallback = 'month') {
+  try {
+    return localStorage.getItem(key) || fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+// Monté dans l'onglet Amis : préchauffe Comparer (moi + ami par défaut) et le
+// Classement (tout le groupe) sur leurs périodes mémorisées. Aucun rendu.
+function useFriendsPrewarm(members, favoriteId) {
+  const s = useShare();
+  const myDrinks = useDrinks();
+  const myRatings = useRatings();
+  const mySettings = useSettings();
+  const key = (members || []).map(m => `${m.userId}:${m.shareBac ? 1 : 0}:${m.bacWeight || ''}:${m.bacGender || ''}`).join(',');
+  const membersRef = React.useRef(members);
+  membersRef.current = members;
+  React.useEffect(() => {
+    const list = membersRef.current || [];
+    if (!s.groupId || !list.length || myDrinks.loading) return undefined;
+    let stop = null,
+      alive = true;
+    loadPoolByAuthor().then(byAuthor => {
+      if (!alive) return;
+      const anchor = new Date();
+      const cmpPeriod = storedPeriod(COMPARE_PERIOD_KEY);
+      const lbPeriod = storedPeriod(LEADERBOARD_PERIOD_KEY);
+      const me = resolveComparePerson(COMPARE_ME, list, mySettings);
+      const target = defaultCompareTarget(list, favoriteId);
+      const jobs = [() => cachedCompareProfile(myDrinks.drinks, compareProfileOpts(me, myRatings), cmpPeriod, anchor)];
+      for (const m of [...list].sort((x, y) => x.userId === target ? -1 : y.userId === target ? 1 : 0)) {
+        const P = resolveComparePerson(m.userId, list, mySettings);
+        const drinks = byAuthor.get(m.userId) || CMP_NO_DRINKS;
+        if (m.userId === target) {
+          jobs.push(() => cachedCompareProfile(drinks, compareProfileOpts(P, cachedSharedRatings(drinks)), cmpPeriod, anchor));
+        }
+        jobs.push(() => cachedCompareProfile(drinks, compareProfileOpts(P), lbPeriod, anchor));
+      }
+      jobs.push(() => cachedCompareProfile(myDrinks.drinks, compareProfileOpts(me), lbPeriod, anchor));
+      stop = runIdleJobs(jobs);
+    }).catch(() => {});
+    return () => {
+      alive = false;
+      if (stop) stop();
+    };
+  }, [s.groupId, key, favoriteId, myDrinks.drinks, myDrinks.loading, myRatings, mySettings.userWeight, mySettings.userGender]);
 }
 
 // Vue plein écran « Comparer » (même transition « page » que la fiche ami).
@@ -1226,14 +1540,21 @@ function CompareView({
   }, [hasA, hasB, pair.a, pair.b, members, s.groupId, s.members.length, close]);
   const dataA = useComparePersonData(pair.a, myDrinks, myRatings);
   const dataB = useComparePersonData(pair.b, myDrinks, myRatings);
-  const profA = useCompareProfile(A, dataA, period, anchor);
-  const profB = useCompareProfile(B, dataB, period, anchor);
-  const liveA = useCompareLiveBac(A, dataA.drinks, minute);
-  const liveB = useCompareLiveBac(B, dataB.drinks, minute);
-  const sections = React.useMemo(() => buildCompareSections(profA, profB, period, liveA != null && liveB != null ? {
+  // Latence au tap : la page est peinte SEULE à la 1re image (stage 0), le
+  // héros et la 1re section à la suivante (1), le reste ensuite (2). Les
+  // profils sont en général déjà en cache (préchauffés en idle par l'onglet
+  // Amis) : chaque étape ne paie que la construction de son DOM.
+  const loadingData = dataA.loading || dataB.loading;
+  const stage = useProgressiveStages(2);
+  const warm = stage >= 1;
+  const profA = useCompareProfile(A, dataA, period, anchor, warm);
+  const profB = useCompareProfile(B, dataB, period, anchor, warm);
+  const liveA = useCompareLiveBac(A, dataA.drinks, minute, warm);
+  const liveB = useCompareLiveBac(B, dataB.drinks, minute, warm);
+  const sections = React.useMemo(() => profA && profB ? buildCompareSections(profA, profB, period, liveA != null && liveB != null ? {
     a: liveA,
     b: liveB
-  } : null), [profA, profB, period, liveA, liveB]);
+  } : null) : null, [profA, profB, period, liveA, liveB]);
   const people = React.useMemo(() => [{
     id: COMPARE_ME,
     name: 'Toi',
@@ -1264,8 +1585,7 @@ function CompareView({
     } catch (e) {}
     return next;
   });
-  const loading = dataA.loading || dataB.loading;
-  const ready = A && B && !loading;
+  const ready = !!(A && B && !loadingData && profA && profB);
   const names = {
     a: A ? A.name : '',
     b: B ? B.name : ''
@@ -1403,12 +1723,26 @@ function CompareView({
     anchor: anchor,
     onShift: d => setAnchor(shiftAnchor(period, anchor, d)),
     onReset: () => setAnchor(new Date())
-  }), ready && /*#__PURE__*/React.createElement(CompareHero, {
+  }), ready ? /*#__PURE__*/React.createElement(CompareHero, {
     pa: profA,
     pb: profB,
     A: A,
     B: B,
     period: period
+  }) :
+  /*#__PURE__*/
+  // Réserve la place du héros le temps d'une image de calcul : pas
+  // de saut de mise en page quand le contenu arrive.
+  React.createElement("div", {
+    "aria-busy": "true",
+    "aria-label": "Calcul de la comparaison",
+    style: {
+      height: 196,
+      marginBottom: 14,
+      borderRadius: 16,
+      background: T.surface2,
+      border: `1px solid ${T.rule}`
+    }
   }), ready && bothEmpty && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
@@ -1424,7 +1758,7 @@ function CompareView({
     sub: "Quantit\xE9s et rythme sur la p\xE9riode",
     collapsed: collapsed,
     toggleSection: toggleSection
-  }, block(sections.volume, CompareRow)), /*#__PURE__*/React.createElement(StatSection, {
+  }, block(sections.volume, CompareRow)), stage >= 2 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(StatSection, {
     id: "cmp-bac",
     title: "Alcool\xE9mie",
     sub: "Sessions et taux (mod\xE8le de Widmark)",
@@ -1454,15 +1788,24 @@ function CompareView({
   }))), /*#__PURE__*/React.createElement(StatSection, {
     id: "cmp-categories",
     title: "R\xE9partition par cat\xE9gorie",
-    sub: "Part de chaque cat\xE9gorie dans les boissons de chacun",
+    sub: "Cat\xE9gories communes, part dans les boissons de chacun",
     collapsed: collapsed,
     toggleSection: toggleSection
-  }, sections.categories.map((c, i) => /*#__PURE__*/React.createElement(CompareCategoryRow, {
+  }, sections.categories.length ? sections.categories.map((c, i) => /*#__PURE__*/React.createElement(CompareCategoryRow, {
     key: c.name,
     cat: c,
     names: names,
     first: i === 0
-  }))))), picking && /*#__PURE__*/React.createElement(ComparePersonSheet, {
+  })) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: T.muted,
+      fontSize: 12,
+      padding: '10px 4px',
+      textAlign: 'center',
+      fontStyle: 'italic',
+      fontFamily: fontSerif
+    }
+  }, "Aucune cat\xE9gorie en commun sur cette p\xE9riode"))))), picking && /*#__PURE__*/React.createElement(ComparePersonSheet, {
     side: picking,
     people: people,
     pair: pair,
@@ -1472,6 +1815,10 @@ function CompareView({
 }
 Object.assign(window, {
   COMPARE_ME,
+  COMPARE_PERIOD_KEY,
+  LEADERBOARD_PERIOD_KEY,
+  COMPARE_FMT,
+  COMPARE_WEEKLY_PERIODS,
   CompareView,
   ComparePersonSheet,
   CompareRow,
@@ -1490,5 +1837,23 @@ Object.assign(window, {
   buildCompareSections,
   buildCategoryDuel,
   compareVerdict,
-  compareAllPeriodNote
+  compareAllPeriodNote,
+  categoryMatchKey,
+  editDistance,
+  categoriesMatch,
+  cachedBACSessions,
+  cachedSharedRatings,
+  cachedCompareProfile,
+  peekCompareProfile,
+  cachedLiveBac,
+  compareProfileOpts,
+  useCompareProfile,
+  useComparePersonData,
+  CMP_NO_DRINKS,
+  storedPeriod,
+  afterNextPaint,
+  useProgressiveStages,
+  onIdle,
+  runIdleJobs,
+  useFriendsPrewarm
 });

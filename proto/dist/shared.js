@@ -43,6 +43,14 @@ const THEMES = {
     // `bacZoneColor` (stats-charts). `T.good` fournit la zone sobre.
     bacWarn: 'oklch(72% 0.16 60)',
     bacDanger: 'oklch(68% 0.20 25)',
+    // Médailles du Classement (podium 1/2/3) : or, argent, bronze — texte
+    // et pastille (`*`), fond doux (`*Soft`).
+    medalGold: 'oklch(80% 0.14 85)',
+    medalGoldSoft: 'oklch(30% 0.05 85)',
+    medalSilver: 'oklch(80% 0.01 250)',
+    medalSilverSoft: 'oklch(30% 0.01 250)',
+    medalBronze: 'oklch(70% 0.11 50)',
+    medalBronzeSoft: 'oklch(29% 0.05 50)',
     // Équivalent sRGB de `bg`, pour <meta name="theme-color"> : la barre
     // système est peinte par le moteur du navigateur/de l'OS, dont les
     // parseurs les plus anciens ignorent oklch() (et retomberaient alors sur
@@ -93,6 +101,14 @@ const THEMES = {
     // `bacZoneColor` (stats-charts). `T.good` fournit la zone sobre.
     bacWarn: 'oklch(58% 0.16 55)',
     bacDanger: 'oklch(54% 0.20 25)',
+    // Médailles du Classement (cf. thème sombre) — assombries pour rester
+    // lisibles en texte sur fond clair.
+    medalGold: 'oklch(58% 0.13 85)',
+    medalGoldSoft: 'oklch(95% 0.05 90)',
+    medalSilver: 'oklch(55% 0.01 250)',
+    medalSilverSoft: 'oklch(94% 0.006 250)',
+    medalBronze: 'oklch(52% 0.11 50)',
+    medalBronzeSoft: 'oklch(94% 0.03 55)',
     // Équivalent sRGB de `bg` (cf. thème sombre).
     metaColor: '#faf8f4',
     isDark: false
@@ -920,6 +936,30 @@ const Ic = {
     y1: "17",
     x2: "17",
     y2: "17"
+  })),
+  // Trophée (Classement du groupe).
+  trophy: /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M8 4h8v5a4 4 0 0 1-8 0V4z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M16 5h3v2a3 3 0 0 1-3 3"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M8 5H5v2a3 3 0 0 0 3 3"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "13",
+    x2: "12",
+    y2: "17"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M8.5 20.5h7"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M9.5 17h5l1 3.5h-7z"
   }))
 };
 function SvgIcon({

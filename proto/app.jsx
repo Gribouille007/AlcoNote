@@ -140,6 +140,9 @@ function AppShell() {
   // Mode « Comparer » : { a, b } (ids de personne, COMPARE_ME = moi). Monté
   // AU-DESSUS de la fiche ami (ouvert depuis elle, Retour y revient).
   const [openCompare, setOpenCompare] = React.useState(null);
+  // Classement du groupe (page plein écran). Monté SOUS la fiche ami : taper
+  // un ami du classement ouvre sa fiche par-dessus, Retour y revient.
+  const [openLeaderboard, setOpenLeaderboard] = React.useState(false);
   const statsReorderRef = React.useRef();
   // Demande de focus d'une section Stats (tap sur la pastille BAC). Un objet
   // neuf à chaque demande → l'effet de StatsTab re-court même pour la même
@@ -286,6 +289,34 @@ function AppShell() {
   // when a tab becomes visible (display:none → flex) the spec restarts
   // its animation, so `alcoRise` rejoue à chaque activation sans démonter
   // le sous-arbre (on garde la persistance/perf du StatsTab).
+  // Éléments d'onglet MÉMOÏSÉS : ouvrir/fermer un overlay (Comparer,
+  // Classement, fiche, sheet…) ou afficher un toast change l'état de ce shell
+  // — sans mémo, chaque onglet monté (dont StatsTab et ses graphiques) était
+  // re-rendu dans le MÊME commit que l'ouverture, d'où la latence au tap.
+  // Même référence d'élément ⇒ React saute le sous-arbre. Les données
+  // traversent le mémo par les contexts ; le thème (T muté en place) est
+  // dans les deps pour garder le repaint complet à la bascule.
+  const categoriesEl = React.useMemo(() => (
+    <CategoriesTab
+      onOpenFamily={setOpenFamily}
+      onDirectAdd={directAdd}
+      onEditFamily={onEdit}
+      onAddInCategory={openAdd}
+      query={catQuery} setQuery={setCatQuery}
+      openCat={catOpen} setOpenCat={setCatOpen}
+    />
+  ), [directAdd, onEdit, openAdd, catQuery, catOpen, themeName]);
+  const historyEl = React.useMemo(() => (
+    <HistoryTab onOpenEntry={setOpenEntry} onDirectAdd={directAdd} />
+  ), [directAdd, themeName]);
+  const statsEl = React.useMemo(() => (
+    <StatsTab reorderRef={statsReorderRef} focusRequest={statsFocus} />
+  ), [statsFocus, themeName]);
+  const friendsEl = React.useMemo(() => (
+    <FriendsTab onOpenFriend={setOpenFriend} onOpenCompare={setOpenCompare}
+      onOpenLeaderboard={setOpenLeaderboard} />
+  ), [themeName]);
+
   const tabContainer = (id) => ({
     flex: 1, minHeight: 0,
     display: tab === id ? 'flex' : 'none',
@@ -305,29 +336,22 @@ function AppShell() {
       <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {activated.has('categories') && (
           <div ref={el => { tabRefs.current.categories = el; }} style={tabContainer('categories')}>
-            <CategoriesTab
-              onOpenFamily={setOpenFamily}
-              onDirectAdd={directAdd}
-              onEditFamily={onEdit}
-              onAddInCategory={openAdd}
-              query={catQuery} setQuery={setCatQuery}
-              openCat={catOpen} setOpenCat={setCatOpen}
-            />
+            {categoriesEl}
           </div>
         )}
         {activated.has('history') && (
           <div ref={el => { tabRefs.current.history = el; }} style={tabContainer('history')}>
-            <HistoryTab onOpenEntry={setOpenEntry} onDirectAdd={directAdd} />
+            {historyEl}
           </div>
         )}
         {activated.has('stats') && (
           <div ref={el => { tabRefs.current.stats = el; }} style={tabContainer('stats')}>
-            <StatsTab reorderRef={statsReorderRef} focusRequest={statsFocus} />
+            {statsEl}
           </div>
         )}
         {activated.has('friends') && (
           <div ref={el => { tabRefs.current.friends = el; }} style={tabContainer('friends')}>
-            <FriendsTab onOpenFriend={setOpenFriend} onOpenCompare={setOpenCompare} />
+            {friendsEl}
           </div>
         )}
       </main>
@@ -357,6 +381,9 @@ function AppShell() {
       )}
       {editFamily && (
         <EditFamilySheet key={editFamily.id} family={editFamily} onClose={() => setEditFamily(null)} />
+      )}
+      {openLeaderboard && (
+        <LeaderboardView onClose={() => setOpenLeaderboard(false)} onOpenFriend={setOpenFriend} />
       )}
       {openFriend && (
         <FriendStatsView key={openFriend.userId} friend={openFriend} onClose={() => setOpenFriend(null)}

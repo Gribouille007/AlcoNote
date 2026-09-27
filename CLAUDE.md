@@ -523,6 +523,16 @@ carte qui capte le glisser à un doigt piégeait le défilement dès qu'elle
 remplissait l'écran (bug « bloqué en bas de la période Jour »). La carte
 est la DERNIÈRE section par défaut.
 
+**Barre d'état iOS** : `apple-mobile-web-app-status-bar-style` = `default`,
+JAMAIS `black-translucent`. En translucide la page passe sous la barre
+d'état et, depuis iOS 26, le système y superpose un flou « Liquid Glass »
+qui déborde de ~35–40 pt et floutait l'en-tête (titre, pastille BAC, menu) —
+aucun CSS ne le désactive. En `default`, la vue web démarre sous une barre
+opaque teintée par `theme-color` (syncThemeToDocument) et
+`env(safe-area-inset-top)` vaut 0. iOS lit ce meta à l'installation : une
+PWA déjà installée doit être ré-ajoutée à l'écran d'accueil. Vérifié par
+static-checks.
+
 **Portrait** : l'app n'est JAMAIS utilisable en paysage. Trois ceintures,
 aucune ne couvrant seule tous les contextes :
 1. `"orientation": "portrait-primary"` dans `manifest.json` (PWA installée) ;
@@ -824,6 +834,41 @@ dupliquée** — un ami passe par les mêmes `aggregateGeneral`,
   seulement si les DEUX partagent leur BAC. Tous les calculs passent par les
   helpers de stats (`buildCompareProfile` n'en réimplémente aucun) ; helpers
   purs testés dans `unit-compare.test.js`.
+  **Répartition par catégorie** : seules les catégories COMMUNES aux deux
+  sont comparées (une catégorie qu'une seule personne a n'apparaît pas), et
+  les noms proches sont rapprochés — `categoriesMatch` (clé
+  `categoryMatchKey` : casse, accents, ponctuation et pluriel s/x ignorés,
+  plus UNE faute de frappe tolérée si les deux clés font ≥ 4 lettres :
+  Vin=Vins, Bière=Bières=Bier, mais Vin≠Gin). Regroupement transitif
+  (union-find) dans `buildCategoryDuel` ; les parts restent celles du TOTAL
+  de chacun (mêmes chiffres que Stats) ; le nom d'en face s'affiche « ≈ … »
+  sous le nom quand il diffère.
+- **Classement** (`proto/leaderboard.jsx`, `LeaderboardView`) : tout le
+  groupe, MOI compris (ligne ambre), classé sur une stat du registre
+  `LEADERBOARD_STATS` (familles Volume / Fréquence / Alcoolémie ; `multiDay`,
+  `periods`, `total`, `bac`). Entrée : carte « Classement » sous « Comparer »
+  (`FriendsEntryCard`, même gabarit). Même sélecteur de période que Comparer
+  (« Tout » = depuis la 1re boisson de chacun, note sur les cumuls). Podium
+  2·1·3 (tokens `T.medalGold/Silver/Bronze` + `*Soft`) puis liste avec barre
+  ∝ valeur. Rang « compétition » sur la valeur AFFICHÉE (`rankLeaderboard`).
+  Stat d'alcoolémie + BAC non partagé ⇒ NON classé, en bas, « BAC non
+  partagé » (jamais un taux inventé) ; aucune session ⇒ « Aucune session ».
+  Chaque personne est évaluée par `cachedCompareProfile` : un chiffre du
+  classement est celui de Comparer. Monté SOUS la fiche ami (zIndex 59 <
+  60) : taper un ami ouvre sa fiche par-dessus, Retour revient au
+  classement. Tests : `unit-leaderboard`, `app-friends-leaderboard`.
+- **Latence Comparer / Classement** (mesurée, CPU ×6) : le coût au tap était
+  (1) le re-rendu de TOUS les onglets montés par l'`AppShell` — corrigé par
+  les éléments d'onglet mémoïsés (`categoriesEl`/`historyEl`/`statsEl`/
+  `friendsEl`, verrou static-checks) — et (2) la construction du DOM de la
+  vue. Règles : calculs via le cache module (`cachedCompareProfile`,
+  `cachedBACSessions`, `cachedLiveBac`, `cachedSharedRatings` — WeakMap clé
+  = TABLEAU de boissons, invalidé naturellement par toute écriture) ;
+  préchauffage en idle depuis l'onglet Amis (`useFriendsPrewarm`, une
+  personne par tranche) ; rendu PROGRESSIF (`useProgressiveStages` : page
+  seule à la 1re image, puis contenu par morceaux pendant l'animation
+  d'entrée). Ne jamais recalculer `computeBACSessions` directement dans ces
+  vues ni rendre tout leur contenu dans le commit du tap.
 - Transport derrière l'interface `ShareTransport` : `MockShareTransport`
   (amis fictifs Léa/Tom pour développer hors-ligne) ou
   `SupabaseShareTransport`. Choix dans **`js/share-config.js`** (édité à
@@ -1009,6 +1054,18 @@ monté pour la session. Cela évite le coût de re-mount du StatsTab
   un ami sans BAC partagé masque l'Alcoolémie (message, aucun taux inventé) ;
   depuis la fiche ami, le bouton de comparaison met cet ami à droite et
   Retour revient à la fiche.
+- **Amis — comparer (catégories)** : « Vin » chez l'un et « Vins » chez
+  l'autre sont comparés sur une même ligne (« ≈ Vins » sous le nom) ; une
+  catégorie que seule une personne a n'apparaît pas.
+- **Amis — classement** : carte « Classement » → podium + liste, moi inclus ;
+  famille Alcoolémie : un ami sans BAC partagé est en bas, « BAC non
+  partagé », sans rang ; taper un ami ouvre sa fiche, Retour revient au
+  classement ; « Fréquence » absente sur « Jour ».
+- **Latence** : taper « Comparer » / « Classement » fait glisser la page
+  immédiatement (le contenu arrive pendant l'animation), même avec l'onglet
+  Stats déjà visité.
+- **iPhone (PWA ré-installée)** : plus aucun flou sur le titre, la pastille
+  BAC ni le bouton menu ; la barre d'état prend la couleur du thème.
 - **Amis — retour** : la fiche ami pousse depuis la droite ; le geste
   retour système la referme (sortie vers la droite) ; un autre geste
   retour ramène à l'onglet Catégories ; répétable à volonté (jamais de
