@@ -64,12 +64,33 @@ function CategoriesTab({
     }
   }, [categories]);
   const cats = React.useMemo(() => computeCategoryStats(categories, families), [categories, families]);
-  const filtered = React.useMemo(() => {
-    if (!openCat) return [];
-    const q = (query || '').toLowerCase();
-    const openKey = canonicalCat(openCat);
-    return families.filter(f => canonicalCat(f.category) === openKey && (!q || f.name.toLowerCase().includes(q)));
-  }, [openCat, families, query]);
+
+  // Frappe fluide : le champ suit la saisie immédiatement, les listes
+  // filtrées suivent en priorité basse (interruptible par la touche suivante).
+  const deferredQuery = React.useDeferredValue(query || '');
+
+  // Drill-down : recherche tolérante (casse, accents, fautes, multi-mots —
+  // cf. searchFamilies, data.jsx) dans la catégorie ouverte. Les résultats
+  // exacts d'abord ; les approchés seulement s'il n'y a aucun exact.
+  const {
+    filtered,
+    filteredApprox
+  } = React.useMemo(() => {
+    if (!openCat) return {
+      filtered: [],
+      filteredApprox: false
+    };
+    const r = searchFamilies(families, deferredQuery, {
+      category: openCat
+    });
+    return r.exact.length || !r.approx.length ? {
+      filtered: r.exact,
+      filteredApprox: false
+    } : {
+      filtered: r.approx,
+      filteredApprox: true
+    };
+  }, [openCat, families, deferredQuery]);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -87,7 +108,7 @@ function CategoriesTab({
   })), !openCat ? /*#__PURE__*/React.createElement(CategoryGrid, {
     cats: cats,
     families: families,
-    query: query,
+    query: deferredQuery,
     onOpen: setOpenCat,
     favorites: favorites,
     onOpenFamily: onOpenFamily,
@@ -101,7 +122,8 @@ function CategoriesTab({
   React.createElement(FamilyList, {
     category: openCat,
     families: filtered,
-    query: query,
+    query: deferredQuery,
+    approx: filteredApprox,
     onBack: () => {
       setOpenCat(null);
       setQuery('');
@@ -131,11 +153,12 @@ function CategoryGrid({
   onDirectAdd,
   onAddCategory
 }) {
-  const q = (query || '').toLowerCase();
-  const matchedFams = React.useMemo(() => {
-    if (!q) return [];
-    return families.filter(f => f.name.toLowerCase().includes(q) || f.category.toLowerCase().includes(q));
-  }, [families, q]);
+  // Recherche globale tolérante (cf. searchFamilies) : exacts triés par
+  // pertinence, puis une section « Résultats approchants » (fautes de frappe).
+  const search = React.useMemo(() => searchFamilies(families, query), [families, query]);
+  const q = search.active;
+  const matchedFams = q ? search.exact : [];
+  const approxFams = q ? search.approx : [];
   return /*#__PURE__*/React.createElement("div", {
     "data-tab-scroll": true,
     style: {
@@ -190,7 +213,7 @@ function CategoryGrid({
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.plus,
     size: 15
-  }), " Nouvelle cat\xE9gorie")), q && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(SectionHead, null, matchedFams.length, " r\xE9sultat", matchedFams.length > 1 ? 's' : ''), /*#__PURE__*/React.createElement("div", {
+  }), " Nouvelle cat\xE9gorie")), q && /*#__PURE__*/React.createElement(React.Fragment, null, (matchedFams.length > 0 || approxFams.length === 0) && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(SectionHead, null, matchedFams.length, " r\xE9sultat", matchedFams.length > 1 ? 's' : ''), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 10
     }
@@ -207,7 +230,21 @@ function CategoryGrid({
       padding: '40px 0',
       textAlign: 'center'
     }
-  }, "Aucun r\xE9sultat pour \xAB ", query, " \xBB"))));
+  }, "Aucun r\xE9sultat pour \xAB ", query.trim(), " \xBB"))), approxFams.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: matchedFams.length ? 18 : 0
+    }
+  }, /*#__PURE__*/React.createElement(SectionHead, null, "R\xE9sultats approchants"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10
+    }
+  }, approxFams.map((f, i) => /*#__PURE__*/React.createElement(FamilyRow, {
+    key: f.id,
+    family: f,
+    index: matchedFams.length + i,
+    onOpen: onOpenFamily,
+    onDirectAdd: onDirectAdd
+  }))))));
 }
 const CategoryCard = React.memo(function CategoryCard({
   cat,
@@ -460,6 +497,7 @@ function FamilyList({
   category,
   families,
   query = '',
+  approx = false,
   onBack,
   onOpen,
   onDirectAdd,
@@ -586,7 +624,16 @@ function FamilyList({
       marginBottom: 18,
       letterSpacing: 0.1
     }
-  }, sortedLen, " variante", sortedLen !== 1 ? 's' : '', " \xB7", ' ', entriesTotal, " entr\xE9es au total"), rows.map(({
+  }, sortedLen, " variante", sortedLen !== 1 ? 's' : '', " \xB7", ' ', entriesTotal, " entr\xE9es au total"), approx && rows.length > 0 && /*#__PURE__*/React.createElement("div", {
+    role: "status",
+    style: {
+      color: T.muted,
+      fontSize: 12,
+      fontFamily: fontSerif,
+      fontStyle: 'italic',
+      padding: '0 2px 6px'
+    }
+  }, "Aucune correspondance exacte \u2014 r\xE9sultats approchants pour \xAB ", query.trim(), " \xBB"), rows.map(({
     f,
     idx,
     total
@@ -598,14 +645,14 @@ function FamilyList({
     variantCount: total,
     onOpen: onOpen,
     onDirectAdd: onDirectAdd
-  })), rows.length === 0 && (query ? /*#__PURE__*/React.createElement("div", {
+  })), rows.length === 0 && (query.trim() ? /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
       fontSize: 13,
       padding: '40px 0',
       textAlign: 'center'
     }
-  }, "Aucun r\xE9sultat pour \xAB ", query, " \xBB") :
+  }, "Aucun r\xE9sultat pour \xAB ", query.trim(), " \xBB") :
   /*#__PURE__*/
   // Catégorie vide : on dit pourquoi et on propose l'action logique
   // (ajouter directement DANS cette catégorie) au lieu d'un « Aucun

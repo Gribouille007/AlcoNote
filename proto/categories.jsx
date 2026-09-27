@@ -58,14 +58,20 @@ function CategoriesTab({ onOpenFamily, onDirectAdd, onEditFamily, onAddInCategor
 
   const cats = React.useMemo(() => computeCategoryStats(categories, families), [categories, families]);
 
-  const filtered = React.useMemo(() => {
-    if (!openCat) return [];
-    const q = (query || '').toLowerCase();
-    const openKey = canonicalCat(openCat);
-    return families.filter(f =>
-      canonicalCat(f.category) === openKey && (!q || f.name.toLowerCase().includes(q))
-    );
-  }, [openCat, families, query]);
+  // Frappe fluide : le champ suit la saisie immédiatement, les listes
+  // filtrées suivent en priorité basse (interruptible par la touche suivante).
+  const deferredQuery = React.useDeferredValue(query || '');
+
+  // Drill-down : recherche tolérante (casse, accents, fautes, multi-mots —
+  // cf. searchFamilies, data.jsx) dans la catégorie ouverte. Les résultats
+  // exacts d'abord ; les approchés seulement s'il n'y a aucun exact.
+  const { filtered, filteredApprox } = React.useMemo(() => {
+    if (!openCat) return { filtered: [], filteredApprox: false };
+    const r = searchFamilies(families, deferredQuery, { category: openCat });
+    return r.exact.length || !r.approx.length
+      ? { filtered: r.exact, filteredApprox: false }
+      : { filtered: r.approx, filteredApprox: true };
+  }, [openCat, families, deferredQuery]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -75,14 +81,14 @@ function CategoriesTab({ onOpenFamily, onDirectAdd, onEditFamily, onAddInCategor
       </div>
 
       {!openCat ? (
-        <CategoryGrid cats={cats} families={families} query={query} onOpen={setOpenCat}
+        <CategoryGrid cats={cats} families={families} query={deferredQuery} onOpen={setOpenCat}
           favorites={favorites}
           onOpenFamily={onOpenFamily} onEditCat={setEditCat} onDirectAdd={onDirectAdd}
           onAddCategory={() => setCreatingCat(true)} />
       ) : (
         // Retour à la grille : la recherche « dans Bière » n'a plus de sens
         // au niveau racine (elle y deviendrait une recherche globale fantôme).
-        <FamilyList category={openCat} families={filtered} query={query}
+        <FamilyList category={openCat} families={filtered} query={deferredQuery} approx={filteredApprox}
           onBack={() => { setOpenCat(null); setQuery(''); }} onOpen={onOpenFamily}
           onDirectAdd={onDirectAdd} onEditCat={() => setEditCat(openCat)}
           onAddInCategory={onAddInCategory}
@@ -101,14 +107,12 @@ function CategoriesTab({ onOpenFamily, onDirectAdd, onEditFamily, onAddInCategor
 }
 
 function CategoryGrid({ cats, families, favorites = [], query, onOpen, onOpenFamily, onEditCat, onDirectAdd, onAddCategory }) {
-  const q = (query || '').toLowerCase();
-  const matchedFams = React.useMemo(() => {
-    if (!q) return [];
-    return families.filter(f =>
-      f.name.toLowerCase().includes(q) ||
-      f.category.toLowerCase().includes(q)
-    );
-  }, [families, q]);
+  // Recherche globale tolérante (cf. searchFamilies) : exacts triés par
+  // pertinence, puis une section « Résultats approchants » (fautes de frappe).
+  const search = React.useMemo(() => searchFamilies(families, query), [families, query]);
+  const q = search.active;
+  const matchedFams = q ? search.exact : [];
+  const approxFams = q ? search.approx : [];
 
   return (
     <div data-tab-scroll style={{ flex: 1, overflow: 'auto', padding: '0 18px 120px' }}>
@@ -142,18 +146,35 @@ function CategoryGrid({ cats, families, favorites = [], query, onOpen, onOpenFam
 
       {q && (
         <>
-          <SectionHead>{matchedFams.length} résultat{matchedFams.length > 1 ? 's' : ''}</SectionHead>
-          <div style={{ marginTop: 10 }}>
-            {matchedFams.map((f, i) => (
-              <FamilyRow key={f.id} family={f} index={i} onOpen={onOpenFamily}
-                onDirectAdd={onDirectAdd} />
-            ))}
-            {matchedFams.length === 0 && (
-              <div style={{
-                color: T.muted, fontSize: 13, padding: '40px 0', textAlign: 'center',
-              }}>Aucun résultat pour « {query} »</div>
-            )}
-          </div>
+          {/* Aucun exact mais des approchés : seule la section « approchants »
+              s'affiche (pas de « 0 résultat » au-dessus). */}
+          {(matchedFams.length > 0 || approxFams.length === 0) && (
+            <>
+              <SectionHead>{matchedFams.length} résultat{matchedFams.length > 1 ? 's' : ''}</SectionHead>
+              <div style={{ marginTop: 10 }}>
+                {matchedFams.map((f, i) => (
+                  <FamilyRow key={f.id} family={f} index={i} onOpen={onOpenFamily}
+                    onDirectAdd={onDirectAdd} />
+                ))}
+                {matchedFams.length === 0 && (
+                  <div style={{
+                    color: T.muted, fontSize: 13, padding: '40px 0', textAlign: 'center',
+                  }}>Aucun résultat pour « {query.trim()} »</div>
+                )}
+              </div>
+            </>
+          )}
+          {approxFams.length > 0 && (
+            <div style={{ marginTop: matchedFams.length ? 18 : 0 }}>
+              <SectionHead>Résultats approchants</SectionHead>
+              <div style={{ marginTop: 10 }}>
+                {approxFams.map((f, i) => (
+                  <FamilyRow key={f.id} family={f} index={matchedFams.length + i}
+                    onOpen={onOpenFamily} onDirectAdd={onDirectAdd} />
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -293,7 +314,7 @@ function FavoriteChip({ family: f, onAdd, index = 0 }) {
   );
 }
 
-function FamilyList({ category, families, query = '', onBack, onOpen, onDirectAdd, onEditCat, onAddInCategory, onEditFamily }) {
+function FamilyList({ category, families, query = '', approx = false, onBack, onOpen, onDirectAdd, onEditCat, onAddInCategory, onEditFamily }) {
   // Sort families: identical-name groups stay contiguous, ordered by
   // total entries inside the group, then by quantity asc inside each
   // group. We keep one line per (name, qty, unit, abv) variant so the
@@ -366,15 +387,23 @@ function FamilyList({ category, families, query = '', onBack, onOpen, onDirectAd
         {' '}{entriesTotal} entrées au total
       </div>
 
+      {approx && rows.length > 0 && (
+        <div role="status" style={{
+          color: T.muted, fontSize: 12, fontFamily: fontSerif, fontStyle: 'italic',
+          padding: '0 2px 6px',
+        }}>
+          Aucune correspondance exacte — résultats approchants pour « {query.trim()} »
+        </div>
+      )}
       {rows.map(({ f, idx, total }, i) => (
         <FamilyRow key={f.id} family={f} index={i}
           variantIndex={idx} variantCount={total}
           onOpen={onOpen} onDirectAdd={onDirectAdd} />
       ))}
 
-      {rows.length === 0 && (query ? (
+      {rows.length === 0 && (query.trim() ? (
         <div style={{ color: T.muted, fontSize: 13, padding: '40px 0', textAlign: 'center' }}>
-          Aucun résultat pour « {query} »
+          Aucun résultat pour « {query.trim()} »
         </div>
       ) : (
         // Catégorie vide : on dit pourquoi et on propose l'action logique

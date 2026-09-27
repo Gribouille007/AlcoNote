@@ -607,6 +607,333 @@ function suggestFamiliesForName(families, query, {
   return out.slice(0, limit).map(x => x.f);
 }
 
+// ── Recherche tolérante (Catégories + Historique) ─────────────────
+// Source UNIQUE de la recherche des listes : jamais de `.toLowerCase()
+// .includes()` local dans un onglet. Règles :
+//   • casse, accents (NFKD), ligatures (œ, æ, ß) ignorés ; « 5,2 » = « 5.2 » ;
+//   • multi-mots : CHAQUE mot tapé doit correspondre à un mot de la fiche
+//     (nom, catégorie, contenance, unité, degré — et lieu dans l'Historique),
+//     dans n'importe quel ordre (« 50 jup » = « jupiler 50 ») ;
+//   • mot EXACT (0) > début de mot (1) > contenu dans un mot (2, dès 2
+//     lettres) > faute de frappe (3 + nb d'erreurs) ;
+//   • fautes : 1 tolérée dès 4 lettres, 2 dès 8 (distance OSA : insertion,
+//     suppression, substitution, inversion de deux lettres voisines), sur le
+//     mot entier OU son début (« jupli » → « jupiler ») ;
+//   • un nombre ne se compare qu'exactement ou en début (« 5 » trouve « 5.2 »
+//     et « 50 », jamais « 25 ») et jamais en approché (25 ≠ 35) ;
+//   • les CARACTÉRISTIQUES (contenance, unité, degré) ne se comparent
+//     qu'exactement ou en début de mot dès 2 caractères — sinon le « c » de
+//     « Histo C » trouverait toutes les boissons en « cl ».
+const SEARCH_FUZZY_BASE = 3;
+const SEARCH_FUZZY_MIN_LEN = 4; // 1 faute tolérée dès 4 lettres
+const SEARCH_FUZZY_LONG_LEN = 8; // 2 fautes tolérées dès 8 lettres
+
+function foldSearchText(s) {
+  return String(s == null ? '' : s).normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').replace(/ß/g, 'ss').replace(/(\d),(?=\d)/g, '$1.');
+}
+
+// Mots repliés d'un texte libre (ponctuation = séparateur, « . » conservé
+// DANS un nombre : « 5.2 »).
+function searchTokens(s) {
+  const out = [];
+  for (const raw of foldSearchText(s).split(/[^\p{L}\p{N}.]+/u)) {
+    const t = raw.replace(/^\.+|\.+$/g, '');
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
+// Distance « optimal string alignment » BORNÉE : renvoie max + 1 dès qu'on
+// sait dépasser `max` (sortie anticipée — la recherche l'appelle beaucoup).
+function boundedEditDistance(a, b, max) {
+  const m = a.length,
+    n = b.length;
+  if (Math.abs(m - n) > max) return max + 1;
+  if (!m || !n) return Math.max(m, n);
+  let prev2 = null,
+    prev = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    const cur = new Array(n + 1);
+    cur[0] = i;
+    let rowMin = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (prev2 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        v = Math.min(v, prev2[j - 2] + 1);
+      }
+      cur[j] = v;
+      if (v < rowMin) rowMin = v;
+    }
+    if (rowMin > max) return max + 1;
+    prev2 = prev;
+    prev = cur;
+  }
+  return prev[n];
+}
+
+// Score d'UN mot tapé face à UN mot de la fiche (plus bas = meilleur ;
+// Infinity = aucune correspondance). Cf. règles en tête de section.
+function searchTokenScore(token, word) {
+  if (word === token) return 0;
+  if (word.startsWith(token)) return 1;
+  if (/\d/.test(token)) return Infinity;
+  if (token.length >= 2 && word.includes(token)) return 2;
+  if (token.length < SEARCH_FUZZY_MIN_LEN || /\d/.test(word)) return Infinity;
+  const max = token.length >= SEARCH_FUZZY_LONG_LEN ? 2 : 1;
+  let best = boundedEditDistance(token, word, max);
+  // Début de mot approché : la saisie est souvent un préfixe en cours de
+  // frappe (« jupli » ≈ « jupil|er »).
+  for (let L = Math.max(SEARCH_FUZZY_MIN_LEN, token.length - max); L <= token.length + max && L < word.length && best > 1; L++) {
+    best = Math.min(best, boundedEditDistance(token, word.slice(0, L), max));
+  }
+  return best <= max ? SEARCH_FUZZY_BASE + best : Infinity;
+}
+
+// Score d'un mot tapé face à une CARACTÉRISTIQUE (contenance, unité, degré).
+function searchSpecScore(token, word) {
+  if (word === token) return 0;
+  if ((token.length >= 2 || /\d/.test(token)) && word.startsWith(token)) return 1;
+  return Infinity;
+}
+
+// Compile une requête → `match(textLists, specWords)` → { score, fuzzy } |
+// null (null = un mot tapé ne correspond à rien ; `textLists` = tableaux de
+// mots « texte » : nom, catégorie, lieu). `null` pour une requête vide.
+// Les scores mot tapé × mot de fiche sont mémorisés : le vocabulaire d'un
+// historique est petit (quelques centaines de mots) même sur des milliers
+// d'entrées, donc chaque distance n'est calculée qu'une fois par requête.
+function createSearcher(query) {
+  const tokens = searchTokens(query);
+  if (!tokens.length) return null;
+  const memoText = tokens.map(() => new Map());
+  const memoSpec = tokens.map(() => new Map());
+  return function match(textLists, specWords) {
+    let score = 0,
+      fuzzy = false;
+    for (let ti = 0; ti < tokens.length; ti++) {
+      const t = tokens[ti];
+      let best = Infinity;
+      for (const list of textLists || []) {
+        if (!list) continue;
+        const m = memoText[ti];
+        for (const w of list) {
+          let s = m.get(w);
+          if (s === undefined) {
+            s = searchTokenScore(t, w);
+            m.set(w, s);
+          }
+          if (s < best) best = s;
+          if (best === 0) break;
+        }
+        if (best === 0) break;
+      }
+      if (best > 0 && specWords) {
+        const m = memoSpec[ti];
+        for (const w of specWords) {
+          let s = m.get(w);
+          if (s === undefined) {
+            s = searchSpecScore(t, w);
+            m.set(w, s);
+          }
+          if (s < best) best = s;
+          if (best === 0) break;
+        }
+      }
+      if (best === Infinity) return null;
+      if (best >= SEARCH_FUZZY_BASE) fuzzy = true;
+      score += best;
+    }
+    return {
+      score,
+      fuzzy
+    };
+  };
+}
+
+// Mots cherchables d'une famille → { text: nom + catégorie, spec :
+// contenance, unité, « 50cl », degré }. Mis en cache par OBJET famille :
+// buildFamilies en recrée à chaque écriture, le cache s'invalide tout seul.
+const _familyWordsCache = new WeakMap();
+function familySearchWords(f) {
+  let w = _familyWordsCache.get(f);
+  if (!w) {
+    const q = f.quantity != null ? String(f.quantity) : '';
+    w = {
+      text: searchTokens(`${f.name || ''} ${f.category || ''}`),
+      spec: searchTokens([q, f.unit, q && f.unit ? q + f.unit : '', f.alcohol != null ? String(f.alcohol) : ''].join(' '))
+    };
+    _familyWordsCache.set(f, w);
+  }
+  return w;
+}
+
+// Familles correspondant à `query` (catégorie optionnelle, comparée
+// canoniquement). → { exact, approx, active } : `exact` sans aucune faute,
+// `approx` trouvées seulement en tolérant une faute ; chacune triée par
+// pertinence puis dans l'ordre reçu (buildFamilies : la plus bue d'abord).
+// Requête vide → toutes les familles (de la catégorie) dans `exact`.
+function searchFamilies(families, query, {
+  category = null
+} = {}) {
+  const catKey = category ? canonicalCat(category) : null;
+  const base = catKey ? (families || []).filter(f => canonicalCat(f.category) === catKey) : families || [];
+  const match = createSearcher(query);
+  if (!match) return {
+    exact: base,
+    approx: [],
+    active: false
+  };
+  const exact = [],
+    approx = [];
+  base.forEach((f, i) => {
+    const w = familySearchWords(f);
+    const r = match([w.text], w.spec);
+    if (r) (r.fuzzy ? approx : exact).push({
+      f,
+      s: r.score,
+      i
+    });
+  });
+  const bySc = (a, b) => a.s - b.s || a.i - b.i;
+  return {
+    exact: exact.sort(bySc).map(x => x.f),
+    approx: approx.sort(bySc).map(x => x.f),
+    active: true
+  };
+}
+
+// Entrées d'Historique filtrées (catégorie canonique + recherche sur la
+// famille ET le lieu). L'ordre chronologique reçu est conservé. Politique
+// « exact d'abord » : dès qu'une entrée correspond sans faute, les entrées
+// seulement approchées sont écartées (elles pollueraient une liste
+// chronologique) ; sinon on renvoie les approchées avec `approx: true`.
+function filterHistoryEntries(entries, {
+  query = '',
+  category = 'all'
+} = {}) {
+  const catKey = category && category !== 'all' ? canonicalCat(category) : null;
+  const match = createSearcher(query);
+  const placeWords = new Map();
+  const exact = [],
+    approx = [];
+  for (const e of entries || []) {
+    if (catKey && canonicalCat(e.family.category) !== catKey) continue;
+    if (!match) {
+      exact.push(e);
+      continue;
+    }
+    let pw = null;
+    if (e.place) {
+      pw = placeWords.get(e.place);
+      if (!pw) {
+        pw = searchTokens(e.place);
+        placeWords.set(e.place, pw);
+      }
+    }
+    const w = familySearchWords(e.family);
+    const r = match([w.text, pw], w.spec);
+    if (r) (r.fuzzy ? approx : exact).push(e);
+  }
+  if (exact.length || !approx.length) return {
+    entries: exact,
+    approx: false
+  };
+  return {
+    entries: approx,
+    approx: true
+  };
+}
+
+// Regroupe des entrées (déjà triées, plus récente d'abord) par jour local
+// « YYYY-MM-DD ». → [{ day, entries, totalCl }] du plus récent au plus
+// ancien. Pur : le total cL du bandeau de jour n'est plus recalculé à
+// chaque rendu de DayGroup.
+function groupEntriesByDay(entries) {
+  const byDay = new Map();
+  for (const e of entries || []) {
+    const day = e.ts.slice(0, 10);
+    let g = byDay.get(day);
+    if (!g) {
+      g = {
+        day,
+        entries: [],
+        totalCl: 0
+      };
+      byDay.set(day, g);
+    }
+    g.entries.push(e);
+    g.totalCl += toCl(e.family.quantity, e.family.unit);
+  }
+  return Array.from(byDay.values()).sort((a, b) => b.day.localeCompare(a.day));
+}
+
+// ── Stabilité des références (Historique) ─────────────────────────
+// buildFamilies recrée TOUS les objets à chaque écriture : sans ce filet,
+// ajouter une boisson re-rendait chaque ligne montée de l'Historique (les
+// DayGroup/EntryRow sont React.memo mais recevaient des objets neufs).
+// On réutilise l'objet d'entrée précédent quand il est ÉGAL EN VALEUR sur
+// tout ce que la ligne affiche ET ce que ses callbacks transmettent (famille
+// dont prix de réf./note, drink brut entier) — une entrée réutilisée n'est
+// donc jamais périmée.
+// Égalité de valeur d'un drink brut (champs de premier niveau ; `location`
+// et autres objets comparés par valeur). Pas de JSON.stringify de chaque
+// entrée : sur 5 000 boissons, le coût se voyait à chaque ajout.
+function _sameRaw(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  for (const k of ka) {
+    const x = a[k],
+      y = b[k];
+    if (x === y) continue;
+    if (x && y && typeof x === 'object' && typeof y === 'object') {
+      if (JSON.stringify(x) !== JSON.stringify(y)) return false;
+    } else if (!(Number.isNaN(x) && Number.isNaN(y))) return false;
+  }
+  return true;
+}
+// Une entrée précédente peut être réutilisée telle quelle ?
+function sameHistoryEntry(p, e) {
+  const a = p.family,
+    b = e.family;
+  return p.ts === e.ts && p.place === e.place && a.name === b.name && a.category === b.category && a.quantity === b.quantity && a.unit === b.unit && a.alcohol === b.alcohol && a.referencePrice === b.referencePrice && a.rating === b.rating && _sameRaw(p.raw, e.raw);
+}
+// → { entries, cache } : `cache` (Map id → entrée) est à repasser au
+// prochain appel ; il ne garde que les entrées courantes.
+function stabilizeEntries(entries, prevCache) {
+  const cache = new Map();
+  const out = (entries || []).map(e => {
+    const prev = prevCache && prevCache.get(e.id);
+    const keep = prev && sameHistoryEntry(prev, e) ? prev : e;
+    cache.set(e.id, keep);
+    return keep;
+  });
+  return {
+    entries: out,
+    cache
+  };
+}
+// Réutilise un groupe de jour précédent (même référence) quand il contient
+// exactement les mêmes objets d'entrée, dans le même ordre.
+// → { groups, byDay } (byDay à repasser au prochain appel).
+function stabilizeDayGroups(groups, prevByDay) {
+  const byDay = new Map();
+  const out = (groups || []).map(g => {
+    const p = prevByDay && prevByDay.get(g.day);
+    const same = p && p.entries.length === g.entries.length && p.entries.every((e, i) => e === g.entries[i]);
+    const keep = same ? p : g;
+    byDay.set(g.day, keep);
+    return keep;
+  });
+  return {
+    groups: out,
+    byDay
+  };
+}
+
 // ── Mutations ─────────────────────────────────────────────────────
 // Each mutation bumps only the channels its write actually touches —
 // providers subscribed to other channels won't refetch. updateDrink
@@ -1513,6 +1840,18 @@ Object.assign(window, {
   renameFavoriteFamily,
   lastUsedCategory,
   suggestFamiliesForName,
+  foldSearchText,
+  searchTokens,
+  boundedEditDistance,
+  searchTokenScore,
+  searchSpecScore,
+  createSearcher,
+  familySearchWords,
+  searchFamilies,
+  filterHistoryEntries,
+  groupEntriesByDay,
+  stabilizeEntries,
+  stabilizeDayGroups,
   ratingKey,
   saveSetting,
   addDrink,
