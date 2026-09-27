@@ -361,3 +361,42 @@ test('import / clearAllData — snapshot de sécurité AVANT l’étape destruct
   assert.ok(parsed.drinks.length > 0, 'le snapshot contient bien les boissons effacées');
   assert.equal((await dbManager.getAllDrinks()).length, 0, 'le wipe a bien eu lieu');
 });
+
+test('getAllDrinks — même ordre que orderBy(date).reverse() (sans curseur)', async () => {
+  // Égalités de date (départage par id), date absente (hors index → exclue
+  // comme avant), formats de date mélangés.
+  const rows = [
+    { name: 'A', category: 'Bière', quantity: 25, unit: 'cL', date: '2026-01-02', time: '20:00' },
+    { name: 'B', category: 'Bière', quantity: 25, unit: 'cL', date: '2026-01-03', time: '20:00' },
+    { name: 'C', category: 'Bière', quantity: 25, unit: 'cL', date: '2026-01-02', time: '22:00' },
+    { name: 'D', category: 'Vin', quantity: 12, unit: 'cL', date: '2025-12-31', time: '23:59' },
+    { name: 'E', category: 'Vin', quantity: 12, unit: 'cL', date: '2026-01-03', time: '01:00' },
+  ];
+  for (const r of rows) await dbManager.addDrink(r);
+  await dbManager.db.drinks.add({ name: 'SansDate', category: 'Vin', quantity: 12, unit: 'cL' });
+  const legacy = await dbManager.db.drinks.orderBy('date').reverse().toArray();
+  const fast = await dbManager.getAllDrinks();
+  assert.deepEqual(fast.map((d) => d.id), legacy.map((d) => d.id));
+  assert.ok(!fast.some((d) => d.name === 'SansDate'), 'date absente → hors index, exclue comme avant');
+  assert.deepEqual(fast.map((d) => d.name), ['E', 'B', 'C', 'A', 'D']);
+});
+
+test('sortDrinksByDateDesc — types de clé IndexedDB (string > Date > number), invalides exclus', () => {
+  const sort = global.window.sortDrinksByDateDesc;
+  const out = sort([
+    { id: 1, date: 5 }, { id: 2, date: new Date(10) }, { id: 3, date: '2026-01-01' },
+    { id: 4, date: NaN }, { id: 5, date: null }, { id: 6, date: new Date('x') }, { id: 7, date: 5 },
+  ]);
+  assert.deepEqual(out.map((d) => d.id), [3, 2, 7, 1]);
+});
+
+test('drinkCount / getDrinksByCategory — comptage canonique inchangé (lecture rapide)', async () => {
+  await dbManager.addCategory({ name: 'Cidre' });
+  await dbManager.addDrink({ name: 'Cid1', category: 'Cidre', quantity: 25, unit: 'cL', date: '2026-01-05', time: '12:00' });
+  await dbManager.addDrink({ name: 'Cid2', category: ' Cidre ', quantity: 25, unit: 'cL', date: '2026-01-05', time: '13:00' });
+  const cat = await dbManager.getCategoryByName('Cidre');
+  assert.equal(cat.drinkCount, 2, 'graphie legacy comptée');
+  const list = await dbManager.getDrinksByCategory('Cidre');
+  assert.deepEqual(list.map((d) => d.name), ['Cid1', 'Cid2'], 'ordre des id conservé');
+  await assert.rejects(dbManager.deleteCategory(cat.id), /contient des boissons/);
+});

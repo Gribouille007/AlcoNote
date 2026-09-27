@@ -11,14 +11,28 @@ function saveCollapsedDays(set) {
   try { localStorage.setItem(HIST_COLLAPSED_KEY, JSON.stringify([...set])); } catch {}
 }
 
+// Rendu au défilement : on ne monte que les jours proches de l'écran. Les
+// suivants arrivent par paquets quand la sentinelle de fin de liste approche
+// du bas de la zone visible (IntersectionObserver, marge d'avance). Monter
+// TOUT l'historique (ancien comportement : extension en idle jusqu'au bout)
+// laissait des dizaines de milliers de nœuds dans le DOM → chaque retour sur
+// l'onglet (display:none → flex) re-layoutait tout : plusieurs secondes sur
+// téléphone.
+const HIST_INITIAL_DAYS = 8;
+const HIST_PAGE_DAYS = 12;
+const HIST_PREFETCH_PX = 1200;
+
 function HistoryTab({ onOpenEntry, onDirectAdd }) {
   const [query, setQuery] = React.useState('');
   const [filter, setFilter] = React.useState('all');
   const [collapsed, setCollapsed] = React.useState(loadCollapsedDays);
   const [editEntry, setEditEntry] = React.useState(null);
-  // Rendu incrémental : on peint d'abord les premiers jours (ouverture
-  // instantanée même sur un gros historique), puis on étend la liste en idle.
-  const [visibleCount, setVisibleCount] = React.useState(8);
+  const [visibleCount, setVisibleCount] = React.useState(HIST_INITIAL_DAYS);
+  const scrollRef = React.useRef(null);
+  const sentinelRef = React.useRef(null);
+  // Frappe fluide : le champ se met à jour tout de suite, le filtrage de la
+  // liste suit en priorité basse (interruptible par la frappe suivante).
+  const deferredQuery = React.useDeferredValue(query);
 
   const { categories } = useCategories();
   // Pilules de filtre teintées par catégorie → abonnement palette
@@ -27,7 +41,15 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
   // Single shared families memo from the App-level FamiliesContext —
   // avoids re-building (drinks × ratings) per tab on every bump.
   const families = useFamilies();
-  const allEntries = React.useMemo(() => flattenEntries(families), [families]);
+  // Références stables d'un rendu à l'autre (cf. stabilizeEntries) : après
+  // un ajout, seules les lignes réellement changées se re-rendent.
+  const entryCacheRef = React.useRef(null);
+  const dayCacheRef = React.useRef(null);
+  const allEntries = React.useMemo(() => {
+    const r = stabilizeEntries(flattenEntries(families), entryCacheRef.current);
+    entryCacheRef.current = r.cache;
+    return r.entries;
+  }, [families]);
 
   // Un filtre pointant une catégorie renommée/supprimée devient orphelin :
   // plus aucune pilule active et « Aucune entrée trouvée » sans explication.
@@ -72,47 +94,54 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
     });
   }, []);
 
-  // Memoize the filter + day-grouping so each `groups[day]` array keeps a
-  // stable reference across renders that don't touch the data/filter —
-  // which is what lets the React.memo'd DayGroup rows skip re-rendering.
-  const { groups, days } = React.useMemo(() => {
-    const entries = allEntries.filter(e => {
-      // Compare category names canonically (trim + NFC), never raw === — a
-      // drink stored as "Bière " or an NFD spelling must still match the
-      // "Bière" pill, matching how CategoriesTab folds them.
-      if (filter !== 'all' && canonicalCat(e.family.category) !== canonicalCat(filter)) return false;
-      if (query) {
-        const q = canonicalCat(query).toLowerCase();
-        if (!canonicalCat(e.family.name).toLowerCase().includes(q) &&
-            !canonicalCat(e.family.category).toLowerCase().includes(q)) return false;
-      }
-      return true;
-    });
-    const groups = {};
-    for (const e of entries) {
-      const day = e.ts.slice(0, 10);
-      (groups[day] = groups[day] || []).push(e);
-    }
-    const days = Object.keys(groups).sort((a, b) => b.localeCompare(a));
-    return { groups, days };
-  }, [allEntries, filter, query]);
+  // Filtre (catégorie canonique) + recherche tolérante (casse, accents,
+  // fautes, multi-mots, lieu — cf. filterHistoryEntries, data.jsx) puis
+  // groupement par jour, mémoïsés : chaque `g.entries` garde sa référence
+  // tant que données/filtre ne bougent pas → les DayGroup (React.memo)
+  // sautent leur rendu.
+  const { dayGroups, approx } = React.useMemo(() => {
+    const r = filterHistoryEntries(allEntries, { query: deferredQuery, category: filter });
+    const g = stabilizeDayGroups(groupEntriesByDay(r.entries), dayCacheRef.current);
+    dayCacheRef.current = g.byDay;
+    return { dayGroups: g.groups, approx: r.approx };
+  }, [allEntries, filter, deferredQuery]);
 
-  // Recherche/filtre changé → on repart des premiers jours (sinon on garderait
-  // une grande fenêtre déjà étendue sur un nouveau résultat plus court).
-  React.useEffect(() => { setVisibleCount(8); }, [filter, query]);
-
-  // Étend la fenêtre par paquets en idle jusqu'à tout afficher, sans bloquer
-  // le thread principal (le 1er paint reste instantané).
+  // Recherche/filtre changé → on repart des premiers jours, en haut de liste
+  // (sinon on garderait une grande fenêtre déjà étendue sur un nouveau
+  // résultat, ou une position de défilement au milieu de nulle part).
   React.useEffect(() => {
-    if (visibleCount >= days.length) return;
+    setVisibleCount(HIST_INITIAL_DAYS);
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [filter, deferredQuery]);
+
+  // Extension au défilement. L'observer est recréé à chaque extension :
+  // observe() livre toujours un premier état, donc si la sentinelle est
+  // ENCORE dans la marge (écran haut, jours repliés), on enchaîne un paquet
+  // de plus sans attendre un nouveau défilement.
+  const hasMore = visibleCount < dayGroups.length;
+  React.useEffect(() => {
+    if (!hasMore) return;
+    const root = scrollRef.current, target = sentinelRef.current;
+    if (typeof window.IntersectionObserver === 'function' && root && target) {
+      const io = new window.IntersectionObserver((items) => {
+        // Transition : le rendu du paquet est découpé et interruptible —
+        // le défilement en cours ne saccade pas pendant le montage.
+        if (items.some(it => it.isIntersecting)) {
+          React.startTransition(() => setVisibleCount(c => Math.min(dayGroups.length, c + HIST_PAGE_DAYS)));
+        }
+      }, { root, rootMargin: `0px 0px ${HIST_PREFETCH_PX}px 0px` });
+      io.observe(target);
+      return () => io.disconnect();
+    }
+    // Repli sans IntersectionObserver : extension progressive en idle.
     const ric = typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback : null;
-    const grow = () => setVisibleCount(c => Math.min(days.length, c + 10));
+    const grow = () => setVisibleCount(c => Math.min(dayGroups.length, c + HIST_PAGE_DAYS));
     const h = ric ? ric(grow, { timeout: 500 }) : setTimeout(grow, 80);
     return () => {
       if (ric && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(h);
       else clearTimeout(h);
     };
-  }, [visibleCount, days.length]);
+  }, [hasMore, visibleCount, dayGroups.length]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -131,20 +160,29 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
         ))}
       </div>
 
-      <div data-tab-scroll style={{ flex: 1, overflow: 'auto', padding: '0 18px 120px' }}>
-        {days.length === 0 && (
-          <div style={{ color: T.muted, fontSize: 13, padding: '60px 0', textAlign: 'center' }}>
-            Aucune entrée trouvée
+      <div ref={scrollRef} data-tab-scroll style={{ flex: 1, overflow: 'auto', padding: '0 18px 120px' }}>
+        {approx && dayGroups.length > 0 && (
+          <div role="status" style={{
+            color: T.muted, fontSize: 12, fontFamily: fontSerif, fontStyle: 'italic',
+            padding: '0 2px 6px',
+          }}>
+            Aucune correspondance exacte — résultats approchants pour « {deferredQuery.trim()} »
           </div>
         )}
-        {days.slice(0, visibleCount).map((day, i) => (
-          <DayGroup key={day} day={day} entries={groups[day]}
-            isCollapsed={collapsed.has(day)} onToggle={toggleDay}
+        {dayGroups.length === 0 && (
+          <div style={{ color: T.muted, fontSize: 13, padding: '60px 0', textAlign: 'center' }}>
+            {deferredQuery.trim() ? `Aucun résultat pour « ${deferredQuery.trim()} »` : 'Aucune entrée trouvée'}
+          </div>
+        )}
+        {dayGroups.slice(0, visibleCount).map((g, i) => (
+          <DayGroup key={g.day} day={g.day} entries={g.entries} totalCl={g.totalCl}
+            isCollapsed={collapsed.has(g.day)} onToggle={toggleDay}
             onOpenEntry={setEditEntry}
             onDirectAdd={onDirectAdd}
             onDelete={onDeleteEntry}
             index={i} first={i === 0} />
         ))}
+        {hasMore && <div ref={sentinelRef} aria-hidden="true" style={{ height: 1 }} />}
       </div>
 
       {editEntry && (
@@ -154,7 +192,7 @@ function HistoryTab({ onOpenEntry, onDirectAdd }) {
   );
 }
 
-const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onToggle, onOpenEntry, onDirectAdd, onDelete, first, index = 0 }) {
+const DayGroup = React.memo(function DayGroup({ day, entries, totalCl = 0, isCollapsed, onToggle, onOpenEntry, onDirectAdd, onDelete, first, index = 0 }) {
   useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   const reduced = useReducedMotion();
   const d = new Date(day + 'T00:00');
@@ -165,11 +203,12 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
   else if (diff === 1) rel = 'Hier';
   else if (diff >= 2 && diff < 7) rel = `il y a ${diff} jours`;
 
-  // Total cL (mirror the real-app summary)
-  const totalCl = entries.reduce((s, e) => s + toCl(e.family.quantity, e.family.unit), 0);
-
   return (
     <div style={{ marginTop: first ? 4 : 14, marginBottom: 4, position: 'relative',
+      // Jours hors écran : le navigateur saute leur layout/paint (y compris
+      // au retour sur l'onglet) ; `auto` mémorise la hauteur réelle une fois
+      // rendue → pas de saut de défilement.
+      contentVisibility: 'auto', containIntrinsicSize: 'auto 180px',
       ...staggerStyle(index, { reduced }) }}>
       <button type="button" onClick={() => onToggle(day)}
         aria-expanded={!isCollapsed}
@@ -222,6 +261,9 @@ const DayGroup = React.memo(function DayGroup({ day, entries, isCollapsed, onTog
             borderRight: `1px solid ${T.rule}`,
             borderBottom: `1px solid ${T.rule}`,
             marginLeft: -24,
+            // Les fonds (carrés) des lignes ne débordent plus des coins
+            // arrondis du bas de la carte.
+            overflow: 'hidden',
           }}>
             {entries.map((e, i) => (
               <EntryRow key={e.id || i} entry={e} onOpenEntry={onOpenEntry}

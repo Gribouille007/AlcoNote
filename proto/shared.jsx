@@ -1272,11 +1272,15 @@ function useReducedMotion() {
 // les bordures/marges de voisinage). Fill `backwards` : masque l'item
 // pendant le délai (pas de flash) puis relâche la transform après l'anim
 // (laisse un éventuel scale de tap reprendre la main).
+// Au-delà de `max`, AUCUNE animation : ces items naissent hors écran, et une
+// animation CSS rejoue à CHAQUE passage display:none → visible (onglets
+// persistants) — sur une longue liste, des centaines d'animations relancées
+// à chaque bascule d'onglet pour des éléments que personne ne voit.
 function staggerStyle(index = 0, opts = {}) {
   const { name = 'alcoRise', duration = MOTION.base, step = MOTION.stagger,
           base = 0, max = 12, reduced = false } = opts;
-  if (reduced) return null;
-  const i = Math.min(Math.max(index, 0), max);     // plafonne la cascade
+  if (reduced || index > max) return null;
+  const i = Math.max(index, 0);
   return {
     animation: `${name} ${duration}ms ${MOTION.ease}`,
     animationDelay: `${base + i * step}ms`,

@@ -72,7 +72,9 @@ valeur en dur.
   les sorties `fadeOut`/`sheetOutDown`/`sheetOutLeft`/`sheetOutRight`,
   les transitions de page `pageIn`/`pageOut`, `toastIn`/`toastOut`).
   Durées/easing via `MOTION` (`base` 220 ms en entrée, `fast` 180 ms en
-  sortie) ; transitions : `0.18–0.22s ease`. Toute fermeture de
+  sortie) ; transitions : `0.18–0.22s ease`. Entrée de liste en cascade via
+  `staggerStyle(index)` — n'anime que les 12 premiers items (cf. § Onglets
+  persistants). Toute fermeture de
   sheet/vue passe par `useSheetClose` (cf. § Sheets) — jamais de
   démontage sec d'un overlay.
 - **Charts** : tous via les primitives de `stats-charts.jsx`
@@ -123,7 +125,8 @@ Node ≥ 20, zéro framework) :
 
 - **Unitaires purs** (`unit-*.test.js`) : helpers de `shared`/`data`/
   `stats` chargés depuis `proto/dist/` avec des stubs globaux minimaux
-  (`helpers/stub-globals.js`).
+  (`helpers/stub-globals.js`). La recherche tolérante et les helpers de
+  rendu de l'Historique vivent dans `unit-search.test.js`.
 - **DB** (`db*.test.js`) : `js/database.js` sur `fake-indexeddb`
   (conversions d'unités, settings, migrations v4→v5, import/export).
 - **Intégration** (`app-*.test.js`) : la vraie app compilée bootée sous
@@ -222,6 +225,32 @@ quand la cible change (évite des champs figés sur l'ancienne cible).
   (aria-label « Appliquer le prix suggéré … ») qui ré-active `priceAuto`
   d'un tap — jamais d'écrasement sans ce geste explicite. Toute
   évolution du prix passe par cet helper, pas par un calcul local.
+
+### Recherche (Catégories + Historique)
+
+Source UNIQUE : § « Recherche tolérante » de `data.jsx` — jamais de
+`.toLowerCase().includes()` local dans un onglet.
+- `foldSearchText` (casse, accents NFKD, ligatures œ/æ/ß, `5,2` = `5.2`) →
+  `searchTokens` (mots repliés) → `createSearcher(query)` compile la requête.
+- **Multi-mots** : CHAQUE mot tapé doit correspondre à un mot de la fiche,
+  dans n'importe quel ordre (« 50 jup »). Mots « texte » (nom, catégorie,
+  lieu) : exact (0) > début (1) > contenu dès 2 lettres (2) > faute (3 + n).
+  Mots « caractéristiques » (contenance, unité, « 50cl », degré, cf.
+  `familySearchWords`) : exact ou début dès 2 caractères/chiffre, jamais
+  contenu ni approché (sinon le « c » de « Histo C » trouve tous les cL).
+  Un nombre ne matche qu'exactement ou en début (« 5 » → 5.2 / 50, jamais 25).
+- **Fautes** (tolérance « modérée », choix produit) : 1 dès 4 lettres, 2 dès
+  8, distance OSA bornée (`boundedEditDistance`) sur le mot entier OU son
+  début (« jupli » → Jupiler). Jamais sous 4 lettres (Vin ≠ Gin).
+- **Présentation** : racine Catégories = résultats exacts triés par
+  pertinence (puis le plus bu), puis section « Résultats approchants » ;
+  drill-down catégorie et Historique (liste chronologique) = politique
+  « exact d'abord » : les approchés ne s'affichent QUE s'il n'y a aucun
+  exact, avec la mention « Aucune correspondance exacte — résultats
+  approchants ». L'Historique cherche AUSSI le lieu (`filterHistoryEntries`).
+- Saisie via `React.useDeferredValue` : le champ suit la frappe, le filtrage
+  de la liste passe en priorité basse.
+- Tests : `unit-search.test.js` (règles, bornes, faux positifs, perf).
 
 ### Navigation & ajout — comportements attendus
 
@@ -920,6 +949,15 @@ utilisateur.**
   Rétention : les 5 snapshots `'auto'` les plus récents ; les snapshots
   de migration (`pre-v5`, `pre-normalize-categories`, `pre-import`,
   `pre-clear`…) ne sont JAMAIS purgés par cette rotation.
+- **Lectures rapides** : lire une table par clé primaire (`toArray()` →
+  getAll natif) puis trier/filtrer en JS — JAMAIS un parcours curseur
+  (`orderBy(index).reverse().toArray()`, `.filter().count()`) sur `drinks`,
+  qui paie un aller-retour IndexedDB PAR enregistrement (~3,5× plus lent,
+  mesuré). `getAllDrinks` = `sortDrinksByDateDesc(toArray())` (même ordre
+  exact que l'ancien index inversé : date décroissante puis id, boissons sans
+  date valide exclues — testé dans `db.test.js`) ; comptages/filtres de
+  catégorie via `_drinksInCanonicalCategory`. Ces lectures tournent au boot
+  et après CHAQUE écriture.
 - **`uid` stable par boisson** (`genUid`, rétro-rempli en v5) : identité
   globale pour le partage, indépendante de l'`++id` local.
 - **`setSetting(key, null)` SUPPRIME la clé** (pas de valeur `null`
@@ -943,11 +981,46 @@ démontés au switch : ils restent dans le DOM avec
 monté pour la session. Cela évite le coût de re-mount du StatsTab
 (8 sections, plusieurs SVG charts) lors des allers-retours.
 
+**Revers : chaque retour sur un onglet (display:none → flex) re-layoute TOUT
+son DOM et relance TOUTES ses animations CSS.** La taille du DOM d'un onglet
+est donc un budget — bug historique : l'Historique pré-monté finissait par
+rendre tous les jours (40 000 nœuds pour 1 500 boissons → ~9 s pour ouvrir
+l'onglet à CPU ×6). Règles :
+- **Historique = rendu au défilement** : `HIST_INITIAL_DAYS` jours au montage,
+  puis `HIST_PAGE_DAYS` de plus quand la sentinelle de fin de liste entre
+  dans la marge `HIST_PREFETCH_PX` (IntersectionObserver recréé à chaque
+  extension ; extension en `startTransition` → rendu découpé, défilement
+  fluide). Recherche/filtre changé → retour aux premiers jours, en haut.
+  Chaque `DayGroup` porte `content-visibility: auto` (+ `contain-intrinsic-
+  size: auto …`) : les jours hors écran ne sont ni layoutés ni peints.
+  Ne JAMAIS revenir à « tout monter en idle ».
+- **Références stables** : `stabilizeEntries` / `stabilizeDayGroups` (data.jsx)
+  réutilisent les objets d'entrée / de jour ÉGAUX EN VALEUR d'un rendu à
+  l'autre → après un ajout, seules les lignes changées se re-rendent (les
+  `DayGroup`/`EntryRow` sont `React.memo`). L'égalité (`sameHistoryEntry`)
+  couvre tout ce que la ligne affiche et transmet (famille, prix de réf.,
+  note, drink brut entier) : une entrée réutilisée n'est jamais périmée.
+- `staggerStyle` n'anime QUE les `max` premiers items (12) : au-delà, aucune
+  animation (hors écran de toute façon, et relancée à chaque bascule).
+- Mesures de référence (Chromium, CPU ×6, 1 500 boissons ; script de bench
+  Playwright hors dépôt) : ouvrir l'Historique 9,4 s → ~0,1 s ; revenir aux
+  Catégories 0,64 s → ~0,04 s ; boot jusqu'à la grille 0,98 s → 0,46 s ;
+  ajout avec l'Historique affiché 1,37 s → ~0,55 s. Identique à 5 000
+  boissons (DOM initial constant ≈ 1 360 nœuds).
+
 ## Tests manuels avant push
 
 - Add drink avec / sans prefill, chaque unité, chaque catégorie.
 - **Recherche Catégories** : taper le « + » sur un résultat de recherche
   ajoute bien la boisson (régression historique).
+- **Recherche tolérante** : « BIERE », « biere » et « Bière » donnent la même
+  chose ; « chardonay » trouve Chardonnay (section « Résultats approchants »
+  à la racine, mention « Aucune correspondance exacte » dans l'Historique et
+  dans une catégorie) ; « jup 50 » trouve la Jupiler 50 cL ; le nom d'un bar
+  retrouve les entrées bues là-bas (Historique) ; « vin » ne propose pas le Gin.
+- **Historique rapide** : avec un gros historique, l'onglet s'ouvre sans
+  délai ; en défilant, les jours suivants arrivent avant d'atteindre le bas ;
+  une recherche ramène en haut de liste.
 - **Champs numériques** : qty, degré et poids ouvrent le pavé numérique ;
   la virgule **et** le point sont acceptés ; vider le champ ne laisse pas
   un « 0 » fantôme.

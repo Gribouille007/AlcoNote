@@ -23,6 +23,37 @@ function canonicalName(name) {
     return String(name == null ? '' : name).trim().normalize('NFC');
 }
 
+// ── Lectures rapides ──────────────────────────────────────────────
+// Lire la table par clé primaire (`toArray()` → getAll natif, un seul aller-
+// retour) puis trier/filtrer en JS est ~3,5× plus rapide qu'un parcours par
+// curseur (`orderBy(index).reverse()`, `.filter()`), qui paie un aller-retour
+// IndexedDB PAR enregistrement (mesuré : 1 500 boissons, CPU ×6 — 40 ms
+// contre 130-175 ms). Ces lectures tournent au boot et après CHAQUE écriture.
+
+// Rang de type d'une clé IndexedDB valide (ordre de la spec : number < Date
+// < string) ; -1 = pas une clé indexable (absente de l'index `date`).
+function _idbKeyRank(k) {
+    if (typeof k === 'number') return Number.isNaN(k) ? -1 : 0;
+    if (k instanceof Date) return Number.isNaN(k.getTime()) ? -1 : 1;
+    if (typeof k === 'string') return 2;
+    return -1;
+}
+// Même résultat que `orderBy('date').reverse().toArray()` : boissons dont la
+// date est une clé valide, date décroissante puis id décroissant (ordre
+// inverse d'un index IndexedDB : clé, puis clé primaire).
+function sortDrinksByDateDesc(drinks) {
+    return drinks
+        .filter(d => d && _idbKeyRank(d.date) >= 0)
+        .sort((a, b) => {
+            const ra = _idbKeyRank(a.date), rb = _idbKeyRank(b.date);
+            if (ra !== rb) return rb - ra;
+            const va = ra === 1 ? a.date.getTime() : a.date;
+            const vb = rb === 1 ? b.date.getTime() : b.date;
+            if (va !== vb) return va < vb ? 1 : -1;
+            return b.id - a.id;
+        });
+}
+
 class AlcoNoteDB extends Dexie {
     constructor() {
         super('AlcoNoteDB');
@@ -339,7 +370,7 @@ class DatabaseManager {
 
             // Check if category has drinks (canonical match on the name)
             const key = canonicalName(category.name);
-            const drinksInCategory = await this.db.drinks.filter(d => canonicalName(d.category) === key).count();
+            const drinksInCategory = (await this._drinksInCanonicalCategory(key)).length;
             if (drinksInCategory > 0) {
                 throw new Error('Impossible de supprimer une catégorie qui contient des boissons');
             }
@@ -359,7 +390,7 @@ class DatabaseManager {
                 // Compte CANONIQUE : les boissons dont la chaîne catégorie a
                 // dérivé (NFD, espaces) comptent pour leur vraie catégorie.
                 const key = canonicalName(category.name);
-                const drinkCount = await this.db.drinks.filter(d => canonicalName(d.category) === key).count();
+                const drinkCount = (await this._drinksInCanonicalCategory(key)).length;
                 await this.updateCategory(category.id, { drinkCount });
             }
         } catch (error) {
@@ -409,10 +440,20 @@ class DatabaseManager {
         }
     }
 
+    // Boissons dont la catégorie correspond CANONIQUEMENT à `key` (déjà passée
+    // par canonicalName), dans l'ordre des id. Lecture par clé primaire +
+    // filtre JS (cf. « Lectures rapides ») — jamais un `.filter()` curseur.
+    async _drinksInCanonicalCategory(key) {
+        const all = await this.db.drinks.toArray();
+        return all.filter(d => canonicalName(d.category) === key);
+    }
+
     // Drink operations
     async getAllDrinks() {
         try {
-            return await this.db.drinks.orderBy('date').reverse().toArray();
+            // Plus récentes d'abord (cf. sortDrinksByDateDesc — même ordre que
+            // l'ancien orderBy('date').reverse(), sans parcours par curseur).
+            return sortDrinksByDateDesc(await this.db.drinks.toArray());
         } catch (error) {
             console.error('Error getting drinks:', error);
             return [];
@@ -433,7 +474,7 @@ class DatabaseManager {
             // Correspondance canonique (cf. canonicalName) : ne rate jamais
             // une boisson dont la chaîne catégorie a dérivé (NFD, espaces).
             const key = canonicalName(category);
-            return await this.db.drinks.filter(d => canonicalName(d.category) === key).toArray();
+            return await this._drinksInCanonicalCategory(key);
         } catch (error) {
             console.error('Error getting drinks by category:', error);
             return [];
@@ -927,3 +968,4 @@ const dbManager = new DatabaseManager();
 // Export for use in other modules
 window.dbManager = dbManager;
 window.genUid = genUid;
+window.sortDrinksByDateDesc = sortDrinksByDateDesc;
