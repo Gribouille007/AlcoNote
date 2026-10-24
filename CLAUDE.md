@@ -133,6 +133,9 @@ Node ≥ 20, zéro framework) :
   jsdom + fake-indexeddb + transport de partage mock
   (`helpers/boot-app.js`). Toujours appeler `cleanup()` dans `after()`
   (ferme la fenêtre jsdom → purge les intervalles 60 s BAC/share).
+  L'app ne crée aucune catégorie : `bootApp()` crée Bière/Vin/Spiritueux/
+  Cocktail/Autre AVANT le montage (option `categories`, `[]` = vrai
+  premier lancement, cf. `app-first-run.test.js`).
 - **Checks statiques** (`static-checks.test.js`) : lint DA sur les
   sources (couleurs en dur, `<input type="number">`, `<svg>` inline,
   `window.confirm`), cohérence `sw.js` (triple version identique,
@@ -165,7 +168,12 @@ Définies dans `shared.jsx` (chargé en premier, donc disponibles partout) :
   `onChange` reçoit la string sanitisée. `suffix` (ex. `'%'`) rend le
   conteneur bordé avec unité. Parser avec `parseDecimal` au submit.
 - `parseDecimal(str)` : `→ Number | NaN` (trim, virgule→point).
-- `CategoryChips({ categories, value, onChange })`,
+- `CategoryChips({ categories, value, onChange, allowCreate })` —
+  `allowCreate` (formulaire d'ajout) : chip « + Nouvelle » + champ en ligne
+  (ouvert d'emblée sans aucune catégorie, validé aussi au blur) ; le nom
+  devient la valeur (chip « · nouvelle ») et n'est écrit en base qu'à
+  l'enregistrement de la boisson via `ensureCategory(name)` (data.jsx :
+  rend l'existante si même nom à la casse/NFC/espaces près).
   `UnitToggle({ value, onChange, units })`,
   `RatingField({ value, onChange, size })`, `FieldGroup({ label, children })`.
 - `TimeField({ value, onChange, ariaLabel })` : champ « Heure » (state
@@ -598,6 +606,18 @@ nouvelles sections appendées en fin — une nouvelle section apparaît donc
 automatiquement, en dernier, chez un utilisateur qui a déjà réordonné.
 La vue ami suit l'ordre perso sans pouvoir l'éditer.
 
+**Sections masquées** : le même mode (bouton « Personnaliser » au-dessus de
+la barre d'onglets) porte un œil par ligne. Setting Dexie
+**`stats.hiddenSections`** (JSON array, suit l'export/import) lu par
+`useHiddenSections()` ; helpers purs `normalizeHiddenSections`,
+`toggleHiddenSection`, `visibleStatsSections(sections, hidden, forcedId)`.
+Une section masquée n'est plus rendue (vue ami et sections réutilisées de la
+page d'une session comprises — jamais les têtes fixes de celle-ci), SAUF
+la section demandée par un `focusRequest` (tap sur la pastille BAC). Les
+lignes masquées restent dans la liste (barrées, « Masquée ») ; en bas de
+l'onglet, `HiddenSectionsNote` rappelle « N sections masquées » (lien vers
+Personnaliser sur ma vue) — une section ne disparaît jamais sans le dire.
+
 **États vides** : aucune boisson au global → `StatsEmptyState` seul
 (pas de sélecteur de période) ; période vide → sélecteur + navigation
 conservés, seules les sections `keepWhenEmpty` (le BAC en direct) sont
@@ -619,6 +639,14 @@ s'affiche au glisser à un doigt) ; `scrollWheelZoom: false` partout. Une
 carte qui capte le glisser à un doigt piégeait le défilement dès qu'elle
 remplissait l'écran (bug « bloqué en bas de la période Jour »). La carte
 est la DERNIÈRE section par défaut.
+
+**Carte — tuiles sans clé** : `tile.openstreetmap.org` (`MAP_TILE_URL`),
+attribution OSM visible. JAMAIS les fonds CARTO (`basemaps.cartocdn.com`) :
+sans clé d'API chaque tuile arrive filigranée « API KEY REQUIRED » (vérifié
+par static-checks). OSM n'a qu'un style clair : le thème sombre est un
+filtre CSS (`.alco-tiles-dark`, shared.jsx) posé sur la SEULE couche de
+tuiles par `applyTileTheme` — marqueurs et contrôles gardent leurs couleurs,
+bascule de thème sans reconstruire la carte.
 
 **Barre d'état iOS** : `apple-mobile-web-app-status-bar-style` = `default`,
 JAMAIS `black-translucent`. En translucide la page passe sous la barre
@@ -659,6 +687,16 @@ pas.
   appelle le vrai `onClose` ; idempotent ; immédiat en
   prefers-reduced-motion. Exception : remplacer une sheet par une autre
   (ex. `onAddAgain`) reste un swap instantané via le parent.
+- **Clavier virtuel** : sur mobile le clavier ne rétrécit que le
+  `visualViewport` (iOS, Chrome `resizes-visual`) — une sheet ancrée en bas
+  restait SOUS le clavier (bug : nom de session tapé à l'aveugle).
+  `SheetOverlay` lit `useKeyboardViewport()` (`keyboardViewportBox`, pur) et
+  s'épingle alors au viewport VISIBLE ; le dialog est plafonné
+  (`maxHeight: 100%`), sa racine peut rétrécir (`.alco-sheet-dialog > *
+  { min-height: 0 }`) et le champ actif est ramené à l'écran
+  (`scrollIntoView`). Toute sheet en profite sans code : garder une zone
+  interne `overflow: auto` + `flex: 1` entre en-tête et pied. Pas de
+  `placeholder` d'exemple dans un champ de nom (confondu avec une valeur).
 - `FriendStatsView` suit le même hook avec les keyframes `pageIn`/
   `pageOut` (transition de page, pousse depuis la droite) et possède
   son `useBackButton(true, close)` — comme une sheet, montée = piège
@@ -681,7 +719,13 @@ SVG dedans, la consommer via `<SvgIcon icon={Ic.xxx} size={N} />`.
 
 ### Catégories
 
-`CAT_DEFAULT` dans `shared.jsx` mappe les 5 catégories par défaut
+**Aucune catégorie créée d'office** : au premier lancement la grille est
+vide (« Nouvelle catégorie », ou création à la volée depuis l'ajout d'une
+boisson — `CategoryChips allowCreate` + `ensureCategory`). L'ancien seed des
+5 catégories (setting `cat._initialized`) est supprimé ; « Tout effacer »
+ne recrée rien non plus. Ne jamais réintroduire de seed.
+
+`CAT_DEFAULT` dans `shared.jsx` mappe les 5 noms usuels
 (Bière, Vin, Spiritueux, Cocktail, Autre) à leur teinte. Les noms
 inconnus reçoivent une teinte hashée déterministe. Comparer les noms
 de catégorie via `canonicalCat()` (trim + NFC), jamais par `===` brut.
@@ -766,9 +810,14 @@ constante `CACHE_NAME / STATIC_CACHE / DYNAMIC_CACHE` et la liste
 `STATIC_FILES` si on ajoute un script.
 
 **Réseau lent ≠ hors-ligne** : sur un wifi mourant, `fetch()` peut
-pendre 30-60 s. Toute stratégie network-first passe par
-`fetchWithTimeout` — navigations bornées à `NAVIGATION_TIMEOUT_MS`
-(3,5 s → repli sur le shell en cache : l'app boote toujours vite),
+pendre 30-60 s. Le **lancement** (navigation vers `/` ou `/index.html`)
+est servi depuis le shell en CACHE (`shellFirst`) : le shell est versionné
+avec le SW, donc cohérent avec les scripts en cache, et la mise à jour
+passe par le cycle du SW — plus jamais d'attente réseau au démarrage
+(avant : network-first, jusqu'à 3,5 s perdues à chaque lancement en wifi
+faible). Polices Google en cache-first. Toute stratégie network-first
+restante passe par `fetchWithTimeout` — navigations hors shell (ou 1re
+visite sans cache) bornées à `NAVIGATION_TIMEOUT_MS` (3,5 s),
 APIs tierces (OpenFoodFacts / Nominatim) à `API_TIMEOUT_MS` (8 s →
 repli cache puis fallback JSON). Ne jamais ajouter un `fetch()` nu
 dans un chemin network-first.
@@ -823,12 +872,29 @@ dupliquée** — un ami passe par les mêmes `aggregateGeneral`,
 - Bus dédié `shareBus` (distinct de `dataBus`). Hooks : `useShare`,
   `useGroupMembers`, `useFavoriteFriend`, `useSharedDrinks`,
   `useSharedRatings`, `useFriendsBac`.
-- Pas de socket : pull à l'ouverture + auto 10 min au premier plan +
-  bouton « Rafraîchir ». Le « live » du BAC est un recalcul local
+- Pas de socket : pull à l'ouverture + auto au premier plan (10 min au
+  repos, **2 min en soirée** — une boisson, la mienne ou d'un ami, de moins
+  de 12 h : `pullIntervalMs`) + bouton « Rafraîchir ». Passage en
+  arrière-plan ⇒ `reconcile()` immédiat (le verre qu'on vient de noter part
+  avant que le système ne suspende la page). Le « live » du BAC est un recalcul local
   (`useFriendsBac`, tick 60 s). **Sobriété données** : le pull est
   incrémental (cursor `share.cursor.<groupId>` sur `updated_at`) et la
   méta (profils + membres + `groups.created_by`) n'est demandée que sur
   la **première page** du drainage (`pullSince(cursor, { withMeta })`).
+- **Aucune boisson d'ami perdue** (bug « mon ami ne voit pas le même taux
+  que moi ») : (1) pagination **keyset** sur `(updated_at, uid)`
+  (`pullSince(since, { afterUid })`) — un `gt(updated_at)` seul sautait les
+  lignes de même horodatage au-delà de 1000 (republication du catalogue) ;
+  (2) chaque pull relit `PULL_OVERLAP_MS` (10 min) AVANT le curseur
+  (horloge d'un téléphone en retard, envoi lent commité après un pull plus
+  récent), et le curseur n'est jamais dans le futur ; (3) côté serveur le
+  trigger `shared_drinks_stamp` (schema.sql) pose `updated_at` à l'horloge
+  du SERVEUR ; (4) `localizeSharedDrink` ré-exprime date/heure depuis
+  `tsUtc` si l'ami est dans un autre fuseau ; (5) mon profil vu par le
+  groupe (poids/sexe = paramètres de MON taux chez eux) est comparé au mien
+  à chaque pull et republié s'il diffère (`profileNeedsRepublish`) — une
+  publication échouée hors-ligne n'était jamais retentée. Le SDK Supabase
+  passe par `_timedFetch` (20 s).
 - **Watermark d'envoi** : `localDrinkToShared` publie TOUJOURS
   `updatedAt = Date.now()` (jamais le `updatedAt` du drink) — sinon une
   republication au re-join reste sous le cursor des autres membres et
@@ -1094,6 +1160,16 @@ l'onglet à CPU ×6). Règles :
   un « 0 » fantôme.
 - **Créer une catégorie** (nom + icône) ; renommer ; doublon (casse /
   accent) refusé avec message avant mutation.
+- **Premier lancement** (données effacées / nouvel appareil) : aucune
+  catégorie n'apparaît ; « + » propose de nommer la première catégorie,
+  créée à l'enregistrement de la boisson.
+- **Renommer une session** (clavier ouvert, iPhone ET Android) : le champ
+  reste visible au-dessus du clavier, sans texte d'exemple dedans.
+- **Stats › Personnaliser** : l'œil masque une section (barrée dans la
+  liste), « N sections masquées » en bas de l'onglet ; ré-afficher la remet.
+- **Amis — taux identique** : mon taux sur mon appareil = celui que voit un
+  ami (même après un verre noté juste avant de fermer l'app, ≤ 2 min en
+  soirée) ; ré-exécuter `supabase/schema.sql` après mise à jour.
 - **Déplacer une famille** via « Déplacer vers… » (fiche détail) et via
   « Modifier la boisson » : elle quitte l'ancienne catégorie et apparaît
   dans la nouvelle ; la fiche reste ouverte avec la nouvelle couleur.
@@ -1151,9 +1227,9 @@ l'onglet à CPU ×6). Règles :
 - **Hors-ligne / réseau lent** : couper le réseau → l'app boote depuis
   le cache (installée) ; ajouter une boisson avec géoloc consentie →
   les coordonnées sont enregistrées sans adresse, et l'adresse se
-  complète toute seule au retour du réseau. En wifi très faible, le
-  lancement retombe sur le shell en cache en ~3,5 s (pas d'écran blanc
-  prolongé).
+  complète toute seule au retour du réseau. En wifi très faible (PWA
+  déjà visitée), le lancement est immédiat : le shell vient du cache, sans
+  attendre le réseau.
 - **Permissions** : le dialogue de consentement géoloc n'apparaît
   qu'UNE fois (puis plus jamais, quel que soit le choix) ; refuser la
   permission navigateur ne redéclenche plus aucune invite ; le scanner
@@ -1189,7 +1265,8 @@ l'onglet à CPU ×6). Règles :
 - **Sessions — amis** : dans la fiche d'un ami qui partage son BAC, ses
   sessions s'ouvrent aussi (sans crayon, ni carte ni dépenses).
 - Carte : un drink avec coordonnées doit apparaître ; sans coords,
-  message vide. Sur téléphone, un doigt sur la carte fait défiler la page
+  message vide. Aucune tuile filigranée « API KEY REQUIRED », en clair
+  comme en sombre. Sur téléphone, un doigt sur la carte fait défiler la page
   (jamais bloqué en bas de l'onglet) ; deux doigts la déplacent.
 - Tiroir paramètres : ouvre depuis la gauche, slide animé.
 - FAB : à environ ~14 px du bord droit, ne déborde pas.

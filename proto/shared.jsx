@@ -230,6 +230,9 @@ const Ic = {
   trendDown: <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="2" x2="6" y2="10"/><polyline points="3 7 6 10 9 7"/></svg>,
   trendFlat: <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="6" x2="10" y2="6"/><polyline points="7 3 10 6 7 9"/></svg>,
   users: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+  // Œil ouvert / barré (section Stats affichée / masquée).
+  eye:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>,
+  eyeOff: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M10.6 5.1A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.9 3.8"/><path d="M6.6 6.6C3.9 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><line x1="3" y1="3" x2="21" y2="21"/></svg>,
   grip:  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>,
   userMinus: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="17" y1="11" x2="23" y2="11"/></svg>,
   // Comparaison (deux colonnes face à face de part et d'autre d'un axe).
@@ -807,8 +810,70 @@ function useBackButton(active, onClose) {
 // Pile des overlays montés : Échap ne ferme que celui du DESSUS (une fiche
 // d'édition empilée sur la fiche détail ne doit pas emporter les deux).
 const _overlayStack = [];
+
+// ── Clavier virtuel ───────────────────────────────────────────────
+// Sur mobile le clavier ne rétrécit PAS le viewport de mise en page (iOS
+// Safari/PWA, Chrome Android ≥ 108 en `resizes-visual`) : seul le
+// `visualViewport` rapetisse. Une sheet `position: fixed` ancrée en bas
+// restait donc SOUS le clavier, avec le champ en cours de saisie (bug : le
+// nom d'une session se tapait à l'aveugle). Tant que le clavier couvre une
+// part notable de l'écran, l'overlay est épinglé sur le viewport VISIBLE
+// (top = offsetTop, hauteur = visualViewport.height) : la sheet remonte
+// au-dessus du clavier et se réduit si besoin (son contenu défile).
+// Pur (testable) : `win` = { innerHeight, visualViewport }.
+const KEYBOARD_MIN_PX = 120; // en dessous : barre d'URL qui bouge, pas un clavier
+function keyboardViewportBox(win) {
+  const vv = win && win.visualViewport;
+  if (!vv || !(win.innerHeight > 0) || !(vv.height > 0)) return null;
+  if (win.innerHeight - vv.height < KEYBOARD_MIN_PX) return null;
+  return { top: Math.max(0, Math.round(vv.offsetTop || 0)), height: Math.round(vv.height) };
+}
+function _sameBox(a, b) {
+  return a === b || (!!a && !!b && a.top === b.top && a.height === b.height);
+}
+function useKeyboardViewport() {
+  const [box, setBox] = React.useState(() =>
+    (typeof window !== 'undefined' ? keyboardViewportBox(window) : null));
+  React.useEffect(() => {
+    const vv = typeof window !== 'undefined' && window.visualViewport;
+    if (!vv || !vv.addEventListener) return;
+    let raf = 0;
+    const update = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const next = keyboardViewportBox(window);
+        setBox(prev => (_sameBox(prev, next) ? prev : next));
+      });
+    };
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    update();
+    return () => {
+      cancelAnimationFrame(raf);
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, []);
+  return box;
+}
+
 function SheetOverlay({ children, onClose, side = 'bottom', label, closing = false }) {
   const reduced = useReducedMotion();
+  const kb = useKeyboardViewport();
+  const dialogRef = React.useRef(null);
+  // Clavier ouvert / redimensionné : le champ actif reste visible (la sheet
+  // vient de rapetisser, il a pu passer sous le bord de sa zone défilante).
+  React.useEffect(() => {
+    if (!kb) return;
+    const id = setTimeout(() => {
+      const a = typeof document !== 'undefined' ? document.activeElement : null;
+      const d = dialogRef.current;
+      if (a && d && d.contains(a) && typeof a.scrollIntoView === 'function') {
+        try { a.scrollIntoView({ block: 'nearest' }); } catch (e) { /* vieux moteurs */ }
+      }
+    }, 60);
+    return () => clearTimeout(id);
+  }, [kb && kb.top, kb && kb.height]);
   const tokenRef = React.useRef(null);
   if (tokenRef.current == null) tokenRef.current = {};
   React.useEffect(() => {
@@ -837,7 +902,8 @@ function SheetOverlay({ children, onClose, side = 'bottom', label, closing = fal
   const exit = side === 'left' ? 'sheetOutLeft' : side === 'right' ? 'sheetOutRight' : 'sheetOutDown';
   return (
     <div role="presentation" onClick={onClose} style={{
-      position: 'fixed', inset: 0, background: T.scrim,
+      position: 'fixed', background: T.scrim,
+      ...(kb ? { left: 0, right: 0, top: kb.top, height: kb.height } : { inset: 0 }),
       zIndex: 100, display: 'flex',
       alignItems: side === 'bottom' ? 'flex-end' : 'stretch',
       justifyContent: side === 'right' ? 'flex-end'
@@ -849,11 +915,16 @@ function SheetOverlay({ children, onClose, side = 'bottom', label, closing = fal
       // relancerait une action sur une sheet déjà en train de partir).
       pointerEvents: closing ? 'none' : undefined,
     }}>
-      <div role="dialog" aria-modal="true" aria-label={label} onClick={e => e.stopPropagation()} style={{
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={label}
+        className="alco-sheet-dialog" onClick={e => e.stopPropagation()} style={{
         width: isSide ? 'auto' : '100%',
         maxWidth: isSide ? '100%' : 'min(560px, 100%)',
         margin: side === 'bottom' ? '0 auto' : 0,
         height: isSide ? '100%' : 'auto',
+        // Jamais plus haut que la zone visible (clavier ouvert compris) : la
+        // racine de la sheet rétrécit (min-height 0, cf. .alco-sheet-dialog)
+        // et sa zone défilante interne prend le relais.
+        maxHeight: '100%',
         display: 'flex', flexDirection: 'column',
         animation: reduced ? undefined
           : closing ? `${exit} ${MOTION.fast}ms ${MOTION.ease} forwards`
@@ -1107,6 +1178,11 @@ function useSWVersion() {
       .alco-chart-in { animation: none; }
     }
 
+    /* Racine d'une sheet : autorisée à rétrécir sous sa hauteur de contenu
+       quand le dialog est plafonné (clavier ouvert) — sa zone interne
+       overflow:auto défile alors au lieu de déborder hors écran. */
+    .alco-sheet-dialog > * { min-height: 0; }
+
     /* Carte (StatsTab › MapSection). Les couleurs sont pilotées par des
        variables CSS posées sur le conteneur, ce qui permet de rethémer la
        carte sans reconstruire le DOM Leaflet. Le halo blanc et les ombres
@@ -1136,6 +1212,10 @@ function useSWVersion() {
       font-family: "Geist Mono", ui-monospace, monospace; font-weight: 600;
       font-variant-numeric: tabular-nums;
     }
+    /* Tuiles OpenStreetMap (style clair uniquement) en thème sombre :
+       inversion + rotation de teinte (l'eau reste bleue, les routes
+       sombres), contraste adouci. Appliqué à la SEULE couche de tuiles. */
+    .alco-tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.6); }
     .alco-map-ctrl {
       display: flex; align-items: center; justify-content: center;
       width: 34px; height: 34px; padding: 0; cursor: pointer;
@@ -1469,23 +1549,93 @@ function TimeField({ value, onChange, ariaLabel = 'Heure' }) {
 // Category picker rendered as a wrap of selectable chips. Replaces the
 // markup duplicated across AddDrink / EditEntry / EditFamily / the move
 // action. Uses real <button role="radio"> for keyboard accessibility.
-function CategoryChips({ categories, value, onChange, ariaLabel = 'Catégorie' }) {
+//
+// `allowCreate` (formulaire d'ajout) : chip « + Nouvelle » qui ouvre un champ
+// en ligne — aucune catégorie n'existe d'office, l'utilisateur crée la sienne
+// au moment d'ajouter sa boisson. Le nom choisi devient la VALEUR (chip
+// « nouvelle » sélectionnée) ; la catégorie n'est écrite en base qu'à
+// l'enregistrement de la boisson (ensureCategory, data.jsx). Sans aucune
+// catégorie, le champ est ouvert d'emblée.
+function CategoryChips({ categories, value, onChange, ariaLabel = 'Catégorie', allowCreate = false }) {
+  const list = categories || [];
+  const [creating, setCreating] = React.useState(false);
+  const [draft, setDraft] = React.useState('');
+  const known = !!value && list.some(c => canonicalCat(c.name) === canonicalCat(value));
+  const pending = allowCreate && !!value && !known;
+  const showField = allowCreate && (creating || (list.length === 0 && !value));
+  const chip = (on) => ({
+    padding: '8px 12px', borderRadius: 10, fontSize: 12,
+    border: `1px solid ${on ? T.accent : T.rule}`,
+    background: on ? T.accentSoft : 'transparent',
+    color: on ? T.accent : T.ink2,
+    cursor: 'pointer', letterSpacing: -0.1, fontFamily: 'inherit',
+  });
+  const confirm = () => {
+    const n = (draft || '').trim();
+    if (!n) return;
+    // Nom déjà existant (casse / composition des accents / espaces) → on
+    // sélectionne l'existante (même règle de doublon qu'EditCategorySheet).
+    const key = canonicalCat(n).toLowerCase();
+    const hit = list.find(c => canonicalCat(c.name).toLowerCase() === key);
+    onChange(hit ? hit.name : n);
+    setDraft(''); setCreating(false);
+  };
   return (
-    <div role="radiogroup" aria-label={ariaLabel}
-      style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-      {(categories || []).map(c => {
-        const on = canonicalCat(value) === canonicalCat(c.name);
-        return (
-          <button key={c.id || c.name} type="button" role="radio" aria-checked={on}
-            onClick={() => onChange(c.name)} style={{
-              padding: '8px 12px', borderRadius: 10, fontSize: 12,
-              border: `1px solid ${on ? T.accent : T.rule}`,
-              background: on ? T.accentSoft : 'transparent',
-              color: on ? T.accent : T.ink2,
-              cursor: 'pointer', letterSpacing: -0.1, fontFamily: 'inherit',
-            }}>{c.name}</button>
-        );
-      })}
+    <div>
+      <div role="radiogroup" aria-label={ariaLabel}
+        style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {list.map(c => {
+          const on = canonicalCat(value) === canonicalCat(c.name);
+          return (
+            <button key={c.id || c.name} type="button" role="radio" aria-checked={on}
+              onClick={() => onChange(c.name)} style={chip(on)}>{c.name}</button>
+          );
+        })}
+        {pending && (
+          <button type="button" role="radio" aria-checked={true}
+            aria-label={`${value} (nouvelle catégorie)`}
+            onClick={() => { setDraft(value); setCreating(true); }} style={chip(true)}>
+            {value} <span style={{ fontSize: 9.5, letterSpacing: 0.3, textTransform: 'uppercase', opacity: 0.8 }}>· nouvelle</span>
+          </button>
+        )}
+        {allowCreate && !showField && (
+          <button type="button" onClick={() => { setDraft(''); setCreating(true); }}
+            aria-label="Nouvelle catégorie pour cette boisson" style={{
+              ...chip(false), border: `1px dashed ${T.rule}`,
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}>
+            <SvgIcon icon={Ic.plus} size={12} /> Nouvelle
+          </button>
+        )}
+      </div>
+      {showField && (
+        <div style={{ display: 'flex', gap: 8, marginTop: list.length || pending ? 8 : 0 }}>
+          <input value={draft} autoFocus={creating} maxLength={40}
+            onChange={e => setDraft(e.target.value)}
+            // Nom tapé puis tap direct sur « Enregistrer » (sans « Choisir ») :
+            // la perte de focus le valide, sinon l'ajout échouait sur
+            // « Choisissez une catégorie ».
+            onBlur={() => { if (draft.trim()) confirm(); }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); confirm(); }
+              if (e.key === 'Escape' && creating) { e.stopPropagation(); setCreating(false); }
+            }}
+            enterKeyHint="done" autoComplete="off"
+            aria-label="Nom de la nouvelle catégorie"
+            style={{ ...inputBaseStyle(), flex: 1, minWidth: 0 }} />
+          <button type="button" onClick={confirm} disabled={!draft.trim()} style={{
+            border: 'none', fontFamily: 'inherit', cursor: draft.trim() ? 'pointer' : 'default',
+            background: T.accent, color: T.accentInk, fontWeight: 600, fontSize: 12.5,
+            padding: '0 14px', borderRadius: 12, flexShrink: 0,
+            opacity: draft.trim() ? 1 : 0.5,
+          }}>Choisir</button>
+        </div>
+      )}
+      {allowCreate && list.length === 0 && !value && (
+        <div style={{ color: T.muted, fontSize: 10.5, lineHeight: 1.5, marginTop: 6 }}>
+          Aucune catégorie pour l'instant : crée la première.
+        </div>
+      )}
     </div>
   );
 }
@@ -1642,6 +1792,7 @@ function BacPill({ bac, ariaLabel, tone = 'accent', compact = false }) {
 }
 
 Object.assign(window, {
+  keyboardViewportBox, useKeyboardViewport, KEYBOARD_MIN_PX,
   T, THEMES, applyTheme, useTheme, syncThemeToDocument,
   fontSans, fontSerif, fontNum,
   BacPill,

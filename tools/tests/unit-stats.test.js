@@ -874,3 +874,35 @@ test('canShiftForward / isCurrentPeriod — jamais de navigation vers le futur',
   assert.equal(canShiftForward('all', now, now), false);
   assert.equal(isCurrentPeriod('all', now, now), true);
 });
+
+// ── Sections masquées (mode « Personnaliser ») ─────────────────────
+
+test('normalizeHiddenSections — ids valides seulement, sans doublon', () => {
+  const { normalizeHiddenSections } = global;
+  assert.deepEqual(normalizeHiddenSections(null), []);
+  assert.deepEqual(normalizeHiddenSections('garbage'), []);
+  assert.deepEqual(normalizeHiddenSections(['map', 'ghost', 'map', 'trends']), ['map', 'trends']);
+});
+
+test('toggleHiddenSection — bascule immuable masquée ↔ affichée', () => {
+  const { toggleHiddenSection } = global;
+  const a = ['map'];
+  assert.deepEqual(toggleHiddenSection(a, 'trends'), ['map', 'trends']);
+  assert.deepEqual(toggleHiddenSection(a, 'map'), []);
+  assert.deepEqual(a, ['map'], 'source intacte');
+  assert.deepEqual(toggleHiddenSection(null, 'bac'), ['bac']);
+});
+
+test('visibleStatsSections — retire les masquées, garde l’ordre, focus explicite prioritaire', () => {
+  const { visibleStatsSections, STATS_SECTIONS } = global;
+  const all = STATS_SECTIONS;
+  assert.equal(visibleStatsSections(all, []), all, 'rien de masqué → même référence');
+  const v = visibleStatsSections(all, ['map', 'bac']);
+  assert.ok(!v.some(s => s.id === 'map' || s.id === 'bac'));
+  assert.equal(v.length, all.length - 2);
+  assert.deepEqual(v.map(s => s.id), all.map(s => s.id).filter(id => id !== 'map' && id !== 'bac'));
+  // Tap sur la pastille BAC : l'Alcoolémie demandée s'affiche même masquée.
+  const f = visibleStatsSections(all, ['map', 'bac'], 'bac');
+  assert.ok(f.some(s => s.id === 'bac'));
+  assert.ok(!f.some(s => s.id === 'map'));
+});

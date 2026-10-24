@@ -15,7 +15,8 @@
 // (local, pour développer/tester sans réseau) ou SupabaseShareTransport (réel).
 
 const SHARE_CFG = Object.assign(
-  { TRANSPORT: 'mock', SUPABASE_URL: '', SUPABASE_ANON_KEY: '', PULL_INTERVAL_MS: 10 * 60 * 1000 },
+  { TRANSPORT: 'mock', SUPABASE_URL: '', SUPABASE_ANON_KEY: '', PULL_INTERVAL_MS: 10 * 60 * 1000,
+    PULL_INTERVAL_ACTIVE_MS: 2 * 60 * 1000 },
   (typeof window !== 'undefined' && window.SHARE_CONFIG) || {}
 );
 
@@ -83,6 +84,7 @@ const shareState = {
   members: [],          // [{ userId, displayName, shareBac, bacWeight, bacGender }]
   favoriteId: null,     // userId de l'ami favori (pastille verte du header) | null
   lastPullAt: 0,
+  lastLocalDrinkTs: 0,  // instant de ma dernière boisson (cadence du pull en soirée)
   online: (typeof navigator !== 'undefined' ? navigator.onLine !== false : true),
   syncing: false,
   error: null,          // 'pull' | 'sync' | null (catégorie)
@@ -184,6 +186,44 @@ function localDrinkToShared(d, rating) {
     deleted: false,
   };
 }
+
+// ── Pagination du pull ────────────────────────────────────────────────────
+// Clé de tri d'une ligne partagée : (updated_at, uid). Paginer sur
+// `updated_at > curseur` seul PERDAIT des lignes : une republication pose le
+// MÊME updated_at sur des centaines de boissons, et la page suivante (gt)
+// sautait toutes celles de même horodatage restées au-delà des 1000
+// premières — dont, parfois, les verres du soir (le BAC vu par les amis
+// différait alors du mien). La suite d'une page reprend APRÈS la dernière
+// clé vue (keyset), égalités comprises.
+function _byPullKey(a, b) {
+  const d = (a.updatedAt || 0) - (b.updatedAt || 0);
+  if (d) return d;
+  return a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0;
+}
+function _afterKey(r, ts, afterUid) {
+  const t = r.updatedAt || 0;
+  if (t > ts) return true;
+  return afterUid != null && t === ts && r.uid > afterUid;
+}
+// Filtre PostgREST équivalent. Un uid hors alphabet sûr (jamais produit par
+// genUid) retombe sur le filtre simple plutôt que de casser la requête.
+const SAFE_UID_RE = /^[A-Za-z0-9_-]+$/;
+function _drinksPage(q, cursor, afterUid) {
+  const ts = Math.max(0, Math.floor(Number(cursor) || 0));
+  if (afterUid && SAFE_UID_RE.test(afterUid)) {
+    return q.or(`updated_at.gt.${ts},and(updated_at.eq.${ts},uid.gt.${afterUid})`);
+  }
+  return q.gt('updated_at', ts);
+}
+// Recouvrement du pull incrémental : chaque pull relit les lignes des 10
+// dernières minutes AVANT le curseur. Le curseur est un horodatage posé par
+// l'APPAREIL qui publie (ou par le serveur, trigger de supabase/schema.sql) :
+// une horloge de téléphone en retard, ou un envoi lent qui se termine après
+// un pull plus récent, laissait sa boisson SOUS le curseur des autres —
+// invisible à jamais, et le taux d'alcoolémie affiché chez les amis restait
+// faux. Les upserts par uid rendent la relecture idempotente (coût : les
+// quelques lignes des 10 dernières minutes).
+const PULL_OVERLAP_MS = 10 * 60 * 1000;
 
 // ════════════════════════════════════════════════════════════════════════
 //  Transports
@@ -306,7 +346,7 @@ function MockShareTransport() {
       srv.mine = srv.mine.map(r => set.has(r.uid) ? { ...r, deleted: true, updatedAt: Date.now() } : r);
       write(srv);
     },
-    async pullSince(cursor, { withMeta = true } = {}) {
+    async pullSince(cursor, { withMeta = true, afterUid = null } = {}) {
       const srv = read();
       if (!srv) {
         return {
@@ -315,9 +355,12 @@ function MockShareTransport() {
           cursor: cursor || 0, error: null,
         };
       }
+      // Même pagination « keyset » que Supabase : (updated_at, uid) croissants,
+      // pages de 1000.
       const all = [...srv.drinks, ...srv.mine];
-      const fresh = all.filter(r => (r.updatedAt || 0) > (cursor || 0));
-      const newCursor = all.reduce((m, r) => Math.max(m, r.updatedAt || 0), cursor || 0);
+      const fresh = all.filter(r => _afterKey(r, cursor || 0, afterUid))
+        .sort(_byPullKey).slice(0, 1000);
+      const newCursor = fresh.reduce((m, r) => Math.max(m, r.updatedAt || 0), cursor || 0);
       // Comme Supabase (group_members contient ma row), la liste inclut MOI —
       // sauf si j'ai été retiré : le moteur s'appuie sur cette absence pour
       // détecter l'exclusion.
@@ -360,6 +403,22 @@ function ensureSupabaseSdk() {
 
 // Supabase : REST/PostgREST + auth anonyme via le SDK officiel (chargé à la
 // demande). N'active PAS le Realtime — on reste en pull (sobriété batterie).
+// fetch borné pour le SDK Supabase : sur un wifi mourant une requête peut
+// pendre une minute — le pull en vol bloquait alors « Rafraîchir » et les
+// retries. Au-delà du délai on abandonne ; le moteur réessaie (backoff).
+const SHARE_FETCH_TIMEOUT_MS = 20000;
+function _timedFetch(input, init = {}) {
+  if (typeof AbortController === 'undefined') return fetch(input, init);
+  const ctrl = new AbortController();
+  const outer = init.signal;
+  if (outer) {
+    if (outer.aborted) ctrl.abort();
+    else outer.addEventListener('abort', () => ctrl.abort(), { once: true });
+  }
+  const t = setTimeout(() => ctrl.abort(), SHARE_FETCH_TIMEOUT_MS);
+  return fetch(input, { ...init, signal: ctrl.signal }).finally(() => clearTimeout(t));
+}
+
 function SupabaseShareTransport(cfg) {
   let client = null;
   async function ensureClient() {
@@ -367,6 +426,7 @@ function SupabaseShareTransport(cfg) {
       await ensureSupabaseSdk();
       client = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
         auth: { persistSession: true, autoRefreshToken: true },
+        global: { fetch: _timedFetch },
       });
     }
     return client;
@@ -457,7 +517,7 @@ function SupabaseShareTransport(cfg) {
         .update({ deleted: true, updated_at: Date.now() }).in('uid', uids);
       if (error) throw error;
     },
-    async pullSince(cursor, { withMeta = true } = {}) {
+    async pullSince(cursor, { withMeta = true, afterUid = null } = {}) {
       const sb = await ensureClient();
       const gid = shareState.groupId;
       // Méta (profils + membres + créateur) une seule fois par pull : la
@@ -469,7 +529,8 @@ function SupabaseShareTransport(cfg) {
         sb.from('groups').select('created_by').eq('id', gid).maybeSingle(),
       ] : [];
       const [d, p, m, g] = await Promise.all([
-        sb.from('shared_drinks').select('*').eq('group_id', gid).gt('updated_at', cursor || 0).order('updated_at', { ascending: true }).limit(1000),
+        _drinksPage(sb.from('shared_drinks').select('*').eq('group_id', gid), cursor, afterUid)
+          .order('updated_at', { ascending: true }).order('uid', { ascending: true }).limit(1000),
         ...metaQueries,
       ]);
       // On NE jette PAS sur la seule erreur des boissons : sinon une erreur de
@@ -581,6 +642,21 @@ function _samePoolList(a, b) {
   return true;
 }
 
+// La date/heure d'une boisson partagée est l'heure MURALE de son auteur ; le
+// moteur BAC (computeBacOverTime) la relit dans le fuseau de CET appareil.
+// Si les deux fuseaux diffèrent (voyage, réglage manuel du téléphone), l'ami
+// voyait mon verre décalé d'autant d'heures — et un autre taux que le mien.
+// `tsUtc` (instant absolu publié) fait foi : on ré-exprime date/heure dans le
+// fuseau local. Même fuseau ⇒ objet rendu tel quel.
+function localizeSharedDrink(d) {
+  const ts = Number(d && d.tsUtc);
+  if (!Number.isFinite(ts) || ts <= 0 || !d.date) return d;
+  const wall = new Date(`${d.date}T${d.time || '00:00'}`).getTime();
+  if (!Number.isFinite(wall) || wall === ts) return d;
+  const at = new Date(ts);
+  return { ...d, date: localDate(at), time: localTime(at) };
+}
+
 // Groupement pur (testable) : lignes du pool → Map auteur → boissons vivantes
 // au format StatsTab (`id` = uid). `prev` permet de réutiliser les tableaux
 // inchangés (stabilité référentielle).
@@ -590,7 +666,7 @@ function groupSharedPool(rows, prev = null) {
     if (!r || r.deleted || !r.authorId) continue;
     let list = groups.get(r.authorId);
     if (!list) { list = []; groups.set(r.authorId, list); }
-    list.push({ ...r, id: r.uid });
+    list.push(localizeSharedDrink({ ...r, id: r.uid }));
   }
   const out = new Map();
   for (const [author, list] of groups) {
@@ -640,8 +716,11 @@ async function reconcile() {
     const idx = await _loadPubIndex();
     const upserts = [];
     const seen = new Set();
+    let lastTs = 0;
     for (const d of drinks) {
       if (!d.uid) continue;
+      const ts = tsFromDateTime(d.date, d.time);
+      if (ts <= Date.now() && ts > lastTs) lastTs = ts;
       seen.add(d.uid);
       const rating = ratings[ratingKey(d.name)] || 0;
       const u = +new Date(d.updatedAt || d.createdAt || 0) || 0;
@@ -651,6 +730,7 @@ async function reconcile() {
         idx[d.uid] = { u, r: rating };
       }
     }
+    shareState.lastLocalDrinkTs = lastTs;
     const tombs = [];
     for (const uid of Object.keys(idx)) {
       if (!seen.has(uid)) { tombs.push(uid); delete idx[uid]; }
@@ -743,12 +823,19 @@ async function _pullOnce(attempt) {
     // TOUT l'historique de chacun ; ensuite une seule itération suffit (delta).
     // Plafonnée (MAX_PAGES) pour écarter toute boucle pathologique.
     const PAGE = 1000, MAX_PAGES = 100;
-    let cursor = (await _sget(`share.cursor.${gid}`)) || 0;
+    // Jamais un curseur dans le futur (horloge d'un membre en avance, avant
+    // l'horodatage serveur) : il masquerait les écritures à venir.
+    const stored = Math.min(Number(await _sget(`share.cursor.${gid}`)) || 0, Date.now());
+    // 1re page : on recule de PULL_OVERLAP_MS (rattrape les boissons arrivées
+    // « dans le passé », cf. PULL_OVERLAP_MS) ; les suivantes reprennent
+    // juste après la dernière clé (updated_at, uid) reçue.
+    let since = Math.max(0, stored - PULL_OVERLAP_MS), afterUid = null;
+    let maxSeen = stored;
     let members = null, creatorId, authUserId = null, partialErr = null, pages = 0;
     for (;;) {
       // Méta (profils / membres / créateur) sur la PREMIÈRE page seulement :
       // les pages suivantes du drainage ne re-téléchargent que les boissons.
-      const res = await getTransport().pullSince(cursor, { withMeta: pages === 0 });
+      const res = await getTransport().pullSince(since, { withMeta: pages === 0, afterUid });
       if (stale()) return;
       const incoming = (res.drinks || []).filter(r => r.authorId !== shareState.userId);
       const live = incoming.filter(r => !r.deleted);
@@ -761,15 +848,18 @@ async function _pullOnce(attempt) {
       if (Array.isArray(res.members)) members = res.members;
       if (res.creatorId !== undefined) creatorId = res.creatorId;
       if (res.authUserId) authUserId = res.authUserId;
-      const count = (res.drinks || []).length;
-      const newCursor = res.cursor || cursor;
+      const rows = res.drinks || [];
+      for (const r of rows) if ((r.updatedAt || 0) > maxSeen) maxSeen = r.updatedAt || 0;
       if (stale()) return;
-      await _sset(`share.cursor.${gid}`, newCursor);
+      await _sset(`share.cursor.${gid}`, maxSeen);
       pages++;
-      const advanced = newCursor > cursor;
-      cursor = newCursor;
       if (res.error) { partialErr = res.error; break; }
-      if (count < PAGE || !advanced || pages >= MAX_PAGES) break;
+      if (rows.length < PAGE || pages >= MAX_PAGES) break;
+      const last = rows[rows.length - 1];
+      const nextSince = (last && last.updatedAt) || 0;
+      const nextUid = last ? last.uid : null;
+      if (nextSince === since && nextUid === afterUid) break; // aucune progression
+      since = nextSince; afterUid = nextUid;
     }
     if (stale()) return;
     // Détection d'exclusion + purge des partants — UNIQUEMENT sur une liste
@@ -803,6 +893,11 @@ async function _pullOnce(attempt) {
         await _sset('share.creatorId', creatorId);
       }
       shareState.members = members;
+      // Mon profil tel que le GROUPE le voit (poids/sexe servent au calcul de
+      // mon taux chez les amis) : s'il diffère du mien — publication passée
+      // échouée hors-ligne, jamais retentée —, on le republie.
+      const selfRow = members.find(mm => mm.userId === me);
+      if (selfRow) await _healMyProfile(selfRow);
     }
     shareState.lastPullAt = Date.now();
     shareState.online = true;
@@ -831,12 +926,40 @@ async function _pullOnce(attempt) {
   }
 }
 
+// Fréquence du pull automatique (app au premier plan) : 10 min au repos,
+// 2 min pendant une SOIRÉE — dès qu'une boisson (la mienne ou celle d'un
+// ami) date de moins de ACTIVE_WINDOW_MS. Le taux d'un ami est recalculé en
+// local depuis ses boissons : avec un pull toutes les 10 min, ses derniers
+// verres manquaient et son taux différait de celui affiché sur SON appareil.
+const ACTIVE_WINDOW_MS = 12 * 3600 * 1000;
+function _lastPoolDrinkTs() {
+  const byAuthor = peekPoolByAuthor();
+  let last = 0;
+  if (byAuthor) {
+    for (const list of byAuthor.values()) {
+      for (const d of list) if ((d.tsUtc || 0) > last) last = d.tsUtc || 0;
+    }
+  }
+  return last;
+}
+// Pur (testable) : délai voulu entre deux pulls automatiques.
+function pullIntervalMs(nowMs, lastActivityTs, cfg = SHARE_CFG) {
+  const idle = cfg.PULL_INTERVAL_MS || 600000;
+  const active = Math.min(idle, cfg.PULL_INTERVAL_ACTIVE_MS || idle);
+  return lastActivityTs && nowMs - lastActivityTs <= ACTIVE_WINDOW_MS ? active : idle;
+}
 function startTimer() {
   stopTimer();
   if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+    const idle = SHARE_CFG.PULL_INTERVAL_MS || 600000;
+    const tick = Math.min(idle, SHARE_CFG.PULL_INTERVAL_ACTIVE_MS || idle);
     _timer = setInterval(() => {
-      if (document.visibilityState === 'visible') pull();
-    }, SHARE_CFG.PULL_INTERVAL_MS || 600000);
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      const activity = Math.max(shareState.lastLocalDrinkTs || 0, _lastPoolDrinkTs());
+      // Marge d'une seconde : le tick et lastPullAt ne tombent jamais pile.
+      if (now - (shareState.lastPullAt || 0) >= pullIntervalMs(now, activity) - 1000) pull();
+    }, tick);
   }
 }
 function stopTimer() { if (_timer) { clearInterval(_timer); _timer = null; } }
@@ -845,9 +968,14 @@ if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       startTimer();
-      if (shareState.enabled && shareState.groupId) pull();
+      if (shareState.enabled && shareState.groupId) { scheduleReconcile(); pull(); }
     } else {
       stopTimer();
+      // L'app passe en arrière-plan (souvent juste après avoir noté un verre) :
+      // on publie TOUT DE SUITE au lieu d'attendre le debounce de reconcile —
+      // le système peut suspendre la page avant, et les amis ne verraient ce
+      // verre qu'au prochain lancement.
+      if (shareState.enabled && shareState.groupId) { clearTimeout(_recTimer); reconcile(); }
     }
   });
 }
@@ -989,6 +1117,36 @@ async function publishMyProfile() {
     // (les amis te verraient « Anonyme »).
     try { console.warn('[AlcoNote partage] publication du profil échouée', e); } catch (_) {}
   }
+}
+
+// Profil attendu côté serveur vs profil reçu au pull (pur, testable) : vrai
+// si le groupe calcule mon taux avec d'autres paramètres que les miens.
+function profileNeedsRepublish(serverRow, expected) {
+  if (!serverRow || !expected) return false;
+  if (!!serverRow.shareBac !== !!expected.shareBac) return true;
+  if ((serverRow.displayName || '') !== (expected.displayName || '')) return true;
+  if (!expected.shareBac) return false;
+  const w = (v) => (Number(v) > 0 ? Number(v) : null);
+  return w(serverRow.bacWeight) !== w(expected.bacWeight)
+    || (serverRow.bacGender || null) !== (expected.bacGender || null);
+}
+// Une seule tentative de réparation par profil attendu et par lancement :
+// un serveur qui refuserait l'écriture ne déclenche pas une boucle d'envois.
+let _healedSig = null;
+async function _healMyProfile(serverRow) {
+  try {
+    const db = await waitForDb();
+    const settings = db ? await db.getAllSettings() : {};
+    const expected = {
+      shareBac: shareState.shareBac, displayName: shareState.displayName,
+      bacWeight: Number(settings.userWeight) || null, bacGender: settings.userGender || null,
+    };
+    if (!profileNeedsRepublish(serverRow, expected)) return;
+    const sig = JSON.stringify(expected);
+    if (sig === _healedSig) return;
+    _healedSig = sig;
+    await publishMyProfile();
+  } catch (e) { /* best-effort */ }
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -1443,6 +1601,7 @@ function sortGroupMembers(members, favoriteId = null) {
 }
 
 Object.assign(window, {
+  localizeSharedDrink, pullIntervalMs, profileNeedsRepublish, PULL_OVERLAP_MS,
   shareEngine, shareBus, getTransport,
   MockShareTransport, SupabaseShareTransport,
   useShare, useGroupMembers, useFavoriteFriend,

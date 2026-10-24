@@ -41,7 +41,7 @@ test('FAB « Ajouter une boisson » présent', () => {
   assert.ok(fab);
 });
 
-test('catégories par défaut affichées (Bière, Vin…)', async () => {
+test('catégories de l’utilisateur affichées (Bière, Vin…)', async () => {
   await ctx.waitFor(() => ctx.text().includes('Bière'), { label: 'seed catégories' });
   const t = ctx.text();
   for (const cat of ['Bière', 'Vin', 'Spiritueux', 'Cocktail', 'Autre']) {

@@ -126,7 +126,7 @@ test('période « Jour » : les contenus multi-jours / globaux sont masqués', a
 test('mode Réorganiser : flèche clavier déplace une section, ordre persisté en DB', async () => {
   assert.deepEqual(sectionDomOrder().slice(0, 2), ['general', 'temporal'], 'ordre par défaut au départ');
 
-  await ctx.clickAria(/Réorganiser les sections/, 300);
+  await ctx.clickAria(/Personnaliser les sections/, 300);
   assert.ok(ctx.text().includes('Terminé'), 'mode édition actif');
   const handles = ctx.qa('button').filter((b) => /^Déplacer «/.test(b.getAttribute('aria-label') || ''));
   assert.equal(handles.length, 10, '10 lignes compactes (toutes les sections visibles)');
@@ -145,7 +145,7 @@ test('mode Réorganiser : flèche clavier déplace une section, ordre persisté 
 });
 
 test('mode Réorganiser : drag à la poignée (pointer events)', async () => {
-  await ctx.clickAria(/Réorganiser les sections/, 300);
+  await ctx.clickAria(/Personnaliser les sections/, 300);
   const handles = ctx.qa('button').filter((b) => /^Déplacer «/.test(b.getAttribute('aria-label') || ''));
   // La 1re ligne est désormais « Analyse temporelle » ; on la glisse d'une
   // ligne (56 px) vers le bas → elle repasse 2e, retour à l'ordre d'origine.
@@ -162,6 +162,36 @@ test('mode Réorganiser : drag à la poignée (pointer events)', async () => {
   assert.deepEqual(sectionDomOrder().slice(0, 2), ['general', 'temporal'], 'drag commité au relâchement');
   const saved = JSON.parse(await ctx.window.dbManager.getSetting('stats.sectionOrder'));
   assert.deepEqual(saved.slice(0, 2), ['general', 'temporal'], 'persistance après drag');
+});
+
+// ── Masquer / afficher des sections ─────────────────────────────────
+
+test('Personnaliser : l’œil masque une section (persisté), puis la ré-affiche', async () => {
+  assert.ok(sectionDomOrder().includes('temporal'), 'Analyse temporelle visible au départ');
+  await ctx.clickAria(/Personnaliser les sections/, 300);
+  await ctx.clickAria(/^Masquer « Analyse temporelle »$/, 200);
+  await ctx.clickAria(/^Masquer « Tendances »$/, 200);
+  // Les lignes masquées restent dans la liste (pour pouvoir les ré-afficher).
+  assert.ok(ctx.buttons().some((b) => b.getAttribute('aria-label') === 'Afficher « Analyse temporelle »'));
+  assert.ok(ctx.text().includes('Masquée'), 'ligne marquée « Masquée »');
+  await ctx.clickText(/^Terminé$/, 300);
+
+  const shown = sectionDomOrder();
+  assert.ok(!shown.includes('temporal') && !shown.includes('trends'), 'sections masquées non rendues');
+  assert.ok(shown.includes('general'), 'les autres restent');
+  const saved = JSON.parse(await ctx.window.dbManager.getSetting('stats.hiddenSections'));
+  assert.deepEqual(saved.sort(), ['temporal', 'trends'], 'masquage persisté en setting Dexie');
+  // Rappel en bas de page, qui ramène au mode Personnaliser.
+  assert.ok(ctx.text().includes('2 sections masquées'), 'mention des sections masquées');
+
+  await ctx.clickAria(/sections masquées — personnaliser/, 300);
+  assert.ok(ctx.text().includes('Terminé'), 'mode Personnaliser rouvert');
+  await ctx.clickAria(/^Afficher « Analyse temporelle »$/, 200);
+  await ctx.clickAria(/^Afficher « Tendances »$/, 200);
+  await ctx.clickText(/^Terminé$/, 300);
+  assert.ok(sectionDomOrder().includes('temporal'), 'ré-affichée');
+  assert.ok(!ctx.text().includes('sections masquées'), 'plus de mention');
+  assert.deepEqual(JSON.parse(await ctx.window.dbManager.getSetting('stats.hiddenSections')), []);
 });
 
 // ── Badges Δ% : jamais en surimpression de la valeur ────────────────

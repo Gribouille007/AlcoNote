@@ -589,8 +589,14 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
   const [anchor, setAnchor] = React.useState(() => new Date());
   const [collapsed, setCollapsed] = React.useState(() => loadCollapsedSections(storageScope));
   const [sectionOrder, saveSectionOrder] = useSectionOrder();
+  const [hiddenSections, saveHiddenSections] = useHiddenSections();
   const [reorderMode, setReorderMode] = React.useState(false);
-  if (reorderRef) reorderRef.current = () => setReorderMode(true);
+  // Section demandée explicitement (focusRequest : tap sur la pastille BAC)
+  // affichée même si masquée — jusqu'au prochain passage par Personnaliser,
+  // où le choix « masquée » de l'utilisateur reprend la main.
+  const [forcedId, setForcedId] = React.useState(null);
+  const openCustomize = React.useCallback(() => { setForcedId(null); setReorderMode(true); }, []);
+  if (reorderRef) reorderRef.current = openCustomize;
   // Page de stats d'UNE session (tap dans la liste « Sessions »). Montée ICI
   // (sous les contextes de la vue : mes boissons, ou celles d'un ami).
   const [openSessionId, setOpenSessionId] = React.useState(null);
@@ -610,6 +616,7 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
     const { id } = focusRequest;
     if (focusRequest.period) { setPeriod(focusRequest.period); setAnchor(new Date()); }
     setReorderMode(false);
+    setForcedId(id);
     setCollapsed(prev => {
       if (!prev.has(id)) return prev;
       const next = new Set(prev); next.delete(id);
@@ -734,14 +741,20 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
     weight, gender, bacAvailable, onOpenSession,
   };
 
-  // Sections visibles, dans l'ordre personnalisé (les flags de la vue
+  // Sections disponibles, dans l'ordre personnalisé (les flags de la vue
   // ami continuent de filtrer APRÈS l'ordre — l'ordre reste global).
-  const visibleSections = React.useMemo(() => {
+  const availableSections = React.useMemo(() => {
     const flags = { hideBac, hideMap, hidePrice };
     return sectionOrder
       .map(id => STATS_SECTIONS.find(s => s.id === id))
       .filter(s => s && !(s.hide && s.hide(flags)));
   }, [sectionOrder, hideBac, hideMap, hidePrice]);
+  // … moins celles que l'utilisateur a masquées (sauf `forcedId`).
+  const visibleSections = React.useMemo(
+    () => visibleStatsSections(availableSections, hiddenSections, forcedId),
+    [availableSections, hiddenSections, forcedId]
+  );
+  const hiddenCount = availableSections.length - visibleSections.length;
 
   // La réorganisation n'est proposée que sur MA vue (la vue ami suit
   // l'ordre personnel, sans l'éditer).
@@ -776,7 +789,7 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
             <div style={{
               fontFamily: fontSerif, fontSize: 18, color: T.ink,
               fontStyle: 'italic', letterSpacing: -0.3,
-            }}>Réorganiser les sections</div>
+            }}>Personnaliser les sections</div>
             <button type="button" onClick={() => setReorderMode(false)} style={{
               border: 'none', fontFamily: 'inherit', cursor: 'pointer',
               background: T.accent, color: T.accentInk, fontWeight: 600,
@@ -785,10 +798,12 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
           </div>
           <div style={{
             color: T.muted, fontSize: 10.5, padding: '0 4px 14px', lineHeight: 1.5,
-          }}>Glisse une section par sa poignée pour changer l'ordre. Il est conservé définitivement.</div>
+          }}>Glisse une section par sa poignée pour changer l'ordre ; touche l'œil pour la masquer ou l'afficher. Tes choix sont conservés.</div>
           <SectionReorderList
-            sections={visibleSections}
+            sections={availableSections}
             onChange={saveSectionOrder}
+            hidden={hiddenSections}
+            onToggleHidden={(id) => saveHiddenSections(toggleHiddenSection(hiddenSections, id))}
           />
         </div>
       </div>
@@ -814,6 +829,13 @@ function StatsTab({ storageScope = '', hideMap = false, hideBac = false, hidePri
           onReset={() => setAnchor(new Date())} />
         {shownSections.map(({ id, Comp }) => <Comp key={id} {...sp} />)}
         {!hasPeriodData && <StatsEmptyState scope="period" />}
+        {hasPeriodData && shownSections.length === 0 && hiddenCount > 0 && (
+          <StatsEmptyState scope="hidden" />
+        )}
+        {hiddenCount > 0 && (
+          <HiddenSectionsNote count={hiddenCount}
+            onCustomize={canReorder ? openCustomize : null} />
+        )}
       </div>
       {openSessionId && (
         <SessionStatsPortal key={openSessionId} sessionId={openSessionId}
@@ -831,20 +853,44 @@ function StatsEmptyState({ scope }) {
   return (
     <div style={{ padding: '48px 22px', textAlign: 'center' }}>
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14, color: T.muted }}>
-        <SvgIcon icon={Ic.bars} size={30} />
+        <SvgIcon icon={scope === 'hidden' ? Ic.eyeOff : Ic.bars} size={30} />
       </div>
       <div style={{
         fontFamily: fontSerif, fontStyle: 'italic', fontSize: 18,
         color: T.ink, letterSpacing: -0.3, marginBottom: 8,
       }}>
-        Pas de données disponibles
+        {scope === 'hidden' ? 'Sections masquées' : 'Pas de données disponibles'}
       </div>
       <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6, maxWidth: 260, margin: '0 auto' }}>
         {scope === 'global'
           ? 'Ajoute ta première boisson avec le bouton + pour voir tes statistiques ici.'
-          : 'Aucune boisson enregistrée sur cette période.'}
+          : scope === 'hidden'
+            ? 'Toutes les sections de cette période sont masquées.'
+            : 'Aucune boisson enregistrée sur cette période.'}
       </div>
     </div>
+  );
+}
+
+// Rappel discret en bas de page : des sections sont masquées (sinon elles
+// « disparaissent » sans explication). Lien vers le mode Personnaliser sur
+// ma vue ; simple mention dans la vue ami (qui suit mes préférences).
+function HiddenSectionsNote({ count, onCustomize }) {
+  const label = `${count} section${count > 1 ? 's' : ''} masquée${count > 1 ? 's' : ''}`;
+  const style = {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+    margin: '4px auto 0', color: T.muted, fontSize: 10, letterSpacing: 0.3,
+    textTransform: 'uppercase', fontWeight: 500,
+  };
+  if (!onCustomize) {
+    return <div style={style}><SvgIcon icon={Ic.eyeOff} size={12} /> {label}</div>;
+  }
+  return (
+    <button type="button" onClick={onCustomize}
+      aria-label={`${label} — personnaliser les sections`}
+      style={{ ...ghostButton, ...style, padding: '6px 10px' }}>
+      <SvgIcon icon={Ic.eyeOff} size={12} /> {label} · Personnaliser
+    </button>
   );
 }
 
@@ -1041,25 +1087,58 @@ function dragTargetIndex(fromIndex, dy, step, count) {
 // avec le profil de l'ami, ce qui rendrait l'ordre invisible — ici la
 // vue ami suit automatiquement l'ordre personnel.
 function useSectionOrder() {
-  const [order, setOrder] = React.useState(DEFAULT_SECTION_ORDER);
+  return _useSectionListSetting(SECTION_ORDER_KEY, normalizeSectionOrder, DEFAULT_SECTION_ORDER);
+}
+
+// Sections MASQUÉES par l'utilisateur (mode « Personnaliser » → œil).
+// Setting Dexie `stats.hiddenSections` (JSON array d'ids) : comme l'ordre,
+// suit l'export/import et s'applique aussi à la vue ami et aux sections
+// réutilisées de la page d'une session. Un id inconnu est ignoré.
+const SECTION_HIDDEN_KEY = 'stats.hiddenSections';
+const NO_HIDDEN_SECTIONS = Object.freeze([]);
+// Sections à rendre (pur) : `sections` (déjà ordonnées/filtrées par les
+// flags de vue) moins les masquées, sauf `forcedId` (focus explicite).
+function visibleStatsSections(sections, hidden, forcedId = null) {
+  if (!hidden || hidden.length === 0) return sections;
+  return sections.filter(s => s.id === forcedId || !hidden.includes(s.id));
+}
+function normalizeHiddenSections(saved, defaults = DEFAULT_SECTION_ORDER) {
+  if (!Array.isArray(saved)) return NO_HIDDEN_SECTIONS;
+  const out = [];
+  for (const id of saved) if (defaults.includes(id) && !out.includes(id)) out.push(id);
+  return out.length ? out : NO_HIDDEN_SECTIONS;
+}
+// Bascule pure masquée ↔ affichée d'une section.
+function toggleHiddenSection(hidden, id) {
+  const list = hidden || NO_HIDDEN_SECTIONS;
+  return list.includes(id) ? list.filter(x => x !== id) : list.concat(id);
+}
+function useHiddenSections() {
+  return _useSectionListSetting(SECTION_HIDDEN_KEY, normalizeHiddenSections, NO_HIDDEN_SECTIONS);
+}
+
+// Liste d'ids persistée en setting Dexie (lecture DB directe + dataBus, cf.
+// useSectionOrder pour le pourquoi). `[value, save]`, sauvegarde optimiste.
+function _useSectionListSetting(key, normalize, initial) {
+  const [value, setValue] = React.useState(initial);
   React.useEffect(() => {
     let alive = true;
     const load = async () => {
       const db = await waitForDb();
       if (!db || !alive) return;
       let saved = null;
-      try { saved = JSON.parse((await db.getSetting(SECTION_ORDER_KEY)) || 'null'); } catch {}
-      if (alive) setOrder(normalizeSectionOrder(saved));
+      try { saved = JSON.parse((await db.getSetting(key)) || 'null'); } catch {}
+      if (alive) setValue(normalize(saved));
     };
     load();
     const unsub = dataBus.sub((ch) => { if (ch === 'settings' || ch == null) load(); });
     return () => { alive = false; unsub(); };
-  }, []);
+  }, [key]);
   const save = React.useCallback((next) => {
-    setOrder(next); // optimiste — le bump 'settings' resynchronise les autres instances
-    saveSetting(SECTION_ORDER_KEY, JSON.stringify(next));
-  }, []);
-  return [order, save];
+    setValue(next); // optimiste — le bump 'settings' resynchronise les autres instances
+    saveSetting(key, JSON.stringify(next));
+  }, [key]);
+  return [value, save];
 }
 
 // ── Mode « Réorganiser » ──────────────────────────────────────────
@@ -1071,7 +1150,7 @@ const REORDER_ROW = 48;
 const REORDER_GAP = 8;
 const REORDER_STEP = REORDER_ROW + REORDER_GAP;
 
-function SectionReorderList({ sections, onChange }) {
+function SectionReorderList({ sections, onChange, hidden = NO_HIDDEN_SECTIONS, onToggleHidden }) {
   const ids = sections.map(s => s.id);
   // L'état pilote le rendu ; la ref porte la valeur À JOUR pour les
   // handlers (au pointerup, l'état peut accuser une frame de retard sur
@@ -1096,6 +1175,7 @@ function SectionReorderList({ sections, onChange }) {
     <div style={{ position: 'relative', height: sections.length * REORDER_STEP - REORDER_GAP }}>
       {sections.map((s, i) => {
         const isDragged = drag != null && drag.id === s.id;
+        const isHidden = hidden.includes(s.id);
         const y = isDragged
           ? drag.from * REORDER_STEP + drag.dy
           : displayIds.indexOf(s.id) * REORDER_STEP;
@@ -1115,9 +1195,29 @@ function SectionReorderList({ sections, onChange }) {
               width: 14, textAlign: 'center', flexShrink: 0,
             }}>{displayIds.indexOf(s.id) + 1}</span>
             <div style={{
-              flex: 1, minWidth: 0, fontSize: 13, color: T.ink, letterSpacing: -0.1,
+              flex: 1, minWidth: 0, fontSize: 13, letterSpacing: -0.1,
+              color: isHidden ? T.muted : T.ink,
+              textDecoration: isHidden ? 'line-through' : 'none',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>{s.title}</div>
+            {isHidden && (
+              <span style={{
+                color: T.muted, fontSize: 9.5, letterSpacing: 0.3,
+                textTransform: 'uppercase', flexShrink: 0,
+              }}>Masquée</span>
+            )}
+            {onToggleHidden && (
+              <button type="button" onClick={() => onToggleHidden(s.id)}
+                aria-pressed={isHidden}
+                aria-label={isHidden ? `Afficher « ${s.title} »` : `Masquer « ${s.title} »`}
+                style={{
+                  ...ghostButton, width: 38, height: 38, flexShrink: 0,
+                  display: 'grid', placeItems: 'center', borderRadius: 10,
+                  color: isHidden ? T.muted : T.ink2,
+                }}>
+                <SvgIcon icon={isHidden ? Ic.eyeOff : Ic.eye} size={16} />
+              </button>
+            )}
             <button type="button"
               aria-label={`Déplacer « ${s.title} » — glisser, ou flèches haut/bas`}
               onPointerDown={(e) => {
@@ -3014,7 +3114,7 @@ function BACRecordRow({ record, isHighest }) {
   );
 }
 // ── 6. Carte des lieux ────────────────────────────────────────────
-// Carte Leaflet des consommations géolocalisées (free : OSM via CARTO).
+// Carte Leaflet des consommations géolocalisées (tuiles OpenStreetMap).
 // Refonte : la carte est construite UNE fois à l'ouverture de la section
 // puis mise à jour en place (clearLayers), ses couleurs étant pilotées par
 // des variables CSS — aucune reconstruction au changement de données ni de
@@ -3023,12 +3123,24 @@ function BACRecordRow({ record, isHighest }) {
 // cluster) ouvre la liste regroupée de ses boissons, bascule points/heatmap
 // et bascule Période/Tout. Leaflet, markercluster et leaflet.heat sont
 // chargés à la demande au premier affichage.
-const CARTO_TILES = {
-  dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-};
-const CARTO_ATTR = '© OpenStreetMap, © CARTO';
-const tileUrlForTheme = () => (T.isDark ? CARTO_TILES.dark : CARTO_TILES.light);
+//
+// Tuiles : serveur standard d'OpenStreetMap, SANS clé d'API. Les fonds CARTO
+// utilisés auparavant exigent désormais une clé : sans elle chaque tuile
+// arrive filigranée « API KEY REQUIRED ». OSM n'a qu'un style clair : le
+// thème sombre est obtenu en CSS (filtre d'inversion sur la seule couche de
+// tuiles, classe .alco-tiles-dark de shared.jsx) — marqueurs et contrôles
+// gardent leurs vraies couleurs. Politique d'usage OSM : attribution
+// visible, pas de préchargement massif (le SW ne met en cache que les
+// tuiles réellement affichées).
+const MAP_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const MAP_TILE_MAX_ZOOM = 19;
+const MAP_ATTR = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
+const MAP_TILES_DARK_CLASS = 'alco-tiles-dark';
+// Rethème la couche de tuiles (pur DOM, aucune reconstruction de la carte).
+function applyTileTheme(layer) {
+  const el = layer && typeof layer.getContainer === 'function' ? layer.getContainer() : null;
+  if (el && el.classList) el.classList.toggle(MAP_TILES_DARK_CLASS, !!T.isDark);
+}
 
 // Pose les variables CSS de thème sur le conteneur de carte. Lues par les
 // règles .alco-* (shared.jsx), elles rethèment marqueurs, clusters et
@@ -3263,9 +3375,10 @@ function MapSection({ drinks, allDrinks, period, collapsed, toggleSection }) {
       dragging: !coarse, scrollWheelZoom: false,
     });
     m.setView([46.6, 2.4], 5); // vue par défaut (France) avant le 1er cadrage
-    tileRef.current = L.tileLayer(tileUrlForTheme(), {
-      maxZoom: 20, subdomains: 'abcd', attribution: CARTO_ATTR,
+    tileRef.current = L.tileLayer(MAP_TILE_URL, {
+      maxZoom: MAP_TILE_MAX_ZOOM, attribution: MAP_ATTR,
     }).addTo(m);
+    applyTileTheme(tileRef.current);
 
     const cluster = L.markerClusterGroup({
       showCoverageOnHover: false,
@@ -3386,11 +3499,11 @@ function MapSection({ drinks, allDrinks, period, collapsed, toggleSection }) {
     };
   }, [isOpen, ready]);
 
-  // ── Thème : variables CSS + URL des tuiles, sans reconstruction ──
+  // ── Thème : variables CSS + filtre des tuiles, sans reconstruction ──
   React.useEffect(() => {
     if (!mapRef.current) return;
     applyMapThemeVars(containerRef.current);
-    if (tileRef.current) { try { tileRef.current.setUrl(tileUrlForTheme()); } catch {} }
+    applyTileTheme(tileRef.current);
   }, [T._name]);
 
   // ── Marqueurs / heatmap : mise à jour EN PLACE (pas de rebuild) ──
@@ -4041,4 +4154,6 @@ Object.assign(window, {
   ScopeChip, DEFAULT_SECTION_ORDER, SECTION_ORDER_KEY,
   normalizeSectionOrder, moveInArray, dragTargetIndex,
   useSectionOrder, SectionReorderList, StatsEmptyState,
+  normalizeHiddenSections, toggleHiddenSection, visibleStatsSections, useHiddenSections,
+  SECTION_HIDDEN_KEY, HiddenSectionsNote,
 });

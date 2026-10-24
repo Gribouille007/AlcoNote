@@ -202,3 +202,58 @@ test('shareErrorMessage — invitation expirée / épuisée / invalide : message
   assert.match(shareErrorMessage(new Error('not authenticated')), /session/i);
   assert.match(shareErrorMessage(new Error('not a member')), /groupe/i);
 });
+
+// ── BAC vu par les amis = BAC de l'auteur ─────────────────────────────────
+
+test('localizeSharedDrink — même fuseau : objet intact ; autre fuseau : date/heure depuis tsUtc', () => {
+  const { localizeSharedDrink, tsFromDateTime, localDate, localTime } = global;
+  const same = { uid: 'a', date: '2026-06-09', time: '21:30', tsUtc: tsFromDateTime('2026-06-09', '21:30') };
+  assert.equal(localizeSharedDrink(same), same, 'même instant → même référence');
+  // Auteur 2 h « en avance » (autre fuseau) : son 21:30 mural = 19:30 ici.
+  const ts = tsFromDateTime('2026-06-09', '19:30');
+  const other = { uid: 'b', date: '2026-06-09', time: '21:30', tsUtc: ts };
+  const loc = localizeSharedDrink(other);
+  assert.notEqual(loc, other);
+  assert.equal(loc.date, localDate(new Date(ts)));
+  assert.equal(loc.time, localTime(new Date(ts)));
+  assert.equal(other.time, '21:30', 'source intacte');
+  // Sans tsUtc exploitable, ou date invalide : on ne touche à rien.
+  const noTs = { uid: 'c', date: '2026-06-09', time: '21:30' };
+  assert.equal(localizeSharedDrink(noTs), noTs);
+  const bad = { uid: 'd', date: 'n/a', time: '??', tsUtc: ts };
+  assert.equal(localizeSharedDrink(bad), bad);
+});
+
+test('groupSharedPool — les boissons d’un ami sont ramenées au fuseau local', () => {
+  const { groupSharedPool, tsFromDateTime } = global;
+  const ts = tsFromDateTime('2026-06-09', '19:30');
+  const map = groupSharedPool([{ uid: 'x', authorId: 'lea', date: '2026-06-09', time: '23:30', tsUtc: ts, updatedAt: 1 }]);
+  assert.equal(map.get('lea')[0].time, '19:30');
+});
+
+test('pullIntervalMs — 2 min en soirée (boisson < 12 h), 10 min au repos', () => {
+  const { pullIntervalMs } = global;
+  const cfg = { PULL_INTERVAL_MS: 600000, PULL_INTERVAL_ACTIVE_MS: 120000 };
+  const now = Date.UTC(2026, 5, 9, 22);
+  assert.equal(pullIntervalMs(now, now - 30 * 60000, cfg), 120000);
+  assert.equal(pullIntervalMs(now, now - 13 * 3600000, cfg), 600000);
+  assert.equal(pullIntervalMs(now, 0, cfg), 600000, 'aucune boisson connue');
+  // Jamais plus lent en soirée qu'au repos (config incohérente).
+  assert.equal(pullIntervalMs(now, now, { PULL_INTERVAL_MS: 60000, PULL_INTERVAL_ACTIVE_MS: 120000 }), 60000);
+});
+
+test('profileNeedsRepublish — détecte un profil serveur périmé (poids/sexe/partage)', () => {
+  const { profileNeedsRepublish } = global;
+  const exp = { shareBac: true, displayName: 'Moi', bacWeight: 55, bacGender: 'female' };
+  assert.equal(profileNeedsRepublish({ shareBac: true, displayName: 'Moi', bacWeight: 55, bacGender: 'female' }, exp), false);
+  assert.equal(profileNeedsRepublish({ shareBac: true, displayName: 'Moi', bacWeight: '55', bacGender: 'female' }, exp), false,
+    'numeric renvoyé en chaîne : égal');
+  // Publication échouée : le groupe calcule mon taux à 70 kg / homme.
+  assert.equal(profileNeedsRepublish({ shareBac: true, displayName: 'Moi', bacWeight: null, bacGender: null }, exp), true);
+  assert.equal(profileNeedsRepublish({ shareBac: false, displayName: 'Moi' }, exp), true, 'partage BAC non publié');
+  assert.equal(profileNeedsRepublish({ shareBac: true, displayName: '' , bacWeight: 55, bacGender: 'female' }, exp), true, 'pseudo');
+  // BAC non partagé : poids/sexe sans objet.
+  assert.equal(profileNeedsRepublish({ shareBac: false, displayName: 'Moi', bacWeight: null },
+    { shareBac: false, displayName: 'Moi', bacWeight: 80, bacGender: 'male' }), false);
+  assert.equal(profileNeedsRepublish(null, exp), false);
+});

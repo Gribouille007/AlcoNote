@@ -738,7 +738,7 @@ function BottomNav({
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: onReorder,
-    "aria-label": "R\xE9organiser les sections",
+    "aria-label": "Personnaliser les sections (ordre, masquage)",
     style: {
       ...ghostButton,
       display: 'flex',
@@ -754,7 +754,7 @@ function BottomNav({
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: Ic.grip,
     size: 12
-  }), " R\xE9organiser")), /*#__PURE__*/React.createElement("div", {
+  }), " Personnaliser")), /*#__PURE__*/React.createElement("div", {
     role: "tablist",
     "aria-label": "Navigation principale",
     style: {

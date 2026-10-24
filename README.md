@@ -27,6 +27,9 @@ serveur tiers.
 - **Ajout intelligent** : autocomplétion des boissons connues, catégorie
   imposée quand on ajoute depuis une catégorie, sinon la dernière utilisée.
 - Re-taper l'onglet actif revient à sa racine (et en haut de la liste).
+- **Tes catégories, pas les nôtres** : aucune catégorie n'est imposée au
+  premier lancement ; crée-les depuis la grille ou directement en ajoutant
+  une boisson (« + Nouvelle »).
 
 ### Sessions
 - Une session = de la première boisson qui fait monter l'alcoolémie au
@@ -56,14 +59,17 @@ Huit sections, toutes pliables, avec navigation par période
   précis), durées avant sobriété/conduite, records (limités au top 3).
   Calcul : Widmark, élimination linéaire 150 mg/L/h, absorption en
   30 min.
-- **Carte** — Leaflet + tuiles OpenStreetMap, un marker par
-  consommation géolocalisée (chargé à la demande).
+- **Carte** — Leaflet + tuiles OpenStreetMap (sans clé d'API, thème
+  sombre par filtre CSS), un marker par consommation géolocalisée (chargé
+  à la demande).
 - **Évolution mensuelle** — courbe verres / grammes sur 6 mois.
 - **Avancées** — moyennes mobiles 7/30 j, horloge polaire 24 h,
   distribution des sessions.
 
 Tous les graphes sont interactifs (tap/glisser pour révéler valeur et
-contexte).
+contexte). **Personnaliser** (au-dessus de la barre d'onglets) permet de
+réordonner les sections et d'en **masquer** autant qu'on veut (œil) ; ces
+choix sont conservés et suivent l'export/import.
 
 ### En-tête
 - Pilule mg/L permanente affichant le BAC courant (rafraîchi chaque

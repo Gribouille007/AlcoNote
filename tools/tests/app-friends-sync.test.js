@@ -129,3 +129,45 @@ test('cache du pool : un bump sans écriture ne relit PAS IndexedDB', async () =
   dbm().getAllSharedDrinks = real;
   assert.equal(reads, 0, 'aucune relecture du sharedPool');
 });
+
+// ── BAC vu par les amis : aucune boisson d'un ami ne doit être perdue ──────
+
+const MOCK_KEY = 'alconote.mock.server';
+const readSrv = () => JSON.parse(ctx.window.localStorage.getItem(MOCK_KEY));
+const writeSrv = (v) => ctx.window.localStorage.setItem(MOCK_KEY, JSON.stringify(v));
+const leaRow = (uid, updatedAt, minsAgo = 600) => {
+  const ms = Date.now() - minsAgo * 60000;
+  const d = new Date(ms);
+  return {
+    uid, groupId: engine().state.groupId, authorId: 'mock-lea', tsUtc: ms,
+    date: ctx.window.localDate(d), time: ctx.window.localTime(d),
+    name: 'Pils', quantity: 25, unit: 'cL', quantityInCL: 25, alcoholContent: 5,
+    category: 'Bière', rating: 0, updatedAt, deleted: false,
+  };
+};
+
+test('RÉGRESSION : > 1000 boissons au MÊME updated_at (republication) — aucune perdue', async () => {
+  await ctx.act(async () => { await engine().createGroup(); await ctx.sleep(450); });
+  const srv = readSrv();
+  const same = Date.now() - 3600000;
+  // Lea republie tout son catalogue d'un coup : 1500 lignes au même watermark.
+  for (let i = 0; i < 1500; i++) srv.drinks.push(leaRow(`bulk-${String(i).padStart(4, '0')}`, same, 2000 + i));
+  writeSrv(srv);
+  await ctx.act(async () => { await engine().pullFullHistory(); await ctx.sleep(200); });
+  const pool = await dbm().getAllSharedDrinks();
+  const bulk = pool.filter((r) => r.uid.startsWith('bulk-'));
+  assert.equal(bulk.length, 1500, 'les 1500 lignes de même horodatage sont toutes rapatriées');
+});
+
+test('RÉGRESSION : boisson publiée « dans le passé » (horloge en retard / envoi lent) rattrapée', async () => {
+  const cursor = await dbm().getSetting(cursorKey());
+  assert.ok(cursor > 0, 'curseur avancé');
+  // Écriture arrivée APRÈS le dernier pull mais horodatée 5 min AVANT le
+  // curseur : un pull `updated_at > curseur` strict la ratait pour toujours.
+  const srv = readSrv();
+  srv.drinks.push(leaRow('late-1', cursor - 5 * 60000, 20));
+  writeSrv(srv);
+  await ctx.act(async () => { await engine().refreshNow(); await ctx.sleep(200); });
+  const pool = await dbm().getAllSharedDrinks();
+  assert.ok(pool.some((r) => r.uid === 'late-1'), 'boisson tardive présente dans le pool');
+});
