@@ -5,9 +5,9 @@
 // source of truth for the displayed version: the GET_VERSION handler returns
 // it and `useSWVersion()` extracts the `vX.Y.Z` suffix. STATIC_CACHE /
 // DYNAMIC_CACHE name the actual Cache Storage buckets.
-const CACHE_NAME = 'alconote-v3.36.0';
-const STATIC_CACHE = 'alconote-static-v3.36.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v3.36.0';
+const CACHE_NAME = 'alconote-v3.37.0';
+const STATIC_CACHE = 'alconote-static-v3.37.0';
+const DYNAMIC_CACHE = 'alconote-dynamic-v3.37.0';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -33,6 +33,7 @@ const STATIC_FILES = [
     '/proto/dist/categories.js',
     '/proto/dist/history.js',
     '/proto/dist/stats.js',
+    '/proto/dist/sessions.js',
     '/proto/dist/share.js',
     '/proto/dist/friends.js',
     '/proto/dist/compare.js',

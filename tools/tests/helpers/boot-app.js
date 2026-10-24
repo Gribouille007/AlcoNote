@@ -45,6 +45,7 @@ const SCRIPTS = [
   'proto/dist/categories.js',
   'proto/dist/history.js',
   'proto/dist/stats.js',
+  'proto/dist/sessions.js',
   'proto/dist/share.js',
   'proto/dist/friends.js',
   'proto/dist/compare.js',

@@ -476,6 +476,87 @@ async function renameFavoriteFamily(oldFamily, newLike) {
   await _writeFavorites(next);
 }
 
+// ── Noms de session ───────────────────────────────────────────────
+// Une session (épisode BAC > 0, cf. computeBACSessions) n'a pas d'identité
+// en base : elle est RECALCULÉE à chaque écriture et peut fusionner (boisson
+// ajoutée entre deux soirées), se scinder (boisson supprimée) ou bouger
+// (changement de poids). Son nom est donc accroché à SES BOISSONS : setting
+// Dexie `session.names` = JSON { uid de boisson → nom }, écrit sur TOUTES les
+// boissons de la session au renommage (suit l'export/import, comme les
+// favoris). Résolution : le nom de la boisson la plus ANCIENNE qui en porte
+// un — une fusion garde le nom de la session la plus ancienne, une scission
+// laisse le nom aux deux morceaux, une boisson ajoutée hérite du nom de sa
+// session. Purement local : jamais publié au groupe.
+const SESSION_NAMES_KEY = 'session.names';
+const SESSION_NAME_MAX = 60;
+const _NO_SESSION_NAMES = new Map();
+let _sessionNamesCache = { raw: null, map: _NO_SESSION_NAMES };
+// Clé d'une boisson : son uid stable (rétro-rempli en v5) ; repli sur l'id
+// local pour une boisson qui n'en aurait pas.
+function sessionDrinkKey(d) {
+  if (!d) return null;
+  if (d.uid) return d.uid;
+  return d.id != null ? 'id:' + d.id : null;
+}
+// Nom saisi → forme stockée (espaces repliés, borné) ; '' = pas de nom.
+function normalizeSessionName(name) {
+  return String(name == null ? '' : name).replace(/\s+/g, ' ').trim().slice(0, SESSION_NAME_MAX);
+}
+// settings → Map clé de boisson → nom. Tolérant (JSON invalide → vide) et
+// mémoïsé sur la chaîne brute : même référence tant que rien ne change
+// (dépendance de useMemo stable d'un rendu à l'autre).
+function parseSessionNames(settings) {
+  const raw = settings ? settings[SESSION_NAMES_KEY] : null;
+  if (!raw) return _NO_SESSION_NAMES;
+  if (raw === _sessionNamesCache.raw) return _sessionNamesCache.map;
+  let obj = raw;
+  if (typeof raw === 'string') { try { obj = JSON.parse(raw); } catch { obj = null; } }
+  const map = new Map();
+  if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+    for (const [k, v] of Object.entries(obj)) {
+      const n = normalizeSessionName(v);
+      if (k && n) map.set(k, n);
+    }
+  }
+  _sessionNamesCache = { raw, map };
+  return map;
+}
+// Nom d'une session (null = sans nom) : celui de sa boisson la plus ancienne
+// qui en porte un (session.drinks est chronologique).
+function resolveSessionName(session, names) {
+  if (!session || !names || names.size === 0) return null;
+  for (const d of (session.drinks || [])) {
+    const n = names.get(sessionDrinkKey(d));
+    if (n) return n;
+  }
+  return null;
+}
+// Pur : objet { clé → nom } après (re)nommage de `session`. Retire d'abord
+// le nom de TOUTES ses boissons (une session fusionnée porte parfois deux
+// noms), puis pose le nouveau partout ; '' retire le nom.
+function applySessionName(namesObj, session, name) {
+  const next = { ...(namesObj || {}) };
+  const keys = (session && session.drinks ? session.drinks : []).map(sessionDrinkKey).filter(Boolean);
+  for (const k of keys) delete next[k];
+  const n = normalizeSessionName(name);
+  if (n) for (const k of keys) next[k] = n;
+  return next;
+}
+// Renomme une session (lecture fraîche du setting : jamais d'écrasement d'un
+// renommage concurrent). Setting supprimé quand plus aucun nom ne reste.
+async function setSessionName(session, name) {
+  const db = await waitForDb();
+  if (!db) throw new Error('DB indisponible');
+  const current = parseSessionNames({ [SESSION_NAMES_KEY]: await db.getSetting(SESSION_NAMES_KEY) });
+  const next = applySessionName(Object.fromEntries(current), session, name);
+  await saveSetting(SESSION_NAMES_KEY, Object.keys(next).length ? JSON.stringify(next) : null);
+}
+// Noms de MES sessions. Dans la vue d'un ami, SettingsContext porte son
+// profil (sans noms) : ses sessions s'affichent donc par leur date.
+function useSessionNames() {
+  return parseSessionNames(useSettings());
+}
+
 // ── Catégorie par défaut du formulaire d'ajout ────────────────────
 // « Dernière utilisée » : catégorie de la dernière boisson ENREGISTRÉE (plus
 // grand id auto-incrémenté), si elle existe encore ; sinon la première de la
@@ -708,7 +789,10 @@ function searchFamilies(families, query, { category = null } = {}) {
 // « exact d'abord » : dès qu'une entrée correspond sans faute, les entrées
 // seulement approchées sont écartées (elles pollueraient une liste
 // chronologique) ; sinon on renvoie les approchées avec `approx: true`.
-function filterHistoryEntries(entries, { query = '', category = 'all' } = {}) {
+// `extraWords(entry)` (optionnel) ajoute des mots cherchables par entrée —
+// l'Historique « Par session » y passe les mots du NOM de la session de
+// l'entrée (« anniv » → toute la session, « anniv jup » → ses Jupiler).
+function filterHistoryEntries(entries, { query = '', category = 'all', extraWords = null } = {}) {
   const catKey = category && category !== 'all' ? canonicalCat(category) : null;
   const match = createSearcher(query);
   const placeWords = new Map();
@@ -722,7 +806,7 @@ function filterHistoryEntries(entries, { query = '', category = 'all' } = {}) {
       if (!pw) { pw = searchTokens(e.place); placeWords.set(e.place, pw); }
     }
     const w = familySearchWords(e.family);
-    const r = match([w.text, pw], w.spec);
+    const r = match([w.text, pw, extraWords ? extraWords(e) : null], w.spec);
     if (r) (r.fuzzy ? approx : exact).push(e);
   }
   if (exact.length || !approx.length) return { entries: exact, approx: false };
@@ -1583,6 +1667,8 @@ Object.assign(window, {
   applyReferenceToFamily, suggestPriceForVolume,
   FAVORITES_KEY, parseFavorites, isFavoriteFamily, resolveFavorites,
   toggleFavoriteFamily, renameFavoriteFamily,
+  SESSION_NAMES_KEY, SESSION_NAME_MAX, sessionDrinkKey, normalizeSessionName, parseSessionNames,
+  resolveSessionName, applySessionName, setSessionName, useSessionNames,
   lastUsedCategory, suggestFamiliesForName,
   foldSearchText, searchTokens, boundedEditDistance, searchTokenScore, searchSpecScore,
   createSearcher, familySearchWords, searchFamilies, filterHistoryEntries,

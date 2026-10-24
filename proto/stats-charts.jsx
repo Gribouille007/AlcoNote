@@ -821,7 +821,13 @@ function SvgLineChart({
 // Past = solid stroke with vertical gradient; future = dashed stroke;
 // the gradient runs green → orange → red so the curve is coloured by
 // its BAC level at every point without splitting into segments.
-function SvgBACProjection({ points, width = 320, height = 200, nowMs = Date.now() }) {
+// Mode « rejeu » (page d'une session passée) : `showNow={false}` retire le
+// marqueur « maintenant » et affiche l'heure d'horloge dans la tooltip au lieu
+// d'un « il y a … » ; `focusDefaultT` place la boule au repos (ex. le pic).
+function SvgBACProjection({
+  points, width = 320, height = 200, nowMs = Date.now(),
+  showNow = true, focusDefaultT = 0, ariaLabel = "Projection d'alcoolémie dans le temps",
+}) {
   useTheme();   // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   // Hooks always run first and unconditionally so React's hook order
   // stays stable even when the component is rendered with empty input.
@@ -931,7 +937,7 @@ function SvgBACProjection({ points, width = 320, height = 200, nowMs = Date.now(
     return { t, bac: a.bac + (b.bac - a.bac) * frac };
   };
 
-  const focusT = scrubT != null ? scrubT : 0;
+  const focusT = scrubT != null ? scrubT : focusDefaultT;
   const focus = interpAt(focusT);
   const focusColor = bacZoneColor(focus.bac);
 
@@ -959,7 +965,7 @@ function SvgBACProjection({ points, width = 320, height = 200, nowMs = Date.now(
 
   return (
     <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" height={height}
-      role="img" aria-label="Projection d'alcoolémie dans le temps"
+      role="img" aria-label={ariaLabel}
       className={CHART.anim.className}
       style={{ display: 'block', touchAction: CHART.touchAction }} {...scr.handlers}>
       <rect x="0" y="0" width={width} height={height} fill="transparent" />
@@ -1007,7 +1013,7 @@ function SvgBACProjection({ points, width = 320, height = 200, nowMs = Date.now(
           strokeDasharray={CHART.dash.future} strokeLinejoin="round" strokeLinecap="round" />
       )}
       {/* "Now" vertical marker */}
-      {0 >= minT && 0 <= maxT && (
+      {showNow && 0 >= minT && 0 <= maxT && (
         <line x1={xs(0)} x2={xs(0)} y1={pad.t} y2={baseY}
           stroke={T.ink2} strokeWidth={CHART.stroke.reference}
           strokeDasharray={CHART.dash.now} opacity={0.5} />
@@ -1026,7 +1032,7 @@ function SvgBACProjection({ points, width = 320, height = 200, nowMs = Date.now(
         );
       })}
       {/* "maintenant" caption above the now line (when not scrubbing) */}
-      {scrubT == null && 0 >= minT && 0 <= maxT && (
+      {showNow && scrubT == null && 0 >= minT && 0 <= maxT && (
         <text x={xs(0)} y={pad.t - 6}
           fontSize={CHART.font.tick} fill={T.ink2} textAnchor="middle" fontFamily={fontNum}>
           maintenant
@@ -1046,7 +1052,7 @@ function SvgBACProjection({ points, width = 320, height = 200, nowMs = Date.now(
             lines={[
               `${Math.round(focus.bac)} mg/L`,
               fmtStatus(focus.bac),
-              fmtRel(focus.t),
+              showNow ? fmtRel(focus.t) : `à ${fmtClock(focus.t)}`,
             ]} />
         </>
       )}

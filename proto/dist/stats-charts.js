@@ -1171,11 +1171,17 @@ function SvgLineChart({
 // Past = solid stroke with vertical gradient; future = dashed stroke;
 // the gradient runs green → orange → red so the curve is coloured by
 // its BAC level at every point without splitting into segments.
+// Mode « rejeu » (page d'une session passée) : `showNow={false}` retire le
+// marqueur « maintenant » et affiche l'heure d'horloge dans la tooltip au lieu
+// d'un « il y a … » ; `focusDefaultT` place la boule au repos (ex. le pic).
 function SvgBACProjection({
   points,
   width = 320,
   height = 200,
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  showNow = true,
+  focusDefaultT = 0,
+  ariaLabel = "Projection d'alcoolémie dans le temps"
 }) {
   useTheme(); // repaint sur bascule de thème malgré React.memo (cf. shared.jsx)
   // Hooks always run first and unconditionally so React's hook order
@@ -1326,7 +1332,7 @@ function SvgBACProjection({
       bac: a.bac + (b.bac - a.bac) * frac
     };
   };
-  const focusT = scrubT != null ? scrubT : 0;
+  const focusT = scrubT != null ? scrubT : focusDefaultT;
   const focus = interpAt(focusT);
   const focusColor = bacZoneColor(focus.bac);
   const fmtClock = t => {
@@ -1355,7 +1361,7 @@ function SvgBACProjection({
     width: "100%",
     height: height,
     role: "img",
-    "aria-label": "Projection d'alcool\xE9mie dans le temps",
+    "aria-label": ariaLabel,
     className: CHART.anim.className,
     style: {
       display: 'block',
@@ -1438,7 +1444,7 @@ function SvgBACProjection({
     strokeDasharray: CHART.dash.future,
     strokeLinejoin: "round",
     strokeLinecap: "round"
-  }), 0 >= minT && 0 <= maxT && /*#__PURE__*/React.createElement("line", {
+  }), showNow && 0 >= minT && 0 <= maxT && /*#__PURE__*/React.createElement("line", {
     x1: xs(0),
     x2: xs(0),
     y1: pad.t,
@@ -1460,7 +1466,7 @@ function SvgBACProjection({
       textAnchor: anchor,
       fontFamily: fontNum
     }, fmtClock(t));
-  }), scrubT == null && 0 >= minT && 0 <= maxT && /*#__PURE__*/React.createElement("text", {
+  }), showNow && scrubT == null && 0 >= minT && 0 <= maxT && /*#__PURE__*/React.createElement("text", {
     x: xs(0),
     y: pad.t - 6,
     fontSize: CHART.font.tick,
@@ -1498,7 +1504,7 @@ function SvgBACProjection({
     y: yc(focus.bac),
     width: width,
     height: height,
-    lines: [`${Math.round(focus.bac)} mg/L`, fmtStatus(focus.bac), fmtRel(focus.t)]
+    lines: [`${Math.round(focus.bac)} mg/L`, fmtStatus(focus.bac), showNow ? fmtRel(focus.t) : `à ${fmtClock(focus.t)}`]
   })));
 }
 // ── BAC forecast (current session projection vs. historical baseline) ──
