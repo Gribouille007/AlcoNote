@@ -169,6 +169,26 @@ test('pastille BAC de l’en-tête : ouvre Stats sur la section Alcoolémie', as
   await ctx.waitFor(() => ctx.q('[data-stats-section="bac"]'), { label: 'section BAC rendue' });
 });
 
+test('pastille BAC : l’Alcoolémie MASQUÉE s’affiche quand même, puis Personnaliser rend la main au masquage', async () => {
+  // Masquer via Personnaliser (efface aussi le focus posé par le test précédent).
+  await ctx.clickAria(/^Personnaliser les sections/, 300);
+  await ctx.clickAria(/^Masquer « Alcoolémie »$/, 200);
+  await ctx.clickText(/^Terminé$/, 300);
+  assert.equal(ctx.q('[data-stats-section="bac"]'), null, 'BAC masquée');
+  // Tap explicite sur ma pastille : la section demandée s'affiche.
+  await ctx.clickAria(/Voir le détail de mon taux/, 500);
+  await ctx.waitFor(() => ctx.q('[data-stats-section="bac"]'), { label: 'BAC affichée sur demande' });
+  // Repasser par Personnaliser : le choix « masquée » reprend la main.
+  await ctx.clickAria(/^Personnaliser les sections/, 300);
+  await ctx.clickText(/^Terminé$/, 300);
+  assert.equal(ctx.q('[data-stats-section="bac"]'), null, 'le masquage reprend la main');
+  // Remise en état pour les tests suivants.
+  await ctx.clickAria(/^Personnaliser les sections/, 300);
+  await ctx.clickAria(/^Afficher « Alcoolémie »$/, 200);
+  await ctx.clickText(/^Terminé$/, 300);
+  await ctx.waitFor(() => ctx.q('[data-stats-section="bac"]'), { label: 'BAC ré-affichée' });
+});
+
 test('Stats : pas de navigation vers le futur, retour rapide à la période actuelle', async () => {
   const next = () => ctx.buttons().find((b) => b.getAttribute('aria-label') === 'Période suivante');
   assert.equal(next().disabled, true, 'période courante → suivante désactivée');

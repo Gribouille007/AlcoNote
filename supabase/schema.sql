@@ -52,6 +52,30 @@ create table if not exists public.shared_drinks (
 );
 create index if not exists shared_drinks_group_updated_idx
   on public.shared_drinks (group_id, updated_at);
+-- Pagination « keyset » du pull : (updated_at, uid) croissants.
+create index if not exists shared_drinks_group_updated_uid_idx
+  on public.shared_drinks (group_id, updated_at, uid);
+
+-- Horodatage SERVEUR de chaque écriture. Le pull incrémental des amis avance
+-- un curseur sur updated_at : avec l'horloge du téléphone qui publie, un
+-- appareil en retard (ou un envoi lent) écrivait SOUS le curseur des autres
+-- et sa boisson n'était jamais vue — le taux d'alcoolémie affiché chez les
+-- amis différait du sien. L'horloge du serveur est commune à tous ; le client
+-- relit en plus les 10 dernières minutes à chaque pull (PULL_OVERLAP_MS).
+create or replace function public.stamp_shared_drink()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.updated_at := (extract(epoch from clock_timestamp()) * 1000)::bigint;
+  return new;
+end;
+$$;
+drop trigger if exists shared_drinks_stamp on public.shared_drinks;
+create trigger shared_drinks_stamp
+  before insert or update on public.shared_drinks
+  for each row execute function public.stamp_shared_drink();
 
 create table if not exists public.shared_profiles (
   user_id      uuid not null,

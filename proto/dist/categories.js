@@ -187,9 +187,15 @@ function CategoryGrid({
       color: T.muted,
       fontSize: 13,
       padding: '40px 0 16px',
-      textAlign: 'center'
+      textAlign: 'center',
+      lineHeight: 1.5
     }
-  }, "Aucune cat\xE9gorie pour le moment."), /*#__PURE__*/React.createElement("button", {
+  }, "Aucune cat\xE9gorie pour le moment.", /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      marginTop: 4
+    }
+  }, "Cr\xE9e les tiennes ci-dessous, ou ajoute directement une boisson avec \xAB + \xBB.")), /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: onAddCategory,
     "aria-label": "Cr\xE9er une nouvelle cat\xE9gorie",

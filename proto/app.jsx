@@ -565,13 +565,13 @@ function BottomNav({ tab, onChange, onReorder }) {
       {tab === 'stats' && onReorder && (
         <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 4 }}>
           <button type="button" onClick={onReorder}
-            aria-label="Réorganiser les sections"
+            aria-label="Personnaliser les sections (ordre, masquage)"
             style={{
               ...ghostButton, display: 'flex', alignItems: 'center', gap: 5,
               color: T.muted, fontSize: 10, letterSpacing: 0.3,
               textTransform: 'uppercase', fontWeight: 500, padding: '2px 8px',
             }}>
-            <SvgIcon icon={Ic.grip} size={12} /> Réorganiser
+            <SvgIcon icon={Ic.grip} size={12} /> Personnaliser
           </button>
         </div>
       )}

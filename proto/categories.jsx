@@ -130,7 +130,13 @@ function CategoryGrid({ cats, families, favorites = [], query, onOpen, onOpenFam
           {cats.length === 0 && (
             <div style={{
               color: T.muted, fontSize: 13, padding: '40px 0 16px', textAlign: 'center',
-            }}>Aucune catégorie pour le moment.</div>
+              lineHeight: 1.5,
+            }}>
+              Aucune catégorie pour le moment.
+              <div style={{ fontSize: 11.5, marginTop: 4 }}>
+                Crée les tiennes ci-dessous, ou ajoute directement une boisson avec « + ».
+              </div>
+            </div>
           )}
           <button type="button" onClick={onAddCategory}
             aria-label="Créer une nouvelle catégorie" style={{

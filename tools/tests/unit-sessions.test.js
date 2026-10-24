@@ -283,6 +283,11 @@ test('registre de la page session — chaque section de Stats est décidée', ()
     ['general', 'bac', 'session-drinks', 'map', 'top', 'temporal', 'category', 'spending']);
   const friend = sessionPageSectionOrder([], { hideMap: true, hidePrice: true });
   assert.ok(!friend.some(s => s.id === 'map' || s.id === 'spending'));
+  // Sections masquées dans Stats : masquées ici aussi, jamais les têtes fixes
+  // (même quand leur id coïncide avec une section de Stats : general, bac).
+  const hidden = sessionPageSectionOrder([], {}, ['map', 'top', 'general', 'bac']);
+  assert.ok(!hidden.some(s => s.id === 'map' || s.id === 'top'));
+  assert.deepEqual(hidden.slice(0, 3).map(s => s.id), ['general', 'bac', 'session-drinks']);
   assert.ok(Math.abs(BAC_LEGAL_LIMIT - 500) < 1e-9);
   assert.deepEqual(widmarkParams({}), { weight: 70, gender: 'male' });
   assert.deepEqual(widmarkParams({ userWeight: '82', userGender: 'female' }), { weight: 82, gender: 'female' });

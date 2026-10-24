@@ -667,9 +667,17 @@ function RenameSessionSheet({
         if (!busy) commit(name);
       }
     },
-    placeholder: "Ex. Anniv' de Lucas, Festival\u2026",
+    enterKeyHint: "done",
+    autoCapitalize: "sentences",
+    autoComplete: "off",
     "aria-label": "Nom de la session",
-    style: inputBaseStyle()
+    style: {
+      ...inputBaseStyle(),
+      fontSize: 17,
+      padding: '14px 16px',
+      border: `1px solid ${T.accent}`,
+      boxShadow: `0 0 0 3px ${T.accentSoft}`
+    }
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
@@ -1146,8 +1154,10 @@ const SESSION_EXCLUDED_SECTIONS = {
 };
 
 // Ordre des sections de la page : têtes fixes, puis l'ordre de Stats.
-function sessionPageSectionOrder(statsOrder, flags = {}) {
-  const visible = SESSION_PAGE_SECTIONS.filter(s => !(s.hide && s.hide(flags)));
+// Les sections de Stats masquées par l'utilisateur (`hidden`) le sont aussi
+// ici ; les têtes fixes de la page (`lead`) restent toujours visibles.
+function sessionPageSectionOrder(statsOrder, flags = {}, hidden = null) {
+  const visible = SESSION_PAGE_SECTIONS.filter(s => !(s.hide && s.hide(flags)) && (s.lead || !(hidden && hidden.includes(s.id))));
   const lead = visible.filter(s => s.lead);
   const rest = visible.filter(s => !s.lead);
   const rank = new Map((statsOrder || []).map((id, i) => [id, i]));
@@ -1207,10 +1217,11 @@ function SessionStatsView({
     });
   }, []);
   const [statsOrder] = useSectionOrder();
+  const [hiddenSections] = useHiddenSections();
   const sections = React.useMemo(() => sessionPageSectionOrder(statsOrder, {
     hideMap,
     hidePrice
-  }), [statsOrder, hideMap, hidePrice]);
+  }, hiddenSections), [statsOrder, hideMap, hidePrice, hiddenSections]);
   const [renaming, setRenaming] = React.useState(false);
   const [editDrink, setEditDrink] = React.useState(null);
   const sp = React.useMemo(() => {

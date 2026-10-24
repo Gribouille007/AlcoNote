@@ -466,12 +466,18 @@ function RenameSessionSheet({ session, name: initialName, onClose }) {
           <div style={{ marginTop: 2 }}>{sessionCountsLabel(session)}</div>
         </div>
         <div style={{ overflowY: 'auto', padding: '0 18px 18px', flex: 1 }}>
+          {/* Champ mis en avant (grand, bordure d'accent) et SANS texte
+              d'exemple : un placeholder se confondait avec une vraie valeur.
+              SheetOverlay garde la sheet au-dessus du clavier virtuel. */}
           <FieldGroup label="Nom de la session">
             <input value={name} autoFocus maxLength={SESSION_NAME_MAX}
               onChange={e => setName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (!busy) commit(name); } }}
-              placeholder="Ex. Anniv' de Lucas, Festival…"
-              aria-label="Nom de la session" style={inputBaseStyle()} />
+              enterKeyHint="done" autoCapitalize="sentences" autoComplete="off"
+              aria-label="Nom de la session" style={{
+                ...inputBaseStyle(), fontSize: 17, padding: '14px 16px',
+                border: `1px solid ${T.accent}`, boxShadow: `0 0 0 3px ${T.accentSoft}`,
+              }} />
           </FieldGroup>
           <div style={{ color: T.muted, fontSize: 10.5, lineHeight: 1.5, marginTop: -4 }}>
             Le nom suit les boissons de la session : il reste si tu en ajoutes ou en modifies une.
@@ -725,8 +731,11 @@ const SESSION_EXCLUDED_SECTIONS = {
 };
 
 // Ordre des sections de la page : têtes fixes, puis l'ordre de Stats.
-function sessionPageSectionOrder(statsOrder, flags = {}) {
-  const visible = SESSION_PAGE_SECTIONS.filter(s => !(s.hide && s.hide(flags)));
+// Les sections de Stats masquées par l'utilisateur (`hidden`) le sont aussi
+// ici ; les têtes fixes de la page (`lead`) restent toujours visibles.
+function sessionPageSectionOrder(statsOrder, flags = {}, hidden = null) {
+  const visible = SESSION_PAGE_SECTIONS.filter(s => !(s.hide && s.hide(flags))
+    && (s.lead || !(hidden && hidden.includes(s.id))));
   const lead = visible.filter(s => s.lead);
   const rest = visible.filter(s => !s.lead);
   const rank = new Map((statsOrder || []).map((id, i) => [id, i]));
@@ -779,9 +788,10 @@ function SessionStatsView({ sessionId, onClose, canEdit = false, hideMap = false
     });
   }, []);
   const [statsOrder] = useSectionOrder();
+  const [hiddenSections] = useHiddenSections();
   const sections = React.useMemo(
-    () => sessionPageSectionOrder(statsOrder, { hideMap, hidePrice }),
-    [statsOrder, hideMap, hidePrice]
+    () => sessionPageSectionOrder(statsOrder, { hideMap, hidePrice }, hiddenSections),
+    [statsOrder, hideMap, hidePrice, hiddenSections]
   );
   const [renaming, setRenaming] = React.useState(false);
   const [editDrink, setEditDrink] = React.useState(null);

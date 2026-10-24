@@ -175,8 +175,11 @@ function AddDrinkSheet({ open, prefill, lockedCategory = null, onClose }) {
       const drinkName = name.trim();
       const priceNum = parseDecimal(price);   // NaN si vide
       const hasPrice = Number.isFinite(priceNum);
+      // Catégorie nommée dans le formulaire (« + Nouvelle », ou proposée par
+      // le scan) : créée maintenant, au moment où l'utilisateur enregistre.
+      const category = await ensureCategory(cat);
       const created = await addDrink({
-        name: drinkName, category: cat, quantity: qtyNum,
+        name: drinkName, category, quantity: qtyNum,
         unit, alcoholContent: alcNum,
         // Les champs natifs date/heure peuvent être VIDÉS par l'utilisateur
         // ('' remonté par l'input) : on retombe sur l'instant courant plutôt
@@ -320,7 +323,7 @@ function AddDrinkSheet({ open, prefill, lockedCategory = null, onClose }) {
                 {lockedCategory}
               </div>
             ) : (
-              <CategoryChips categories={categories} value={cat} onChange={setCat} />
+              <CategoryChips categories={categories} value={cat} onChange={setCat} allowCreate />
             )}
           </FieldGroup>
 

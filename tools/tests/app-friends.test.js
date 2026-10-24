@@ -69,9 +69,9 @@ test('stats de Léa : mêmes sections, carte masquée, BAC visible (opt-in)', as
   // (L'onglet Stats perso n'est jamais monté dans ce fichier — le seul
   // StatsTab du DOM est celui de la vue ami, qui doit masquer le bouton.)
   const reorderBtn = ctx.qa('button').find(
-    (b) => (b.getAttribute('aria-label') || '') === 'Réorganiser les sections'
+    (b) => (b.getAttribute('aria-label') || '') === 'Personnaliser les sections (ordre, masquage)'
   );
-  assert.ok(!reorderBtn, 'pas de bouton Réorganiser dans la vue ami');
+  assert.ok(!reorderBtn, 'pas de bouton Personnaliser dans la vue ami');
   await ctx.clickAria(/^Retour$/, 300);
 });
 

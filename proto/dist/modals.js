@@ -225,9 +225,12 @@ function AddDrinkSheet({
       const drinkName = name.trim();
       const priceNum = parseDecimal(price); // NaN si vide
       const hasPrice = Number.isFinite(priceNum);
+      // Catégorie nommée dans le formulaire (« + Nouvelle », ou proposée par
+      // le scan) : créée maintenant, au moment où l'utilisateur enregistre.
+      const category = await ensureCategory(cat);
       const created = await addDrink({
         name: drinkName,
-        category: cat,
+        category,
         quantity: qtyNum,
         unit,
         alcoholContent: alcNum,
@@ -514,7 +517,8 @@ function AddDrinkSheet({
   })), lockedCategory) : /*#__PURE__*/React.createElement(CategoryChips, {
     categories: categories,
     value: cat,
-    onChange: setCat
+    onChange: setCat,
+    allowCreate: true
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',

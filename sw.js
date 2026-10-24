@@ -5,9 +5,9 @@
 // source of truth for the displayed version: the GET_VERSION handler returns
 // it and `useSWVersion()` extracts the `vX.Y.Z` suffix. STATIC_CACHE /
 // DYNAMIC_CACHE name the actual Cache Storage buckets.
-const CACHE_NAME = 'alconote-v3.37.0';
-const STATIC_CACHE = 'alconote-static-v3.37.0';
-const DYNAMIC_CACHE = 'alconote-dynamic-v3.37.0';
+const CACHE_NAME = 'alconote-v3.38.0';
+const STATIC_CACHE = 'alconote-static-v3.38.0';
+const DYNAMIC_CACHE = 'alconote-dynamic-v3.38.0';
 
 // Detect local development environment to avoid stale caches on localhost
 const IS_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
@@ -57,7 +57,12 @@ const NETWORK_FIRST_URLS = [
 const CACHE_FIRST_URLS = [
     '/assets/',
     'https://cdn.jsdelivr.net/',
-    'https://unpkg.com/'
+    'https://unpkg.com/',
+    // Polices (feuille Google Fonts + fichiers woff2) : immuables en pratique.
+    // En stale-while-revalidate chaque lancement les re-téléchargeait, ce qui
+    // disputait la bande passante d'un wifi faible au reste du démarrage.
+    'https://fonts.googleapis.com/',
+    'https://fonts.gstatic.com/'
 ];
 
 // Install event - cache static files
@@ -140,9 +145,17 @@ self.addEventListener('fetch', (event) => {
         return;
     }
     
-    // Ensure fresh HTML for navigations (avoid stale index.html)
+    // Lancement de l'app (navigation vers le shell) : CACHE D'ABORD. Le shell
+    // est versionné avec le SW (index.html ∈ STATIC_FILES, bump à chaque
+    // déploiement) : servir celui du cache est donc toujours cohérent avec
+    // les scripts en cache, et la mise à jour arrive par le cycle du SW
+    // (install du nouveau sw.js → activé au lancement suivant). Avant, la
+    // navigation partait en network-first : sur un wifi faible chaque
+    // lancement attendait jusqu'à NAVIGATION_TIMEOUT_MS (3,5 s) avant de
+    // retomber sur ce même cache. Sans shell en cache (1re visite), on reste
+    // en network-first borné.
     if (request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html')) {
-        event.respondWith(networkFirst(request));
+        event.respondWith(isShellNavigation(url) ? shellFirst(request) : networkFirst(request));
         return;
     }
     
@@ -214,6 +227,20 @@ function fetchWithTimeout(request, timeoutMs) {
     if (!ctrl) return fetch(request);
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
     return fetch(request, { signal: ctrl.signal }).finally(() => clearTimeout(t));
+}
+
+// Navigations qui affichent l'app (racine, /index.html, ou toute URL du
+// scope avec une query, ex. start_url du manifest).
+function isShellNavigation(url) {
+    if (url.origin !== self.location.origin) return false;
+    return url.pathname === '/' || url.pathname === '/index.html';
+}
+
+// Shell instantané depuis le cache statique, réseau borné en repli.
+async function shellFirst(request) {
+    const shell = await caches.match('/index.html', { cacheName: STATIC_CACHE });
+    if (shell) return shell;
+    return networkFirst(request);
 }
 
 // Network First Strategy - for dynamic content and APIs

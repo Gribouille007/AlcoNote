@@ -315,6 +315,27 @@ test('sw.js : tous les bundles proto/dist/*.js sont précachés', () => {
   }
 });
 
+test('sw.js : lancement depuis le shell en CACHE (jamais bloqué par un wifi faible)', () => {
+  assert.match(sw, /function shellFirst\(/, 'stratégie shellFirst présente');
+  assert.match(sw, /isShellNavigation\(url\) \? shellFirst\(request\)/,
+    'les navigations vers le shell passent par shellFirst');
+  assert.ok(staticFiles().includes('/index.html'), 'shell précaché');
+});
+
+test('carte : tuiles sans clé d’API (jamais CARTO, filigrané « API KEY REQUIRED »)', () => {
+  const stats = read('proto/stats.jsx');
+  assert.ok(!/cartocdn\.com/.test(stats), 'aucune tuile CARTO');
+  assert.match(stats, /tile\.openstreetmap\.org/, 'tuiles OpenStreetMap');
+  assert.ok(!/[?&](api_?key|key|access_token)=/i.test(stats.match(/const MAP_TILE_URL = '([^']+)'/)[1]),
+    'URL de tuiles sans paramètre de clé');
+});
+
+test('partage : horodatage SERVEUR des boissons partagées (curseur du pull fiable)', () => {
+  assert.match(schemaSql, /create or replace function public\.stamp_shared_drink\(\)/);
+  assert.match(schemaSql, /create trigger shared_drinks_stamp\s+before insert or update on public\.shared_drinks/);
+  assert.match(schemaSql, /clock_timestamp\(\)/, 'horloge du serveur');
+});
+
 test('zoom verrouillé : meta viewport + touch-action + guards gesture*', () => {
   const html = read('index.html');
   const viewport = (html.match(/<meta name="viewport" content="([^"]+)"/) || [])[1] || '';

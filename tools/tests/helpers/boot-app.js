@@ -54,7 +54,14 @@ const SCRIPTS = [
   'proto/dist/app.js',
 ];
 
-async function bootApp({ preSeed, shareConfig } = {}) {
+// L'app ne crée plus AUCUNE catégorie d'office (premier lancement = grille
+// vide). La plupart des tests partent d'un utilisateur qui a déjà ses
+// catégories : le harnais les crée AVANT le montage de l'app (comme le ferait
+// l'utilisateur), dans l'ordre de l'ancien seed. `categories: []` = premier
+// lancement réel.
+const TEST_CATEGORIES = ['Bière', 'Vin', 'Spiritueux', 'Cocktail', 'Autre'];
+
+async function bootApp({ preSeed, shareConfig, categories = TEST_CATEGORIES } = {}) {
   const Dexie = require('dexie');
   // Pré-seed éventuel (ex. base v4 pour tester la migration v5) AVANT que
   // js/database.js n'ouvre la base.
@@ -119,6 +126,12 @@ async function bootApp({ preSeed, shareConfig } = {}) {
   );
 
   for (const s of SCRIPTS) {
+    if (s === 'proto/dist/app.js' && categories && categories.length) {
+      const db = await window.waitForDb();
+      for (const name of categories) {
+        try { await db.addCategory({ name }); } catch (e) { /* déjà là (preSeed) */ }
+      }
+    }
     try { window.eval(read(s)); }
     catch (e) { e.message = `Eval failed in ${s}: ${e.message}`; throw e; }
   }
@@ -203,7 +216,7 @@ async function bootApp({ preSeed, shareConfig } = {}) {
   };
 
   // Laisse le mount + les effets + la migration + les chargements initiaux
-  // (dont le seed des catégories par défaut) se faire avant de rendre la main.
+  // se faire avant de rendre la main.
   await flush(400);
   await ctx.waitFor(
     () => window.document.getElementById('root').children.length > 0,
@@ -212,4 +225,4 @@ async function bootApp({ preSeed, shareConfig } = {}) {
   return ctx;
 }
 
-module.exports = { bootApp, SCRIPTS, ROOT, sleep };
+module.exports = { bootApp, SCRIPTS, ROOT, sleep, TEST_CATEGORIES };

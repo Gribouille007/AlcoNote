@@ -3,8 +3,6 @@
 // mock; here we expose React-friendly hooks that load from the real DB and
 // re-render on writes.
 
-const DEFAULT_CATEGORY_NAMES = ['Bière', 'Vin', 'Spiritueux', 'Cocktail', 'Autre'];
-
 // Canonical rating key — the single source of truth for associating a
 // rating with a drink. Ratings live in the `drinkRatings` table keyed by
 // name; normalizing (trim + lowercase) matches the name component of the
@@ -54,45 +52,11 @@ async function waitForDb() {
   return window.dbManager;
 }
 
-// Seeds the 5 default categories ONCE per database, gated by the
-// `cat._initialized` setting. Without that flag, we'd re-seed defaults
-// every time the user emptied the categories table (e.g. after deleting
-// the last remaining category), making it effectively impossible to
-// fully clear the list.
-//
-// `_seedDone` short-circuits subsequent calls after a successful seed
-// (or after we've confirmed via the flag that the seed is already
-// done), avoiding a DB round-trip on every dataBus.bump. `_seedPromise`
-// coalesces concurrent callers during the very first mount, and is
-// cleared on failure so the next call retries instead of being stuck
-// on a memoized no-op promise.
-let _seedDone = false;
-let _seedPromise = null;
-async function _ensureDefaultCategories() {
-  if (_seedDone) return;
-  if (_seedPromise) return _seedPromise;
-  _seedPromise = (async () => {
-    try {
-      const db = await waitForDb();
-      if (!db) return;
-      const flag = await db.getSetting('cat._initialized');
-      if (flag) { _seedDone = true; return; }
-      const existing = await db.getAllCategories();
-      if (existing.length === 0) {
-        for (const name of DEFAULT_CATEGORY_NAMES) {
-          try { await db.addCategory({ name }); } catch (e) {}
-        }
-      }
-      await db.setSetting('cat._initialized', true);
-      _seedDone = true;
-    } catch (e) {
-      // swallow — caller is best-effort
-    } finally {
-      if (!_seedDone) _seedPromise = null;
-    }
-  })();
-  return _seedPromise;
-}
+// Plus AUCUNE catégorie créée d'office : un nouvel utilisateur part d'une
+// grille vide et crée les siennes (« Nouvelle catégorie », ou à la volée
+// depuis l'ajout d'une boisson). L'ancien seed des 5 catégories par défaut
+// (gardé par le setting `cat._initialized`) imposait une organisation que
+// chacun devait ensuite défaire. Les bases existantes ne sont pas touchées.
 
 // ── Contexts for hoisted data ────────────────────────────────────
 // App-level providers fetch once per dataBus.bump and broadcast to
@@ -195,9 +159,8 @@ function CategoriesProvider({ children }) {
       const db = await waitForDb();
       if (!db) return;
       // Normalise les noms hérités (NFC + trim, fusion des doublons) AVANT
-      // le seed et la migration d'icônes, qui matchent par nom canonique.
+      // la migration d'icônes, qui matche par nom canonique.
       await normalizeCategoryNamesOnce();
-      await _ensureDefaultCategories();
       await migrateCategoryIconsToId();
       const list = await db.getAllCategories();
       if (alive) setState({ categories: list, loading: false });
@@ -998,6 +961,25 @@ async function addCategory(name) {
   return r;
 }
 
+// Garantit l'existence de la catégorie `name` (créée À LA DEMANDE, à
+// l'enregistrement d'une boisson dont la catégorie a été nommée dans le
+// formulaire) et rend son nom réel — l'existante si un nom équivalent
+// (casse, composition des accents, espaces) existe déjà. Plus aucune catégorie n'est créée
+// d'office (cf. CategoriesProvider).
+async function ensureCategory(name) {
+  const n = canonicalCat(String(name || ''));
+  if (!n) throw new Error('Choisissez une catégorie');
+  const db = await waitForDb();
+  if (!db) throw new Error('Base de données indisponible');
+  // Doublon = même nom à la casse près (règle d'EditCategorySheet).
+  const key = n.toLowerCase();
+  const hit = (await db.getAllCategories()).find(c => canonicalCat(c.name).toLowerCase() === key);
+  if (hit) return hit.name;
+  await db.addCategory({ name: n });
+  dataBus.bump('categories');
+  return n;
+}
+
 async function renameCategory(oldName, newName) {
   const db = await waitForDb();
   if (!db) throw new Error('Base de données indisponible');
@@ -1360,16 +1342,14 @@ async function deleteDrinkWithSnapshot(id) {
 }
 
 // Wipe entire database (drinks, categories, settings). Caller is
-// responsible for collecting an explicit user confirmation. The seed
-// memoization is reset so the next load re-seeds defaults exactly once
-// on the empty DB. The icon Provider re-reads the empty settings table
-// on the bump below.
+// responsible for collecting an explicit user confirmation. The one-time
+// migration memos are reset; no category is re-created (the grid starts
+// empty, like a first launch). The icon Provider re-reads the empty
+// settings table on the bump below.
 async function clearAllData() {
   const db = await waitForDb();
   if (!db) throw new Error('DB indisponible');
   const r = await db.clearAllData();
-  _seedDone = false;
-  _seedPromise = null;
   _iconMigrateDone = false;
   _iconMigratePromise = null;
   _ratingCanonDone = false;
@@ -1676,7 +1656,7 @@ Object.assign(window, {
   ratingKey,
   saveSetting,
   addDrink, updateDrink, deleteDrink, deleteDrinkWithSnapshot, saveRating,
-  addCategory, renameCategory, deleteCategory, normalizeCategoryNamesOnce,
+  addCategory, ensureCategory, renameCategory, deleteCategory, normalizeCategoryNamesOnce,
   updateFamily, deleteFamily, restoreDrinks,
   clearAllData,
   captureLocationForDrink, attachLocationToDrink, backfillMissingAddresses,

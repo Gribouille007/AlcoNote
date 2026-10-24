@@ -168,3 +168,21 @@ test('RÉGRESSION : palette CANONIQUE — NFD/espaces résolvent la même couleu
   assert.equal(catColor(nfd, 60), catColor('Bière', 60), 'reset symétrique');
 });
 
+
+test('keyboardViewportBox — overlay épinglé au viewport visible quand le clavier est ouvert', () => {
+  const { keyboardViewportBox, KEYBOARD_MIN_PX } = global;
+  // Pas de visualViewport (vieux moteur, jsdom) → comportement normal.
+  assert.equal(keyboardViewportBox({ innerHeight: 800 }), null);
+  assert.equal(keyboardViewportBox(null), null);
+  // Clavier fermé, ou simple barre d'URL qui bouge → rien.
+  assert.equal(keyboardViewportBox({ innerHeight: 800, visualViewport: { height: 800, offsetTop: 0 } }), null);
+  assert.equal(keyboardViewportBox({ innerHeight: 800, visualViewport: { height: 800 - KEYBOARD_MIN_PX + 1, offsetTop: 0 } }), null);
+  // Clavier ouvert (iOS / Chrome resizes-visual) : boîte visible.
+  assert.deepEqual(keyboardViewportBox({ innerHeight: 800, visualViewport: { height: 460, offsetTop: 0 } }),
+    { top: 0, height: 460 });
+  // iOS a fait défiler le viewport visuel : la boîte suit son décalage.
+  assert.deepEqual(keyboardViewportBox({ innerHeight: 800, visualViewport: { height: 460.4, offsetTop: 120.6 } }),
+    { top: 121, height: 460 });
+  // Valeurs aberrantes → null.
+  assert.equal(keyboardViewportBox({ innerHeight: 0, visualViewport: { height: 400 } }), null);
+});
