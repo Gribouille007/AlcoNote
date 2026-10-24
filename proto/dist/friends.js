@@ -1080,7 +1080,8 @@ function FriendStatsView({
     hideMap: true,
     hidePrice: true,
     hideBac: !friend.shareBac,
-    bacAvailable: !!friend.shareBac
+    bacAvailable: !!friend.shareBac,
+    sessionOwnerName: name
   })))))));
 }
 

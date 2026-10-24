@@ -658,7 +658,8 @@ function FriendStatsView({ friend: initialFriend, onClose, onCompare }) {
             <RatingsContext.Provider value={friendRatings}>
               <BacProvider>
                 <StatsTab storageScope={'friend:' + friend.userId} hideMap hidePrice
-                  hideBac={!friend.shareBac} bacAvailable={!!friend.shareBac} />
+                  hideBac={!friend.shareBac} bacAvailable={!!friend.shareBac}
+                  sessionOwnerName={name} />
               </BacProvider>
             </RatingsContext.Provider>
           </SettingsContext.Provider>

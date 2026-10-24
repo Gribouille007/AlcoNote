@@ -170,6 +170,56 @@ test('computeBACSessions — femme (r=0.55) > homme, entrées invalides exclues'
     'sans date/heure → exclu');
 });
 
+test('computeBACSessions — une boisson sans alcool à jeun n’ouvre pas de session qui avale la suivante', () => {
+  // Bug historique : la boisson à 0 % ouvrait une session jamais refermée
+  // (taux bloqué à 0), qui absorbait la vraie session 4 jours plus tard.
+  const zero = { ...beer('2026-06-01', '20:00'), name: 'Sans alcool', alcoholContent: 0 };
+  const sessions = computeBACSessions([zero, beer('2026-06-05', '21:00')], 70, 'male');
+  assert.equal(sessions.length, 1, 'seule la vraie session existe');
+  const s = sessions[0];
+  assert.equal(s.startTs, new Date('2026-06-05T21:00').getTime());
+  assert.equal(s.drinks.length, 1);
+  assert.ok(s.endTs - s.startTs < 4 * HOUR, 'durée d’une soirée, pas de 4 jours');
+  // Seule : aucune session (le taux ne quitte jamais 0).
+  assert.deepEqual(computeBACSessions([zero], 70, 'male'), []);
+  // Pendant une session : rattachée à cette session.
+  const during = { ...zero, time: '20:20' };
+  const inSess = computeBACSessions([beer('2026-06-01', '20:00'), during], 70, 'male');
+  assert.equal(inSess.length, 1);
+  assert.equal(inSess[0].drinks.length, 2);
+});
+
+test('computeBACSessions — boisson trop faible pour dépasser l’élimination : hors session', () => {
+  // 25 cL à 0,5 % : pic ≈ 20,7 mg/L, absorbé à 41 mg/L/h < 150 → taux à 0.
+  const light = { name: 'Panaché', category: 'Bière', quantity: 25, unit: 'cL', alcoholContent: 0.5,
+    date: '2026-06-01', time: '19:00' };
+  const sessions = computeBACSessions([light, beer('2026-06-02', '21:00')], 70, 'male');
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0].drinks.length, 1);
+  assert.equal(sessions[0].startTs, new Date('2026-06-02T21:00').getTime());
+});
+
+test('computeBACSessions — courbe exacte : sommets du début au retour à 0, pic inclus', () => {
+  const sessions = computeBACSessions(
+    [beer('2026-06-01', '20:00'), beer('2026-06-01', '20:45'), beer('2026-06-01', '22:00')], 70, 'male');
+  assert.equal(sessions.length, 1);
+  const s = sessions[0];
+  const c = s.curve;
+  assert.ok(c.length >= 4);
+  assert.equal(c[0].ts, s.startTs);
+  assert.ok(c[0].bac < 1e-6, 'démarre à 0');
+  assert.equal(c[c.length - 1].ts, s.endTs);
+  assert.equal(c[c.length - 1].bac, 0, 'finit à 0');
+  for (let i = 1; i < c.length; i++) assert.ok(c[i].ts > c[i - 1].ts, 'ts strictement croissants');
+  const top = c.reduce((a, b) => (b.bac > a.bac ? b : a));
+  assert.ok(Math.abs(top.bac - s.peakBac) < 1e-9, 'le pic est un sommet de la courbe');
+  assert.equal(top.ts, s.peakTs);
+  // Aire du polygone (trapèzes) = aire intégrée par le moteur.
+  let area = 0;
+  for (let i = 1; i < c.length; i++) area += (c[i].bac + c[i - 1].bac) / 2 * (c[i].ts - c[i - 1].ts) / HOUR;
+  assert.ok(Math.abs(area - s.area) < 1e-6, `aire ${area} ≈ ${s.area}`);
+});
+
 // ── Moteur Widmark : courbe temps réel ─────────────────────────────
 
 test('computeBacOverTime — pas d’élimination avant la 1re boisson, courbe bornée', () => {

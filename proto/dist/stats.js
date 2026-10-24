@@ -295,9 +295,10 @@ function aggregateGeneral(drinks) {
 // reflects a real drinking episode (matches the BAC projection curve and
 // the "Temps bourré" / records-per-session features).
 //
-// Each session carries its own deterministic id (`sess::<startTs>`) so
-// the user can mask individual records from the BAC list and the
-// masking persists across renders without a DB write.
+// Each session carries its own deterministic id (`sess::<startTs>`) —
+// clé de rendu / d'ouverture de sa page. Son NOM ne s'y accroche pas (l'id
+// bouge si une boisson s'insère avant) : il vit sur les uid de ses boissons
+// (cf. sessions.jsx › resolveSessionName).
 const BAC_ELIM_RATE = 150; // mg/L/h, standard Widmark β
 const BAC_ABSORPTION_H = 0.5; // h, linear absorption window (alcohol fully absorbed 30 min after a drink)
 const FORECAST_MAX_RATE_GPH = 60; // cap on the projected drinking pace (~6 standard drinks/h)
@@ -353,17 +354,52 @@ function computeBACSessions(drinks, weight = DEFAULT_WEIGHT_KG, gender = 'male')
   let bac = 0; // mg/L
   let rate = 0; // active absorption rate, mg/L per hour
   let t = bps[0].t;
+
+  // Sommets exacts { ts, bac } de la courbe de la session ouverte. La courbe
+  // est affine par morceaux : ses seuls sommets sont les points de rupture et
+  // le retour à 0 — `curve` la restitue donc EXACTEMENT (page d'une session),
+  // sans second moteur ni échantillonnage.
+  const knot = (ts, b) => {
+    const c = cur.curve,
+      last = c[c.length - 1];
+    if (last && Math.abs(last.ts - ts) < 1e-6) {
+      last.bac = b;
+      return;
+    }
+    c.push({
+      ts,
+      bac: b
+    });
+  };
+  const close = endTs => {
+    cur.endTs = endTs;
+    cur.avgBac = cur.area / Math.max(1e-9, (endTs - cur.startTs) / hour);
+    knot(endTs, 0);
+    cur = null;
+  };
   for (const bp of bps) {
     // Integrate from t up to this breakpoint at the current net slope.
     while (t < bp.t) {
       const net = rate - elim; // mg/L per hour
       const dh = (bp.t - t) / hour;
       if (bac <= 1e-9) {
-        // At zero: stays zero unless absorption now outpaces elimination.
-        const bacEnd = net > 0 ? net * dh : 0;
-        if (cur) cur.area += (bac + bacEnd) / 2 * dh; // aire (trapèze)
+        if (net <= 0) {
+          // À zéro et sans montée : la session ouverte se clôt ICI. C'est le
+          // cas d'une boisson sans alcool (ou trop faible pour dépasser
+          // l'élimination) bue à jeun — sans cette clôture, la session
+          // restait ouverte et avalait la suivante, même des jours plus tard
+          // (une « session » de 4 jours, temps bourré gonflé d'autant).
+          if (cur) close(t);
+          bac = 0;
+          t = bp.t;
+          break;
+        }
+        // At zero, absorption now outpaces elimination: BAC rises.
+        const bacEnd = net * dh;
+        if (cur) cur.area += bacEnd / 2 * dh; // aire (trapèze)
         bac = bacEnd;
         t = bp.t;
+        if (cur) knot(t, bac);
         break;
       }
       if (net < 0) {
@@ -371,9 +407,7 @@ function computeBACSessions(drinks, weight = DEFAULT_WEIGHT_KG, gender = 'male')
         if (hZero <= dh) {
           if (cur) {
             cur.area += bac / 2 * hZero; // descente bac → 0 sur hZero
-            cur.endTs = t + hZero * hour;
-            cur.avgBac = cur.area / Math.max(1e-9, (cur.endTs - cur.startTs) / hour);
-            cur = null;
+            close(t + hZero * hour);
           }
           bac = 0;
           t += hZero * hour;
@@ -384,6 +418,7 @@ function computeBACSessions(drinks, weight = DEFAULT_WEIGHT_KG, gender = 'male')
       if (cur) cur.area += (bac + bacEnd) / 2 * dh; // aire (trapèze)
       bac = bacEnd;
       t = bp.t;
+      if (cur) knot(t, bac);
     }
 
     // Apply this breakpoint's slope change.
@@ -405,9 +440,12 @@ function computeBACSessions(drinks, weight = DEFAULT_WEIGHT_KG, gender = 'male')
           peakTs: bp.d._ts,
           area: 0,
           // ∫ bac dt sur la session (mg/L·h)
-          avgBac: 0 // = area / durée (mg/L), posé à la clôture
+          avgBac: 0,
+          // = area / durée (mg/L), posé à la clôture
+          curve: [] // sommets exacts { ts, bac } (cf. knot)
         };
         sessions.push(cur);
+        knot(bp.t, bac);
       } else {
         cur.drinks.push(bp.d);
         cur.lastDrinkTs = bp.d._ts;
@@ -426,10 +464,13 @@ function computeBACSessions(drinks, weight = DEFAULT_WEIGHT_KG, gender = 'male')
   if (cur) {
     const hZero = bac / elim;
     cur.area += bac / 2 * hZero; // dernière descente bac → 0
-    cur.endTs = t + hZero * hour;
-    cur.avgBac = cur.area / Math.max(1e-9, (cur.endTs - cur.startTs) / hour);
+    close(t + hZero * hour);
   }
-  return sessions;
+
+  // Une « session » dont le taux n'a jamais quitté 0 n'en est pas une (cf.
+  // définition : de la sortie de 0 au retour à 0). Ses boissons restent
+  // comptées partout ailleurs (volume, grammes…) mais hors session.
+  return sessions.filter(s => s.peakBac > 1e-6);
 }
 
 // Total time within `range` where BAC > 0 (= sum of session intervals
@@ -630,7 +671,8 @@ function StatsTab({
   hidePrice = false,
   bacAvailable = true,
   reorderRef,
-  focusRequest
+  focusRequest,
+  sessionOwnerName = null
 } = {}) {
   const {
     drinks,
@@ -647,6 +689,10 @@ function StatsTab({
   const [sectionOrder, saveSectionOrder] = useSectionOrder();
   const [reorderMode, setReorderMode] = React.useState(false);
   if (reorderRef) reorderRef.current = () => setReorderMode(true);
+  // Page de stats d'UNE session (tap dans la liste « Sessions »). Montée ICI
+  // (sous les contextes de la vue : mes boissons, ou celles d'un ami).
+  const [openSessionId, setOpenSessionId] = React.useState(null);
+  const onOpenSession = React.useCallback(s => setOpenSessionId(s.id), []);
   React.useEffect(() => {
     try {
       localStorage.setItem(_statsKey('alconote.stats.period', storageScope), period);
@@ -743,7 +789,9 @@ function StatsTab({
   // Sessions calculées UNE fois sur tout l'historique (le modèle Widmark a
   // besoin de la continuité : une soirée à cheval sur minuit reste UNE
   // session), puis sélectionnées par période via sessionsForRange.
-  const allSessions = React.useMemo(() => computeBACSessions(drinks, weight, gender), [drinks, weight, gender]);
+  // Cache commun (cachedBACSessions, clé = tableau de boissons) : l'Historique
+  // « Par session » et la page d'une session lisent les MÊMES objets.
+  const allSessions = React.useMemo(() => cachedBACSessions(drinks, weight, gender), [drinks, weight, gender]);
   const sessions = React.useMemo(() => sessionsForRange(allSessions, allRange), [allSessions, allRange]);
   const prevSessions = React.useMemo(() => prevRange ? sessionsForRange(allSessions, prevRange) : null, [allSessions, prevRange]);
   const streak = React.useMemo(() => computeStreak(drinks), [drinks]);
@@ -795,7 +843,8 @@ function StatsTab({
     prevBourreMs,
     weight,
     gender,
-    bacAvailable
+    bacAvailable,
+    onOpenSession
   };
 
   // Sections visibles, dans l'ordre personnalisé (les flags de la vue
@@ -937,7 +986,15 @@ function StatsTab({
     key: id
   }, sp))), !hasPeriodData && /*#__PURE__*/React.createElement(StatsEmptyState, {
     scope: "period"
-  })));
+  })), openSessionId && /*#__PURE__*/React.createElement(SessionStatsPortal, {
+    key: openSessionId,
+    sessionId: openSessionId,
+    onClose: () => setOpenSessionId(null),
+    canEdit: storageScope === '',
+    hideMap: hideMap,
+    hidePrice: hidePrice,
+    ownerName: sessionOwnerName || null
+  }));
 }
 
 // État vide de l'onglet Stats — remplace les sections quand il n'y a
@@ -1740,16 +1797,20 @@ function buildCalendarModel(drinks, period, range, anchor, now = new Date()) {
 }
 
 // Les N sessions les plus récentes (plus récente d'abord), aplaties pour
-// l'affichage : { id, startTs, durationMs, drinkCount, peakBac }.
+// l'affichage : { id, startTs, durationMs, drinkCount, peakBac, session }
+// (`session` = l'objet complet, pour ouvrir sa page). n = Infinity → toutes.
 function buildSessionList(sessions, n = 8) {
   return (sessions || []).slice().sort((a, b) => b.startTs - a.startTs).slice(0, n).map(s => ({
     id: s.id,
     startTs: s.startTs,
     durationMs: Math.max(0, s.endTs - s.startTs),
     drinkCount: s.drinks ? s.drinks.length : 0,
-    peakBac: s.peakBac || 0
+    peakBac: s.peakBac || 0,
+    session: s
   }));
 }
+// Nombre de sessions listées avant « Voir tout ».
+const SESSION_LIST_PREVIEW = 8;
 
 // Distribution des pics d'alcoolémie par session (mg/L), prête pour
 // SvgHistogram : { label, v }[].
@@ -1893,21 +1954,28 @@ function HeatmapSection({
 }
 
 // ── Historique des sessions (liste + distribution des pics) ───────
+// Liste de TOUTES les sessions de la période (les 8 plus récentes, puis
+// « Voir tout »), chacune par son nom (ou sa date) ; un tap ouvre la page de
+// stats de la session (`onOpenSession`, monté par StatsTab).
 function SessionsSection({
   sessions,
   collapsed,
-  toggleSection
+  toggleSection,
+  onOpenSession
 }) {
-  const list = React.useMemo(() => buildSessionList(sessions, 8), [sessions]);
+  const [showAll, setShowAll] = React.useState(false);
+  const total = (sessions || []).length;
+  const list = React.useMemo(() => buildSessionList(sessions, showAll ? Infinity : SESSION_LIST_PREVIEW), [sessions, showAll]);
   const hist = React.useMemo(() => buildSessionPeakHistogram(sessions), [sessions]);
   const durations = React.useMemo(() => computeSessionDurationBuckets(sessions), [sessions]);
-  const total = (sessions || []).length;
+  const names = useSessionNames();
+  const nowMs = useSessionEndTick(sessions);
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "sessions",
     title: "Sessions",
     collapsed: collapsed,
     toggleSection: toggleSection,
-    sub: "Vos derni\xE8res sessions \xB7 pics \xB7 dur\xE9es"
+    sub: total > 0 ? `${total} session${total > 1 ? 's' : ''} · touchez-en une pour son détail` : 'Vos sessions · pics · durées'
   }, total === 0 ? /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
@@ -1922,66 +1990,42 @@ function SessionsSection({
       padding: '4px 4px',
       marginBottom: total >= 2 ? 10 : 0
     }
-  }, list.map((s, i) => {
-    const d = new Date(s.startTs);
-    const lvl = bacLevel(s.peakBac);
-    return /*#__PURE__*/React.createElement("div", {
-      key: s.id,
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        padding: '11px 12px',
-        borderBottom: i === list.length - 1 ? 'none' : `1px solid ${T.rule}`
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        width: 10,
-        height: 10,
-        borderRadius: 99,
-        background: lvl.color,
-        flexShrink: 0,
-        boxShadow: `0 0 8px ${withAlpha(lvl.color, 0.5)}`
-      }
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        minWidth: 0
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        color: T.ink,
-        fontSize: 13,
-        letterSpacing: -0.1,
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap'
-      }
-    }, fmtDateMedium(_fmtIso(d)), " \xB7 ", localTime(d)), /*#__PURE__*/React.createElement("div", {
-      style: {
-        color: T.muted,
-        fontSize: 10.5,
-        fontFamily: fontNum,
-        marginTop: 2
-      }
-    }, fmtDurationHM(s.durationMs / 3600_000), " \xB7 ", s.drinkCount, " conso", s.drinkCount > 1 ? 's' : '')), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontFamily: fontSerif,
-        fontSize: 17,
-        color: T.ink,
-        letterSpacing: -0.3,
-        whiteSpace: 'nowrap',
-        flexShrink: 0
-      }
-    }, Math.round(s.peakBac), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 9.5,
-        color: T.muted,
-        fontFamily: fontSans,
-        marginLeft: 2
-      }
-    }, "mg/L")));
-  })), total >= 2 && /*#__PURE__*/React.createElement(Card, {
+  }, list.map((it, i) => /*#__PURE__*/React.createElement(SessionListRow, {
+    key: it.id,
+    session: it.session,
+    name: resolveSessionName(it.session, names),
+    ongoing: isSessionOngoing(it.session, nowMs),
+    onOpen: onOpenSession,
+    last: i === list.length - 1
+  })), total > SESSION_LIST_PREVIEW && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setShowAll(v => !v),
+    "aria-expanded": showAll,
+    style: {
+      ...ghostButton,
+      width: '100%',
+      padding: '12px',
+      color: T.accent,
+      fontSize: 10,
+      letterSpacing: 0.3,
+      textTransform: 'uppercase',
+      fontWeight: 600,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      borderTop: `1px solid ${T.rule}`
+    }
+  }, showAll ? 'Réduire' : `Voir tout (${total})`, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'flex',
+      transform: showAll ? 'rotate(180deg)' : 'none',
+      transition: 'transform 0.2s ease'
+    }
+  }, /*#__PURE__*/React.createElement(SvgIcon, {
+    icon: Ic.chev,
+    size: 10
+  })))), total >= 2 && /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 10
     }
@@ -2208,6 +2252,7 @@ const StatCell = React.memo(function StatCell({
   label,
   icon,
   delta,
+  deltaVs,
   period,
   index = 0
 }) {
@@ -2270,7 +2315,8 @@ const StatCell = React.memo(function StatCell({
       marginTop: 6
     }
   }, /*#__PURE__*/React.createElement(DeltaBadge, {
-    delta: delta
+    delta: delta,
+    vs: deltaVs
   })));
 });
 
@@ -2349,6 +2395,7 @@ const HeroStatCard = React.memo(function HeroStatCard({
 // across renders (React.memo on SvgBarChart relies on it).
 const hourlyFormatX = (d, i) => i % 4 === 0 ? d.label : '';
 const weekdayTooltip = d => [d.fullLabel, `${d.v} boisson${d.v > 1 ? 's' : ''}`];
+const sessionHourTooltip = weekdayTooltip;
 
 // ── 2. Analyse temporelle ─────────────────────────────────────────
 function TemporalSection({
@@ -2358,13 +2405,17 @@ function TemporalSection({
   toggleSection,
   agg,
   sessions,
+  session = null,
   bacAvailable = true
 }) {
   const dayNames = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
   // Sur « Jour », les métriques multi-jours n'ont pas de sens (un seul jour
   // de données) : jour de pointe, écart entre sessions et radar hebdo sont
   // masqués — restent l'heure de pointe, la durée de session et le bar horaire.
-  const multiDay = period !== 'today';
+  // Page d'UNE session (`period: 'session'`) : idem, et le bar horaire suit
+  // les heures DE la session dans l'ordre (22h, 23h, 0h…) au lieu de 0h→23h.
+  const inSession = period === 'session' && !!session;
+  const multiDay = period !== 'today' && period !== 'session';
   // `peakIndex` renvoie null quand l'histogramme est entièrement à zéro
   // (heures/dates invalides) — la cellule affiche alors « — » au lieu de
   // désigner faussement « 0h » / « Dim. ».
@@ -2404,10 +2455,18 @@ function TemporalSection({
 
   // Pre-shape hourly data so a parent re-render doesn't allocate a
   // fresh array; React.memo on SvgBarChart relies on reference equality.
-  const hourlyData = React.useMemo(() => agg.byHour.map((v, h) => ({
+  const hourlyData = React.useMemo(() => inSession ? sessionHourlyBuckets(session) : agg.byHour.map((v, h) => ({
     v,
     label: `${h}h`
-  })), [agg.byHour]);
+  })), [agg.byHour, inSession, session]);
+
+  // Session : pointe lue sur les heures CHRONOLOGIQUES de la session (à
+  // égalité, la plus tôt de la soirée — pas « 0h » parce que 0 < 20).
+  const sessionPeakLabel = React.useMemo(() => {
+    if (!inSession) return null;
+    const i = peakIndex(hourlyData.map(d => d.v));
+    return i != null ? hourlyData[i].label : '—';
+  }, [inSession, hourlyData]);
   if (drinks.length === 0) {
     return /*#__PURE__*/React.createElement(StatSection, {
       id: "temporal",
@@ -2431,7 +2490,7 @@ function TemporalSection({
     title: "Analyse temporelle",
     collapsed: collapsed,
     toggleSection: toggleSection,
-    sub: "R\xE9partition par heures et jours"
+    sub: inSession ? 'Rythme de la session, heure par heure' : 'Répartition par heures et jours'
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
@@ -2440,14 +2499,17 @@ function TemporalSection({
       marginBottom: 10
     }
   }, /*#__PURE__*/React.createElement(MiniStat, {
-    big: peakHour != null ? `${peakHour}h` : '—',
+    big: inSession ? sessionPeakLabel : peakHour != null ? `${peakHour}h` : '—',
     label: "Heure de pointe"
   }), multiDay && /*#__PURE__*/React.createElement(MiniStat, {
     big: peakDow != null ? dayNames[peakDow] : '—',
     label: "Jour de pointe"
-  }), bacAvailable && /*#__PURE__*/React.createElement(MiniStat, {
+  }), bacAvailable && !inSession && /*#__PURE__*/React.createElement(MiniStat, {
     big: fmtH(avgDuration),
     label: "Dur\xE9e moy. session"
+  }), inSession && /*#__PURE__*/React.createElement(MiniStat, {
+    big: fmtH((session.lastDrinkTs - session.startTs) / 3600_000),
+    label: "1re \u2192 derni\xE8re"
   }), bacAvailable && multiDay && /*#__PURE__*/React.createElement(MiniStat, {
     big: between > 0 ? `${between.toFixed(1)}j` : '—',
     label: "Entre sessions"
@@ -2463,16 +2525,17 @@ function TemporalSection({
       marginBottom: 10,
       letterSpacing: -0.1
     }
-  }, "Par heure"), /*#__PURE__*/React.createElement(ChartAutoWidth, {
+  }, inSession ? 'Par heure de la session' : 'Par heure'), /*#__PURE__*/React.createElement(ChartAutoWidth, {
     minHeight: 150
   }, w => /*#__PURE__*/React.createElement(SvgBarChart, {
     data: hourlyData,
     width: w,
     height: 150,
     color: T.accent,
-    formatX: hourlyFormatX,
+    formatX: inSession ? null : hourlyFormatX,
+    formatTooltip: inSession ? sessionHourTooltip : undefined,
     valueLabel: "boisson(s)",
-    ariaLabel: "Boissons par heure de la journ\xE9e"
+    ariaLabel: inSession ? 'Boissons par heure de la session' : 'Boissons par heure de la journée'
   }))), multiDay && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.ink,
@@ -2497,8 +2560,11 @@ function TemporalSection({
 // period, red when it falls, neutral when essentially flat (< 0.5 %).
 // Pastille EN LIGNE (jamais en position absolue) : c'est au parent de lui
 // réserver sa place, pour qu'elle ne recouvre jamais la valeur qu'elle qualifie.
+// `vs` nomme la référence pour les lecteurs d'écran (« la session moyenne »
+// sur la page d'une session).
 function DeltaBadge({
-  delta
+  delta,
+  vs = 'période précédente'
 }) {
   if (delta == null || !isFinite(delta)) return null;
   const rising = delta > 0;
@@ -2527,7 +2593,7 @@ function DeltaBadge({
       letterSpacing: 0,
       lineHeight: 1
     },
-    "aria-label": `${ariaDir} de ${value} vs période précédente`
+    "aria-label": `${ariaDir} de ${value} vs ${vs}`
   }, /*#__PURE__*/React.createElement(SvgIcon, {
     icon: arrowIcon,
     size: 9
@@ -4391,6 +4457,7 @@ function MapDrinksSheet({
 function MapSection({
   drinks,
   allDrinks,
+  period,
   collapsed,
   toggleSection
 }) {
@@ -4761,7 +4828,7 @@ function MapSection({
       alignItems: 'center',
       marginBottom: 10
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, period !== 'session' && /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 6
@@ -5495,7 +5562,11 @@ function SpendingSection({
     name: c.name,
     v: Math.round(c.total * 100) / 100
   })), [byCat]);
-  const spend = React.useMemo(() => bucketSpend(priced, period, range), [priced, period, range]);
+  // Une session dure quelques heures : pas de barres par jour/mois (le total,
+  // le prix moyen et la répartition par catégorie suffisent).
+  const spend = React.useMemo(() => period === 'session' ? {
+    data: []
+  } : bucketSpend(priced, period, range), [priced, period, range]);
   if (priced.length === 0) {
     return /*#__PURE__*/React.createElement(StatSection, {
       id: "spending",
@@ -5512,7 +5583,7 @@ function SpendingSection({
         fontStyle: 'italic',
         fontFamily: fontSerif
       }
-    }, "Aucun prix saisi sur cette p\xE9riode")));
+    }, "Aucun prix saisi sur cette ", period === 'session' ? 'session' : 'période')));
   }
   return /*#__PURE__*/React.createElement(StatSection, {
     id: "spending",
@@ -5701,6 +5772,9 @@ Object.assign(window, {
   STATS_PERIOD_MATRIX,
   ALL_PERIODS,
   GLOBAL_CHART_PERIODS,
+  loadCollapsedSections,
+  saveCollapsedSections,
+  bacChartHeight,
   ScopeChip,
   DEFAULT_SECTION_ORDER,
   SECTION_ORDER_KEY,

@@ -247,7 +247,8 @@ Source UNIQUE : § « Recherche tolérante » de `data.jsx` — jamais de
   drill-down catégorie et Historique (liste chronologique) = politique
   « exact d'abord » : les approchés ne s'affichent QUE s'il n'y a aucun
   exact, avec la mention « Aucune correspondance exacte — résultats
-  approchants ». L'Historique cherche AUSSI le lieu (`filterHistoryEntries`).
+  approchants ». L'Historique cherche AUSSI le lieu (`filterHistoryEntries`)
+  et, en mode « Par session », le NOM de la session (option `extraWords`).
 - Saisie via `React.useDeferredValue` : le champ suit la frappe, le filtrage
   de la liste passe en priorité basse.
 - Tests : `unit-search.test.js` (règles, bornes, faux positifs, perf).
@@ -453,6 +454,73 @@ purs exportés (`computeSpendingSummary`, `meanSessionBac`, `peakIndex`,
 `sessionGapStats`, `soberDaysInRange`, `pctBourreAllTime`…) — ne jamais
 ré-enfouir un calcul dans le JSX d'un composant (il deviendrait
 intestable).
+
+### Sessions (Historique « Par session » + page d'une session)
+
+`proto/sessions.jsx`. Une **session** = un épisode d'alcoolémie, de la sortie
+de 0 au retour à 0 — c'est `computeBACSessions` (moteur UNIQUE, cf. § BAC),
+lu via le cache partagé **`cachedBACSessions(drinks, weight, gender)`**
+(compare.jsx, WeakMap clé = tableau de boissons) : Stats, l'Historique et la
+page d'une session lisent les MÊMES objets. Ne jamais recalculer les sessions
+sur un sous-ensemble de boissons.
+- **Moteur** : une boisson sans alcool (ou trop faible pour dépasser
+  l'élimination) bue à jeun n'ouvre PAS de session — la session se clôt dès
+  que le taux est à 0 sans remonter, et une « session » dont le pic est resté
+  à 0 est écartée (ses boissons sont « hors session »). Bug historique : elle
+  restait ouverte et avalait la session suivante, même des jours plus tard
+  (temps bourré gonflé). Chaque session porte `curve` : les sommets EXACTS
+  `{ ts, bac }` de sa courbe affine par morceaux (début à 0, pic, retour à 0)
+  — la page d'une session la rejoue sans second moteur.
+- **Nom** : accroché aux BOISSONS, jamais à l'id (`sess::<startTs>` bouge
+  quand une boisson s'insère avant). Setting Dexie **`session.names`** = JSON
+  `{ uid de boisson → nom }` (suit l'export/import, purement local, jamais
+  publié). Renommer écrit le nom sur TOUTES les boissons de la session
+  (`applySessionName`, pur) ; `resolveSessionName` prend celui de la boisson
+  la plus ANCIENNE qui en porte un ⇒ boisson ajoutée = hérite, fusion = le
+  nom de la plus ancienne gagne, scission = les deux morceaux le gardent.
+  `''` retire le nom ; plus aucun nom ⇒ setting supprimé. `useSessionNames()`
+  lit `useSettings()` : dans la vue d'un ami (SettingsContext surchargé),
+  ses sessions s'affichent par leur date et ne sont pas renommables.
+- **Libellés** : `sessionTitle` = le nom, sinon la date (« Samedi 12
+  octobre », + année hors année courante) ; sous-titre sur DEUX lignes
+  explicites (`[date courte ·] 21:30 → 03:10` puis `N consos · pic X mg/L`)
+  — une ligne unique se tronquait au milieu des chiffres. « → en cours »
+  pour une session non revenue à 0 (`isSessionOngoing` ; badge rafraîchi
+  pile à la fin projetée par `useSessionEndTick`, pas de tick périodique).
+- **Historique** : bascule « Par jour / Par session » (tablist, mode
+  mémorisé en localStorage `alconote.hist.mode`). `groupEntriesBySession`
+  (pur) → une carte `SessionGroup` (React.memo) par session : toute la ligne
+  ouvre la page de la session, le crayon (bouton FRÈRE) ouvre
+  `RenameSessionSheet`. Les boissons hors session forment des groupes
+  consécutifs « Hors session ». Mêmes règles de perf que le mode jour
+  (rendu au défilement, `content-visibility`, références stables via
+  `stabilizeSessionGroups`). La recherche y trouve aussi le NOM de la
+  session (`filterHistoryEntries(…, { extraWords })` ajoute les mots du nom
+  aux mots de chaque boisson) ; l'en-tête garde les chiffres de la session
+  ENTIÈRE même filtrée.
+- **Stats › Sessions** : TOUTES les sessions de la période (8 puis « Voir
+  tout »), chacune par son nom (`SessionListRow`), tap ⇒ page de la session
+  (state `openSessionId` de `StatsTab`, donc aussi dans la fiche d'un ami).
+- **Page d'une session** (`SessionStatsView`, montée en PORTAIL sur `<body>`
+  via `SessionStatsPortal`, zIndex 61 > fiche ami 60 ; transition
+  `pageIn`/`pageOut` + `useBackButton`) : registre
+  **`SESSION_PAGE_SECTIONS`** — têtes fixes `SessionSummarySection`
+  (résumé, Δ% vs **la session moyenne** = moyenne des AUTRES sessions
+  terminées, `sessionBaseline`), `SessionBacSection` (courbe de la session
+  via `SvgBACProjection showNow={false}` en rejeu, ou en direct si en
+  cours), `SessionDrinksSection` (boissons ; tap = `EditEntrySheet` pour mes
+  sessions) ; puis les sections de Stats RÉUTILISÉES telles quelles avec un
+  bag `sp` scopé (`period: 'session'`, `session`, `drinks` = ses boissons),
+  dans l'ordre perso de Stats. Les sections réutilisées gèrent
+  `period === 'session'` (TemporalSection : heures chronologiques de la
+  session ; Dépenses : pas de barres temporelles ; Carte : pas de bascule
+  « Tout »). **Toute section de `STATS_SECTIONS` doit être déclarée dans
+  `SESSION_PAGE_SECTIONS` OU `SESSION_EXCLUDED_SECTIONS`** (testé).
+- Tests : `unit-sessions.test.js` (nom qui suit les boissons, libellés,
+  courbe, moyenne, regroupement, recherche, registre),
+  `app-history-sessions.test.js` (bascule, renommage, recherche, page depuis
+  l'Historique et Stats, session en cours), `app-friends.test.js` (sessions
+  d'un ami en lecture seule).
 
 ### Sections statistiques
 
@@ -1108,6 +1176,18 @@ l'onglet à CPU ×6). Règles :
 - **Favoris** : étoile dans la fiche → carte dans « Favoris » en tête de
   Catégories ; tap = ajout ; renommer la boisson garde l'épingle.
 - **Pastille BAC** : tap → Stats › Alcoolémie (période Jour).
+- **Sessions — Historique** : « Par session » sépare l'historique en
+  cartes (nom ou date, heures, consos, pic) ; le crayon nomme/renomme ; le
+  nom tient après l'ajout d'une boisson (même avant la 1re) ; « anniv »
+  dans la recherche retrouve toute la session « Anniv… » ; une bière sans
+  alcool bue à jeun apparaît « Hors session » et ne fusionne rien.
+- **Sessions — page** : taper une session (Historique ou Stats › Sessions)
+  ouvre sa page : résumé avec écarts vs la session moyenne, courbe de la
+  session (rejouable au doigt), boissons, rythme heure par heure,
+  catégories, top, dépenses, carte ; Retour système la referme ; une
+  session en cours affiche « Écoulé » et la descente prévue en pointillés.
+- **Sessions — amis** : dans la fiche d'un ami qui partage son BAC, ses
+  sessions s'ouvrent aussi (sans crayon, ni carte ni dépenses).
 - Carte : un drink avec coordonnées doit apparaître ; sans coords,
   message vide. Sur téléphone, un doigt sur la carte fait défiler la page
   (jamais bloqué en bas de l'onglet) ; deux doigts la déplacent.

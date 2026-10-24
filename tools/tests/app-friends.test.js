@@ -75,6 +75,34 @@ test('stats de Léa : mêmes sections, carte masquée, BAC visible (opt-in)', as
   await ctx.clickAria(/^Retour$/, 300);
 });
 
+test('sessions de Léa : cliquables, page en lecture seule (ni nom ni carte ni prix)', async () => {
+  await ctx.clickAria(/Voir les statistiques de Léa/, 450);
+  await ctx.waitFor(() => ctx.text().includes('Temps bourré'), { label: 'stats de Léa' });
+  const all = ctx.tabs().find((t) => (t.textContent || '').trim() === 'Tout');
+  await ctx.act(async () => { ctx.click(all); await ctx.sleep(350); });
+  const section = await ctx.waitFor(() => ctx.q('[data-stats-section="sessions"]'), { label: 'Sessions de Léa' });
+  const row = [...section.querySelectorAll('button')]
+    .find((b) => /^Statistiques de la session /.test(b.getAttribute('aria-label') || ''));
+  assert.ok(row, 'session de l’ami cliquable');
+  await ctx.act(async () => { ctx.click(row); await ctx.sleep(400); });
+  const page = await ctx.waitFor(() => ctx.qa('[role="dialog"]')
+    .find((d) => /^Session /.test(d.getAttribute('aria-label') || '')), { label: 'page session ami' });
+  assert.ok(page.textContent.includes('Léa'), 'la page nomme la personne');
+  assert.ok(page.textContent.includes('Boissons de la session'));
+  const ids = [...page.querySelectorAll('[data-stats-section]')].map((el) => el.getAttribute('data-stats-section'));
+  assert.ok(!ids.includes('map') && !ids.includes('spending'), 'ni carte ni dépenses (non partagées)');
+  assert.ok(![...page.querySelectorAll('button')].some((b) => /session$/.test(b.getAttribute('aria-label') || '')
+    && /^(Re)?[Nn]ommer/.test(b.getAttribute('aria-label') || '')), 'pas de renommage des sessions d’un ami');
+  await ctx.act(async () => {
+    ctx.click([...page.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Retour'));
+    await ctx.sleep(400);
+  });
+  await ctx.waitFor(() => !ctx.qa('[role="dialog"]').some((d) => /^Session /.test(d.getAttribute('aria-label') || '')),
+    { label: 'page refermée' });
+  assert.ok(ctx.text().includes('Statistiques partagées'), 'retour sur la fiche de Léa');
+  await ctx.clickAria(/^Retour$/, 300);
+});
+
 test('stats de Tom (BAC non partagé) : sections Widmark masquées', async () => {
   await ctx.clickAria(/Voir les statistiques de Tom/, 450);
   await ctx.waitFor(() => ctx.text().includes('Statistiques générales'), { label: 'vue de Tom' });

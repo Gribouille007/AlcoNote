@@ -1,8 +1,27 @@
 /* AUTO-GENERATED from proto/history.jsx — do not edit by hand. */
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
-// history.jsx — Tab 2: Historique (chronological list grouped by day)
+// history.jsx — Tab 2: Historique (chronological list grouped by day, or by
+// drinking session — cf. sessions.jsx)
 
 const HIST_COLLAPSED_KEY = 'alconote.hist.collapsed';
+// Mode d'affichage mémorisé : 'day' (par jour, défaut) | 'session'.
+const HIST_MODE_KEY = 'alconote.hist.mode';
+const HIST_MODES = [{
+  id: 'day',
+  label: 'Par jour',
+  icon: 'cal'
+}, {
+  id: 'session',
+  label: 'Par session',
+  icon: 'hourglass'
+}];
+function loadHistMode() {
+  try {
+    return localStorage.getItem(HIST_MODE_KEY) === 'session' ? 'session' : 'day';
+  } catch {
+    return 'day';
+  }
+}
 function loadCollapsedDays() {
   try {
     return new Set(JSON.parse(localStorage.getItem(HIST_COLLAPSED_KEY) || '[]'));
@@ -35,6 +54,22 @@ function HistoryTab({
   const [collapsed, setCollapsed] = React.useState(loadCollapsedDays);
   const [editEntry, setEditEntry] = React.useState(null);
   const [visibleCount, setVisibleCount] = React.useState(HIST_INITIAL_DAYS);
+  const [mode, setModeState] = React.useState(loadHistMode);
+  const bySession = mode === 'session';
+  const setMode = React.useCallback(m => {
+    setModeState(m);
+    try {
+      localStorage.setItem(HIST_MODE_KEY, m);
+    } catch {}
+  }, []);
+  // Page de stats d'une session / sheet de renommage (mode « Par session »).
+  const [openSessionId, setOpenSessionId] = React.useState(null);
+  const [renameTarget, setRenameTarget] = React.useState(null);
+  const openSession = React.useCallback(sess => setOpenSessionId(sess.id), []);
+  const renameSession = React.useCallback((sess, name) => setRenameTarget({
+    session: sess,
+    name
+  }), []);
   const scrollRef = React.useRef(null);
   const sentinelRef = React.useRef(null);
   // Frappe fluide : le champ se met à jour tout de suite, le filtrage de la
@@ -53,6 +88,7 @@ function HistoryTab({
   // un ajout, seules les lignes réellement changées se re-rendent.
   const entryCacheRef = React.useRef(null);
   const dayCacheRef = React.useRef(null);
+  const sessCacheRef = React.useRef(null);
   const allEntries = React.useMemo(() => {
     const r = stabilizeEntries(flattenEntries(families), entryCacheRef.current);
     entryCacheRef.current = r.cache;
@@ -100,26 +136,75 @@ function HistoryTab({
     });
   }, []);
 
+  // Sessions (mode « Par session » uniquement) : moteur Widmark UNIQUE via le
+  // cache partagé avec Stats et la page d'une session (même tableau de
+  // boissons → mêmes objets, aucun recalcul). Rien n'est calculé en mode jour.
+  const {
+    drinks
+  } = useDrinks();
+  const settings = useSettings();
+  const {
+    weight,
+    gender
+  } = widmarkParams(settings);
+  const sessions = React.useMemo(() => bySession ? cachedBACSessions(drinks, weight, gender) : null, [bySession, drinks, weight, gender]);
+  const sessionIndex = React.useMemo(() => sessions ? sessionIndexByDrinkId(sessions) : null, [sessions]);
+  const names = useSessionNames();
+  // Re-rendu pile au retour à 0 de la session en cours (badge « En cours »).
+  const tickNow = useSessionEndTick(sessions);
+  const ongoingKey = sessions ? sessions.filter(x => isSessionOngoing(x, tickNow)).map(x => x.id).join('|') : '';
+  // Recherche « Par session » : les mots du NOM de la session s'ajoutent aux
+  // mots cherchables de chaque boisson (« anniv » → toute la session).
+  const extraWords = React.useMemo(() => {
+    if (!sessionIndex || names.size === 0) return null;
+    const cache = new Map();
+    return e => {
+      const sess = sessionIndex.get(e.id);
+      if (!sess) return null;
+      let w = cache.get(sess.id);
+      if (w === undefined) {
+        const n = resolveSessionName(sess, names);
+        w = n ? searchTokens(n) : null;
+        cache.set(sess.id, w);
+      }
+      return w;
+    };
+  }, [sessionIndex, names]);
+
   // Filtre (catégorie canonique) + recherche tolérante (casse, accents,
   // fautes, multi-mots, lieu — cf. filterHistoryEntries, data.jsx) puis
-  // groupement par jour, mémoïsés : chaque `g.entries` garde sa référence
-  // tant que données/filtre ne bougent pas → les DayGroup (React.memo)
-  // sautent leur rendu.
-  const {
-    dayGroups,
-    approx
-  } = React.useMemo(() => {
-    const r = filterHistoryEntries(allEntries, {
-      query: deferredQuery,
-      category: filter
-    });
-    const g = stabilizeDayGroups(groupEntriesByDay(r.entries), dayCacheRef.current);
+  // groupement par jour OU par session, mémoïsés : chaque groupe garde sa
+  // référence tant que données/filtre ne bougent pas → les DayGroup /
+  // SessionGroup (React.memo) sautent leur rendu.
+  const filtered = React.useMemo(() => filterHistoryEntries(allEntries, {
+    query: deferredQuery,
+    category: filter,
+    extraWords: bySession ? extraWords : null
+  }), [allEntries, filter, deferredQuery, bySession, extraWords]);
+  const approx = filtered.approx;
+  const dayGroups = React.useMemo(() => {
+    if (bySession) return [];
+    const g = stabilizeDayGroups(groupEntriesByDay(filtered.entries), dayCacheRef.current);
     dayCacheRef.current = g.byDay;
-    return {
-      dayGroups: g.groups,
-      approx: r.approx
-    };
-  }, [allEntries, filter, deferredQuery]);
+    return g.groups;
+  }, [filtered, bySession]);
+  const sessionGroups = React.useMemo(() => {
+    if (!bySession) return [];
+    const nowMs = Date.now();
+    const raw = groupEntriesBySession(filtered.entries, sessions, sessionIndex).map(g => g.session ? {
+      ...g,
+      name: resolveSessionName(g.session, names),
+      ongoing: isSessionOngoing(g.session, nowMs)
+    } : {
+      ...g,
+      name: null,
+      ongoing: false
+    });
+    const r = stabilizeSessionGroups(raw, sessCacheRef.current);
+    sessCacheRef.current = r.byKey;
+    return r.groups;
+  }, [filtered, bySession, sessions, sessionIndex, names, ongoingKey]);
+  const groupCount = bySession ? sessionGroups.length : dayGroups.length;
 
   // Recherche/filtre changé → on repart des premiers jours, en haut de liste
   // (sinon on garderait une grande fenêtre déjà étendue sur un nouveau
@@ -127,13 +212,13 @@ function HistoryTab({
   React.useEffect(() => {
     setVisibleCount(HIST_INITIAL_DAYS);
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [filter, deferredQuery]);
+  }, [filter, deferredQuery, mode]);
 
   // Extension au défilement. L'observer est recréé à chaque extension :
   // observe() livre toujours un premier état, donc si la sentinelle est
   // ENCORE dans la marge (écran haut, jours repliés), on enchaîne un paquet
   // de plus sans attendre un nouveau défilement.
-  const hasMore = visibleCount < dayGroups.length;
+  const hasMore = visibleCount < groupCount;
   React.useEffect(() => {
     if (!hasMore) return;
     const root = scrollRef.current,
@@ -143,7 +228,7 @@ function HistoryTab({
         // Transition : le rendu du paquet est découpé et interruptible —
         // le défilement en cours ne saccade pas pendant le montage.
         if (items.some(it => it.isIntersecting)) {
-          React.startTransition(() => setVisibleCount(c => Math.min(dayGroups.length, c + HIST_PAGE_DAYS)));
+          React.startTransition(() => setVisibleCount(c => Math.min(groupCount, c + HIST_PAGE_DAYS)));
         }
       }, {
         root,
@@ -154,14 +239,14 @@ function HistoryTab({
     }
     // Repli sans IntersectionObserver : extension progressive en idle.
     const ric = typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback : null;
-    const grow = () => setVisibleCount(c => Math.min(dayGroups.length, c + HIST_PAGE_DAYS));
+    const grow = () => setVisibleCount(c => Math.min(groupCount, c + HIST_PAGE_DAYS));
     const h = ric ? ric(grow, {
       timeout: 500
     }) : setTimeout(grow, 80);
     return () => {
       if (ric && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(h);else clearTimeout(h);
     };
-  }, [hasMore, visibleCount, dayGroups.length]);
+  }, [hasMore, visibleCount, groupCount]);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -175,8 +260,54 @@ function HistoryTab({
   }, /*#__PURE__*/React.createElement(SearchInput, {
     value: query,
     onChange: setQuery,
-    placeholder: "Rechercher dans l'historique\u2026"
+    placeholder: bySession ? 'Boisson, lieu ou nom de session…' : "Rechercher dans l'historique…"
   })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '0 18px 10px'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    role: "tablist",
+    "aria-label": "Affichage de l'historique",
+    style: {
+      display: 'flex',
+      gap: 2,
+      padding: 3,
+      background: T.surface2,
+      borderRadius: 12,
+      border: `1px solid ${T.rule}`
+    }
+  }, HIST_MODES.map(m => {
+    const on = mode === m.id;
+    return /*#__PURE__*/React.createElement("button", {
+      key: m.id,
+      type: "button",
+      role: "tab",
+      "aria-selected": on,
+      onClick: () => setMode(m.id),
+      style: {
+        flex: 1,
+        padding: '6px 10px',
+        borderRadius: 9,
+        cursor: 'pointer',
+        background: on ? T.accent : 'transparent',
+        color: on ? T.accentInk : T.ink2,
+        fontSize: 12,
+        fontWeight: on ? 600 : 400,
+        letterSpacing: -0.1,
+        whiteSpace: 'nowrap',
+        border: 'none',
+        fontFamily: 'inherit',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        transition: 'background 0.18s ease, color 0.18s ease'
+      }
+    }, /*#__PURE__*/React.createElement(SvgIcon, {
+      icon: Ic[m.icon],
+      size: 13
+    }), m.label);
+  }))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 8,
@@ -200,7 +331,7 @@ function HistoryTab({
       overflow: 'auto',
       padding: '0 18px 120px'
     }
-  }, approx && dayGroups.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, approx && groupCount > 0 && /*#__PURE__*/React.createElement("div", {
     role: "status",
     style: {
       color: T.muted,
@@ -209,14 +340,26 @@ function HistoryTab({
       fontStyle: 'italic',
       padding: '0 2px 6px'
     }
-  }, "Aucune correspondance exacte \u2014 r\xE9sultats approchants pour \xAB ", deferredQuery.trim(), " \xBB"), dayGroups.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, "Aucune correspondance exacte \u2014 r\xE9sultats approchants pour \xAB ", deferredQuery.trim(), " \xBB"), groupCount === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: T.muted,
       fontSize: 13,
       padding: '60px 0',
       textAlign: 'center'
     }
-  }, deferredQuery.trim() ? `Aucun résultat pour « ${deferredQuery.trim()} »` : 'Aucune entrée trouvée'), dayGroups.slice(0, visibleCount).map((g, i) => /*#__PURE__*/React.createElement(DayGroup, {
+  }, deferredQuery.trim() ? `Aucun résultat pour « ${deferredQuery.trim()} »` : 'Aucune entrée trouvée'), bySession ? sessionGroups.slice(0, visibleCount).map((g, i) => /*#__PURE__*/React.createElement(SessionGroup, {
+    key: g.key,
+    group: g,
+    name: g.name,
+    ongoing: g.ongoing,
+    onOpenSession: openSession,
+    onRenameSession: renameSession,
+    onOpenEntry: setEditEntry,
+    onDirectAdd: onDirectAdd,
+    onDelete: onDeleteEntry,
+    index: i,
+    first: i === 0
+  })) : dayGroups.slice(0, visibleCount).map((g, i) => /*#__PURE__*/React.createElement(DayGroup, {
     key: g.day,
     day: g.day,
     entries: g.entries,
@@ -238,6 +381,16 @@ function HistoryTab({
     key: editEntry.id,
     entry: editEntry,
     onClose: () => setEditEntry(null)
+  }), renameTarget && /*#__PURE__*/React.createElement(RenameSessionSheet, {
+    key: renameTarget.session.id,
+    session: renameTarget.session,
+    name: renameTarget.name,
+    onClose: () => setRenameTarget(null)
+  }), openSessionId && /*#__PURE__*/React.createElement(SessionStatsPortal, {
+    key: openSessionId,
+    sessionId: openSessionId,
+    canEdit: true,
+    onClose: () => setOpenSessionId(null)
   }));
 }
 const DayGroup = React.memo(function DayGroup({

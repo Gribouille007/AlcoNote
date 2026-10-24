@@ -28,6 +28,18 @@ serveur tiers.
   imposée quand on ajoute depuis une catégorie, sinon la dernière utilisée.
 - Re-taper l'onglet actif revient à sa racine (et en haut de la liste).
 
+### Sessions
+- Une session = de la première boisson qui fait monter l'alcoolémie au
+  retour à 0 (même modèle Widmark que les stats).
+- Historique en deux modes : **Par jour** ou **Par session** (une carte par
+  session : nom ou date, heures, consos, pic).
+- Chaque session se **nomme** d'un tap (crayon) ; le nom suit ses boissons
+  et se retrouve dans la recherche.
+- Taper une session (Historique ou Stats › Sessions) ouvre **sa page de
+  statistiques** : résumé comparé à la session moyenne, courbe
+  d'alcoolémie de la soirée, boissons bues, rythme heure par heure,
+  catégories, top, dépenses, carte.
+
 ### Statistiques
 Huit sections, toutes pliables, avec navigation par période
 (Jour · Semaine · Mois · Année · A. scol. · Tout) :
@@ -71,6 +83,7 @@ AlcoNote/
 │   ├── categories.jsx      # Onglet Catégories
 │   ├── history.jsx         # Onglet Historique
 │   ├── stats.jsx           # Onglet Statistiques
+│   ├── sessions.jsx        # Sessions : historique par session, page d'une session
 │   ├── modals.jsx          # Sheets : ajout, détail, édition, settings
 │   ├── app.jsx             # Shell, navigation, header, FAB
 │   └── dist/               # Sortie Babel (chargée par index.html)
