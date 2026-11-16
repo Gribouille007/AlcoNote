@@ -565,53 +565,47 @@ function RenameSessionSheet({
       savingRef.current = false;
     }
   };
+
+  // Dialogue compact posé dans le HAUT de l'écran (`side="top"`) : le champ
+  // est déjà au-dessus du clavier, donc rien ne bouge quand celui-ci s'ouvre,
+  // change de hauteur ou se ferme. (L'ancienne sheet ancrée en bas devait
+  // être ré-épinglée à chaque mouvement du clavier : tout le bloc sautait.)
   return /*#__PURE__*/React.createElement(SheetOverlay, {
     onClose: close,
     closing: closing,
+    side: "top",
     label: "Nommer la session"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.bg,
-      borderRadius: '22px 22px 0 0',
-      maxHeight: '92dvh',
+      color: T.ink,
+      borderRadius: 18,
+      border: `1px solid ${T.rule}`,
+      boxShadow: DIALOG_SHADOW,
       display: 'flex',
       flexDirection: 'column',
-      borderTop: `1px solid ${T.rule}`,
-      borderLeft: `1px solid ${T.rule}`,
-      borderRight: `1px solid ${T.rule}`,
-      overflowX: 'hidden'
+      overflow: 'hidden'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      display: 'grid',
-      placeItems: 'center',
-      padding: '10px 0 4px'
+      padding: '18px 18px 12px'
     }
   }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 42,
-      height: 4,
-      borderRadius: 99,
-      background: T.rule
-    }
-  })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '8px 18px 6px'
+      alignItems: 'flex-start',
+      gap: 10
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      width: 30
-    }
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
+      flex: 1,
+      minWidth: 0,
       fontFamily: fontSerif,
       fontSize: 22,
       color: T.ink,
       letterSpacing: -0.3,
-      fontStyle: 'italic'
+      fontStyle: 'italic',
+      lineHeight: 1.1
     }
   }, initialName ? 'Renommer la session' : 'Nommer la session'), /*#__PURE__*/React.createElement("button", {
     type: "button",
@@ -622,6 +616,7 @@ function RenameSessionSheet({
       height: 30,
       borderRadius: 99,
       background: T.surface2,
+      flexShrink: 0,
       display: 'grid',
       placeItems: 'center',
       color: T.ink2,
@@ -635,23 +630,19 @@ function RenameSessionSheet({
     size: 14
   }))), /*#__PURE__*/React.createElement("div", {
     style: {
-      textAlign: 'center',
       color: T.muted,
       fontSize: 10.5,
       fontFamily: fontNum,
       letterSpacing: 0.3,
-      padding: '0 18px 16px'
+      marginTop: 6,
+      lineHeight: 1.5
     }
   }, /*#__PURE__*/React.createElement("div", null, sessionShortDate(session.startTs), " \xB7 ", sessionTimeRange(session, {
     ongoing
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 2
-    }
-  }, sessionCountsLabel(session))), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", null, sessionCountsLabel(session)))), /*#__PURE__*/React.createElement("div", {
     style: {
       overflowY: 'auto',
-      padding: '0 18px 18px',
+      padding: '0 18px 16px',
       flex: 1
     }
   }, /*#__PURE__*/React.createElement(FieldGroup, {
@@ -674,35 +665,37 @@ function RenameSessionSheet({
     style: {
       ...inputBaseStyle(),
       fontSize: 17,
-      padding: '14px 16px',
+      padding: '12px 14px',
       border: `1px solid ${T.accent}`,
       boxShadow: `0 0 0 3px ${T.accentSoft}`
     }
   })), /*#__PURE__*/React.createElement("div", {
     style: {
+      display: 'flex',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+      gap: 12,
       color: T.muted,
       fontSize: 10.5,
       lineHeight: 1.5,
       marginTop: -4
     }
-  }, "Le nom suit les boissons de la session : il reste si tu en ajoutes ou en modifies une."), initialName && /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement("span", null, "Le nom suit les boissons de la session."), initialName && /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: busy ? undefined : () => commit(''),
     disabled: busy,
     style: {
-      width: '100%',
-      marginTop: 16,
-      padding: '12px',
-      borderRadius: 12,
-      background: T.surface2,
+      ...ghostButton,
+      flexShrink: 0,
       color: T.ink2,
-      border: `1px solid ${T.rule}`,
-      fontSize: 12.5,
+      fontSize: 12,
+      textDecoration: 'underline',
+      textUnderlineOffset: 3,
       cursor: busy ? 'wait' : 'pointer',
-      fontFamily: 'inherit',
       opacity: busy ? 0.5 : 1
     }
-  }, "Retirer le nom"), err && /*#__PURE__*/React.createElement("div", {
+  }, "Retirer le nom")), err && /*#__PURE__*/React.createElement("div", {
+    role: "alert",
     style: {
       color: T.accent2,
       background: T.dangerSoftBg,
@@ -714,8 +707,7 @@ function RenameSessionSheet({
     }
   }, err)), /*#__PURE__*/React.createElement("div", {
     style: {
-      padding: '12px 18px calc(22px + env(safe-area-inset-bottom))',
-      borderTop: `1px solid ${T.rule}`,
+      padding: '0 18px 18px',
       display: 'flex',
       gap: 10
     }
@@ -724,7 +716,7 @@ function RenameSessionSheet({
     onClick: close,
     style: {
       flex: 1,
-      padding: '14px',
+      padding: '12px',
       textAlign: 'center',
       borderRadius: 12,
       background: T.surface2,
@@ -739,8 +731,8 @@ function RenameSessionSheet({
     onClick: busy ? undefined : () => commit(name),
     disabled: busy,
     style: {
-      flex: 2,
-      padding: '14px',
+      flex: 1.4,
+      padding: '12px',
       textAlign: 'center',
       borderRadius: 12,
       background: T.accent,

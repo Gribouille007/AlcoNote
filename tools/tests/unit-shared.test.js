@@ -186,3 +186,47 @@ test('keyboardViewportBox — overlay épinglé au viewport visible quand le cla
   // Valeurs aberrantes → null.
   assert.equal(keyboardViewportBox({ innerHeight: 0, visualViewport: { height: 400 } }), null);
 });
+
+test('keyboardInsets — le voile reste plein écran, seul le contenu est repoussé', () => {
+  const { keyboardInsets } = global;
+  assert.deepEqual(keyboardInsets(null, 800), { top: 0, bottom: 0 });
+  // Clavier de 340 px : le contenu s'arrête 340 px au-dessus du bas.
+  assert.deepEqual(keyboardInsets({ top: 0, height: 460 }, 800), { top: 0, bottom: 340 });
+  // Viewport visuel décalé (iOS) : marge haute = décalage, basse = le reste.
+  assert.deepEqual(keyboardInsets({ top: 121, height: 460 }, 800), { top: 121, bottom: 219 });
+  // Jamais de marge négative (boîte qui dépasse par arrondi).
+  assert.deepEqual(keyboardInsets({ top: 400, height: 460 }, 800), { top: 400, bottom: 0 });
+});
+
+test('touchCanScrollWithin — un glisser sans zone défilante sous le doigt est avalé', () => {
+  const { touchCanScrollWithin } = global;
+  const prevGCS = global.getComputedStyle;
+  global.getComputedStyle = (el) => el._cs || { overflowY: 'visible', overflowX: 'visible' };
+  try {
+    const node = (tag, extra = {}) => ({
+      nodeType: 1, tagName: tag, parentNode: null, scrollHeight: 100, clientHeight: 100,
+      scrollWidth: 100, clientWidth: 100,
+      hasAttribute: (a) => !!(extra.attrs && extra.attrs.includes(a)),
+      classList: { contains: (c) => !!(extra.classes && extra.classes.includes(c)) },
+      ...extra,
+    });
+    const chain = (...nodes) => { for (let i = 0; i < nodes.length - 1; i++) nodes[i].parentNode = nodes[i + 1]; return nodes[0]; };
+    const root = node('DIV');
+    // Titre d'un dialogue : rien à faire défiler → bloqué.
+    assert.equal(touchCanScrollWithin(chain(node('SPAN'), node('DIV'), root), root), false);
+    // Zone overflow:auto qui déborde → autorisé ; qui ne déborde pas → bloqué.
+    const scroller = node('DIV', { _cs: { overflowY: 'auto', overflowX: 'visible' }, scrollHeight: 400 });
+    assert.equal(touchCanScrollWithin(chain(node('SPAN'), scroller, root), root), true);
+    const flat = node('DIV', { _cs: { overflowY: 'auto', overflowX: 'visible' } });
+    assert.equal(touchCanScrollWithin(chain(node('SPAN'), flat, root), root), false);
+    // Rangée de chips défilant en horizontal → autorisé.
+    const row = node('DIV', { _cs: { overflowY: 'visible', overflowX: 'auto' }, scrollWidth: 600 });
+    assert.equal(touchCanScrollWithin(chain(node('BUTTON'), row, root), root), true);
+    // Champs natifs (curseur de texte, slider) et zones marquées : jamais bloqués.
+    assert.equal(touchCanScrollWithin(chain(node('INPUT'), root), root), true);
+    assert.equal(touchCanScrollWithin(chain(node('DIV', { attrs: ['data-allow-touch'] }), root), root), true);
+    assert.equal(touchCanScrollWithin(chain(node('DIV', { classes: ['leaflet-container'] }), root), root), true);
+    // Le voile lui-même (cible = racine) → bloqué.
+    assert.equal(touchCanScrollWithin(root, root), false);
+  } finally { global.getComputedStyle = prevGCS; }
+});

@@ -54,6 +54,12 @@ test('bascule « Par session » : une carte par session + groupe hors session', 
 test('nommer une session : sheet, nom bien en vue, stocké sur ses boissons', async () => {
   await ctx.act(async () => { ctx.click(visibleButton(/^Nommer la session/)); await ctx.sleep(300); });
   const input = await ctx.waitFor(() => ctx.findInputByAria(/^Nom de la session$/), { label: 'sheet de renommage' });
+  // Dialogue posé en HAUT de l'écran (jamais une sheet ancrée en bas, qui
+  // devait suivre le clavier) : le voile aligne son contenu en haut.
+  const dlg = input.closest('[role="dialog"]');
+  assert.equal(dlg.getAttribute('aria-label'), 'Nommer la session');
+  assert.equal(dlg.parentElement.style.alignItems, 'flex-start', 'dialogue ancré en haut');
+  assert.equal(input.getAttribute('placeholder'), null, 'pas de texte d’exemple');
   await ctx.setInput(input, "  Anniv de  Lucas ");
   await ctx.clickText(/^Enregistrer$/, 450);
   await ctx.waitFor(() => ctx.text().includes('Anniv de Lucas'), { label: 'nom affiché' });
