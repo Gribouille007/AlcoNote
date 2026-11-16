@@ -835,6 +835,7 @@ function ScannerSheet({
     };
   }, []);
   return /*#__PURE__*/React.createElement("div", {
+    "data-sheet-nodrag": "",
     style: {
       position: 'fixed',
       inset: 0,
@@ -2806,18 +2807,19 @@ function ToggleRow({
       fontFamily: 'inherit',
       background: on ? T.accent : T.surface3,
       border: `1px solid ${on ? T.accent : T.rule}`,
-      transition: 'background 0.18s ease'
+      transition: `background ${MOTION.base}ms ${MOTION.ease}, border-color ${MOTION.base}ms ${MOTION.ease}`
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       position: 'absolute',
       top: 2,
-      left: on ? 19 : 2,
+      left: 2,
       width: 19,
       height: 19,
       borderRadius: 99,
       background: on ? T.accentInk : T.muted,
-      transition: 'left 0.18s ease'
+      transform: `translate3d(${on ? 17 : 0}px, 0, 0)`,
+      transition: `transform ${MOTION.base}ms ${MOTION.easeOut}, background ${MOTION.base}ms ${MOTION.ease}`
     }
   })));
 }

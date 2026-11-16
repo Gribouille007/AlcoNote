@@ -73,6 +73,11 @@ function CategoriesTab({ onOpenFamily, onDirectAdd, onEditFamily, onAddInCategor
       : { filtered: r.approx, filteredApprox: true };
   }, [openCat, families, deferredQuery]);
 
+  // Vrai dès la première entrée dans une catégorie : la grille du tout
+  // premier affichage n'a pas à « revenir » de quelque part.
+  const reducedMotion = useReducedMotion();
+  const drilled = React.useRef(false);
+  if (openCat) drilled.current = true;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '4px 18px 14px' }}>
@@ -80,6 +85,18 @@ function CategoriesTab({ onOpenFamily, onDirectAdd, onEditFamily, onAddInCategor
           placeholder={openCat ? `Rechercher dans ${openCat}…` : 'Rechercher boisson ou catégorie…'} />
       </div>
 
+      {/* Navigation en profondeur : la liste d'une catégorie ARRIVE par la
+          droite, la grille REVIENT par la gauche — le sens du geste « retour ».
+          L'animation se neutralise une fois jouée : sans cela elle rejouerait
+          à chaque retour sur l'onglet (display:none → flex relance les
+          animations CSS), en plus de l'entrée de l'onglet lui-même. */}
+      <div key={openCat ? 'list' : 'grid'}
+        onAnimationEnd={(e) => { if (e.target === e.currentTarget) e.currentTarget.style.animation = 'none'; }}
+        style={{
+          flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
+          animation: reducedMotion || !drilled.current ? undefined
+            : `${openCat ? 'slideLeft' : 'slideRight'} ${MOTION.base}ms ${MOTION.easeOut}`,
+        }}>
       {!openCat ? (
         <CategoryGrid cats={cats} families={families} query={deferredQuery} onOpen={setOpenCat}
           favorites={favorites}
@@ -94,6 +111,7 @@ function CategoriesTab({ onOpenFamily, onDirectAdd, onEditFamily, onAddInCategor
           onAddInCategory={onAddInCategory}
           onEditFamily={onEditFamily} />
       )}
+      </div>
 
       {editCat && (
         <EditCategorySheet category={editCat} onClose={() => setEditCat(null)}

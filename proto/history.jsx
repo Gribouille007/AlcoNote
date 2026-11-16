@@ -420,8 +420,6 @@ const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectA
         display: 'flex', alignItems: 'center', gap: 12,
         padding: '12px 10px 12px 18px',
         position: 'relative', background: T.surface,
-        transform: `translateX(${swipe.offset}px)`,
-        transition: swipe.dragging ? 'none' : 'transform 0.22s ease',
         touchAction: 'pan-y',
       }}>
         <div style={{
@@ -468,93 +466,114 @@ const EntryRow = React.memo(function EntryRow({ entry: e, onOpenEntry, onDirectA
   );
 });
 
-// Tiny pointer-driven swipe controller. Returns translate offset, a
-// drag flag (so the consumer can disable transitions during dragging),
-// and the handlers to spread on the swipeable element. Calls `onAction`
-// when the user releases past `actionThreshold` pixels of drag.
-//
-// `offsetRef` mirrors the React state so `onPointerUp` always sees the
-// latest drag distance, even when several `pointermove` events fire
-// faster than React can commit a re-render. Reading `offset` from
-// closure was unreliable: the captured value lagged the real position
-// and the swipe action almost never triggered.
-//
-// `onClickCapture` swallows the synthetic click that some browsers
-// generate after a meaningful pointer drag, so swiping never
-// accidentally opens the edit sheet sitting underneath the row.
+// Balayage vers la gauche = suppression. Contrôleur 100 % IMPÉRATIF : la
+// ligne suit le doigt en écrivant son transform directement dans le style —
+// aucun state React, donc aucun re-rendu de la ligne par pointermove (avant :
+// un rendu par événement, plus un à CHAQUE pointerdown, même pour un simple
+// tap ou un défilement).
+//   • suivi 1:1 vers la gauche, résistance élastique vers la droite ;
+//   • décision au LÂCHER sur la position OU l'élan (`swipeShouldCommit`) :
+//     un petit coup sec supprime, comme dans une liste native ;
+//   • un tick haptique quand le doigt franchit le seuil (Android) ;
+//   • suppression : la ligne FINIT sa course hors écran puis se replie en
+//     hauteur — elle ne revient plus en place avant de disparaître.
+// `onClickCapture` avale le clic fantôme qui suit un vrai balayage, pour ne
+// jamais ouvrir la fiche d'édition sous le doigt.
+// SWIPE / swipeShouldCommit : helpers purs dans shared.jsx (testés).
 function useSwipeToDelete(onAction, actionThreshold = 64, tapSlop = 10) {
-  const [offset, setOffset] = React.useState(0);
-  const [dragging, setDragging] = React.useState(false);
-  const offsetRef = React.useRef(0);
-  const startRef = React.useRef(null);
-  const lockRef = React.useRef(null); // 'h' | 'v' once direction decided
-  const swipedRef = React.useRef(false); // true once the finger travels past tapSlop (a real swipe, not a tap)
+  const g = React.useRef(null);          // geste en cours
+  const swipedRef = React.useRef(false); // vrai balayage (≠ tap) → avale le clic
+  const actionRef = React.useRef(onAction);
+  actionRef.current = onAction;
 
-  const setOff = (v) => { offsetRef.current = v; setOffset(v); };
-
-  const onPointerDown = (e) => {
-    startRef.current = { x: e.clientX, y: e.clientY };
-    lockRef.current = null;
-    swipedRef.current = false;
-    setDragging(true);
-    // Pointer capture is deferred until a horizontal swipe is actually
-    // committed (see onPointerMove). Capturing eagerly here would make
-    // every tap — including taps on the inner "+"/edit buttons — capture
-    // the pointer, which on touch can interfere with the trailing click.
-  };
-  const onPointerMove = (e) => {
-    if (!startRef.current) return;
-    const dx = e.clientX - startRef.current.x;
-    const dy = e.clientY - startRef.current.y;
-    if (!lockRef.current) {
-      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
-      lockRef.current = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
-      // Capture only once we've committed to a horizontal swipe so move/up
-      // keep coming even if the finger leaves the row. A plain tap never
-      // locks horizontal, so it never captures and its click flows through.
-      if (lockRef.current === 'h') {
-        try { e.currentTarget.setPointerCapture && e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-      }
-    }
-    if (lockRef.current !== 'h') return;
-    // Only mark this as a real swipe (and thus swallow the trailing click
-    // in onClickCapture) once the finger has travelled past the tap slop.
-    // Below it the gesture stays a tap, so the row's "+" / edit button
-    // fire reliably despite a few px of finger jitter.
-    if (Math.abs(dx) > tapSlop) swipedRef.current = true;
-    const next = Math.max(-actionThreshold * 1.6, Math.min(0, dx));
-    setOff(next);
-  };
-  const onPointerUp = (e) => {
-    if (lockRef.current === 'h' && offsetRef.current <= -actionThreshold) {
-      onAction && onAction();
-    }
-    setOff(0);
-    setDragging(false);
-    startRef.current = null;
-    lockRef.current = null;
-    try {
-      if (e && e.currentTarget && e.currentTarget.releasePointerCapture) {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      }
-    } catch {}
-  };
-  // Called in the capture phase BEFORE the click reaches any inner
-  // button. Suppresses ghost clicks that follow a real swipe.
-  const onClickCapture = (e) => {
-    if (swipedRef.current) {
-      e.preventDefault();
-      e.stopPropagation();
-      swipedRef.current = false;
-    }
-  };
-  return {
-    offset, dragging,
-    handlers: {
-      onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp,
-      onClickCapture,
-    },
-  };
+  const handlers = React.useMemo(() => {
+    const noMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    const restore = (el) => {
+      el.style.transition = ''; el.style.transform = '';
+      const row = el.parentElement;
+      if (row) { row.style.transition = ''; row.style.height = ''; row.style.opacity = ''; }
+    };
+    const snapBack = (el) => {
+      if (noMotion()) { restore(el); return; }
+      el.style.transition = `transform ${MOTION.base}ms ${MOTION.easeOut}`;
+      el.style.transform = 'translate3d(0, 0, 0)';
+    };
+    const commit = async (el) => {
+      const run = async () => {
+        try { await (actionRef.current && actionRef.current()); } catch (err) { /* signalé par l'appelant */ }
+        // Succès : la ligne est démontée par le re-rendu de la liste. Si elle
+        // est toujours là (suppression échouée), on la remet en place.
+        setTimeout(() => { if (el.isConnected) restore(el); }, 500);
+      };
+      if (noMotion()) { run(); return; }
+      el.style.transition = `transform ${MOTION.fast}ms ${MOTION.easeIn}`;
+      el.style.transform = 'translate3d(-100%, 0, 0)';
+      const row = el.parentElement;
+      setTimeout(() => {
+        if (row && el.isConnected) {
+          row.style.height = `${row.getBoundingClientRect().height}px`;
+          void row.offsetHeight;   // fige la hauteur de départ avant la transition
+          row.style.transition = `height ${MOTION.fast}ms ${MOTION.ease}, opacity ${MOTION.fast}ms ${MOTION.ease}`;
+          row.style.height = '0px';
+          row.style.opacity = '0';
+        }
+        setTimeout(run, MOTION.fast);
+      }, MOTION.fast);
+    };
+    const end = (e, cancelled) => {
+      const cur = g.current; g.current = null;
+      if (!cur || cur.lock !== 'h') return;
+      const el = cur.el;
+      try { el.releasePointerCapture && el.releasePointerCapture(e.pointerId); } catch {}
+      const a = cur.samples[0], b = cur.samples[cur.samples.length - 1];
+      const dt = a && b ? b.t - a.t : 0;
+      const velocity = dt > 0 ? ((b.x - a.x) / dt) * 1000 : 0;
+      if (!cancelled && swipeShouldCommit({ offset: cur.offset, velocity, threshold: actionThreshold })) commit(el);
+      else snapBack(el);
+    };
+    return {
+      onPointerDown: (e) => {
+        // La capture du pointeur est différée jusqu'au verrou horizontal :
+        // un simple tap (« + », édition) ne capture jamais, son clic passe.
+        g.current = { x: e.clientX, y: e.clientY, lock: null, offset: 0, armed: false, samples: [], el: e.currentTarget };
+        swipedRef.current = false;
+      },
+      onPointerMove: (e) => {
+        const cur = g.current;
+        if (!cur) return;
+        const dx = e.clientX - cur.x, dy = e.clientY - cur.y;
+        if (!cur.lock) {
+          if (Math.abs(dx) < SWIPE.slop && Math.abs(dy) < SWIPE.slop) return;
+          cur.lock = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+          if (cur.lock === 'h') {
+            try { cur.el.setPointerCapture && cur.el.setPointerCapture(e.pointerId); } catch {}
+            cur.el.style.transition = 'none';
+            cur.width = cur.el.getBoundingClientRect().width || 1;
+          }
+        }
+        if (cur.lock !== 'h') return;
+        if (Math.abs(dx) > tapSlop) swipedRef.current = true;
+        // Gauche : 1:1. Droite : rien à révéler → résistance élastique.
+        cur.offset = dx <= 0 ? Math.max(dx, -cur.width) : rubberBand(dx, cur.width, 0.25);
+        const now = e.timeStamp || Date.now();
+        cur.samples.push({ t: now, x: dx });
+        while (cur.samples.length > 2 && now - cur.samples[0].t > 100) cur.samples.shift();
+        cur.el.style.transform = `translate3d(${cur.offset}px, 0, 0)`;
+        const armed = cur.offset <= -actionThreshold;
+        if (armed !== cur.armed) { cur.armed = armed; if (armed) haptic(); }
+      },
+      onPointerUp: (e) => end(e, false),
+      onPointerCancel: (e) => end(e, true),
+      onClickCapture: (e) => {
+        if (swipedRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          swipedRef.current = false;
+        }
+      },
+    };
+  }, [actionThreshold, tapSlop]);
+  return { handlers };
 }
 
 Object.assign(window, { HistoryTab, DayGroup, EntryRow, useSwipeToDelete });

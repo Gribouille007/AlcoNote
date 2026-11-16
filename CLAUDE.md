@@ -68,15 +68,33 @@ valeur en dur.
   virgule. Son state reste une *string* ; convertir avec
   `parseDecimal(str)` (virgule→point, `NaN` si vide/invalide) au submit.
 - **Animations** : utiliser celles déjà injectées dans `shared.jsx`
-  (`fade`, `slideUp`, `slideRight`, `slideLeft`, `scaleIn`, `pulse`,
-  les sorties `fadeOut`/`sheetOutDown`/`sheetOutLeft`/`sheetOutRight`,
-  les transitions de page `pageIn`/`pageOut`, `toastIn`/`toastOut`).
-  Durées/easing via `MOTION` (`base` 220 ms en entrée, `fast` 180 ms en
-  sortie) ; transitions : `0.18–0.22s ease`. Entrée de liste en cascade via
-  `staggerStyle(index)` — n'anime que les 12 premiers items (cf. § Onglets
-  persistants). Toute fermeture de
+  (`fade`, `slideRight`, `slideLeft`, `scaleIn`/`scaleOut`, `pulse`,
+  `alcoRise`, les trajets de sheet `sheetInUp`/`sheetInLeft`/`sheetInRight`
+  et `sheetOutDown`/`sheetOutLeft`/`sheetOutRight`, le voile `scrimOut`,
+  les pages `pageIn`/`pageOut`, `toastIn`/`toastOut`). Tout passe par
+  **`MOTION`** : durées `fast` 180 ms (toute SORTIE), `base` 220 ms
+  (micro-entrées), `page` 300 ms et `sheet` 340 ms (trajets longs) ;
+  courbes `ease` (neutre), `easeOut` (ce qui ARRIVE : départ vif, pose
+  douce), `easeIn` (ce qui PART). Jamais de rebond. Seuls `transform` et
+  `opacity` s'animent (compositeur) — pas de `left`/`width`/`height` pour un
+  mouvement. Entrée de liste en cascade via `staggerStyle(index)` — n'anime
+  que les 12 premiers items (cf. § Onglets persistants). Toute fermeture de
   sheet/vue passe par `useSheetClose` (cf. § Sheets) — jamais de
-  démontage sec d'un overlay.
+  démontage sec d'un overlay. Vue « page » : `pageAnimation(closing,
+  reduced)`, jamais la chaîne recomposée à la main.
+- **Retour tactile** : `usePressScale()` — spreader `{...press.handlers}`
+  (pose `data-press` + les pointer handlers). Piloté par l'attribut
+  `data-pressed` + CSS : AUCUN state React (un tap ne re-rend rien),
+  enfoncement 90 ms / relâchement 260 ms, et un tap sur un contrôle
+  imbriqué n'enfonce pas son conteneur. Les `<button>` hors
+  `usePressScale` ont un retour d'opacité global (`:active`). Ne jamais
+  réintroduire un `useState(pressed)`.
+- **Gestes** : tout geste suit le doigt en écrivant le `transform`
+  directement dans le style (jamais un `setState` par `pointermove`),
+  décide au LÂCHER sur la position ET l'élan (helpers purs testés :
+  `shouldDismissSheet`, `swipeShouldCommit`, `projectMomentum`,
+  `rubberBand`), et repart de la position courante (keyframes de sortie
+  SANS `from`). `haptic()` uniquement aux moments qui comptent.
 - **Charts** : tous via les primitives de `stats-charts.jsx`
   (`SvgBarChart`, `SvgDonut`, `SvgLineChart`, `SvgBACProjection`,
   `SvgBACForecast`, `SvgHistogram`, `SvgCalendarHeatmap`). Géométrie/typo/
@@ -675,9 +693,21 @@ pas.
 ### Sheets / overlays
 
 - `SheetOverlay` accepte `side: 'bottom' | 'left' | 'right'` et porte
-  lui-même l'animation d'ENTRÉE (`slideUp`/`slideRight`/`slideLeft`)
-  sur le wrapper du dialog — **ne plus poser d'`animation:` sur la
-  racine d'une sheet**.
+  lui-même l'animation d'ENTRÉE (`sheetInUp`/`sheetInLeft`/`sheetInRight` :
+  la surface parcourt TOUTE sa dimension, comme une feuille native) sur le
+  wrapper du dialog — **ne plus poser d'`animation:` sur la racine d'une
+  sheet**. Le voile est une couche SÉPARÉE (frère du dialog) qui fond
+  pendant que la sheet glisse.
+- **Glisser pour fermer** (`useSheetDrag`, intégré à `SheetOverlay` — toute
+  sheet en profite sans code) : tirer une sheet vers le bas / repousser le
+  tiroir vers son bord la referme. Le geste ne démarre PAS depuis un champ
+  de saisie, une carte, une figure, une zone défilante qui n'est pas en
+  haut, ni clavier ouvert ; marquer `data-sheet-nodrag` tout sous-arbre qui
+  doit garder ses gestes (ex. le scanner). Relâché sous le seuil : retour
+  en place ; au-delà (position ou élan) : `onClose`, dont la sortie repart
+  de la position du doigt. Événements TOUCH natifs non passifs (seul un
+  `preventDefault` sur `touchmove` empêche le navigateur de réclamer le
+  pan) — ne pas migrer vers les pointer events.
 - **Fermeture animée** : chaque sheet fait
   `const [closing, close] = useSheetClose(onClose)` (passer `open` en
   2ᵉ argument pour les sheets montées en continu : AddDrinkSheet,
@@ -1241,6 +1271,19 @@ l'onglet à CPU ×6). Règles :
 - **Sheets** : chaque fermeture (X, Annuler, succès, backdrop, Escape,
   Retour système) glisse vers sa sortie au lieu de disparaître sec ;
   aucune interaction possible pendant la sortie.
+- **Sheets — glisser** (téléphone réel, iOS ET Android) : une sheet monte
+  depuis le bas de l'écran sur toute sa hauteur ; la tirer par l'en-tête la
+  fait suivre le doigt (le voile s'éclaircit) ; petit glisser relâché =
+  retour en place, coup sec vers le bas = fermeture ; faire défiler un
+  formulaire long ne ferme jamais la sheet ; le tiroir Paramètres se
+  repousse vers la gauche.
+- **Historique — balayage** : la ligne suit le doigt ; relâchée au-delà du
+  seuil (ou d'un coup sec) elle sort par la gauche puis la liste se
+  referme ; « Annuler » la restaure ; un petit balayage la remet en place.
+- **Thème** : la bascule Clair ↔ Sombre est un fondu enchaîné (pas de
+  flash), et tout est repeint à la fin du fondu.
+- **Confirmation** : « Annuler » / « Confirmer » font sortir le dialogue
+  en fondu-réduction, sans disparition sèche.
 - **Re-tap onglet** : dans Bière avec une recherche, re-taper « Catégories »
   ramène à la grille, recherche vidée ; re-taper Historique/Stats remonte en
   haut.

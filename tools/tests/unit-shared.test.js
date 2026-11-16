@@ -186,3 +186,95 @@ test('keyboardViewportBox — overlay épinglé au viewport visible quand le cla
   // Valeurs aberrantes → null.
   assert.equal(keyboardViewportBox({ innerHeight: 0, visualViewport: { height: 400 } }), null);
 });
+
+// ── Motion : physique des gestes (sheets, balayage) ───────────────
+const { MOTION, SHEET_DRAG, projectMomentum, rubberBand, shouldDismissSheet,
+        SWIPE, swipeShouldCommit, pageAnimation, staggerStyle, usePressScale } = global;
+
+test('MOTION — les trajets longs durent plus que les micro-transitions, les sorties sont les plus brèves', () => {
+  assert.ok(Object.isFrozen(MOTION));
+  assert.ok(MOTION.fast < MOTION.base && MOTION.base < MOTION.page && MOTION.page <= MOTION.sheet);
+  assert.ok(MOTION.pressIn < MOTION.pressOut, 'enfoncement plus vif que le relâchement');
+  for (const k of ['ease', 'easeOut', 'easeIn']) assert.match(MOTION[k], /^cubic-bezier\(/);
+});
+
+test('projectMomentum — atterrissage projeté proportionnel à l\'élan, signé, borné sur entrée invalide', () => {
+  assert.equal(projectMomentum(0), 0);
+  assert.ok(Math.abs(projectMomentum(1000) - 499) < 1e-6);   // 1000 px/s → ~499 px
+  assert.equal(projectMomentum(-1000), -projectMomentum(1000));
+  assert.equal(projectMomentum(NaN), 0);
+  assert.equal(projectMomentum(Infinity), 0);
+});
+
+test('rubberBand — résistance progressive : suit de moins en moins, ne dépasse jamais la dimension', () => {
+  assert.equal(rubberBand(0, 600), 0);
+  const a = rubberBand(50, 600), b = rubberBand(100, 600), c = rubberBand(1e6, 600);
+  assert.ok(a > 0 && a < 50, 'toujours en retrait du doigt');
+  assert.ok(b > a && (b - a) < a, 'rendement décroissant');
+  assert.ok(c < 600, 'asymptote = dimension');
+  assert.equal(rubberBand(-80, 600), -rubberBand(80, 600));
+  assert.equal(rubberBand(80, 0), 0);
+  assert.equal(rubberBand(NaN, 600), 0);
+});
+
+test('shouldDismissSheet — la décision se prend sur le point d\'atterrissage projeté', () => {
+  const size = 600;
+  // Long glisser lent au-delà de la moitié : ferme.
+  assert.equal(shouldDismissSheet({ offset: 320, velocity: 0, size }), true);
+  // Petit glisser lent : reste ouverte.
+  assert.equal(shouldDismissSheet({ offset: 80, velocity: 0, size }), false);
+  // Petit coup sec vers le bas : l'élan suffit.
+  assert.equal(shouldDismissSheet({ offset: 40, velocity: 900, size }), true);
+  // Tirée loin puis RAMENÉE : jamais de fermeture, même au-delà de la moitié.
+  assert.equal(shouldDismissSheet({ offset: 400, velocity: SHEET_DRAG.backVelocity - 1, size }), false);
+  // Entrées dégénérées.
+  assert.equal(shouldDismissSheet({ offset: 0, velocity: 5000, size }), false);
+  assert.equal(shouldDismissSheet({ offset: -20, velocity: 5000, size }), false);
+  assert.equal(shouldDismissSheet({ offset: 300, velocity: 0, size: 0 }), false);
+  assert.equal(shouldDismissSheet({ offset: 320, velocity: NaN, size }), true);
+});
+
+test('swipeShouldCommit — seuil franchi OU coup sec, jamais un geste qui revient', () => {
+  const threshold = 64;
+  assert.equal(swipeShouldCommit({ offset: -70, velocity: 0, threshold }), true);
+  assert.equal(swipeShouldCommit({ offset: -40, velocity: 0, threshold }), false);
+  assert.equal(swipeShouldCommit({ offset: -SWIPE.flickMin, velocity: -SWIPE.flickVelocity, threshold }), true);
+  assert.equal(swipeShouldCommit({ offset: -10, velocity: -3000, threshold }), false, 'course trop courte');
+  assert.equal(swipeShouldCommit({ offset: -90, velocity: SWIPE.flickVelocity + 1, threshold }), false, 'le doigt revenait');
+  assert.equal(swipeShouldCommit({ offset: 0, velocity: -3000, threshold }), false);
+  assert.equal(swipeShouldCommit({ offset: 30, velocity: -3000, threshold }), false, 'balayage vers la droite');
+});
+
+test('pageAnimation — entrée décélérée, sortie accélérée plus brève, rien en reduced-motion', () => {
+  assert.equal(pageAnimation(false, true), undefined);
+  assert.equal(pageAnimation(true, true), undefined);
+  assert.equal(pageAnimation(false, false), `pageIn ${MOTION.page}ms ${MOTION.easeOut}`);
+  assert.equal(pageAnimation(true, false), `pageOut ${MOTION.fast}ms ${MOTION.easeIn} forwards`);
+});
+
+test('usePressScale — retour tactile par attribut, sans state React', () => {
+  const press = usePressScale();
+  assert.equal(press, usePressScale(), 'objet constant : aucun re-rendu induit');
+  assert.equal(press.style, null);
+  assert.equal(press.handlers['data-press'], '');
+  const attrs = new Set();
+  const el = {
+    setAttribute: (k) => attrs.add(k), removeAttribute: (k) => attrs.delete(k),
+    contains: (n) => n === inner,
+  };
+  const inner = { closest: () => inner };
+  // Tap direct sur l'élément : enfoncé, puis relâché.
+  press.handlers.onPointerDown({ currentTarget: el, target: { closest: () => el } });
+  assert.ok(attrs.has('data-pressed'));
+  press.handlers.onPointerUp({ currentTarget: el });
+  assert.ok(!attrs.has('data-pressed'));
+  // Tap sur un contrôle IMBRIQUÉ : le conteneur ne s'enfonce pas.
+  press.handlers.onPointerDown({ currentTarget: el, target: inner });
+  assert.ok(!attrs.has('data-pressed'));
+});
+
+test('staggerStyle — seuls les premiers items s\'animent', () => {
+  assert.equal(staggerStyle(0, { reduced: true }), null);
+  assert.equal(staggerStyle(13), null);
+  assert.equal(staggerStyle(2).animationDelay, `${2 * MOTION.stagger}ms`);
+});

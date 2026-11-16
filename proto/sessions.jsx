@@ -827,9 +827,7 @@ function SessionStatsView({ sessionId, onClose, canEdit = false, hideMap = false
     <div role="dialog" aria-modal="true" aria-label={`Session ${title}`} style={{
       position: 'fixed', inset: 0, zIndex: 61,
       background: T.bg, color: T.ink, display: 'flex', flexDirection: 'column',
-      animation: reduced ? undefined
-        : closing ? `pageOut ${MOTION.fast}ms ${MOTION.ease} forwards`
-        : `pageIn ${MOTION.base}ms ${MOTION.ease}`,
+      animation: pageAnimation(closing, reduced),
       pointerEvents: closing ? 'none' : undefined,
     }}>
       <div style={{

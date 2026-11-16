@@ -535,8 +535,9 @@ function NavButton({ item, active, onChange }) {
         gap: 4, padding: '10px 8px', cursor: 'pointer', position: 'relative',
         color: active ? T.accent : T.muted,
         background: 'transparent', border: 'none', fontFamily: 'inherit',
-        ...press.style,
-        ...(reduced ? null : { transition: `transform ${MOTION.fast}ms ${MOTION.ease}, color ${MOTION.fast}ms ${MOTION.ease}` }),
+        // `transform` (retour tactile) est piloté par la règle [data-press] :
+        // on la recopie ici car une transition inline remplace celle du CSS.
+        ...(reduced ? null : { transition: `transform ${MOTION.pressOut}ms ${MOTION.easeOut}, color ${MOTION.fast}ms ${MOTION.ease}` }),
       }}>
       <SvgIcon icon={item.icon} size={22} />
       <span style={{
@@ -584,7 +585,7 @@ function BottomNav({ tab, onChange, onReorder }) {
           width: `${100 / items.length}%`,
           display: 'flex', justifyContent: 'center',
           transform: `translateX(${activeIdx * 100}%)`,
-          transition: reduced ? undefined : `transform ${MOTION.base}ms ${MOTION.ease}`,
+          transition: reduced ? undefined : `transform ${MOTION.page}ms ${MOTION.easeOut}`,
           pointerEvents: 'none',
         }}>
           <div style={{

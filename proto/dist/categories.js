@@ -91,6 +91,12 @@ function CategoriesTab({
       filteredApprox: true
     };
   }, [openCat, families, deferredQuery]);
+
+  // Vrai dès la première entrée dans une catégorie : la grille du tout
+  // premier affichage n'a pas à « revenir » de quelque part.
+  const reducedMotion = useReducedMotion();
+  const drilled = React.useRef(false);
+  if (openCat) drilled.current = true;
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -105,7 +111,19 @@ function CategoriesTab({
     value: query || '',
     onChange: setQuery,
     placeholder: openCat ? `Rechercher dans ${openCat}…` : 'Rechercher boisson ou catégorie…'
-  })), !openCat ? /*#__PURE__*/React.createElement(CategoryGrid, {
+  })), /*#__PURE__*/React.createElement("div", {
+    key: openCat ? 'list' : 'grid',
+    onAnimationEnd: e => {
+      if (e.target === e.currentTarget) e.currentTarget.style.animation = 'none';
+    },
+    style: {
+      flex: 1,
+      minHeight: 0,
+      display: 'flex',
+      flexDirection: 'column',
+      animation: reducedMotion || !drilled.current ? undefined : `${openCat ? 'slideLeft' : 'slideRight'} ${MOTION.base}ms ${MOTION.easeOut}`
+    }
+  }, !openCat ? /*#__PURE__*/React.createElement(CategoryGrid, {
     cats: cats,
     families: families,
     query: deferredQuery,
@@ -133,7 +151,7 @@ function CategoriesTab({
     onEditCat: () => setEditCat(openCat),
     onAddInCategory: onAddInCategory,
     onEditFamily: onEditFamily
-  }), editCat && /*#__PURE__*/React.createElement(EditCategorySheet, {
+  })), editCat && /*#__PURE__*/React.createElement(EditCategorySheet, {
     category: editCat,
     onClose: () => setEditCat(null),
     onRenamed: onCatRenamed
