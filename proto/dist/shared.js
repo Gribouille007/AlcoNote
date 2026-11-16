@@ -2012,6 +2012,12 @@ function useBackButton(active, onClose) {
 // d'édition empilée sur la fiche détail ne doit pas emporter les deux).
 const _overlayStack = [];
 
+// Distance entre le haut de l'écran et un dialogue `side="top"` : assez pour
+// respirer, assez peu pour que le dialogue entier reste au-dessus du clavier
+// sur un petit téléphone (≈ 14 px à 568 px de haut, 69 px à 844). En `vh`
+// (insensible au clavier), jamais en %.
+const SHEET_TOP_OFFSET = 'clamp(12px, calc(20vh - 100px), 72px)';
+
 // ── Clavier virtuel ───────────────────────────────────────────────
 // Sur mobile le clavier ne rétrécit PAS le viewport de mise en page (iOS
 // Safari/PWA, Chrome Android ≥ 108 en `resizes-visual`) : seul le
@@ -2034,6 +2040,46 @@ function keyboardViewportBox(win) {
 }
 function _sameBox(a, b) {
   return a === b || !!a && !!b && a.top === b.top && a.height === b.height;
+}
+// Marges (px) à réserver en haut/bas d'un overlay PLEIN ÉCRAN pour que son
+// contenu tienne dans le viewport visible. Le scrim, lui, ne bouge jamais
+// (inset: 0) : seul le contenu est repoussé — plus de voile qui saute quand
+// le clavier s'ouvre, change de hauteur (barre de suggestions) ou se ferme.
+// Pur (testable).
+function keyboardInsets(box, innerHeight) {
+  if (!box) return {
+    top: 0,
+    bottom: 0
+  };
+  return {
+    top: box.top,
+    bottom: Math.max(0, Math.round(innerHeight) - box.top - box.height)
+  };
+}
+
+// Un geste tactile parti de `target` peut-il faire défiler quelque chose À
+// L'INTÉRIEUR de `root` ? Sinon le glisser est avalé (cf. SheetOverlay) :
+// clavier ouvert, iOS laisse le doigt promener TOUTE la page (viewport
+// visuel plus petit que la page) — l'overlay partait avec le doigt puis se
+// recalait. Les champs de saisie gardent leurs gestes natifs (curseur,
+// slider de teinte), comme les zones marquées `data-allow-touch` (carte).
+function touchCanScrollWithin(target, root) {
+  let el = target;
+  while (el && el !== root && el.nodeType === 1) {
+    const tag = el.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (el.hasAttribute && el.hasAttribute('data-allow-touch')) return true;
+    if (el.classList && el.classList.contains('leaflet-container')) return true;
+    const cs = typeof getComputedStyle === 'function' ? getComputedStyle(el) : null;
+    if (cs) {
+      const oy = cs.overflowY,
+        ox = cs.overflowX;
+      if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) return true;
+      if ((ox === 'auto' || ox === 'scroll') && el.scrollWidth > el.clientWidth + 1) return true;
+    }
+    el = el.parentNode;
+  }
+  return false;
 }
 function useKeyboardViewport() {
   const [box, setBox] = React.useState(() => typeof window !== 'undefined' ? keyboardViewportBox(window) : null);
@@ -2127,7 +2173,7 @@ function swipeShouldCommit({
 // dans le sens du geste, overlay imbriqué.)
 function _sheetDragBlocked(target, dialog, vertical) {
   if (!target || !target.closest) return true;
-  if (target.closest('input, textarea, select, [contenteditable], [data-sheet-nodrag], .leaflet-container, svg[role="img"]')) return true;
+  if (target.closest('input, textarea, select, [contenteditable], [data-sheet-nodrag], [data-allow-touch], .leaflet-container, svg[role="img"]')) return true;
   if (target.closest('[role="dialog"]') !== dialog) return true;
   for (let el = target; el && el !== dialog; el = el.parentElement) {
     let cs;
@@ -2338,6 +2384,7 @@ function SheetOverlay({
 }) {
   const reduced = useReducedMotion();
   const kb = useKeyboardViewport();
+  const rootRef = React.useRef(null);
   const dialogRef = React.useRef(null);
   const scrimRef = React.useRef(null);
   // Clavier ouvert / redimensionné : le champ actif reste visible (la sheet
@@ -2357,6 +2404,20 @@ function SheetOverlay({
     }, 60);
     return () => clearTimeout(id);
   }, [kb && kb.top, kb && kb.height]);
+  // Verrou de défilement : un glisser qui ne peut rien faire défiler DANS
+  // l'overlay est avalé (listener non passif obligatoire pour preventDefault).
+  React.useEffect(() => {
+    const root = rootRef.current;
+    if (!root || !root.addEventListener) return undefined;
+    const onMove = e => {
+      if (e.touches && e.touches.length > 1) return; // pinch : géré ailleurs
+      if (e.cancelable && !touchCanScrollWithin(e.target, root)) e.preventDefault();
+    };
+    root.addEventListener('touchmove', onMove, {
+      passive: false
+    });
+    return () => root.removeEventListener('touchmove', onMove);
+  }, []);
   const tokenRef = React.useRef(null);
   if (tokenRef.current == null) tokenRef.current = {};
   React.useEffect(() => {
@@ -2381,31 +2442,39 @@ function SheetOverlay({
   // (Add / Detail / EditEntry / EditFamily / Settings / EditCategory).
   useBackButton(true, onClose);
   // Glisser pour fermer — suspendu clavier ouvert (le doigt vise un champ).
+  // Pas de glisser non plus sur un dialogue `side="top"` (ce n'est pas une feuille).
   useSheetDrag(dialogRef, scrimRef, {
     side,
     onDismiss: onClose,
-    disabled: closing || !!kb
+    disabled: closing || !!kb || side === 'top'
   });
   const isSide = side === 'left' || side === 'right';
-  const enter = side === 'left' ? 'sheetInLeft' : side === 'right' ? 'sheetInRight' : 'sheetInUp';
-  const exit = side === 'left' ? 'sheetOutLeft' : side === 'right' ? 'sheetOutRight' : 'sheetOutDown';
+  const isTop = side === 'top';
+  const enter = side === 'left' ? 'sheetInLeft' : side === 'right' ? 'sheetInRight' : isTop ? 'scaleIn' : 'sheetInUp';
+  const exit = side === 'left' ? 'sheetOutLeft' : side === 'right' ? 'sheetOutRight' : isTop ? 'dialogOut' : 'sheetOutDown';
+  const inset = keyboardInsets(kb, typeof window !== 'undefined' ? window.innerHeight : 0);
   return /*#__PURE__*/React.createElement("div", {
+    ref: rootRef,
     role: "presentation",
     onClick: onClose,
     style: {
+      // La racine couvre TOUJOURS tout l'écran (comme le voile, couche
+      // séparée ci-dessous) ; le clavier ne fait que repousser le contenu
+      // (padding), en glissant plutôt qu'en sautant.
       position: 'fixed',
-      ...(kb ? {
-        left: 0,
-        right: 0,
-        top: kb.top,
-        height: kb.height
-      } : {
-        inset: 0
-      }),
+      inset: 0,
+      boxSizing: 'border-box',
+      // `side="top"` : dialogue posé dans le HAUT de l'écran, donc déjà
+      // au-dessus du clavier — il ne bouge pas quand celui-ci s'ouvre.
+      paddingTop: isTop ? `calc(${inset.top}px + ${SHEET_TOP_OFFSET})` : inset.top,
+      paddingBottom: inset.bottom,
+      paddingLeft: isTop ? 16 : 0,
+      paddingRight: isTop ? 16 : 0,
+      transition: reduced ? undefined : `padding-bottom ${MOTION.fast}ms ${MOTION.ease}`,
       zIndex: 100,
       display: 'flex',
-      alignItems: side === 'bottom' ? 'flex-end' : 'stretch',
-      justifyContent: side === 'right' ? 'flex-end' : side === 'left' ? 'flex-start' : 'stretch',
+      alignItems: side === 'bottom' ? 'flex-end' : isTop ? 'flex-start' : 'stretch',
+      justifyContent: side === 'right' ? 'flex-end' : side === 'left' ? 'flex-start' : isTop ? 'center' : 'stretch',
       // Plus aucune interaction pendant la sortie (évite un double-tap qui
       // relancerait une action sur une sheet déjà en train de partir).
       pointerEvents: closing ? 'none' : undefined
@@ -2417,7 +2486,7 @@ function SheetOverlay({
       position: 'absolute',
       inset: 0,
       background: T.scrim,
-      animation: reduced ? undefined : closing ? `scrimOut ${MOTION.fast}ms ${MOTION.ease} forwards` : `fade ${MOTION.sheet}ms ${MOTION.ease}`
+      animation: reduced ? undefined : closing ? `scrimOut ${MOTION.fast}ms ${MOTION.ease} forwards` : `fade ${isTop ? MOTION.base : MOTION.sheet}ms ${MOTION.ease}`
     }
   }), /*#__PURE__*/React.createElement("div", {
     ref: dialogRef,
@@ -2430,7 +2499,7 @@ function SheetOverlay({
     style: {
       position: 'relative',
       width: isSide ? 'auto' : '100%',
-      maxWidth: isSide ? '100%' : 'min(560px, 100%)',
+      maxWidth: isSide ? '100%' : isTop ? 400 : 'min(560px, 100%)',
       margin: side === 'bottom' ? '0 auto' : 0,
       height: isSide ? '100%' : 'auto',
       // Jamais plus haut que la zone visible (clavier ouvert compris) : la
@@ -2440,7 +2509,7 @@ function SheetOverlay({
       display: 'flex',
       flexDirection: 'column',
       boxShadow: side === 'bottom' ? SHEET_SHADOW : side === 'left' ? DRAWER_SHADOW : undefined,
-      animation: reduced ? undefined : closing ? `${exit} ${MOTION.fast}ms ${MOTION.easeIn} forwards` : `${enter} ${MOTION.sheet}ms ${MOTION.easeOut}`
+      animation: reduced ? undefined : closing ? `${exit} ${MOTION.fast}ms ${MOTION.easeIn} forwards` : `${enter} ${isTop ? MOTION.base : MOTION.sheet}ms ${MOTION.easeOut}`
     }
   }, children));
 }
@@ -2535,12 +2604,12 @@ const Confirm = (() => {
 // identique en thème clair/sombre, comme les scrims).
 const DIALOG_SHADOW = '0 30px 60px rgba(0,0,0,0.5)';
 function ConfirmHost() {
+  const reduced = useReducedMotion();
   const [state, setState] = React.useState(null);
   // Sortie animée : `leaving` garde le dernier dialogue monté le temps de
-  // scaleOut. La promesse, elle, est résolue IMMÉDIATEMENT (aucune latence
+  // dialogOut. La promesse, elle, est résolue IMMÉDIATEMENT (aucune latence
   // pour l'appelant) ; seul le démontage visuel est différé.
   const [leaving, setLeaving] = React.useState(null);
-  const reduced = useReducedMotion();
   const leaveTimer = React.useRef(0);
   const shownRef = React.useRef(null);
   shownRef.current = state;
@@ -2632,7 +2701,7 @@ function ConfirmHost() {
       maxWidth: 360,
       width: '100%',
       boxShadow: DIALOG_SHADOW,
-      animation: reduced ? undefined : out ? `scaleOut ${MOTION.fast}ms ${MOTION.easeIn} forwards` : `scaleIn ${MOTION.base}ms ${MOTION.easeOut}`
+      animation: reduced ? undefined : out ? `dialogOut ${MOTION.fast}ms ${MOTION.easeIn} forwards` : `scaleIn ${MOTION.base}ms ${MOTION.easeOut}`
     }
   }, /*#__PURE__*/React.createElement("div", {
     id: "alco-confirm-title",
@@ -2777,8 +2846,8 @@ function useSWVersion() {
     @keyframes sheetOutLeft { to { transform: translate3d(-100%, 0, 0) } }
     @keyframes sheetOutRight { to { transform: translate3d(100%, 0, 0) } }
     @keyframes scrimOut { to { opacity: 0 } }
-    /* Dialogue de confirmation : sortie miroir de scaleIn. */
-    @keyframes scaleOut { from { transform: scale(1); opacity: 1 } to { transform: scale(.96); opacity: 0 } }
+    /* Dialogues (confirmation, sheet \`side="top"\`) : sortie miroir de scaleIn. */
+    @keyframes dialogOut { from { transform: scale(1); opacity: 1 } to { transform: scale(.96); opacity: 0 } }
     /* Transition « page » (vue plein écran type fiche ami) : pousse depuis la
        droite à l'ouverture, ressort vers la droite au retour — cohérent avec
        le geste système « revenir en arrière ». */
@@ -2834,12 +2903,13 @@ function useSWVersion() {
     /* Zones défilantes : inertie native iOS, et le défilement d'une liste
        ne se propage jamais à ce qu'il y a derrière (sheet → page). */
     [data-tab-scroll], .alco-sheet-dialog * { -webkit-overflow-scrolling: touch; }
-    .alco-sheet-dialog { overscroll-behavior: contain; }
 
     /* Racine d'une sheet : autorisée à rétrécir sous sa hauteur de contenu
        quand le dialog est plafonné (clavier ouvert) — sa zone interne
        overflow:auto défile alors au lieu de déborder hors écran. */
     .alco-sheet-dialog > * { min-height: 0; }
+    /* Fin de défilement d'une zone interne : ne se propage pas à la page. */
+    .alco-sheet-dialog, .alco-sheet-dialog * { overscroll-behavior: contain; }
 
     /* Carte (StatsTab › MapSection). Les couleurs sont pilotées par des
        variables CSS posées sur le conteneur, ce qui permet de rethémer la
@@ -3721,6 +3791,10 @@ Object.assign(window, {
   keyboardViewportBox,
   useKeyboardViewport,
   KEYBOARD_MIN_PX,
+  keyboardInsets,
+  touchCanScrollWithin,
+  SHEET_TOP_OFFSET,
+  DIALOG_SHADOW,
   T,
   THEMES,
   applyTheme,

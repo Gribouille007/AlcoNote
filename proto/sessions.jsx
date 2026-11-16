@@ -432,82 +432,77 @@ function RenameSessionSheet({ session, name: initialName, onClose }) {
     } finally { setBusy(false); savingRef.current = false; }
   };
 
+  // Dialogue compact posé dans le HAUT de l'écran (`side="top"`) : le champ
+  // est déjà au-dessus du clavier, donc rien ne bouge quand celui-ci s'ouvre,
+  // change de hauteur ou se ferme. (L'ancienne sheet ancrée en bas devait
+  // être ré-épinglée à chaque mouvement du clavier : tout le bloc sautait.)
   return (
-    <SheetOverlay onClose={close} closing={closing} label="Nommer la session">
+    <SheetOverlay onClose={close} closing={closing} side="top" label="Nommer la session">
       <div style={{
-        background: T.bg, borderRadius: '22px 22px 0 0',
-        maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
-        borderTop: `1px solid ${T.rule}`, borderLeft: `1px solid ${T.rule}`, borderRight: `1px solid ${T.rule}`,
-        overflowX: 'hidden',
+        background: T.bg, color: T.ink, borderRadius: 18, border: `1px solid ${T.rule}`,
+        boxShadow: DIALOG_SHADOW, display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
-        <div style={{ display: 'grid', placeItems: 'center', padding: '10px 0 4px' }}>
-          <div style={{ width: 42, height: 4, borderRadius: 99, background: T.rule }}/>
-        </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '8px 18px 6px',
-        }}>
-          <div style={{ width: 30 }}/>
+        <div style={{ padding: '18px 18px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <div style={{
+              flex: 1, minWidth: 0, fontFamily: fontSerif, fontSize: 22, color: T.ink,
+              letterSpacing: -0.3, fontStyle: 'italic', lineHeight: 1.1,
+            }}>{initialName ? 'Renommer la session' : 'Nommer la session'}</div>
+            <button type="button" onClick={close} aria-label="Fermer" style={{
+              width: 30, height: 30, borderRadius: 99, background: T.surface2, flexShrink: 0,
+              display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
+              border: 'none', padding: 0, fontFamily: 'inherit',
+            }}><SvgIcon icon={Ic.close} size={14} /></button>
+          </div>
           <div style={{
-            fontFamily: fontSerif, fontSize: 22, color: T.ink,
-            letterSpacing: -0.3, fontStyle: 'italic',
-          }}>{initialName ? 'Renommer la session' : 'Nommer la session'}</div>
-          <button type="button" onClick={close} aria-label="Fermer" style={{
-            width: 30, height: 30, borderRadius: 99, background: T.surface2,
-            display: 'grid', placeItems: 'center', color: T.ink2, cursor: 'pointer',
-            border: 'none', padding: 0, fontFamily: 'inherit',
-          }}><SvgIcon icon={Ic.close} size={14} /></button>
+            color: T.muted, fontSize: 10.5, fontFamily: fontNum, letterSpacing: 0.3,
+            marginTop: 6, lineHeight: 1.5,
+          }}>
+            <div>{sessionShortDate(session.startTs)} · {sessionTimeRange(session, { ongoing })}</div>
+            <div>{sessionCountsLabel(session)}</div>
+          </div>
         </div>
-        <div style={{
-          textAlign: 'center', color: T.muted, fontSize: 10.5, fontFamily: fontNum,
-          letterSpacing: 0.3, padding: '0 18px 16px',
-        }}>
-          <div>{sessionShortDate(session.startTs)} · {sessionTimeRange(session, { ongoing })}</div>
-          <div style={{ marginTop: 2 }}>{sessionCountsLabel(session)}</div>
-        </div>
-        <div style={{ overflowY: 'auto', padding: '0 18px 18px', flex: 1 }}>
+        <div style={{ overflowY: 'auto', padding: '0 18px 16px', flex: 1 }}>
           {/* Champ mis en avant (grand, bordure d'accent) et SANS texte
-              d'exemple : un placeholder se confondait avec une vraie valeur.
-              SheetOverlay garde la sheet au-dessus du clavier virtuel. */}
+              d'exemple : un placeholder se confondait avec une vraie valeur. */}
           <FieldGroup label="Nom de la session">
             <input value={name} autoFocus maxLength={SESSION_NAME_MAX}
               onChange={e => setName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (!busy) commit(name); } }}
               enterKeyHint="done" autoCapitalize="sentences" autoComplete="off"
               aria-label="Nom de la session" style={{
-                ...inputBaseStyle(), fontSize: 17, padding: '14px 16px',
+                ...inputBaseStyle(), fontSize: 17, padding: '12px 14px',
                 border: `1px solid ${T.accent}`, boxShadow: `0 0 0 3px ${T.accentSoft}`,
               }} />
           </FieldGroup>
-          <div style={{ color: T.muted, fontSize: 10.5, lineHeight: 1.5, marginTop: -4 }}>
-            Le nom suit les boissons de la session : il reste si tu en ajoutes ou en modifies une.
+          <div style={{
+            display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12,
+            color: T.muted, fontSize: 10.5, lineHeight: 1.5, marginTop: -4,
+          }}>
+            <span>Le nom suit les boissons de la session.</span>
+            {initialName && (
+              <button type="button" onClick={busy ? undefined : () => commit('')} disabled={busy} style={{
+                ...ghostButton, flexShrink: 0, color: T.ink2, fontSize: 12,
+                textDecoration: 'underline', textUnderlineOffset: 3,
+                cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.5 : 1,
+              }}>Retirer le nom</button>
+            )}
           </div>
-          {initialName && (
-            <button type="button" onClick={busy ? undefined : () => commit('')} disabled={busy} style={{
-              width: '100%', marginTop: 16, padding: '12px', borderRadius: 12,
-              background: T.surface2, color: T.ink2, border: `1px solid ${T.rule}`,
-              fontSize: 12.5, cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
-              opacity: busy ? 0.5 : 1,
-            }}>Retirer le nom</button>
-          )}
           {err && (
-            <div style={{
+            <div role="alert" style={{
               color: T.accent2, background: T.dangerSoftBg, border: `1px solid ${T.dangerSoftBorder}`,
               padding: '8px 12px', borderRadius: 10, fontSize: 12, marginTop: 10,
             }}>{err}</div>
           )}
         </div>
-        <div style={{
-          padding: '12px 18px calc(22px + env(safe-area-inset-bottom))',
-          borderTop: `1px solid ${T.rule}`, display: 'flex', gap: 10,
-        }}>
+        <div style={{ padding: '0 18px 18px', display: 'flex', gap: 10 }}>
           <button type="button" onClick={close} style={{
-            flex: 1, padding: '14px', textAlign: 'center', borderRadius: 12,
+            flex: 1, padding: '12px', textAlign: 'center', borderRadius: 12,
             background: T.surface2, color: T.ink2, fontSize: 13, cursor: 'pointer',
             border: `1px solid ${T.rule}`, fontFamily: 'inherit',
           }}>Annuler</button>
           <button type="button" onClick={busy ? undefined : () => commit(name)} disabled={busy} style={{
-            flex: 2, padding: '14px', textAlign: 'center', borderRadius: 12,
+            flex: 1.4, padding: '12px', textAlign: 'center', borderRadius: 12,
             background: T.accent, color: T.accentInk, fontSize: 13, fontWeight: 600,
             cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.5 : 1,
             border: 'none', fontFamily: 'inherit',

@@ -68,7 +68,7 @@ valeur en dur.
   virgule. Son state reste une *string* ; convertir avec
   `parseDecimal(str)` (virgule→point, `NaN` si vide/invalide) au submit.
 - **Animations** : utiliser celles déjà injectées dans `shared.jsx`
-  (`fade`, `slideRight`, `slideLeft`, `scaleIn`/`scaleOut`, `pulse`,
+  (`fade`, `slideRight`, `slideLeft`, `scaleIn`/`dialogOut`, `pulse`,
   `alcoRise`, les trajets de sheet `sheetInUp`/`sheetInLeft`/`sheetInRight`
   et `sheetOutDown`/`sheetOutLeft`/`sheetOutRight`, le voile `scrimOut`,
   les pages `pageIn`/`pageOut`, `toastIn`/`toastOut`). Tout passe par
@@ -692,7 +692,7 @@ pas.
 
 ### Sheets / overlays
 
-- `SheetOverlay` accepte `side: 'bottom' | 'left' | 'right'` et porte
+- `SheetOverlay` accepte `side: 'bottom' | 'left' | 'right' | 'top'` et porte
   lui-même l'animation d'ENTRÉE (`sheetInUp`/`sheetInLeft`/`sheetInRight` :
   la surface parcourt TOUTE sa dimension, comme une feuille native) sur le
   wrapper du dialog — **ne plus poser d'`animation:` sur la racine d'une
@@ -717,6 +717,21 @@ pas.
   appelle le vrai `onClose` ; idempotent ; immédiat en
   prefers-reduced-motion. Exception : remplacer une sheet par une autre
   (ex. `onAddAgain`) reste un swap instantané via le parent.
+- **`side="top"` = dialogue de saisie courte** (un seul champ texte :
+  `RenameSessionSheet`) : carte compacte posée dans le HAUT de l'écran
+  (`SHEET_TOP_OFFSET`, en `vh`), entrée `scaleIn` / sortie `dialogOut`. Elle
+  est déjà au-dessus du clavier, donc **rien ne bouge** quand il s'ouvre,
+  change de hauteur ou se ferme. Bug historique : en sheet ancrée en bas, tout
+  le bloc sautait à chaque mouvement du clavier. Tout nouveau « prompt » à un
+  champ prend cette variante — jamais une sheet du bas avec `autoFocus`.
+- **Voile fixe + verrou de défilement** : le scrim reste `inset: 0` ; le
+  clavier ne fait que repousser le contenu par `padding`
+  (`keyboardInsets`, pur, glissement `MOTION.fast`). Un glisser qui ne peut
+  rien faire défiler DANS l'overlay est avalé (`touchCanScrollWithin`, pur ;
+  listener `touchmove` non passif) : clavier ouvert, iOS laissait le doigt
+  promener toute la page sous la sheet. Exemptés : `input`/`textarea`/
+  `select`, `.leaflet-container`, et toute zone marquée `data-allow-touch`
+  (à poser sur un futur geste tactile custom dans une sheet).
 - **Clavier virtuel** : sur mobile le clavier ne rétrécit que le
   `visualViewport` (iOS, Chrome `resizes-visual`) — une sheet ancrée en bas
   restait SOUS le clavier (bug : nom de session tapé à l'aveugle).
@@ -1193,8 +1208,11 @@ l'onglet à CPU ×6). Règles :
 - **Premier lancement** (données effacées / nouvel appareil) : aucune
   catégorie n'apparaît ; « + » propose de nommer la première catégorie,
   créée à l'enregistrement de la boisson.
-- **Renommer une session** (clavier ouvert, iPhone ET Android) : le champ
-  reste visible au-dessus du clavier, sans texte d'exemple dedans.
+- **Renommer une session** (iPhone ET Android) : dialogue en haut de l'écran,
+  qui ne bouge PAS quand le clavier s'ouvre/se ferme ; glisser le doigt sur le
+  dialogue ou le voile ne déplace rien ; sans texte d'exemple dans le champ.
+- **Sheets + clavier** (ajout, édition de catégorie) : la sheet remonte
+  au-dessus du clavier en glissant ; la page derrière ne défile jamais.
 - **Stats › Personnaliser** : l'œil masque une section (barrée dans la
   liste), « N sections masquées » en bas de l'onglet ; ré-afficher la remet.
 - **Amis — taux identique** : mon taux sur mon appareil = celui que voit un
