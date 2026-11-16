@@ -1061,9 +1061,7 @@ function CompareView({ initialA = COMPARE_ME, initialB = null, onClose }) {
     <div role="dialog" aria-modal="true" aria-label="Comparaison des statistiques" style={{
       position: 'fixed', inset: 0, zIndex: 62,
       background: T.bg, color: T.ink, display: 'flex', flexDirection: 'column',
-      animation: reduced ? undefined
-        : closing ? `pageOut ${MOTION.fast}ms ${MOTION.ease} forwards`
-        : `pageIn ${MOTION.base}ms ${MOTION.ease}`,
+      animation: pageAnimation(closing, reduced),
       pointerEvents: closing ? 'none' : undefined,
     }}>
       <div style={{

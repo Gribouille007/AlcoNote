@@ -152,15 +152,41 @@ function syncThemeToDocument() {
     document.head.appendChild(meta);
   }
   if (meta) meta.setAttribute('content', T.metaColor);
+  // Anneau de focus clavier (cf. injectBaseStyles) aux couleurs du thème.
+  try { document.documentElement.style.setProperty('--alco-focus', T.accent); } catch (e) {}
 }
 
 function applyTheme(name) {
-  setTheme(name);
-  try { localStorage.setItem('alconote.theme', name); } catch {}
-  // Persist to dbManager too so legacy code stays in sync
-  try { window.dbManager && window.dbManager.setSetting && window.dbManager.setSetting('theme', name); } catch {}
-  syncThemeToDocument();
-  window.__themeListeners.forEach(f => f());
+  const run = () => {
+    setTheme(name);
+    try { localStorage.setItem('alconote.theme', name); } catch {}
+    // Persist to dbManager too so legacy code stays in sync
+    try { window.dbManager && window.dbManager.setSetting && window.dbManager.setSetting('theme', name); } catch {}
+    syncThemeToDocument();
+    window.__themeListeners.forEach(f => f());
+  };
+  // Bascule en FONDU ENCHAÎNÉ (View Transitions) : l'ancien thème se fond
+  // dans le nouveau au lieu d'un flash clair↔sombre — un saut de luminosité
+  // brutal est précisément ce qu'on évite la nuit. Le navigateur fige une
+  // capture, on repeint TOUT en synchrone (flushSync), il fond les deux.
+  // Sans l'API (ou en reduced-motion, ou avant le montage) : bascule sèche.
+  let animated = false;
+  try {
+    animated = typeof document !== 'undefined'
+      && typeof document.startViewTransition === 'function'
+      && name !== T._name
+      && !!document.querySelector('.alco-shell')
+      && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  } catch (e) { animated = false; }
+  if (!animated) { run(); return; }
+  let done = false;
+  const once = () => { if (!done) { done = true; run(); } };
+  try {
+    document.startViewTransition(() => {
+      if (window.ReactDOM && typeof window.ReactDOM.flushSync === 'function') window.ReactDOM.flushSync(once);
+      else once();
+    });
+  } catch (e) { once(); }
 }
 
 (function initTheme() {
@@ -183,9 +209,21 @@ const fontNum = '"Geist Mono", ui-monospace, monospace';
 // (cf. CLAUDE.md › DA). Registre sobre, sans rebond.
 const MOTION = Object.freeze({
   fast: 180, base: 220,
+  // Trajets LONGS (une sheet traverse sa propre hauteur, un tiroir sa
+  // largeur, une page pousse depuis la droite) : plus de distance ⇒ plus de
+  // temps, sinon le mouvement « claque ». Les sorties restent à `fast`.
+  sheet: 340, page: 300,
   stagger: 38,                          // ms entre deux items d'une liste
   ease: 'cubic-bezier(.2,.6,.2,1)',     // calme, sans overshoot
+  // Décélération longue des surfaces qui ARRIVENT (sheets, tiroir, pages) :
+  // départ vif, pose douce — la courbe des feuilles iOS, sans rebond.
+  easeOut: 'cubic-bezier(.32,.72,0,1)',
+  // Accélération des surfaces qui PARTENT : elles quittent l'écran en
+  // prenant de la vitesse au lieu de ralentir avant de disparaître.
+  easeIn: 'cubic-bezier(.4,0,1,1)',
   press: 0.97,                          // scale au tap
+  pressIn: 90,                          // enfoncement quasi instantané…
+  pressOut: 260,                        // …relâchement plus souple
 });
 
 // ── Icons ──────────────────────────────────────────────────────────
@@ -674,23 +712,25 @@ function QuickAddButton({ onAdd, label, size = 32 }) {
       onPointerDown={(e) => {
         e.stopPropagation();
         start.current = { x: e.clientX, y: e.clientY, moved: false };
-        press.press();
+        press.press(e.currentTarget);
       }}
       onPointerMove={(e) => {
         const s = start.current;
         if (s && (Math.abs(e.clientX - s.x) > 10 || Math.abs(e.clientY - s.y) > 10)) {
           s.moved = true;
-          press.release();
+          press.release(e.currentTarget);
         }
       }}
       onPointerUp={(e) => {
         e.stopPropagation();
         const s = start.current; start.current = null;
         lastPointerTs.current = e.timeStamp;
-        press.release();
+        press.release(e.currentTarget);
         if (s && !s.moved) onAdd && onAdd();
       }}
-      onPointerCancel={() => { start.current = null; press.release(); }}
+      onPointerCancel={(e) => { start.current = null; press.release(e.currentTarget); }}
+      onPointerLeave={(e) => press.release(e.currentTarget)}
+      data-press=""
       onKeyDown={(e) => {
         // Keep Enter/Space from bubbling to a parent `clickable` row
         // (FamilyRow), whose onKeyDown would otherwise open the detail
@@ -712,7 +752,6 @@ function QuickAddButton({ onAdd, label, size = 32 }) {
         display: 'grid', placeItems: 'center', color: T.accent,
         cursor: 'pointer', flexShrink: 0,
         padding: 0, fontFamily: 'inherit', touchAction: 'manipulation',
-        ...press.style,
       }}
       title="Ajouter à nouveau"
       aria-label={label}
@@ -897,11 +936,201 @@ function useKeyboardViewport() {
   return box;
 }
 
+// ── Glisser pour fermer ───────────────────────────────────────────
+// Une sheet se referme en la tirant vers le bas, le tiroir en le repoussant
+// vers son bord — le geste natif d'iOS comme d'Android. Trois helpers purs
+// (testés dans unit-shared) portent toute la physique :
+//   • projectMomentum : où le geste ATTERRIRAIT s'il continuait sur son élan
+//     (décroissance exponentielle, celle du défilement natif) ;
+//   • rubberBand : résistance progressive quand on tire à contresens ;
+//   • shouldDismissSheet : la décision se prend sur le point d'atterrissage
+//     PROJETÉ, pas sur la position au lâcher — un petit coup sec ferme, un
+//     long glisser hésitant qu'on ramène ne ferme pas.
+const SHEET_DRAG = Object.freeze({
+  slop: 8,            // px de course avant de trancher glisser / défilement
+  axisBias: 1.2,      // dominance exigée de l'axe du geste sur l'autre
+  dismissRatio: 0.5,  // part de la sheet à franchir (en projeté) pour fermer
+  backVelocity: -120, // px/s : au-delà, le doigt REVENAIT — jamais de fermeture
+  deceleration: 0.998,
+  scrimFade: 0.7,     // part du voile qui s'efface sur une course complète
+});
+function projectMomentum(velocity, deceleration = SHEET_DRAG.deceleration) {
+  if (!Number.isFinite(velocity)) return 0;
+  return (velocity / 1000) * deceleration / (1 - deceleration);
+}
+function rubberBand(overshoot, dimension, constant = 0.55) {
+  if (!(dimension > 0) || !Number.isFinite(overshoot)) return 0;
+  return (overshoot * dimension * constant) / (dimension + constant * Math.abs(overshoot));
+}
+// `offset` : course dans le sens de la fermeture (px, ≥ 0) ; `velocity` : px/s
+// dans ce même sens ; `size` : dimension de la sheet sur l'axe du geste.
+function shouldDismissSheet({ offset, velocity, size }) {
+  if (!(size > 0) || !(offset > 0)) return false;
+  const v = Number.isFinite(velocity) ? velocity : 0;
+  if (v < SHEET_DRAG.backVelocity) return false;
+  return offset + projectMomentum(v) > size * SHEET_DRAG.dismissRatio;
+}
+
+// Balayage-suppression d'une ligne d'historique (useSwipeToDelete, history.jsx).
+const SWIPE = Object.freeze({
+  slop: 6,            // px avant de trancher balayage / défilement
+  flickVelocity: 550, // px/s vers la gauche : un coup sec suffit…
+  flickMin: 24,       // …à partir de cette course
+});
+// Pur (testé) : `offset` ≤ 0 (px), `velocity` en px/s (négatif = vers la gauche).
+function swipeShouldCommit({ offset, velocity, threshold }) {
+  if (!(offset < 0)) return false;
+  if (offset <= -threshold) return !(velocity > SWIPE.flickVelocity); // on ne supprime pas un geste qui REVIENT
+  return offset <= -SWIPE.flickMin && velocity <= -SWIPE.flickVelocity;
+}
+
+// Le toucher part-il d'un endroit où le geste appartient à AUTRE chose ?
+// (champ de saisie, carte, figure à scrubber, zone qui peut encore défiler
+// dans le sens du geste, overlay imbriqué.)
+function _sheetDragBlocked(target, dialog, vertical) {
+  if (!target || !target.closest) return true;
+  if (target.closest('input, textarea, select, [contenteditable], [data-sheet-nodrag], [data-allow-touch], .leaflet-container, svg[role="img"]')) return true;
+  if (target.closest('[role="dialog"]') !== dialog) return true;
+  for (let el = target; el && el !== dialog; el = el.parentElement) {
+    let cs;
+    try { cs = window.getComputedStyle(el); } catch (e) { return true; }
+    if (vertical) {
+      // Tirer vers le bas : légitime seulement si la liste est déjà EN HAUT
+      // (sinon le geste est un défilement), comme une feuille iOS.
+      if (/(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 1 && el.scrollTop > 0) return true;
+    } else if (/(auto|scroll)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 1) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Suivi 1:1 du doigt, écrit directement dans le style (aucun rendu React
+// pendant le geste). Événements TOUCH natifs non passifs : seul un
+// `preventDefault` sur le touchmove empêche le navigateur de réclamer le
+// geste comme un pan (ce que les pointer events ne permettent pas).
+function useSheetDrag(dialogRef, scrimRef, { side, onDismiss, disabled }) {
+  const live = React.useRef({});
+  live.current = { side, onDismiss, disabled };
+  React.useEffect(() => {
+    const el = dialogRef.current;
+    if (!el || !el.addEventListener) return;
+    let g = null;         // geste en cours
+    let settle = 0;       // timer de retour en place
+    const noMotion = () => !!(_reducedMotion.mq && _reducedMotion.mq.matches);
+    const apply = (offset) => {
+      const { side: sd } = live.current;
+      const sign = sd === 'left' ? -1 : 1;
+      el.style.transform = sd === 'bottom'
+        ? `translate3d(0, ${offset}px, 0)`
+        : `translate3d(${sign * offset}px, 0, 0)`;
+      const sc = scrimRef.current;
+      if (sc) sc.style.opacity = String(1 - SHEET_DRAG.scrimFade * Math.min(1, Math.max(0, offset) / g.size));
+    };
+    const reset = () => {
+      clearTimeout(settle);
+      el.style.transition = ''; el.style.transform = '';
+      el.style.willChange = '';
+      const sc = scrimRef.current;
+      if (sc) { sc.style.transition = ''; sc.style.opacity = ''; }
+    };
+    const snapBack = () => {
+      const sc = scrimRef.current;
+      if (noMotion()) { reset(); return; }
+      const tr = `${MOTION.sheet}ms ${MOTION.easeOut}`;
+      el.style.transition = `transform ${tr}`;
+      el.style.transform = 'translate3d(0, 0, 0)';
+      if (sc) { sc.style.transition = `opacity ${tr}`; sc.style.opacity = '1'; }
+      clearTimeout(settle);
+      settle = setTimeout(reset, MOTION.sheet + 40);
+    };
+    const onStart = (e) => {
+      const { disabled: off, side: sd } = live.current;
+      g = null;
+      if (off || e.touches.length !== 1) return;
+      if (_sheetDragBlocked(e.target, el, sd === 'bottom')) return;
+      const t = e.touches[0];
+      g = { x: t.clientX, y: t.clientY, locked: false, origin: 0, offset: 0, size: 1, samples: [] };
+    };
+    const onMove = (e) => {
+      if (!g) return;
+      if (e.touches.length !== 1) { if (g.locked) snapBack(); g = null; return; }
+      const { side: sd } = live.current;
+      const t = e.touches[0];
+      const dx = t.clientX - g.x, dy = t.clientY - g.y;
+      // Course dans le sens de la FERMETURE, et course sur l'autre axe.
+      const main = sd === 'bottom' ? dy : sd === 'left' ? -dx : dx;
+      const cross = sd === 'bottom' ? dx : dy;
+      if (!g.locked) {
+        if (Math.abs(main) < SHEET_DRAG.slop && Math.abs(cross) < SHEET_DRAG.slop) return;
+        if (main <= 0 || Math.abs(main) < Math.abs(cross) * SHEET_DRAG.axisBias) { g = null; return; }
+        g.locked = true;
+        g.origin = main;   // la sheet ne saute pas de la course d'hystérésis
+        const r = el.getBoundingClientRect();
+        g.size = Math.max(1, sd === 'bottom' ? r.height : r.width);
+        clearTimeout(settle);
+        // L'entrée (keyframes) primerait sur le transform inline : on la
+        // coupe. React ne la repose que si la valeur change — c.-à-d. à la
+        // sortie (`closing`), qui part alors de la position du doigt.
+        el.style.animation = 'none';
+        el.style.transition = 'none';
+        el.style.willChange = 'transform';
+        const sc = scrimRef.current;
+        if (sc) { sc.style.animation = 'none'; sc.style.transition = 'none'; }
+      }
+      if (e.cancelable) e.preventDefault();
+      const raw = main - g.origin;
+      g.offset = raw >= 0 ? raw : rubberBand(raw, g.size);
+      const now = e.timeStamp || Date.now();
+      g.samples.push({ t: now, v: raw });
+      while (g.samples.length > 2 && now - g.samples[0].t > 100) g.samples.shift();
+      apply(g.offset);
+    };
+    const onEnd = (e) => {
+      const cur = g; g = null;
+      if (!cur || !cur.locked) return;
+      if (e.type === 'touchcancel') { snapBack(); return; }
+      const a = cur.samples[0], b = cur.samples[cur.samples.length - 1];
+      const dt = a && b ? b.t - a.t : 0;
+      const velocity = dt > 0 ? ((b.v - a.v) / dt) * 1000 : 0;
+      if (!shouldDismissSheet({ offset: cur.offset, velocity, size: cur.size })) { snapBack(); return; }
+      // Fermeture : la sheet reste où le doigt l'a laissée ; `closing`
+      // (useSheetClose) joue la sortie DEPUIS cette position.
+      el.style.willChange = '';
+      const { onDismiss: dismiss } = live.current;
+      if (dismiss) dismiss();
+      // Fermeture refusée/différée par le parent : on ne laisse jamais une
+      // sheet à moitié tirée.
+      clearTimeout(settle);
+      settle = setTimeout(() => {
+        if (el.isConnected && !el.hasAttribute('data-closing')) snapBack();
+      }, MOTION.fast + 160);
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    return () => {
+      clearTimeout(settle);
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, []);
+}
+
+// Ombre portée d'une surface flottante (sheet, tiroir) — constante nommée,
+// volontairement identique en clair et en sombre, comme DIALOG_SHADOW.
+const SHEET_SHADOW = '0 -12px 40px rgba(0,0,0,0.22)';
+const DRAWER_SHADOW = '12px 0 40px rgba(0,0,0,0.22)';
+
 function SheetOverlay({ children, onClose, side = 'bottom', label, closing = false }) {
   const reduced = useReducedMotion();
   const kb = useKeyboardViewport();
   const rootRef = React.useRef(null);
   const dialogRef = React.useRef(null);
+  const scrimRef = React.useRef(null);
   // Clavier ouvert / redimensionné : le champ actif reste visible (la sheet
   // vient de rapetisser, il a pu passer sous le bord de sa zone défilante).
   React.useEffect(() => {
@@ -950,18 +1179,22 @@ function SheetOverlay({ children, onClose, side = 'bottom', label, closing = fal
   // mount = push a back-trap, unmount = remove it. Covers every sheet
   // (Add / Detail / EditEntry / EditFamily / Settings / EditCategory).
   useBackButton(true, onClose);
+  // Glisser pour fermer — suspendu clavier ouvert (le doigt vise un champ).
+  // Pas de glisser non plus sur un dialogue `side="top"` (ce n'est pas une feuille).
+  useSheetDrag(dialogRef, scrimRef, { side, onDismiss: onClose, disabled: closing || !!kb || side === 'top' });
   const isSide = side === 'left' || side === 'right';
   const isTop = side === 'top';
-  const enter = side === 'left' ? 'slideRight' : side === 'right' ? 'slideLeft'
-    : isTop ? 'scaleIn' : 'slideUp';
+  const enter = side === 'left' ? 'sheetInLeft' : side === 'right' ? 'sheetInRight'
+    : isTop ? 'scaleIn' : 'sheetInUp';
   const exit = side === 'left' ? 'sheetOutLeft' : side === 'right' ? 'sheetOutRight'
     : isTop ? 'dialogOut' : 'sheetOutDown';
   const inset = keyboardInsets(kb, typeof window !== 'undefined' ? window.innerHeight : 0);
   return (
     <div ref={rootRef} role="presentation" onClick={onClose} style={{
-      // Le voile couvre TOUJOURS tout l'écran ; le clavier ne fait que
-      // repousser le contenu (padding), en glissant plutôt qu'en sautant.
-      position: 'fixed', inset: 0, background: T.scrim, boxSizing: 'border-box',
+      // La racine couvre TOUJOURS tout l'écran (comme le voile, couche
+      // séparée ci-dessous) ; le clavier ne fait que repousser le contenu
+      // (padding), en glissant plutôt qu'en sautant.
+      position: 'fixed', inset: 0, boxSizing: 'border-box',
       // `side="top"` : dialogue posé dans le HAUT de l'écran, donc déjà
       // au-dessus du clavier — il ne bouge pas quand celui-ci s'ouvre.
       paddingTop: isTop ? `calc(${inset.top}px + ${SHEET_TOP_OFFSET})` : inset.top,
@@ -972,15 +1205,23 @@ function SheetOverlay({ children, onClose, side = 'bottom', label, closing = fal
       alignItems: side === 'bottom' ? 'flex-end' : isTop ? 'flex-start' : 'stretch',
       justifyContent: side === 'right' ? 'flex-end'
                      : side === 'left' ? 'flex-start' : isTop ? 'center' : 'stretch',
-      animation: reduced ? undefined
-        : closing ? `fadeOut ${MOTION.fast}ms ${MOTION.ease} forwards`
-        : `fade ${MOTION.base}ms ${MOTION.ease}`,
       // Plus aucune interaction pendant la sortie (évite un double-tap qui
       // relancerait une action sur une sheet déjà en train de partir).
       pointerEvents: closing ? 'none' : undefined,
     }}>
+      {/* Voile sur sa PROPRE couche : il fond pendant que la sheet glisse
+          (deux mouvements distincts, tous deux sur le compositeur), et suit
+          le doigt pendant un glisser-pour-fermer. */}
+      <div ref={scrimRef} aria-hidden="true" style={{
+        position: 'absolute', inset: 0, background: T.scrim,
+        animation: reduced ? undefined
+          : closing ? `scrimOut ${MOTION.fast}ms ${MOTION.ease} forwards`
+          : `fade ${isTop ? MOTION.base : MOTION.sheet}ms ${MOTION.ease}`,
+      }}/>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={label}
+        data-closing={closing ? '' : undefined}
         className="alco-sheet-dialog" onClick={e => e.stopPropagation()} style={{
+        position: 'relative',
         width: isSide ? 'auto' : '100%',
         maxWidth: isSide ? '100%' : isTop ? 400 : 'min(560px, 100%)',
         margin: side === 'bottom' ? '0 auto' : 0,
@@ -990,14 +1231,24 @@ function SheetOverlay({ children, onClose, side = 'bottom', label, closing = fal
         // et sa zone défilante interne prend le relais.
         maxHeight: '100%',
         display: 'flex', flexDirection: 'column',
+        boxShadow: side === 'bottom' ? SHEET_SHADOW : side === 'left' ? DRAWER_SHADOW : undefined,
         animation: reduced ? undefined
-          : closing ? `${exit} ${MOTION.fast}ms ${MOTION.ease} forwards`
-          : `${enter} ${MOTION.base}ms ${MOTION.ease}`,
+          : closing ? `${exit} ${MOTION.fast}ms ${MOTION.easeIn} forwards`
+          : `${enter} ${isTop ? MOTION.base : MOTION.sheet}ms ${MOTION.easeOut}`,
       }}>
         {children}
       </div>
     </div>
   );
+}
+
+// Animation d'une vue plein écran « page » (fiche ami, Comparer, Classement,
+// page d'une session) : pousse depuis la droite, ressort par la droite.
+// Source unique — les vues ne recomposent plus la chaîne à la main.
+function pageAnimation(closing, reduced) {
+  if (reduced) return undefined;
+  return closing ? `pageOut ${MOTION.fast}ms ${MOTION.easeIn} forwards`
+                 : `pageIn ${MOTION.page}ms ${MOTION.easeOut}`;
 }
 
 // Fermeture animée d'une sheet / vue : retourne `[closing, close]`.
@@ -1072,7 +1323,26 @@ const DIALOG_SHADOW = '0 30px 60px rgba(0,0,0,0.5)';
 function ConfirmHost() {
   const reduced = useReducedMotion();
   const [state, setState] = React.useState(null);
-  React.useEffect(() => { Confirm._bind(setState); return () => Confirm._bind(null); }, []);
+  // Sortie animée : `leaving` garde le dernier dialogue monté le temps de
+  // dialogOut. La promesse, elle, est résolue IMMÉDIATEMENT (aucune latence
+  // pour l'appelant) ; seul le démontage visuel est différé.
+  const [leaving, setLeaving] = React.useState(null);
+  const leaveTimer = React.useRef(0);
+  const shownRef = React.useRef(null);
+  shownRef.current = state;
+  const bind = React.useCallback((next) => {
+    const prev = shownRef.current;
+    clearTimeout(leaveTimer.current);
+    if (!next && prev && !(_reducedMotion.mq && _reducedMotion.mq.matches)) {
+      setLeaving(prev);
+      leaveTimer.current = setTimeout(() => setLeaving(null), MOTION.fast);
+    } else {
+      setLeaving(null);
+    }
+    setState(next);
+  }, []);
+  React.useEffect(() => () => clearTimeout(leaveTimer.current), []);
+  React.useEffect(() => { Confirm._bind(bind); return () => Confirm._bind(null); }, [bind]);
   // All hooks must be called unconditionally on every render —
   // putting `useCallback`/`useEffect` after the `if (!state) return null`
   // early-return below changes the hook count when the dialog opens
@@ -1084,9 +1354,9 @@ function ConfirmHost() {
     // Escape/Enter doesn't ALSO reach the SheetOverlay sitting underneath
     // (both listen on `document`): cancelling a delete-confirmation used to
     // close the edit sheet behind it too.
-    if (e.key === 'Escape') { e.stopPropagation(); state._resolve(false); setState(null); }
-    if (e.key === 'Enter')  { e.stopPropagation(); state._resolve(true);  setState(null); }
-  }, [state]);
+    if (e.key === 'Escape') { e.stopPropagation(); state._resolve(false); bind(null); }
+    if (e.key === 'Enter')  { e.stopPropagation(); state._resolve(true);  bind(null); }
+  }, [state, bind]);
   React.useEffect(() => {
     if (!state) return;
     // Capture phase: `document` is first in the capture path, so this runs
@@ -1097,47 +1367,55 @@ function ConfirmHost() {
   }, [onKey, state]);
   // Android Back cancels the dialog (same as Escape / backdrop).
   useBackButton(!!state, React.useCallback(() => {
-    if (state) { state._resolve(false); setState(null); }
-  }, [state]));
-  if (!state) return null;
-  const close = (ok) => { state._resolve(ok); setState(null); };
+    if (state) { state._resolve(false); bind(null); }
+  }, [state, bind]));
+  const shown = state || leaving;
+  if (!shown) return null;
+  const out = !state;
+  const close = (ok) => { if (!state) return; state._resolve(ok); bind(null); };
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="alco-confirm-title"
       onClick={() => close(false)} style={{
       position: 'fixed', inset: 0, background: T.scrim,
       display: 'grid', placeItems: 'center', zIndex: 200,
-      animation: reduced ? undefined : `fade ${MOTION.fast}ms ${MOTION.ease}`, padding: 16,
+      animation: reduced ? undefined
+        : out ? `fadeOut ${MOTION.fast}ms ${MOTION.ease} forwards`
+        : `fade ${MOTION.fast}ms ${MOTION.ease}`,
+      pointerEvents: out ? 'none' : undefined,
+      padding: 16,
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
         background: T.bg, color: T.ink, borderRadius: 18,
         border: `1px solid ${T.rule}`,
         padding: '22px 22px 18px', maxWidth: 360, width: '100%',
         boxShadow: DIALOG_SHADOW,
-        animation: reduced ? undefined : `scaleIn ${MOTION.fast}ms ${MOTION.ease}`,
+        animation: reduced ? undefined
+          : out ? `dialogOut ${MOTION.fast}ms ${MOTION.easeIn} forwards`
+          : `scaleIn ${MOTION.base}ms ${MOTION.easeOut}`,
       }}>
         <div id="alco-confirm-title" style={{
           fontFamily: fontSerif, fontSize: 22, fontStyle: 'italic',
           letterSpacing: -0.3, marginBottom: 10,
-        }}>{state.title || 'Confirmer'}</div>
+        }}>{shown.title || 'Confirmer'}</div>
         <div style={{
           color: T.ink2, fontSize: 13.5, lineHeight: 1.45,
           letterSpacing: -0.05, marginBottom: 22,
-        }}>{state.message}</div>
+        }}>{shown.message}</div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={() => close(false)} style={{
             flex: 1, padding: '12px', borderRadius: 12,
             background: T.surface2, color: T.ink2,
             border: `1px solid ${T.rule}`, fontSize: 13,
             fontFamily: fontSans, cursor: 'pointer',
-          }}>{state.cancelText || 'Annuler'}</button>
+          }}>{shown.cancelText || 'Annuler'}</button>
           <button onClick={() => close(true)} autoFocus style={{
             flex: 1.4, padding: '12px', borderRadius: 12,
-            background: state.danger ? T.dangerBtn : T.accent,
-            color: state.danger ? T.dangerBtnInk : T.accentInk,
+            background: shown.danger ? T.dangerBtn : T.accent,
+            color: shown.danger ? T.dangerBtnInk : T.accentInk,
             border: 'none', fontSize: 13, fontWeight: 600,
             fontFamily: fontSans, cursor: 'pointer', letterSpacing: 0.1,
-            boxShadow: `0 4px 18px ${withAlpha(state.danger ? T.dangerBtn : T.accent, state.danger ? 0.5 : 0.4)}`,
-          }}>{state.confirmText || 'Confirmer'}</button>
+            boxShadow: `0 4px 18px ${withAlpha(shown.danger ? T.dangerBtn : T.accent, shown.danger ? 0.5 : 0.4)}`,
+          }}>{shown.confirmText || 'Confirmer'}</button>
         </div>
       </div>
     </div>
@@ -1218,15 +1496,25 @@ function useSWVersion() {
     /* Sorties miroir des entrées de sheet (jouées par SheetOverlay quand
        \`closing\` est vrai, cf. useSheetClose) : même distance, même easing. */
     @keyframes fadeOut { from { opacity: 1 } to { opacity: 0 } }
-    @keyframes sheetOutDown { from { transform: translateY(0); opacity: 1 } to { transform: translateY(16px); opacity: 0 } }
-    @keyframes sheetOutLeft { from { transform: translateX(0); opacity: 1 } to { transform: translateX(-16px); opacity: 0 } }
+    /* Sheets & tiroirs : la surface parcourt TOUTE sa dimension (elle sort
+       du bord de l'écran, comme une feuille native) au lieu d'un fondu sur
+       16px. Les sorties n'ont PAS de \`from\` : elles partent de la position
+       COURANTE — celle où le doigt a lâché la sheet après un glisser
+       (cf. useSheetDrag) — sans saut. Idem pour le voile (\`scrimOut\`). */
+    @keyframes sheetInUp { from { transform: translate3d(0, 100%, 0) } to { transform: translate3d(0, 0, 0) } }
+    @keyframes sheetInLeft { from { transform: translate3d(-100%, 0, 0) } to { transform: translate3d(0, 0, 0) } }
+    @keyframes sheetInRight { from { transform: translate3d(100%, 0, 0) } to { transform: translate3d(0, 0, 0) } }
+    @keyframes sheetOutDown { to { transform: translate3d(0, 100%, 0) } }
+    @keyframes sheetOutLeft { to { transform: translate3d(-100%, 0, 0) } }
+    @keyframes sheetOutRight { to { transform: translate3d(100%, 0, 0) } }
+    @keyframes scrimOut { to { opacity: 0 } }
+    /* Dialogues (confirmation, sheet \`side="top"\`) : sortie miroir de scaleIn. */
     @keyframes dialogOut { from { transform: scale(1); opacity: 1 } to { transform: scale(.96); opacity: 0 } }
-    @keyframes sheetOutRight { from { transform: translateX(0); opacity: 1 } to { transform: translateX(16px); opacity: 0 } }
     /* Transition « page » (vue plein écran type fiche ami) : pousse depuis la
        droite à l'ouverture, ressort vers la droite au retour — cohérent avec
        le geste système « revenir en arrière ». */
-    @keyframes pageIn { from { transform: translateX(28px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
-    @keyframes pageOut { from { transform: translateX(0); opacity: 1 } to { transform: translateX(28px); opacity: 0 } }
+    @keyframes pageIn { from { transform: translate3d(36px, 0, 0); opacity: 0 } to { transform: translate3d(0, 0, 0); opacity: 1 } }
+    @keyframes pageOut { from { transform: translate3d(0, 0, 0); opacity: 1 } to { transform: translate3d(36px, 0, 0); opacity: 0 } }
     /* Toast : montée + fondu (le translateX(-50%) du centrage doit vivre DANS
        les keyframes, sinon l'animation de transform écrase le centrage). */
     @keyframes toastIn { from { transform: translate(-50%, 10px); opacity: 0 } to { transform: translate(-50%, 0); opacity: 1 } }
@@ -1243,6 +1531,40 @@ function useSWVersion() {
     @media (prefers-reduced-motion: reduce) {
       .alco-chart-in { animation: none; }
     }
+
+    /* Bascule de thème (applyTheme) : fondu enchaîné de la page entière. */
+    ::view-transition-old(root), ::view-transition-new(root) {
+      animation-duration: ${MOTION.page}ms;
+      animation-timing-function: ${MOTION.ease};
+    }
+
+    /* Retour tactile (usePressScale) : piloté par un ATTRIBUT posé au
+       pointerdown — aucun re-rendu React par tap. Enfoncement quasi
+       instantané (${MOTION.pressIn} ms), relâchement plus souple
+       (${MOTION.pressOut} ms) : l'asymétrie d'un vrai bouton. */
+    [data-press] { transition: transform ${MOTION.pressOut}ms ${MOTION.easeOut}; }
+    [data-press][data-pressed] {
+      transform: scale(${MOTION.press});
+      transition-duration: ${MOTION.pressIn}ms;
+    }
+    /* Boutons hors usePressScale : un retour d'état discret et immédiat
+       (opacité, compositeur seul) pour que plus aucun tap ne reste muet. */
+    button:not([data-press]):not(:disabled):active { opacity: 0.72; }
+    button:not([data-press]) { transition: opacity ${MOTION.pressOut}ms ${MOTION.easeOut}; }
+    button:not([data-press]):active { transition-duration: ${MOTION.pressIn}ms; }
+    @media (prefers-reduced-motion: reduce) {
+      [data-press], [data-press][data-pressed] { transform: none; transition: none; }
+      button:not([data-press]) { transition: none; }
+    }
+
+    /* Focus clavier : anneau net aux couleurs du thème, jamais au tap. */
+    button:focus-visible, a:focus-visible, [role="button"]:focus-visible, [role="tab"]:focus-visible {
+      outline: 2px solid var(--alco-focus, currentColor); outline-offset: 2px;
+    }
+
+    /* Zones défilantes : inertie native iOS, et le défilement d'une liste
+       ne se propage jamais à ce qu'il y a derrière (sheet → page). */
+    [data-tab-scroll], .alco-sheet-dialog * { -webkit-overflow-scrolling: touch; }
 
     /* Racine d'une sheet : autorisée à rétrécir sous sa hauteur de contenu
        quand le dialog est plafonné (clavier ouvert) — sa zone interne
@@ -1415,6 +1737,15 @@ function useReducedMotion() {
   return reduced;
 }
 
+// Tick haptique discret (Android ; iOS n'expose pas l'API — no-op). Réservé
+// aux moments qui COMPTENT (seuil d'un balayage franchi…) : trop de retours
+// apprennent à tous les ignorer.
+function haptic(ms = 8) {
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') navigator.vibrate(ms);
+  } catch (e) { /* refusé hors geste utilisateur : sans importance */ }
+}
+
 // Entrée de liste en cascade. Fonction pure → à *spreader* dans le
 // style racine d'un item mappé (aucune prop de layout : ne casse pas
 // les bordures/marges de voisinage). Fill `backwards` : masque l'item
@@ -1436,30 +1767,34 @@ function staggerStyle(index = 0, opts = {}) {
   };
 }
 
-// Feedback tactile réutilisable : léger scale au pointerdown. Contourne
-// l'impossibilité d'exprimer :active en style inline. Expose `pressed`
-// + press/release pour composer avec des éléments qui gèrent déjà leurs
-// propres pointer events (ex. QuickAddButton), sans les écraser.
-function usePressScale(opts = {}) {
-  const { scale = MOTION.press } = opts;
-  const reduced = useReducedMotion();
-  const [pressed, setPressed] = React.useState(false);
-  const press = React.useCallback(() => setPressed(true), []);
-  const release = React.useCallback(() => setPressed(false), []);
-  return {
-    pressed, press, release,
-    style: reduced ? null : {
-      transform: pressed ? `scale(${scale})` : 'scale(1)',
-      transition: `transform ${MOTION.fast}ms ${MOTION.ease}`,
+// Feedback tactile réutilisable : léger scale au pointerdown. Piloté par
+// l'attribut `data-pressed` + CSS (cf. injectBaseStyles) : AUCUN state React,
+// donc aucun re-rendu de la carte/ligne à chaque tap (avant : deux rendus par
+// pression, sur des composants parfois lourds). Un tap sur un contrôle
+// IMBRIQUÉ (bouton « modifier » d'une carte, « + » d'une ligne) n'enfonce
+// plus son conteneur. `press(el)` / `release(el)` restent exposés pour les
+// éléments qui gèrent déjà leurs propres pointer events (QuickAddButton).
+// prefers-reduced-motion est géré en CSS.
+const _PRESS_NESTED = 'button, a, input, select, textarea, [role="button"], [data-press]';
+function _pressOn(el) { if (el && el.setAttribute) el.setAttribute('data-pressed', ''); }
+function _pressOff(el) { if (el && el.removeAttribute) el.removeAttribute('data-pressed'); }
+const _PRESS = Object.freeze({
+  press: _pressOn, release: _pressOff,
+  style: null,   // conservé pour compat (`...press.style`) : tout vit en CSS
+  handlers: Object.freeze({
+    'data-press': '',
+    onPointerDown: (e) => {
+      const el = e.currentTarget, t = e.target;
+      const inner = t && t.closest ? t.closest(_PRESS_NESTED) : null;
+      if (inner && inner !== el && el.contains(inner)) return;
+      _pressOn(el);
     },
-    handlers: reduced ? {} : {
-      onPointerDown: press,
-      onPointerUp: release,
-      onPointerCancel: release,
-      onPointerLeave: release,
-    },
-  };
-}
+    onPointerUp: (e) => _pressOff(e.currentTarget),
+    onPointerCancel: (e) => _pressOff(e.currentTarget),
+    onPointerLeave: (e) => _pressOff(e.currentTarget),
+  }),
+});
+function usePressScale() { return _PRESS; }
 
 // Repli/dépli à hauteur animée via l'astuce grid-template-rows 0fr→1fr
 // (aucune mesure JS). Le contenu est démonté une fois le repli terminé
@@ -1877,6 +2212,7 @@ Object.assign(window, {
   Confirm, ConfirmHost,
   clickable, ghostButton, QuickAddButton,
   MOTION, useReducedMotion, staggerStyle, usePressScale, Collapse,
+  haptic, SWIPE, swipeShouldCommit, SHEET_DRAG, projectMomentum, rubberBand, shouldDismissSheet, pageAnimation,
   useSWVersion,
   inputBaseStyle, inputS: inputBaseStyle, FieldGroup, parseDecimal,
   NumberField, CategoryChips, UnitToggle, RatingField, LocationField,

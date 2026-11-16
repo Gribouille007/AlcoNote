@@ -566,9 +566,7 @@ function FriendStatsView({ friend: initialFriend, onClose, onCompare }) {
     <div style={{
       position: 'fixed', inset: 0, zIndex: 60,
       background: T.bg, color: T.ink, display: 'flex', flexDirection: 'column',
-      animation: reduced ? undefined
-        : closing ? `pageOut ${MOTION.fast}ms ${MOTION.ease} forwards`
-        : `pageIn ${MOTION.base}ms ${MOTION.ease}`,
+      animation: pageAnimation(closing, reduced),
       pointerEvents: closing ? 'none' : undefined,
     }}>
       <div style={{

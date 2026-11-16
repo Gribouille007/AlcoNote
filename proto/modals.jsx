@@ -549,7 +549,7 @@ function ScannerSheet({ onClose, onScanned }) {
   }, []);
 
   return (
-    <div style={{
+    <div data-sheet-nodrag="" style={{
       position: 'fixed', inset: 0, background: VIEWFINDER_BG, zIndex: 200,
       display: 'flex', flexDirection: 'column',
     }}>
@@ -1749,11 +1749,14 @@ function ToggleRow({ label, sub, on, onToggle, last }) {
         width: 42, height: 25, borderRadius: 99, flexShrink: 0, position: 'relative',
         cursor: 'pointer', padding: 0, fontFamily: 'inherit',
         background: on ? T.accent : T.surface3, border: `1px solid ${on ? T.accent : T.rule}`,
-        transition: 'background 0.18s ease',
+        transition: `background ${MOTION.base}ms ${MOTION.ease}, border-color ${MOTION.base}ms ${MOTION.ease}`,
       }}>
+        {/* Le curseur glisse en transform (compositeur seul, pas de layout). */}
         <span style={{
-          position: 'absolute', top: 2, left: on ? 19 : 2, width: 19, height: 19,
-          borderRadius: 99, background: on ? T.accentInk : T.muted, transition: 'left 0.18s ease',
+          position: 'absolute', top: 2, left: 2, width: 19, height: 19,
+          borderRadius: 99, background: on ? T.accentInk : T.muted,
+          transform: `translate3d(${on ? 17 : 0}px, 0, 0)`,
+          transition: `transform ${MOTION.base}ms ${MOTION.easeOut}, background ${MOTION.base}ms ${MOTION.ease}`,
         }} />
       </button>
     </div>

@@ -681,9 +681,10 @@ function NavButton({
       background: 'transparent',
       border: 'none',
       fontFamily: 'inherit',
-      ...press.style,
+      // `transform` (retour tactile) est piloté par la règle [data-press] :
+      // on la recopie ici car une transition inline remplace celle du CSS.
       ...(reduced ? null : {
-        transition: `transform ${MOTION.fast}ms ${MOTION.ease}, color ${MOTION.fast}ms ${MOTION.ease}`
+        transition: `transform ${MOTION.pressOut}ms ${MOTION.easeOut}, color ${MOTION.fast}ms ${MOTION.ease}`
       })
     }
   }), /*#__PURE__*/React.createElement(SvgIcon, {
@@ -774,7 +775,7 @@ function BottomNav({
       display: 'flex',
       justifyContent: 'center',
       transform: `translateX(${activeIdx * 100}%)`,
-      transition: reduced ? undefined : `transform ${MOTION.base}ms ${MOTION.ease}`,
+      transition: reduced ? undefined : `transform ${MOTION.page}ms ${MOTION.easeOut}`,
       pointerEvents: 'none'
     }
   }, /*#__PURE__*/React.createElement("div", {

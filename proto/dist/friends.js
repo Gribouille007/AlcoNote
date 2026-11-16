@@ -907,7 +907,7 @@ function FriendStatsView({
       color: T.ink,
       display: 'flex',
       flexDirection: 'column',
-      animation: reduced ? undefined : closing ? `pageOut ${MOTION.fast}ms ${MOTION.ease} forwards` : `pageIn ${MOTION.base}ms ${MOTION.ease}`,
+      animation: pageAnimation(closing, reduced),
       pointerEvents: closing ? 'none' : undefined
     }
   }, /*#__PURE__*/React.createElement("div", {
